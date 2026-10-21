@@ -1,6 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, mkdir, symlink } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, symlink, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -12,15 +12,24 @@ await writeFile(path.join(outside, "outside.md"), "# Outside grant\n");
 await symlink(path.join(outside, "outside.md"), path.join(directory, "escaping.md"));
 await mkdir(path.join(directory, "子目录")); await writeFile(path.join(directory, "子目录", "另一页.md"), "# 另一页\n\n文件树与快速打开验收\n");
 await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, folder: directory, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "功能验收.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), bom: false, lineEnding: "\n" }] }));
-const env = { ...process.env, OMARKIE_DATA_DIR: directory }; delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+const state = path.join(directory, "state"); await mkdir(path.join(state, "omarchy", "current", "theme"), { recursive: true });
+await writeFile(path.join(state, "omarchy", "current", "theme", "colors.toml"), 'background = "#1a1b26"\nforeground = "#a9b1d6"\naccent = "#7aa2f7"\n');
+const env = { ...process.env, OMARKIE_DATA_DIR: directory, XDG_STATE_HOME: state, OMARKIE_LANGUAGE: "zh" }; delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 const application = await electron.launch({ args: [process.cwd()], env });
 const page = await application.firstWindow(), errors = [], passed = [], qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-features-qa";
 page.on("pageerror", error => errors.push(error.message));
 const rich = page.locator(".rich-document"), source = page.locator(".source-surface .cm-content");
 async function mode(rendered) { const button = page.locator(".source-toggle"); if (((await button.getAttribute("aria-pressed")) === "true") === rendered) await button.click(); await expect(rendered ? rich : source).toBeVisible(); }
+// Linux and Windows use the pcKey shortcuts from shared/commands.json.
+const quickOpen = process.platform === "darwin" ? "Meta+Shift+o" : "Control+p";
 async function menu(label) { await page.getByRole("button", { name: "更多操作" }).click(); await page.getByRole("menuitem", { name: label, exact: true }).click(); }
 async function text() { await mode(false); return (await source.locator(".cm-line").allTextContents()).join("\n"); }
 try {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "omarchy");
+  const documentFont = () => rich.evaluate(element => getComputedStyle(element).fontFamily);
+  await expect.poll(documentFont).toMatch(/JetBrains|monospace/);
+  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("omarkie-preferences"))).documentFont, "theme");
+  passed.push("first run on Omarchy uses the live Omarchy theme and its font, leaving font preferences on theme default");
   await expect(rich.locator(".markdown-toc a")).toHaveCount(2);
   const rejectedLink = await page.evaluate(async () => { const result = await window.desktop.openDocumentLink("fixture", "escaping.md"); return result.ok ? "" : result.error; });
   assert.match(rejectedLink, /当前文档目录之外/);
@@ -63,28 +72,48 @@ try {
   await expect(rich.locator("mark")).toHaveCount(1);
   await preferences.getByLabel("正文字号").fill("20");
   assert.equal(await rich.evaluate(element => getComputedStyle(element).fontSize), "20px");
+  await preferences.getByLabel("主题", { exact: true }).selectOption("paper");
+  await expect.poll(documentFont).toMatch(/^Georgia/);
   await preferences.getByLabel("主题", { exact: true }).selectOption("dark");
   await mkdir(qa, { recursive: true }); await page.screenshot({ path: path.join(qa, "preferences-dark.png") });
   await preferences.getByLabel("主题", { exact: true }).selectOption("light");
   await preferences.getByLabel("正文字号").fill("16"); await preferences.getByRole("button", { name: "完成" }).click();
-  passed.push("preferences change rendering without changing source and apply font/theme live");
+  passed.push("preferences change rendering without changing source and apply font/theme live; Warm Paper brings its serif back");
   const currentText = await text(); assert.ok(currentText.includes("==高亮==")); await mode(true);
-  await page.keyboard.press("ControlOrMeta+Shift+o");
+  await page.keyboard.press(quickOpen);
   const quick = page.getByRole("dialog", { name: "快速打开", exact: true });
   await expect(quick.getByRole("combobox")).toBeFocused();
   await quick.getByRole("combobox").fill("功能"); await page.keyboard.press("Enter");
   await expect(quick).toHaveCount(0); await expect(rich).toBeVisible();
   passed.push("quick open supports immediate typing and keyboard selection");
-  await page.keyboard.press("ControlOrMeta+Shift+o"); await page.getByRole("combobox").fill("另一页"); await page.keyboard.press("Enter");
+  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("另一页"); await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "另一页", exact: true })).toBeVisible();
-  await page.keyboard.press("ControlOrMeta+Control+3");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Control+3" : "Control+Shift+3");
   await expect(page.getByRole("tree", { name: "文件树", exact: true })).toBeVisible();
   await expect(page.getByRole("tree").getByRole("button", { name: "另一页.md", exact: true })).toBeVisible();
   passed.push("quick open loads an unopened nested file and the tree expands its directory");
   await page.getByRole("button", { name: "切换侧栏内容" }).click(); await page.getByRole("menuitemradio", { name: "文件", exact: true }).click();
   await page.getByRole("button", { name: "关闭 另一页.md", exact: true }).click();
+  await expect(page.getByRole("button", { name: "关闭 另一页.md", exact: true })).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+t"); await expect(page.getByRole("heading", { name: "另一页", exact: true })).toBeVisible();
   passed.push("closing and reopening a file restores the actual document");
+  const shown = page.locator(".document-editor:not([hidden]) .rich-document");
+  const menus = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu()?.items.map(item => item.label) ?? []);
+  for (const [code, title, label, file] of [["en", "Preferences", "Interface Language", "File"], ["es", "Preferencias", "Idioma de la interfaz", "Archivo"], ["ca", "Preferències", "Idioma de la interfície", "Fitxer"]]) {
+    await shown.click(); await page.keyboard.press("ControlOrMeta+,");
+    await page.getByRole("dialog").getByRole("combobox").first().selectOption(code);
+    await expect(page.locator("html")).toHaveAttribute("lang", code);
+    await shown.click(); await page.keyboard.press("ControlOrMeta+,");
+    await expect(page.getByRole("dialog", { name: title, exact: true }).getByLabel(label, { exact: true })).toHaveValue(code);
+    assert.ok((await menus()).includes(file), `${code} native menu`);
+    await page.keyboard.press("Escape");
+  }
+  await shown.click(); await page.keyboard.press("ControlOrMeta+,");
+  await page.getByRole("dialog").getByRole("combobox").first().selectOption("auto");
+  await expect.poll(async () => (await readFile(path.join(directory, "language"), "utf8")).trim()).toBe("auto");
+  await expect(page.getByRole("dialog")).toBeHidden(); await shown.click(); await page.keyboard.press("ControlOrMeta+,");
+  await expect(page.getByRole("dialog").getByRole("combobox").first()).toHaveValue("auto");
+  passed.push("the interface language dropdown switches to English, Spanish, Catalan and back to auto, menus included");
   await page.screenshot({ path: path.join(qa, "features-desktop.png") });
   assert.deepEqual(errors, []); passed.push("no renderer errors");
   await writeFile(path.join(qa, "features-results.json"), JSON.stringify({ passed, errors, directory }, null, 2));

@@ -12,8 +12,8 @@ export function PreferencesDialog({ value, change, theme, changeTheme, themes, i
   useEffect(() => { void host.conversionSettings().then(setConversion).catch(e => setError(e.message)); }, []);
   const options = [["imageAutoUpload", t("插入后通过 PicGo 自动上传")], ["remoteImages", t("显示远程图片")], ["imagePrefix", t("相对图片路径使用 ./ 前缀")], ["imageEscape", t("自动转义图片路径")], ["spellcheck", t("拼写检查")], ["autoPair", t("自动配对括号与引号")], ["highlight", t("高亮：==文字==")], ["subscript", t("下标：H~2~O")], ["superscript", t("上标：X^2^")], ["emoji", t("Emoji：:smile:")], ["inlineMath", t("行内公式：$x^2$")]] as const;
   async function changeLanguage(choice: string) {
-    if (window.desktop?.setLanguage) { if (!(await window.desktop.setLanguage(choice))?.ok) return; }
-    else localStorage.setItem(languageKey, choice);
+    if (window.desktop?.setLanguage) { const result = await window.desktop.setLanguage(choice); if (!result?.ok) setError(result?.error || t("语言无效。")); return; }
+    localStorage.setItem(languageKey, choice);
     location.reload();
   }
   return <Dialog title={t("偏好设置")} close={close}>

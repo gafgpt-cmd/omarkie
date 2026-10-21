@@ -8,7 +8,7 @@ const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-"));
-const env = { ...process.env, OMARKIE_DATA_DIR: dataDir };
+const env = { ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" };
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
 const errors = [],

@@ -6,8 +6,9 @@ export function Dialog({ title, close, children }: { title: string; close(): voi
   closing.current = close;
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const first = [...root.current!.querySelectorAll<HTMLElement>('input:not([type="checkbox"]),textarea,select,button,summary')].find(control => control.getClientRects().length > 0 && !control.matches(":disabled"));
-    first?.focus();
+    // Fields first: the heading's close button precedes them in the DOM.
+    const usable = (selector: string) => [...root.current!.querySelectorAll<HTMLElement>(selector)].find(control => control.getClientRects().length > 0 && !control.matches(":disabled"));
+    (usable('input:not([type="checkbox"]),textarea,select') ?? usable("button,summary"))?.focus();
     return () => { if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
   return <div className="dialog-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) closing.current(); }}>

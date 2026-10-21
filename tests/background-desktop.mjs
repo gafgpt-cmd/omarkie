@@ -5,7 +5,7 @@ import os from "node:os";
 import assert from "node:assert/strict";
 import formats from "./background-formats.json" with {type:"json"};
 const directory = await mkdtemp(path.join(os.tmpdir(),"omarkie-background-desktop-"));
-const env={...process.env,OMARKIE_DATA_DIR:directory,OMARKIE_TEST_HIDDEN:"1"};delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
+const env={...process.env,OMARKIE_DATA_DIR:directory,OMARKIE_TEST_HIDDEN:"1",OMARKIE_LANGUAGE:"zh"};delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
 let application;
 try {
   application=await electron.launch({args:[process.cwd()],env,timeout:30000});let page=await application.firstWindow();

@@ -116,7 +116,8 @@ const handlers = {
   setLanguage: async (_, choice) => {
     if (choice !== "auto" && !languages.some(([code]) => code === choice)) throw new Error(t("语言无效。"));
     await atomicWrite(path.join(store.dataDir, "language"), choice);
-    applyLanguage(choice); buildMenu(); return true;
+    // will-navigate blocks a renderer location.reload(), so the main process reloads after replying.
+    applyLanguage(choice); buildMenu(); setTimeout(() => window?.webContents.reload()); return true;
   },
   installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : installTheme(result.filePaths[0], store.dataDir); },
   readResource: async (_, address) => exportResource(address,store,path.join(root,"dist")),
