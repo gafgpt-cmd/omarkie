@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
-import { t } from "./i18n";
+import { language, t } from "./i18n";
 import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
   const prepareEditor = useRef(canPrepare); prepareEditor.current = canPrepare;
@@ -37,7 +37,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
   useEffect(() => {
     let disposed = false;
     void host
-      .restore()
+      .restore(language, t("示例笔记"))
       .then(async (session) => {
         if (disposed) return;
         const records = session?.documents || [];

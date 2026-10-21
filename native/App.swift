@@ -469,11 +469,20 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         return try jsonValue(seed)
       }
       if let session = try store.restore() { return try jsonValue(session) }
-      let samples =
-        try JSONSerialization.jsonObject(
-          with: Data(contentsOf: Bundle.main.resourceURL!.appendingPathComponent("samples.json")))
-        as! [[String: String]]
-      let folder = store.dataDirectory.appendingPathComponent("示例笔记")
+      let language = args.first as? String ?? "zh"
+      let resources = Bundle.main.resourceURL!
+      let samples: [[String: String]]
+      if language == "zh" {
+        samples = try JSONSerialization.jsonObject(
+          with: Data(contentsOf: resources.appendingPathComponent("samples.json"))) as! [[String: String]]
+      } else {
+        let localized = try JSONSerialization.jsonObject(
+          with: Data(contentsOf: resources.appendingPathComponent("samples.i18n.json"))) as! [String: [[String: String]]]
+        samples = localized[language] ?? localized["en"]!
+      }
+      var folderName = args.count > 1 ? args[1] as? String ?? "" : ""
+      if folderName.isEmpty || folderName.contains("/") || folderName.hasPrefix(".") { folderName = "示例笔记" }
+      let folder = store.dataDirectory.appendingPathComponent(folderName)
       var records = [DocumentRecord]()
       for sample in samples {
         let file = folder.appendingPathComponent(sample["name"]!)

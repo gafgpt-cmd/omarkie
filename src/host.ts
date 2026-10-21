@@ -1,7 +1,8 @@
 import type { DocumentRecord, Host, Recovery, SessionSnapshot } from "./types";
-import samples from "../shared/samples.json";
+import zhSamples from "../shared/samples.json";
+import localizedSamples from "../shared/samples.i18n.json";
 import { browserBackground, chooseBrowserBackground } from "./browserBackground";
-import { t } from "./i18n";
+import { language, t } from "./i18n";
 const browserRecords = new Map<string, DocumentRecord>();
 const key = "omarkie-session-v1";
 function draft(name: string, content: string): DocumentRecord {
@@ -48,7 +49,7 @@ const browser: Host = {
     if (raw && !Array.isArray(session?.documents)) { localStorage.setItem(key + "-backup", raw); session = null; }
     if (session) session.documents = session.documents.filter(record => record && typeof record.id === "string" && typeof record.name === "string" && typeof record.content === "string" && typeof record.savedContent === "string");
     session ??= {
-      documents: samples.map((sample) => draft(sample.name, sample.content)),
+      documents: (language === "zh" ? zhSamples : localizedSamples[language as keyof typeof localizedSamples] ?? localizedSamples.en).map((sample) => draft(sample.name, /Mac/.test(navigator.platform) ? sample.content : sample.content.replace(/⌘\s*/g, "Ctrl+"))),
     };
     for (const record of session.documents)
       browserRecords.set(record.id, record);

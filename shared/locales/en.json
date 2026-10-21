@@ -183,6 +183,7 @@
   "图表有语法错误，无法导出。": "The diagram has a syntax error and cannot be exported.",
   "图表语法错误": "Diagram syntax error",
   "在 Finder 中显示": "Reveal in Finder",
+  "在文件夹中显示": "Show in folder",
   "在上方插入段落": "Insert Paragraph Before",
   "在下方插入段落": "Insert Paragraph After",
   "在文件夹中新建文件…": "New File in Folder…",
