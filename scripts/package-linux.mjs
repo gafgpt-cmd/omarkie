@@ -33,7 +33,7 @@ await build({
     },
     rpm: { artifactName: outputs.rpm },
     // electron-builder's default Arch list names packages Arch no longer ships (http-parser, libappindicator-gtk3).
-    pacman: { artifactName: outputs.pacman, compression: "zstd", depends: ["gtk3", "nss", "alsa-lib", "libxss", "libxtst", "xdg-utils", "at-spi2-core", "libdrm", "mesa", "libsecret", "libnotify", "libcups"] },
+    pacman: { artifactName: outputs.pacman, synopsis: pkg.description, compression: "zstd", depends: ["gtk3", "nss", "alsa-lib", "libxss", "libxtst", "xdg-utils", "at-spi2-core", "libdrm", "mesa", "libsecret", "libnotify", "libcups"] },
   },
 });
 const names = targets.map(target => outputs[target]);
