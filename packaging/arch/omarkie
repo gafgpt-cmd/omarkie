@@ -12,12 +12,18 @@ if ! command -v "$electron" >/dev/null 2>&1; then
   if [[ -t 0 && -t 2 ]]; then
     sudo pacman -S --needed "$electron"
   else
-    if command -v notify-send >/dev/null 2>&1; then
-      notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "The $electron package is missing. A terminal is opening to install it." || true
-    fi
+    terminal=false
+    notice="The $electron package is missing. Install it with: sudo pacman -S --needed $electron"
     if command -v xdg-terminal-exec >/dev/null 2>&1; then
+      terminal=true
+      notice="The $electron package is missing. A terminal is opening to install it."
+    fi
+    if command -v notify-send >/dev/null 2>&1; then
+      notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$notice" || true
+    fi
+    if $terminal; then
       relaunch=$(printf '%q ' omarkie "$@")
-      exec xdg-terminal-exec bash -c "if sudo pacman -S --needed $electron; then setsid -f $relaunch; else read -rp 'Installation failed. Press Enter to close.'; fi"
+      exec xdg-terminal-exec bash -c "if sudo pacman -S --needed $electron; then setsid -f $relaunch </dev/null >/dev/null 2>&1; else read -rp 'Installation failed. Press Enter to close.'; fi"
     fi
     exit 1
   fi

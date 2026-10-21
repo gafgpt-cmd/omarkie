@@ -35,7 +35,21 @@ test("launched from the desktop without Electron: loud error, critical notificat
     assert.match(result.stderr, /sudo pacman -S --needed electron-stub-missing/);
     const [notify, terminal] = await box.calls();
     assert.match(notify, /^notify-send --urgency=critical --app-name=Omarkie Omarkie cannot start/);
-    assert.match(terminal, /^xdg-terminal-exec bash -c if sudo pacman -S --needed electron-stub-missing; then setsid -f omarkie a\\ b\.md/);
+    assert.match(notify, /A terminal is opening to install it/);
+    assert.match(terminal, /^xdg-terminal-exec bash -c if sudo pacman -S --needed electron-stub-missing; then setsid -f omarkie a\\ b\.md {2}<\/dev\/null >\/dev\/null 2>&1;/);
+  } finally { await box.done(); }
+});
+
+test("from the desktop without a terminal launcher the notification carries the install command", { skip: !linux }, async () => {
+  const box = await sandbox("electron-stub-missing");
+  try {
+    await box.stub("notify-send");
+    const result = spawnSync("/usr/bin/bash", [path.join(box.root, "omarkie")], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: box.root, HOME: box.root } });
+    assert.equal(result.status, 1);
+    const calls = await box.calls();
+    assert.equal(calls.length, 1);
+    assert.match(calls[0], /Install it with: sudo pacman -S --needed electron-stub-missing$/);
+    assert.doesNotMatch(calls[0], /terminal/);
   } finally { await box.done(); }
 });
 
