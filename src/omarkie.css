@@ -1,0 +1,53 @@
+.menu-bar {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  font-size: 12.5px;
+  z-index: 60;
+}
+.menu-bar-item {
+  position: relative;
+}
+.menu-bar-item > button {
+  padding: 3px 8px;
+  border-radius: 4px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.menu-bar-item > button[aria-expanded="true"] {
+  background: var(--selected);
+}
+.more-menu.menu-bar-panel {
+  top: 26px;
+  bottom: auto;
+  width: 290px;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+}
+.menu-bar-panel button:focus-visible {
+  background: var(--selected);
+  outline: none;
+}
+:root:not(#_) :is(.dialog-backdrop, .more-menu, .menu-bar, .sidebar, .statusbar, .toolbar, .file-context-menu) :is(input, select, textarea, kbd) {
+  font-family: inherit;
+}
+.menu-bar-panel button > span {
+  flex: 1;
+}
+@media (max-width: 1100px) {
+  .toolbar:has(.menu-bar) .document-title {
+    left: auto;
+    right: 12px;
+    transform: none;
+    max-width: calc(100% - 500px);
+  }
+}
+@media (max-width: 620px) {
+  .toolbar:has(.menu-bar) .document-title {
+    display: none;
+  }
+}

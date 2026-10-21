@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Omarkie</title>
+  <desc id="desc">A custom ink-blue M on a porcelain-white tile.</desc>
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#edf1f5"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#35465e"/>
+      <stop offset="1" stop-color="#1d2a3e"/>
+    </linearGradient>
+    <filter id="tile-shadow" x="-20%" y="-15%" width="140%" height="145%">
+      <feDropShadow dx="0" dy="15" stdDeviation="15" flood-color="#18324b" flood-opacity=".17"/>
+    </filter>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="207" fill="url(#paper)" filter="url(#tile-shadow)"/>
+  <rect x="65.5" y="65.5" width="893" height="893" rx="205.5" fill="none" stroke="#ffffff" stroke-width="3"/>
+  <path d="M252 300H392L512 555L632 300H772V331C744 336 730 349 730 380V670C730 701 744 714 776 718V750H578V718C610 714 626 701 626 670V414L522 649H494L374 414V657C374 691 392 711 430 718V750H248V718C280 711 294 691 294 657V380C294 349 280 336 252 331Z" fill="url(#ink)"/>
+  <path d="M632 300H772V322H642Z" fill="#6d8cae"/>
+</svg>

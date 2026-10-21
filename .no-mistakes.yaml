@@ -1,0 +1,4 @@
+# Mirrors .github/workflows/ci.yml. Desktop/Electron suites (test:desktop, test:features...) stay manual.
+commands:
+  test: npm test
+  lint: npx tsc -b

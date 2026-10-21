@@ -1,0 +1,198 @@
+name: Desktop release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag, for example v0.5.2"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Desktop acceptance tests assert the original Chinese UI labels.
+env:
+  OMARKIE_LANGUAGE: zh
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install desktop runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk pandoc libreoffice-writer
+      - run: npm test
+        env:
+          OMARKIE_REQUIRE_CONVERTERS: "1"
+      - name: Build Linux x64 DEB and AppImage
+        run: npm run package:linux
+      - name: Install DEB, exercise both packaged payloads, and uninstall
+        run: xvfb-run -a node tests/linux-install.mjs
+        env:
+          OMARKIE_QA_DIR: ${{ runner.temp }}/omarkie-linux-qa
+      - name: Save Linux acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: linux-acceptance
+          path: ${{ runner.temp }}/omarkie-linux-qa
+          retention-days: 7
+      - name: Save tested Linux packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: linux-packages
+          path: |
+            release/linux/*.deb
+            release/linux/*.AppImage
+            release/linux/SHA256SUMS-linux-x64.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install conversion tools for actual DOC, RTF and media acceptance
+        shell: pwsh
+        run: |
+          # Pinned upstream installers avoid the Chocolatey feed dependency.
+          # Checksums: jgm/pandoc release 3.12.1 and the LibreOffice mirror list.
+          $packages = @(
+            @{ Name = 'pandoc'; Url = 'https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-windows-x86_64.msi'; Sha256 = 'b6bf9f2c8408a1689272be5722e45f93ed9da17ba74321d0f7ef4e5a196605e8' },
+            @{ Name = 'libreoffice'; Url = 'https://download.documentfoundation.org/libreoffice/stable/26.8.1/win/x86_64/LibreOffice_26.8.1_Win_x86-64.msi'; Sha256 = 'c6298b10cfa1748bcbedad94c62ce771e240e5021bfd6d7a967cd571b04b5312' }
+          )
+          foreach ($package in $packages) {
+            $installer = Join-Path $env:RUNNER_TEMP ($package.Name + '.msi')
+            curl.exe --fail --location --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --max-time 300 $package.Url --output $installer
+            if ($LASTEXITCODE -ne 0) { throw ($package.Name + ' download failed') }
+            if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $package.Sha256) { throw ($package.Name + ' checksum mismatch') }
+            $install = Start-Process msiexec.exe -ArgumentList @('/i', "`"$installer`"", '/qn', '/norestart', 'ALLUSERS=1') -Wait -PassThru
+            if ($install.ExitCode -ne 0 -and $install.ExitCode -ne 3010) { throw ($package.Name + ' install failed: ' + $install.ExitCode) }
+          }
+          node --input-type=module -e "import {pandocPath,libreOfficePath} from './electron/interchange.mjs'; if (!(await pandocPath()) || !(await libreOfficePath())) process.exit(1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed conversion tools were not found' }
+          exit 0
+      - run: npm test
+        env:
+          OMARKIE_REQUIRE_CONVERTERS: "1"
+      - name: Build Windows x64 installer and ZIP
+        run: npm run package:win
+      - name: Install, exercise the installed app, and uninstall
+        shell: pwsh
+        run: ./tests/windows-install.ps1
+      - name: Save Windows acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-acceptance
+          path: ${{ runner.temp }}/omarkie-windows-qa
+          retention-days: 7
+      - name: Save tested Windows packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: windows-packages
+          path: |
+            release/windows/*-Setup.exe
+            release/windows/*.zip
+            release/windows/SHA256SUMS-windows-x64.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check Apple Silicon runner
+        run: node -e "if(process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:native
+      - name: Build native app, DMG, ZIP, and checksums
+        run: npm run package:release
+      - run: mv release/native/SHA256SUMS.txt release/native/SHA256SUMS-macos-arm64.txt
+      - name: Save tested macOS packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: macos-packages
+          path: |
+            release/native/*.dmg
+            release/native/*.zip
+            release/native/SHA256SUMS-macos-arm64.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: '*-packages'
+          merge-multiple: true
+          path: release-assets
+      - name: Verify version and every release checksum
+        run: |
+          test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+          cd release-assets
+          cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Publish all three platforms together
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-draft.txt"; then
+            if [ "$(cat "$RUNNER_TEMP/release-draft.txt")" != "true" ]; then
+              echo 'This release is already published; refusing to replace its assets.' >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --draft --verify-tag --title "Omarkie ${RELEASE_TAG#v}" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*-Setup.exe release-assets/*.zip release-assets/*.deb release-assets/*.AppImage release-assets/SHA256SUMS.txt
+          gh release edit "$RELEASE_TAG" --draft=false --latest
