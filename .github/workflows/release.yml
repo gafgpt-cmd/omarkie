@@ -40,7 +40,7 @@ jobs:
         run: |
           useradd --create-home builder
           chown -R builder: "$GITHUB_WORKSPACE"
-          su builder -c "cd '$GITHUB_WORKSPACE' && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && node --test tests/arch-launcher.test.mjs && npm run package:arch"
+          su builder -c "cd '$GITHUB_WORKSPACE' && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && node --test tests/arch-launcher.test.mjs tests/arch-electron.test.mjs && OMARKIE_ELECTRON=electron\$(node -p 'require(\"./package.json\").devDependencies.electron.split(\".\")[0]') npm run package:arch"
       - name: Lint and install it; pacman must pull in the Electron runtime
         run: |
           namcap release/arch/*.pkg.tar.zst
