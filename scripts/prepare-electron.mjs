@@ -1,8 +1,9 @@
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { licenseNotices } from "./license-notices.mjs";
 import { spellcheckDictionaries } from "./spellcheck-dictionaries.mjs";
+import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 // Folders the Electron host reads at runtime, at the same relative paths as in the repository.
 export const applicationFolders = ["dist", "electron", "shared", "docs/showcase"];
@@ -12,6 +13,8 @@ export async function prepareElectronApplication(platform) {
   await rm(application, { recursive: true, force: true });
   await mkdir(application, { recursive: true });
   for (const folder of applicationFolders) await cp(folder, path.join(application, folder), { recursive: true });
+  const index = path.join(application, "dist/index.html");
+  await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
   for (const name of ["iconv-lite", "safer-buffer", "i18next", "image-size"]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
   await cp("LICENSE", path.join(application, "LICENSE"));
   await cp("build/icon.png", path.join(application, "icon.png"));

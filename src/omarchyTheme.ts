@@ -13,7 +13,7 @@ function colors(palette: OmarchyPalette) {
   const vars = `color-scheme:${dark ? "dark" : "light"};--paper:${c.background};--sidebar:${c.dark_background || c.background};--ink:${c.foreground};--muted:${mix(c.foreground, 62)};--border:${mix(c.foreground, 14)};--heading-border:${mix(c.foreground, 14)};--accent:${c.accent};--code:${dark ? c.lighter_background : mix(c.foreground, 5)};--selected:${mix(c.accent, 16)};--quote:${mix(c.foreground, 18)};--selection:${mix(c.accent, 32)}`;
   return { dark, c, mix, vars };
 }
-export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "omarchy", name = "Omarchy", description = t("跟随 Omarchy 当前主题")): Theme {
+export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "omarchy", name = t("Omarchy（自动）"), description = t("跟随 Omarchy 当前主题")): Theme {
   const { dark, c, mix, vars } = colors(palette);
   const mono = `${palette.font ? JSON.stringify(palette.font) + "," : ""}"JetBrainsMono Nerd Font","JetBrains Mono",ui-monospace,monospace`;
   const scope = ':root[data-theme^="omarchy"]';
@@ -40,7 +40,7 @@ export function toyporaOmarchyTheme(palette: OmarchyPalette = omarchyDefault): T
   const css = `:root[data-theme][data-appearance]{${vars};--document-font:"Open Sans","Clear Sans","Helvetica Neue",Helvetica,Arial,"Noto Color Emoji",sans-serif;--chrome-font:"Open Sans","Helvetica Neue",Arial,"Noto Color Emoji",sans-serif}`
     + `.rich-document,.print-document{font-family:var(--document-font)}${scope} :is(.rich-document,.print-document) :is(code,pre,.md-fence){font-family:"Lucida Console",Consolas,Courier,monospace}`
     + `${scope} .rich-document a{color:${c.accent};text-decoration:none}${scope} .rich-document{caret-color:${c.accent}}`;
-  return { id: "omarchy-toypora", name: "Omarchy × Toypora", description: t("Omarchy 配色 · Toypora 字体"), dark, paper: c.background, ink: c.foreground, accent: c.accent, css };
+  return { id: "omarchy-toypora", name: t("Omarchy 配色 · Toypora 字体"), description: t("Omarchy 配色 · Toypora 字体"), dark, paper: c.background, ink: c.foreground, accent: c.accent, css };
 }
 export const omarchyThemes = [
   omarchyTheme(),

@@ -30,6 +30,7 @@ function download(name: string, text: string, type = "text/markdown;charset=utf-
 }
 const browser: Host = {
   native: false,
+  async spellcheckLanguages() { return []; },
   async cancelClose() {},
   async windowAction() { return false; },
   async imageAction() { throw new Error(t("图片文件操作请使用桌面应用。")); },
@@ -166,6 +167,7 @@ export const host: Host = window.desktop
         if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
+          if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
             const error = new Error(response.error);

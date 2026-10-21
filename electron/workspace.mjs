@@ -41,15 +41,28 @@ export class Workspace {
     if (!query || query.length > 1000) return { matches: [], skipped: 0, truncated: false };
     const expression = new RegExp(options.regex ? query : query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), options.caseSensitive ? "g" : "gi");
     const matches = [], deadline = Date.now() + (options.timeout ?? 5000), context = vm.createContext({ expression }); let skipped = 0, total = 0;
-    for (const file of files.filter(item => item.isDirectory !== "true")) {
+    for (const file of files) {
+      if (Date.now() >= deadline) return { matches, skipped, truncated: true, timedOut: true };
+      if (file.isDirectory === "true") continue;
       let lines, found;
-      try { const size = (await stat(file.path)).size; if (size > 2 * 1024 * 1024 || (total += size) > 30 * 1024 * 1024) { skipped++; continue; } lines = decodeText(await readFile(file.path), options.encodings?.[file.path]).content.split("\n"); } catch { skipped++; continue; }
-      try { Object.assign(context, { lines, limit: 501 - matches.length }); found = scan.runInContext(context, { timeout: Math.max(1, deadline - Date.now()) }); }
+      try { const size = (await stat(file.path)).size; if (size > 8 * 1024 * 1024 || total + size > 512 * 1024 * 1024) { skipped++; continue; } total += size; lines = decodeText(await readFile(file.path), options.encodings?.[file.path]).content.split("\n"); } catch { skipped++; continue; }
+      try {
+        if (options.regex) { Object.assign(context, { lines, limit: 501 - matches.length }); found = scan.runInContext(context, { timeout: Math.max(1, deadline - Date.now()) }); }
+        else {
+          found = [];
+          outer: for (let line = 0; line < lines.length; line++) {
+            for (const match of lines[line].matchAll(expression)) { found.push([line, match.index, match[0].length]); if (found.length >= 501 - matches.length) break outer; }
+            if (line % 2048 === 0) { await new Promise(resolve => setImmediate(resolve)); if (Date.now() >= deadline) return { matches, skipped, truncated: true, timedOut: true }; }
+          }
+        }
+      }
       catch (error) { if (error.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") return { matches, skipped, truncated: true, timedOut: true }; throw error; }
       for (const [line, index, length] of found) {
         if (matches.length >= 500) return { matches, skipped, truncated: true };
         matches.push({ token: file.token, path: file.path, name: file.relative, line: line + 1, column: index + 1, length, preview: lines[line].slice(Math.max(0, index - 70), Math.max(index + length, index + 110)) });
       }
+      context.lines = null;
+      await new Promise(resolve => setImmediate(resolve));
     }
     return { matches, skipped, truncated: false };
   }

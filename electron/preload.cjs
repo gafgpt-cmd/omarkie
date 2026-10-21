@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("desktop", {
   background: () => call("background"), chooseBackground: () => call("chooseBackground"), clearBackground: () => call("clearBackground"),
   plugins: () => call("plugins"), installPlugin: folder => call("installPlugin", folder), removePlugin: id => call("removePlugin", id),
   themes: () => call("themes"), omarchyTheme: () => call("omarchyTheme"), editRole: role => call("editRole", role), setRemoteImages: value => call("setRemoteImages", value), installTheme: () => call("installTheme"), conversionSettings: choose => call("conversionSettings", choose), importDocument: () => call("importDocument"), exportConverted: (id, format, source, html) => call("exportConverted", id, format, source, html), imageAction: (id, sources, action, options) => call("imageAction", id, sources, action, options),
+  spellcheckLanguages: languages => call("spellcheckLanguages", languages),
   ready: () => call("ready"),
   cancelClose: () => call("cancelClose"),
   fileOperation: operation => call("fileOperation", operation),

@@ -48,6 +48,12 @@ Each window has its own web view, document store, model and session file. Openin
 
 The bridge only accepts the main frame of the local app origin. Remote images, media and embeds are off by default: the renderer strips remote attributes and, in Electron, `webRequest` cancels every non-loopback request from the window until the user allows remote images. Sanitised HTML drops scripts, event handlers and forged editor attributes.
 
+Spellcheck languages are stored with editor preferences and validated against Electron’s available languages before applying them to the default session. Linux/Windows fetch Chromium `.bdic` dictionaries on first use; cached dictionaries work offline, but a new language needs an initial connection. The network filter targets editor-window requests only, so Electron’s background dictionary downloads are unaffected; document requests remain blocked. System Hunspell `.aff`/`.dic` files in `/usr/share/hunspell` are not Chromium `.bdic` dictionaries and cannot be used directly. macOS uses the system spellchecker and its language settings.
+
+Packagers stamp the Git-derived build ID into the packaged HTML metadata for About, using the same version calculation as Arch; unpackaged builds show `dev`. Release artifact filenames keep the package version.
+
+Vault search reads one file at a time (8 MiB per file, 512 MiB total), yields between files, and keeps the 5-second deadline and 500-result cap.
+
 `electron/workspace.mjs` (and `native/Workspace.swift`) manage folder tokens, recent items, full-text search, copy/rename/move/Trash and a one-step undo for file operations. Image moves copy everything first and only then move originals to the Trash.
 
 ## Encodings and conversion

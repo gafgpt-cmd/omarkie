@@ -111,6 +111,7 @@ export default function App() {
       for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
     });
   }, [pluginDefinitions, pluginPreferences, session.ready, !!active, runtimeReady]);
+  useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
   useEffect(() => { pluginRuntime.current?.documentChanged(); }, [active?.id, active?.path, active?.content]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !rendered); }, [rendered]);
@@ -494,7 +495,7 @@ export default function App() {
             <h2>Omarkie</h2>
             <p>{t("让文字，回到文字。")}</p>
             <p className="about-details">
-              {appVersion} · {t("本地 Markdown 写作空间")}
+              {appVersion} ({document.querySelector<HTMLMetaElement>('meta[name="omarkie-build"]')?.content || "dev"}) · {t("本地 Markdown 写作空间")}
               <br />
               {t("MIT 开源 · 独立实现")}
             </p>

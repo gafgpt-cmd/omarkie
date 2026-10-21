@@ -16,7 +16,7 @@ const classic = { id: "toypora", name: "Toypora", description: "", dark: false, 
 // Classic colours with Omarchy's fonts: the live Omarchy monospace for chrome, headings and code, Liberation Sans for text.
 export function omarchyFontsTheme(font: string | null): Theme {
   const mono = `${font ? JSON.stringify(font) + "," : ""}"JetBrainsMono Nerd Font","JetBrains Mono",ui-monospace,monospace`;
-  return readingTheme({ ...classic, id: "toypora-omarchy", name: "Toypora × Omarchy", description: t("Toypora 配色 · Omarchy 字体"), text: '"Liberation Sans",Arimo,Arial,"Noto Color Emoji",sans-serif', mono, chrome: mono, headingFont: mono });
+  return readingTheme({ ...classic, id: "toypora-omarchy", name: t("Toypora 纸张 · Omarchy 标题"), description: t("Toypora 配色 · Omarchy 字体"), text: '"Liberation Sans",Arimo,Arial,"Noto Color Emoji",sans-serif', mono, chrome: mono, headingFont: mono });
 }
 // The classic reading set: Open Sans 16px, line height 1.6, 860px column (base styles), these colours and code faces.
 export const toyporaThemes = [

@@ -140,6 +140,11 @@ const handlers = {
   themes: () => themes(store.dataDir),
   omarchyTheme: () => readOmarchyTheme(),
   editRole: async (event, role) => { if (["cut", "copy", "paste", "selectAll"].includes(role)) event.sender[role](); },
+  spellcheckLanguages: (_, languages) => {
+    const available = session.defaultSession.availableSpellCheckerLanguages;
+    if (Array.isArray(languages) && process.platform !== "darwin") session.defaultSession.setSpellCheckerLanguages([...new Set(languages.filter(code => typeof code === "string" && available.includes(code)))]);
+    return available;
+  },
   setRemoteImages: async (_, value) => { remoteImages = value === true; return true; },
   setLanguage: async (_, choice) => {
     if (choice !== "auto" && !languages.some(([code]) => code === choice)) throw new Error(t("语言无效。"));
