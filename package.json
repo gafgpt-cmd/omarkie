@@ -13,6 +13,7 @@
     "start": "electron .",
     "test": "node --import ./tests/setup-language.mjs --test tests/*.test.mjs",
     "test:desktop": "node tests/desktop.mjs",
+    "test:perf": "node tests/perf-desktop.mjs",
     "package:mac": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs",
     "install:app": "npm run package:mac && node scripts/install.mjs",
     "test:native": "node scripts/test-native.mjs",

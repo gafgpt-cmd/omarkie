@@ -65,4 +65,6 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (macOS key bindings).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.
 
+**Speed budgets.** After `npm run build`, `npm run test:perf` measures desktop startup, large-note opening/scrolling and lazy photo loading with isolated profiles and cached generated fixtures. `tests/perf-budgets.json` sets budgets of 1000 / 1500 / 300 / 150 ms respectively; current builds are expected to fail. Results include medians, decoded image dimensions and loaded-image counts in `/tmp/omarkie-perf-qa/perf-results.json` (`OMARKIE_QA_DIR` overrides the directory). Set `OMARKIE_PERF_RUNS` (default 3), `OMARKIE_PERF_REPORT_ONLY=1`, or `OMARKIE_EXECUTABLE` with optional `OMARKIE_APP` for an installed executable/asar.
+
 Automated composition checks do not replace manual input-method testing.
