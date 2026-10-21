@@ -29,3 +29,8 @@ declare module "*shared/background.mjs" {
   export function backgroundMime(bytes: Uint8Array): string;
   export function checkedBackground(value: unknown): { name: string; dataUrl: string } | null;
 }
+
+declare module "*shared/languages.mjs" {
+  export const languages: [string, string][];
+  export function resolveLanguage(choice: string, locales?: readonly string[]): string;
+}

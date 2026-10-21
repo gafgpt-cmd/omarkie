@@ -2,7 +2,7 @@ import DOMPurify from "dompurify";
 import { parseBlocks } from "./markdown.ts";
 import { imageReferences } from "./images.ts";
 import { t } from "../i18n.ts";
-import { pluginExportStyles } from "../plugins/runtime.ts";
+import { pluginExportStyles } from "../plugins/exportStyles.ts";
 export function exportHtml(content: HTMLElement) {
   content = content.cloneNode(true) as HTMLElement;
   for (const image of content.querySelectorAll("img")) { image.removeAttribute("srcset"); image.removeAttribute("sizes"); }

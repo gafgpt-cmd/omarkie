@@ -1,6 +1,6 @@
 import type { EditorView } from "@codemirror/view";
-import { EditorView as View } from "@codemirror/view";
-import { selectParentSyntax } from "@codemirror/commands";
+import { codeMirror } from "./loadCodeMirror.ts";
+
 
 export const selectionActions = new Set(["select-word", "delete-word", "select-line", "select-scope", "jump-selection"]);
 export function wordRange(text: string, position: number) {
@@ -17,10 +17,10 @@ export function codeSelectionCommand(view: EditorView, action: string) {
   if (!selectionActions.has(action)) return false;
   const selected = view.state.selection.main;
   if (action === "jump-selection") {
-    view.dispatch({effects:View.scrollIntoView(selected.head,{y:"center"})}); view.focus(); return true;
+    view.dispatch({effects:codeMirror!.EditorView.scrollIntoView(selected.head,{y:"center"})}); view.focus(); return true;
   }
   if (action === "delete-word" && view.state.readOnly) return true;
-  if (action === "select-scope" && selectParentSyntax(view)) { view.focus(); return true; }
+  if (action === "select-scope" && codeMirror!.selectParentSyntax(view)) { view.focus(); return true; }
   let from = selected.from, to = selected.to;
   if (action === "select-line" || action === "select-scope") {
     from = view.state.doc.lineAt(from).from;

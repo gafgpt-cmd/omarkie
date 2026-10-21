@@ -1,38 +1,18 @@
-// Bundled so every font choice renders the same on machines without it installed; @font-face files load only when used.
-import "@fontsource/pt-serif/400.css";
-import "@fontsource/pt-serif/700.css";
-import "@fontsource/pt-serif/400-italic.css";
-import "@fontsource/pt-serif/700-italic.css";
-import "@fontsource/lato/400.css";
-import "@fontsource/lato/700.css";
-import "@fontsource/lato/400-italic.css";
-import "@fontsource/lato/700-italic.css";
-import "@fontsource/merriweather/400.css";
-import "@fontsource/merriweather/700.css";
-import "@fontsource/merriweather/400-italic.css";
-import "@fontsource/merriweather/700-italic.css";
-import "@fontsource/vollkorn/400.css";
-import "@fontsource/vollkorn/700.css";
-import "@fontsource/vollkorn/400-italic.css";
-import "@fontsource/vollkorn/700-italic.css";
-import "@fontsource/arimo/400.css";
-import "@fontsource/arimo/700.css";
-import "@fontsource/arimo/400-italic.css";
-import "@fontsource/arimo/700-italic.css";
-import "@fontsource/tinos/400.css";
-import "@fontsource/tinos/700.css";
-import "@fontsource/tinos/400-italic.css";
-import "@fontsource/tinos/700-italic.css";
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/700.css";
-import "@fontsource/jetbrains-mono/400-italic.css";
-import "@fontsource/jetbrains-mono/700-italic.css";
-import "@fontsource/inter/400.css";
-import "@fontsource/inter/700.css";
-import "@fontsource/inter/400-italic.css";
-import "@fontsource/inter/700-italic.css";
-import "@fontsource/literata/400.css";
-import "@fontsource/literata/700.css";
-import "@fontsource/literata/400-italic.css";
-import "@fontsource/literata/700-italic.css";
-import "@fontsource/inter/600.css";
+const families = [
+  ["Open Sans", () => import("./fontStyles/open-sans.ts")] as const,
+  ["PT Serif", () => import("./fontStyles/pt-serif.ts")] as const,
+  ["Lato", () => import("./fontStyles/lato.ts")] as const,
+  ["Merriweather", () => import("./fontStyles/merriweather.ts")] as const,
+  ["Vollkorn", () => import("./fontStyles/vollkorn.ts")] as const,
+  ["Arimo", () => import("./fontStyles/arimo.ts")] as const,
+  ["Tinos", () => import("./fontStyles/tinos.ts")] as const,
+  ["JetBrains Mono", () => import("./fontStyles/jetbrains-mono.ts")] as const,
+  ["Inter", () => import("./fontStyles/inter.ts")] as const,
+  ["Literata", () => import("./fontStyles/literata.ts")] as const
+];
+const loaded = new Set<string>();
+const pending = new Set<Promise<unknown>>();
+export async function fontFacesReady() { await Promise.all([...pending]); }
+export function loadFontFaces(css: string) {
+  for (const [family, load] of families) if (css.includes(family) && !loaded.has(family)) { loaded.add(family); const loading = load().catch(() => loaded.delete(family)).finally(() => pending.delete(loading)); pending.add(loading); }
+}

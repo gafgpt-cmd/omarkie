@@ -1,7 +1,9 @@
 import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import { configureMath } from "./mathMarkdown.ts";
-import hljs from "highlight.js/lib/common";
+let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
+let highlighting: Promise<void> | undefined;
+export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
 import DOMPurify from "dompurify";
 import mark from "markdown-it-mark";
 import sub from "markdown-it-sub";
@@ -28,7 +30,7 @@ const md = new MarkdownIt({
   linkify: true,
   breaks: true,
   highlight(code, language): string {
-    return language && hljs.getLanguage(language)
+    return language && hljs?.getLanguage(language)
       ? hljs.highlight(code, { language, ignoreIllegals: true }).value
       : md.utils.escapeHtml(code);
   },
@@ -193,7 +195,7 @@ export function decodeMarkdownText(source: string) {
   return md.utils.unescapeAll(source);
 }
 export function highlightCode(source: string, language: string) {
-  return language && hljs.getLanguage(language)
+  return language && hljs?.getLanguage(language)
     ? hljs.highlight(source, { language, ignoreIllegals: true }).value
     : md.utils.escapeHtml(source);
 }

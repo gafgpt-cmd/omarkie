@@ -1,3 +1,4 @@
+import { loadFontFaces } from "./fontFaces.ts";
 import { t } from "./i18n.ts";
 export interface FontPreferences { documentFont: string; headingFont: string; codeFont: string; interfaceFont: string }
 export interface FontChoice { id: string; name: string; group: "toypora" | "toyzetlr" | "omarchy" | "system"; stack: string }
@@ -47,6 +48,7 @@ export function fontCss(fonts: FontPreferences, omarchyFont: string | null) {
 export function applyFonts(fonts: FontPreferences, omarchyFont: string | null) {
   const style = document.createElement("style"); style.dataset.fontPreferences = "true"; style.dataset.customTheme = "true";
   style.textContent = fontCss(fonts, omarchyFont);
+  loadFontFaces(style.textContent || "");
   document.head.append(style);
   return () => style.remove();
 }

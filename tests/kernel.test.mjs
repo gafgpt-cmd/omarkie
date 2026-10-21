@@ -576,11 +576,13 @@ test("highlight, subscript, superscript, emoji and safe underline keep original 
   assert.equal(f.model.text, source.replace("高亮", "高新亮"));
   f.editor.undo(); f.close();
 });
-test("HTML clipboard paste converts formatted paragraphs and tables to editable Markdown", () => {
+test("HTML clipboard paste converts formatted paragraphs and tables to editable Markdown", async () => {
   const f = fixture(""); point(f.editor, 0);
   const event = new window.Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", { value: { files: [], getData(type) { return type === "text/html" ? '<h2>Title</h2><p><strong>Bold</strong> <a href="https://example.com">Link</a></p><script>alert(1)</script><table><thead><tr><th>A</th><th>B</th></tr></thead><tbody><tr><td>X</td><td>Y</td></tr></tbody></table>' : ""; } } });
   f.root.dispatchEvent(event);
+  await import("../src/editor/clipboard.ts");
+  await new Promise(resolve => setImmediate(resolve));
   assert.match(f.model.text, /^## Title/); assert.match(f.model.text, /\*\*Bold\*\*/); assert.match(f.model.text, /\[Link\]\(https:\/\/example.com\)/);
   assert.ok(f.root.querySelector("table")); assert.ok(!f.model.text.includes("alert(1)"));
   f.editor.undo(); assert.equal(f.model.text, ""); f.close();
@@ -898,5 +900,17 @@ test("spaces typed after Ctrl+End in a newline-terminated file stay with the typ
   point(f.editor, source.length);
   for (const character of " two words") input(f.root, "insertText", character);
   assert.equal(f.model.toMarkdown(), source + " two words");
+  f.close();
+});
+
+test("lazy syntax highlighting preserves fence text, escaping and lossless Markdown", async () => {
+  const { loadHighlighting } = await import("../src/editor/markdown.ts");
+  await loadHighlighting();
+  const source = '```js\nconst answer = "<script>";\n```\n';
+  const f = fixture(source);
+  assert.equal(f.root.querySelector(".hljs-keyword")?.textContent, "const");
+  assert.equal(f.root.querySelector(".fence-body code")?.textContent, 'const answer = "<script>";\n');
+  assert.equal(f.root.querySelector("script"), null);
+  assert.equal(f.model.toMarkdown(), source);
   f.close();
 });

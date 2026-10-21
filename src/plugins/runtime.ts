@@ -35,12 +35,8 @@ export function matchesHotkey(event: KeyboardEvent, shortcut: string, mac = /Mac
   return key === physical && event.metaKey === meta && event.ctrlKey === ctrl && event.altKey === (parts.includes("alt") || parts.includes("option")) && event.shiftKey === parts.includes("shift");
 }
 // Export hooks outlive the component tree, like upstream's exportHelper; print.ts reads them while building the document.
-const exportHelpers = new Map<string, { before?: (options: { type: string }) => unknown; failed(error: unknown): void }>();
-export function pluginExportStyles(options: { type: string }) {
-  let css = "";
-  for (const helper of exportHelpers.values()) { try { const value = helper.before?.(options); if (typeof value === "string") css += value + "\n"; } catch (error) { helper.failed(error); } }
-  return css ? adaptThemeCss(css).replace(/<\/style/gi, "<\\/style") : "";
-}
+import { exportHelpers } from "./exportStyles.ts";
+export { pluginExportStyles } from "./exportStyles.ts";
 // Spacers stand for blocks outside the rendered window; plugins must neither mark, style nor walk through them.
 const isSpacer = (node: unknown) => node instanceof Element && node.classList.contains("md-window-spacer");
 function hotkeySignature(shortcut: string, mac = /Mac/.test(navigator.platform)) {

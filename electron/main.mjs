@@ -29,6 +29,12 @@ import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
+const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
+function startupMark(name) {
+  if (!traceStartup) return;
+  performance.mark(`omarkie:${name}`);
+  console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
+}
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 if (process.env.OMARKIE_DATA_DIR)
@@ -57,6 +63,8 @@ let window,
   closing = false;
 const pending = [];
 let rendererReady = false;
+let revealWindow = () => {};
+
 const pluginToken = randomUUID();
 const authorizedPlugin = item => item && ({ ...item, url: item.url + "?token=" + pluginToken });
 function openFiles(files) {
@@ -156,7 +164,12 @@ const handlers = {
     if (action === "delete") { const result = await dialog.showMessageBox(window,{type:"warning",message:t("删除图片文件？"),detail:t("图片文件会移到废纸篓，文档中的引用也会移除。"),buttons:[t("取消"),t("移到废纸篓")],defaultId:0,cancelId:0}); if(result.response !== 1) return null; }
     return imageAction({store,id,sources,action,options,destination,directory,trash:file=>shell.trashItem(file),notice:message=>window.webContents.send("app:command",{action:"notice",message})});
   },
-  ready: async () => { rendererReady = true; for (const file of pending.splice(0)) {
+  ready: async () => {
+    if (traceStartup) {
+      const marks = await window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))');
+      for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
+    }
+    rendererReady = true; revealWindow(); for (const file of pending.splice(0)) {
     try { send({ action: "opened", document: await store.open(file) }); }
     catch (error) { showError(error); }
   } return true; },
@@ -180,6 +193,18 @@ const handlers = {
   },
   restore: async () => {
     const restored = await store.restore();
+    if (pending.length) {
+      const documents = [...(restored?.documents || [])];
+      let activeId = restored?.activeId;
+      for (const file of pending.splice(0)) {
+        try {
+          const record = await store.open(file), index = documents.findIndex(item => item.id === record.id);
+          if (index < 0) documents.push(record); else documents[index] = record;
+          activeId = record.id;
+        } catch (error) { showError(error); }
+      }
+      if (documents.length) return { ...restored, documents, activeId };
+    }
     if (restored) return restored;
     const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
     return { documents, activeId: documents[0].id, folder: folder.folder };
@@ -327,6 +352,7 @@ const handlers = {
 app
   .whenReady()
   .then(async () => {
+    startupMark("main-process-ready");
     if (process.platform !== "darwin" && !app.hasSingleInstanceLock()) return;
     store = new DocumentStore(app.getPath("userData"));
     workspace = new Workspace(app.getPath("userData"));
@@ -391,11 +417,24 @@ app
         webPreferences: {
           backgroundThrottling: process.env.OMARKIE_TEST_HIDDEN !== "1",
           preload: path.join(root, "electron/preload.cjs"),
+          v8CacheOptions: "code",
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
         },
       });
+      const created = window;
+      let paintReady = false, revealing = false;
+      revealWindow = () => {
+        if (!paintReady || !rendererReady || revealing || created.isDestroyed()) return;
+        revealing = true;
+        void created.webContents.executeJavaScript('getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()').catch(() => "").then(color => {
+          if (created.isDestroyed()) return;
+          if (/^#[0-9a-f]{3,8}$/i.test(color)) created.setBackgroundColor(color);
+          if (process.env.OMARKIE_TEST_HIDDEN !== "1") { created.show(); startupMark("window-shown"); }
+        });
+      };
+      created.once("ready-to-show", () => { paintReady = true; revealWindow(); });
       session.defaultSession.setPermissionRequestHandler((_, __, callback) =>
         callback(false),
       );
@@ -422,6 +461,7 @@ app
         app.quit();
       }
     });
+    createWindow();
     const command = (action) => item => {
       if (item?.type === "checkbox") item.checked = viewChecked[action] === true;
       send(action);
@@ -436,7 +476,6 @@ app
       { role: "windowMenu", label: t("窗口") }
     ]));
     buildMenu();
-    createWindow();
     if (process.platform === "linux") watchOmarchyTheme(() => send("omarchy-theme"));
     app.on("activate", () => {
       if (!window) {
