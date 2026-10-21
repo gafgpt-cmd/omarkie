@@ -462,6 +462,9 @@ svg {
 .sidebar-hidden .sidebar {
   visibility: hidden;
 }
+.sidebar-hidden .quick-actions {
+  background: var(--paper);
+}
 .focus-mode .toolbar,
 .focus-mode .quick-actions,
 .focus-mode .statusbar {

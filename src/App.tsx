@@ -13,7 +13,7 @@ import { renderMath } from "./editor/math";
 import { exportHtml, portableHtml, conversionMarkdown } from "./editor/print";
 import { commandForKey, commandKey, commandsByAction } from "./commands";
 import { loadPreferences } from "./preferences";
-import { applyFonts } from "./fonts";
+import { applyFonts, fontKeys } from "./fonts";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { InsertDialog } from "./components/InsertDialog";
 import type { InsertKind } from "./components/InsertDialog";
@@ -132,7 +132,8 @@ export default function App() {
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme"));
   async function refreshOmarchy() {
     const palette = await host.omarchyTheme().catch(() => null); setOmarchy(palette);
-    if (palette && themeUnset.current) { themeUnset.current = false; setTheme("omarchy"); }
+    // First run on Omarchy: live Omarchy colours and the Omarchy font everywhere.
+    if (palette && themeUnset.current) { themeUnset.current = false; setTheme("omarchy"); setPreferences(current => fontKeys.every(key => current[key] === "theme") ? { ...current, ...Object.fromEntries(fontKeys.map(key => [key, "omarchy"])) } : current); }
   }
   useEffect(() => { void refreshOmarchy(); }, []);
   useEffect(() => { const remove = applyTheme(theme, themes, omarchy); void refreshDiagrams().catch(() => {}); return remove; }, [theme, themes, omarchy]);
