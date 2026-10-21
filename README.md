@@ -51,15 +51,14 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 ### Linux
 
-Ubuntu 22.04 x64 is the tested baseline; Arch-based systems such as Omarchy use the AppImage or a source build.
+| Distribution | Package | Install |
+| --- | --- | --- |
+| Arch, Omarchy, Manjaro | `omarkie-0.1.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.0-1-x86_64.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.1.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.0-linux-x64.deb` |
+| Fedora, RHEL, openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.1.0-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-```sh
-sudo apt install ./Omarkie-0.1.0-linux-x64.deb
-```
-
-The launcher and Markdown file association are included. `sudo apt remove omarkie` keeps your documents and recovery data.
-
-For the AppImage, run `chmod +x Omarkie-0.1.0-linux-x64.AppImage` and start it. FUSE 2 may be required; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 ### Windows
 
@@ -81,7 +80,7 @@ Use **Node.js 26** and npm.
 git clone https://github.com/gafgpt-cmd/omarkie.git
 cd omarkie
 npm ci
-npm run package:linux   # DEB and AppImage in release/linux/
+npm run package:linux   # DEB, RPM, Arch package and AppImage in release/linux/
 npm run package:win     # on Windows x64: installer and ZIP in release/windows/
 npm run package:mac     # on macOS with Xcode Command Line Tools: release/native/Omarkie.app
 ```
