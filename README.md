@@ -62,7 +62,7 @@ The Arch package is small (about 14 MB) because it runs on Arch's shared Electro
 
 #### Update, uninstall and clean up
 
-To update, install the new package over the old one with the same command as above. There is no need to remove the old one first, and a rebuilt package with the same version number also replaces the installed one.
+To update, install the new package over the old one with the same command as above. There is no need to remove the old one first. On Arch, a rebuilt package with the same version number also replaces the installed one; on Debian and Fedora it needs `sudo apt reinstall ./<file>.deb` or `sudo dnf reinstall ./<file>.rpm`.
 
 | | Arch, Omarchy, Manjaro | Debian, Ubuntu, Mint | Fedora, RHEL, openSUSE |
 | --- | --- | --- | --- |
