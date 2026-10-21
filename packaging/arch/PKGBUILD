@@ -1,0 +1,27 @@
+# Built by scripts/package-arch.mjs, which fills in the version and Electron series.
+pkgname=omarkie
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="@DESCRIPTION@"
+arch=('any')
+url="https://github.com/gafgpt-cmd/omarkie"
+license=('MIT')
+depends=('@ELECTRON@' 'hicolor-icon-theme' 'xdg-utils')
+optdepends=('noto-fonts-emoji: color emoji'
+            'ttf-jetbrains-mono-nerd: the Omarchy monospace font'
+            'pandoc: import and export DOCX, ODT, EPUB and more'
+            'libreoffice-fresh: import legacy DOC and RTF'
+            'libnotify: desktop notification when the Electron runtime is missing')
+source=('app.asar' 'omarkie' 'omarkie.desktop' 'omarkie.png' 'LICENSE' 'ThirdPartyLicenses.tar')
+sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP' 'SKIP')
+noextract=('ThirdPartyLicenses.tar')
+
+package() {
+  install -Dm644 app.asar "$pkgdir/usr/lib/omarkie/app.asar"
+  install -Dm755 omarkie "$pkgdir/usr/bin/omarkie"
+  install -Dm644 omarkie.desktop "$pkgdir/usr/share/applications/omarkie.desktop"
+  install -Dm644 omarkie.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/omarkie.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/omarkie/LICENSE"
+  mkdir -p "$pkgdir/usr/share/licenses/omarkie/third-party"
+  bsdtar -xf ThirdPartyLicenses.tar -C "$pkgdir/usr/share/licenses/omarkie/third-party"
+}
