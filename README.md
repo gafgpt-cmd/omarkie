@@ -58,7 +58,7 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 | Fedora, RHEL, openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
 | Any x64 distribution | `Omarkie-0.1.0-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The Arch package is small (about 14 MB) because it runs on Arch's shared `electron44` runtime; pacman installs that automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 ### Windows
 

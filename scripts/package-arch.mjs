@@ -5,10 +5,12 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
+import { electronSeries, installedPackages } from "./arch-electron.mjs";
 
 // An Arch package that runs on the distribution's shared Electron instead of bundling Chromium.
 if (process.platform !== "linux") throw new Error("Build the Arch package on Linux.");
-const electron = `electron${pkg.devDependencies.electron.split(".")[0]}`;
+const electron = electronSeries({ override: process.env.OMARKIE_ELECTRON, installed: installedPackages(), recommended: Number(pkg.devDependencies.electron.split(".")[0]) });
+console.log(`Arch package runtime: ${electron}`);
 const work = path.resolve("release/arch"), sources = path.join(work, "src");
 await rm(work, { recursive: true, force: true });
 await mkdir(sources, { recursive: true });
