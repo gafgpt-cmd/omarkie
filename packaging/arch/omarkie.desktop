@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Omarkie
+GenericName=Markdown Editor
+Comment=Write in Markdown with live, inline rendering
+Exec=omarkie %F
+Icon=omarkie
+Terminal=false
+Categories=Office;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+StartupWMClass=omarkie
+Keywords=markdown;notes;writing;editor;

@@ -14,7 +14,7 @@
 
 Omarkie is an open-source Markdown editor with live, inline rendering. Write directly in the formatted document, switch to source when you need it, and keep ordinary `.md` files in your own folders. It feels at home on [Omarchy](https://omarchy.org): it follows your Omarchy theme and font live, and it runs on Linux, Windows and macOS.
 
-**Status:** early development, version **0.1.0**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+**Status:** early development, version **0.1.1**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
 
 ## Features
 
@@ -53,12 +53,12 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 | Distribution | Package | Install |
 | --- | --- | --- |
-| Arch, Omarchy, Manjaro | `omarkie-0.1.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.0-1-x86_64.pkg.tar.zst` |
-| Debian, Ubuntu, Mint | `Omarkie-0.1.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.0-linux-x64.deb` |
-| Fedora, RHEL, openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
-| Any x64 distribution | `Omarkie-0.1.0-linux-x64.AppImage` | `chmod +x` the file and run it |
+| Arch, Omarchy, Manjaro | `omarkie-0.1.1-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.1-1-any.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.1.1-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.1-linux-x64.deb` |
+| Fedora, RHEL, openSUSE | `omarkie-0.1.1-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.1-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.1.1-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The Arch package is small (about 14 MB) because it runs on Arch's shared `electron44` runtime; pacman installs that automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.1-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 ### Windows
 
@@ -80,7 +80,8 @@ Use **Node.js 26** and npm.
 git clone https://github.com/gafgpt-cmd/omarkie.git
 cd omarkie
 npm ci
-npm run package:linux   # DEB, RPM, Arch package and AppImage in release/linux/
+npm run package:linux   # DEB, RPM and AppImage in release/linux/
+npm run package:arch    # Arch package on the shared Electron runtime, in release/arch/ (needs makepkg)
 npm run package:win     # on Windows x64: installer and ZIP in release/windows/
 npm run package:mac     # on macOS with Xcode Command Line Tools: release/native/Omarkie.app
 ```

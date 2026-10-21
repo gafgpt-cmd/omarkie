@@ -1,0 +1,26 @@
+#!/usr/bin/bash
+# Runs Omarkie on Arch's shared Electron. pacman installs it as a dependency; if it was
+# removed afterwards, say so loudly and offer the install instead of failing silently.
+set -euo pipefail
+
+electron=@ELECTRON@
+app=/usr/lib/omarkie/app.asar
+
+if ! command -v "$electron" >/dev/null 2>&1; then
+  message="Omarkie cannot start: the $electron package is not installed."
+  printf '\n\033[1;31m%s\033[0m\nInstall it with: sudo pacman -S --needed %s\n\n' "$message" "$electron" >&2
+  if [[ -t 0 && -t 2 ]]; then
+    sudo pacman -S --needed "$electron"
+  else
+    if command -v notify-send >/dev/null 2>&1; then
+      notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "The $electron package is missing. A terminal is opening to install it." || true
+    fi
+    if command -v xdg-terminal-exec >/dev/null 2>&1; then
+      relaunch=$(printf '%q ' omarkie "$@")
+      exec xdg-terminal-exec bash -c "if sudo pacman -S --needed $electron; then setsid -f $relaunch; else read -rp 'Installation failed. Press Enter to close.'; fi"
+    fi
+    exit 1
+  fi
+fi
+
+exec "$electron" "$app" "$@"

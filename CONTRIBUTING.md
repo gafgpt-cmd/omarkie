@@ -59,7 +59,7 @@ Automated desktop suites use isolated temporary application data. To keep screen
 
 ## Build and install
 
-On Linux x64, run `npm run package:linux` to create a DEB, an RPM, an Arch package, an AppImage and checksums in `release/linux/`. The RPM needs `rpmbuild`, and both the RPM and the Arch package need `bsdtar`, which reads each package back to reject a truncated build; set `OMARKIE_LINUX_TARGETS` (for example `deb,AppImage`) to build a subset.
+On Linux x64, run `npm run package:linux` to create a DEB, an RPM, an AppImage and checksums in `release/linux/`. The RPM needs `rpmbuild` and `bsdtar`, which reads the package back to reject a truncated build; set `OMARKIE_LINUX_TARGETS` (for example `deb,AppImage`) to build a subset. On Arch, `npm run package:arch` builds a package for the shared `electronNN` runtime with `makepkg` into `release/arch/`; its launcher (`packaging/arch/omarkie`) reports a missing runtime and offers the install.
 
 On macOS:
 

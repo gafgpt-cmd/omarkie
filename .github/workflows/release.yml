@@ -24,6 +24,39 @@ env:
   OMARKIE_LANGUAGE: zh
 
 jobs:
+  arch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    container: archlinux:base-devel
+    steps:
+      - name: Install build tools
+        run: pacman -Syu --noconfirm --needed git nodejs npm namcap
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+      # makepkg refuses to run as root.
+      - name: Build the Arch package on the shared Electron runtime
+        run: |
+          useradd --create-home builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && node --test tests/arch-launcher.test.mjs && npm run package:arch"
+      - name: Lint and install it; pacman must pull in the Electron runtime
+        run: |
+          namcap release/arch/*.pkg.tar.zst
+          pacman -U --noconfirm release/arch/*.pkg.tar.zst
+          electron=$(pacman -Qi omarkie | sed -n 's/^Depends On *: \(electron[0-9]*\).*/\1/p')
+          pacman -Qi "$electron" > /dev/null
+          test -x /usr/bin/omarkie
+          grep -qx 'Exec=omarkie %F' /usr/share/applications/omarkie.desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: arch-packages
+          path: |
+            release/arch/*.pkg.tar.zst
+            release/arch/SHA256SUMS-arch.txt
+          if-no-files-found: error
+
   linux:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -42,7 +75,7 @@ jobs:
       - run: npm test
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"
-      - name: Build Linux x64 DEB, RPM, Arch package and AppImage
+      - name: Build Linux x64 DEB, RPM and AppImage
         run: npm run package:linux
       - name: Install DEB, exercise both packaged payloads, and uninstall
         run: xvfb-run -a node tests/linux-install.mjs
@@ -62,7 +95,6 @@ jobs:
           path: |
             release/linux/*.deb
             release/linux/*.rpm
-            release/linux/*.pkg.tar.zst
             release/linux/*.AppImage
             release/linux/SHA256SUMS-linux-x64.txt
           if-no-files-found: error
@@ -161,7 +193,7 @@ jobs:
 
   publish:
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
-    needs: [macos, windows, linux]
+    needs: [macos, windows, linux, arch]
     runs-on: ubuntu-latest
     permissions:
       contents: write

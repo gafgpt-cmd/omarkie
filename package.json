@@ -1,6 +1,6 @@
 {
   "name": "omarkie",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local Markdown writing space with live rendering and lossless source editing.",
   "private": true,
   "type": "module",
@@ -30,6 +30,7 @@
     "build:demo": "tsc -b && vite build --config vite.demo.config.ts",
     "test:background-desktop": "node tests/background-desktop.mjs",
     "package:linux": "npm run build && node scripts/icon.mjs && node scripts/package-linux.mjs",
+    "package:arch": "npm run build && node scripts/icon.mjs && node scripts/package-arch.mjs",
     "test:parity": "node tests/parity-desktop.mjs"
   },
   "dependencies": {
@@ -74,6 +75,7 @@
   },
   "devDependencies": {
     "@babel/parser": "8.0.4",
+    "@electron/asar": "3.4.1",
     "@types/markdown-it": "14.2.0",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
