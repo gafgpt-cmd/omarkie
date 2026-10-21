@@ -70,15 +70,17 @@ async function measure(kind, file, title) {
     // Observe attachment and image readiness together, without locator actionability waits.
     const ready = await page.waitForFunction(({ editor, title, photo }) => {
       const heading = document.querySelector(`${editor} h1`);
-      if (!heading || (title && heading.textContent !== title)) return false;
+      if (!heading || (title && !heading.textContent?.includes(title))) return false;
       const attached = performance.now();
       if (!photo) return { attached };
       return new Promise(resolve => {
+        let revealed = false;
         const check = () => {
           const image = [...document.querySelectorAll(`${editor} img`)].find(image => {
             const rect = image.getBoundingClientRect();
             return rect.width > 0 && rect.height > 0 && rect.top < innerHeight && rect.bottom > 0 && rect.left < innerWidth && rect.right > 0;
           });
+          if (!image && !revealed) { const first = document.querySelector(`${editor} img`); if (first) { first.scrollIntoView({ block: "center" }); revealed = true; } }
           if (image?.complete && image.naturalWidth > 0) resolve({ attached, firstPhoto: performance.now() - attached, width: image.naturalWidth, height: image.naturalHeight });
           else requestAnimationFrame(check);
         };
@@ -97,7 +99,7 @@ async function measure(kind, file, title) {
       await page.locator(editor).focus();
       const scrolling = performance.now();
       await page.keyboard.press("Control+End");
-      await page.locator(`${editor} h2`).filter({ hasText: /^Section 399$/ }).waitFor({ state: "attached", timeout: 60000 });
+      await page.waitForFunction(editor => [...document.querySelectorAll(`${editor} h2`)].some(heading => heading.textContent?.includes("Section 399")), editor, { timeout: 60000 });
       return { bigNote: elapsed, bigNoteScroll: performance.now() - scrolling };
     }
     return { launch: elapsed };

@@ -351,7 +351,7 @@ export class PluginRuntime {
       this.running.set(definition.id, item); this.options.changed(definition.id, { enabled: true, status: "loading" });
       try {
         this.syncDOM();
-        const factory = definition.factory || (definition.url ? (await import(/* @vite-ignore */ definition.url)).default : undefined);
+        const factory = definition.factory || (definition.load ? await definition.load() : undefined) || (definition.url ? (await import(/* @vite-ignore */ definition.url)).default : undefined);
         if (item.disposed || this.stopped) return;
         if (!factory) throw new Error(t("插件缺少入口。"));
         const context = this.context(item), Constructor = factory(context);

@@ -32,6 +32,7 @@ import { useSettled } from "./useSettled";
 import { countCharacters } from "./characters";
 import { PluginRuntime } from "./plugins/runtime";
 import { t } from "./i18n";
+import { afterDocumentPaint } from "./plugins/startup";
 import { bundledPlugins, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
 import type { PluginDefinition, PluginState } from "./plugins/types";
 import { PluginsDialog } from "./components/PluginsDialog";
@@ -96,7 +97,11 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
     if (!session.ready || !active) return;
-    for (const definition of pluginDefinitions) void pluginRuntime.current?.setEnabled(definition, !!pluginPreferences[definition.id]?.enabled);
+    for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
+    if (!pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    return afterDocumentPaint(() => {
+      for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
+    });
   }, [pluginDefinitions, pluginPreferences, session.ready, !!active]);
   useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
   useEffect(() => { pluginRuntime.current?.documentChanged(); }, [active?.id, active?.path, active?.content]);
