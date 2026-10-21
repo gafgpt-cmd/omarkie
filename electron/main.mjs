@@ -12,6 +12,7 @@ import {
 } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
@@ -342,6 +343,8 @@ app
         return new Response(bytes, { headers });
       } catch { return new Response("Resource unavailable", { status: 404 }); }
     });
+    const photoPreviews = new PhotoPreviews(path.join(store.dataDir, "photo-previews"),
+      (file, width) => chromiumPreview(window.webContents, file, width), file => shell.trashItem(file));
     protocol.handle("omarkie-asset", async (request) => {
       try {
         const url = new URL(request.url);
@@ -350,7 +353,7 @@ app
           decodeURIComponent(id),
           decodeURIComponent(rest.join("/")),
         );
-        return net.fetch(pathToFileURL(file).href);
+        return net.fetch(pathToFileURL(await photoPreviews.get(file, Number(url.searchParams.get("preview")))).href);
       } catch {
         return new Response("Image unavailable", { status: 404 });
       }

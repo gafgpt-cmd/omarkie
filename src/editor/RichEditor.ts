@@ -1019,6 +1019,7 @@ export class RichEditor {
       container
         .querySelectorAll(".md-meta,.md-object-source,.md-ui")
         .forEach((e) => e.remove());
+      for (const image of container.querySelectorAll("img")) { image.removeAttribute("srcset"); image.removeAttribute("sizes"); }
       const plainCopy = container.cloneNode(true) as HTMLElement;
       plainCopy.querySelectorAll("td,th").forEach(cell => cell.append("\t"));
       plainCopy.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,tr,br").forEach(block => block.append("\n"));

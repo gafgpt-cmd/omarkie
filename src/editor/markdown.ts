@@ -56,7 +56,7 @@ if (typeof document !== "undefined")
   document.addEventListener("load", event => {
     // Tag check, not instanceof: DOM test environments expose document without the HTMLImageElement global.
     const image = event.target as HTMLImageElement | null;
-    if (image?.tagName === "IMG" && image.naturalWidth) imageSizes.set(image.getAttribute("src") || "", [image.naturalWidth, image.naturalHeight]);
+    if (image?.tagName === "IMG" && image.naturalWidth && !image.currentSrc?.includes("?preview=")) imageSizes.set(image.getAttribute("src") || "", [image.naturalWidth, image.naturalHeight]);
   }, true);
 // Sizes announced by the host before a document's first render, keyed like the image rule keys
 // them: by the raw source and by its Markdown-normalized form.
@@ -108,6 +108,11 @@ function cleanHtml(html: string, documentId?: string) {
     if (documentId && source && !/^(?:https?:|data:|omarkie-asset:)/i.test(source)) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
     const size = imageSizes.get(image.getAttribute("src") || "");
+    if (typeof navigator !== "undefined" && /Electron\//.test(navigator.userAgent) && /^omarkie-asset:/.test(image.src) && /\.jpe?g$/i.test(decodeURIComponent(new URL(image.src).pathname))) {
+      image.loading = "lazy"; image.decoding = "async";
+      image.setAttribute("sizes", "auto");
+      image.setAttribute("srcset", [800, 1200, 1600, 2400].map(width => `${image.src}?preview=${width} ${width}w`).join(", "));
+    }
     if (size && !image.hasAttribute("width") && !image.hasAttribute("height")) { image.setAttribute("width", String(size[0])); image.setAttribute("height", String(size[1])); }
   }
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll<Element>("[srcset],[poster],[style],[background],input[src],image")) {
@@ -228,7 +233,7 @@ export function editableHtml(
     })
     .join("");
   return DOMPurify.sanitize(html, {
-    ADD_URI_SAFE_ATTR: ["src"],
+    ADD_URI_SAFE_ATTR: ["src", "srcset"],
     ADD_ATTR: [
       "contenteditable",
       "data-leaf",

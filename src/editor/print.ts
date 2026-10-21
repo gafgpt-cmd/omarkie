@@ -4,6 +4,8 @@ import { imageReferences } from "./images.ts";
 import { t } from "../i18n.ts";
 import { pluginExportStyles } from "../plugins/runtime.ts";
 export function exportHtml(content: HTMLElement) {
+  content = content.cloneNode(true) as HTMLElement;
+  for (const image of content.querySelectorAll("img")) { image.removeAttribute("srcset"); image.removeAttribute("sizes"); }
   const styles = [
     ...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
   ]
@@ -53,6 +55,7 @@ export async function portableHtml(content: HTMLElement, title: string) {
     return css;
   }));
   await Promise.all([...clone.querySelectorAll<HTMLImageElement>("img")].map(async image => {
+    image.removeAttribute("srcset"); image.removeAttribute("sizes");
     if (image.src.startsWith("data:")) return;
     image.src = (await resource(image.src)).data; image.removeAttribute("loading");
   }));
