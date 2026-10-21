@@ -1,0 +1,138 @@
+{
+  "name": "omarkie",
+  "version": "0.1.0",
+  "description": "A local Markdown writing space with live rendering and lossless source editing.",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5186",
+    "dev:app": "node scripts/dev.mjs",
+    "build": "tsc -b && vite build",
+    "start": "electron .",
+    "test": "node --import ./tests/setup-language.mjs --test tests/*.test.mjs",
+    "test:desktop": "node tests/desktop.mjs",
+    "package:mac": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs",
+    "install:app": "npm run package:mac && node scripts/install.mjs",
+    "test:native": "node scripts/test-native.mjs",
+    "package:preview": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs --preview",
+    "test:webkit": "npm run build && node scripts/test-webkit.mjs",
+    "test:kernel-desktop": "node tests/kernel-desktop.mjs",
+    "test:features": "node tests/features-desktop.mjs",
+    "test:alignment": "node tests/alignment-desktop.mjs",
+    "test:encoding": "node tests/encoding-desktop.mjs",
+    "package:dmg": "npm run package:mac && node scripts/package-dmg.mjs",
+    "package:release": "npm run package:dmg",
+    "package:win": "npm run build && node scripts/icon.mjs && node scripts/package-windows.mjs",
+    "test:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/windows-install.ps1",
+    "dev:demo": "vite --config vite.demo.config.ts --host 127.0.0.1 --port 5187",
+    "build:demo": "tsc -b && vite build --config vite.demo.config.ts",
+    "test:background-desktop": "node tests/background-desktop.mjs",
+    "package:linux": "npm run build && node scripts/icon.mjs && node scripts/package-linux.mjs",
+    "test:parity": "node tests/parity-desktop.mjs"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.0",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/streamparser": "6.0.0",
+    "@codemirror/view": "6.43.14",
+    "@fontsource/arimo": "5.3.0",
+    "@fontsource/inter": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
+    "@fontsource/lato": "5.3.0",
+    "@fontsource/literata": "5.3.0",
+    "@fontsource/merriweather": "5.3.0",
+    "@fontsource/open-sans": "5.3.0",
+    "@fontsource/pt-serif": "5.3.0",
+    "@fontsource/tinos": "5.3.0",
+    "@fontsource/vollkorn": "5.3.0",
+    "@mathjax/mathjax-newcm-font": "4.1.3",
+    "@mathjax/src": "4.1.3",
+    "dompurify": "3.4.17",
+    "highlight.js": "11.12.0",
+    "i18next": "26.5.3",
+    "iconv-lite": "0.6.3",
+    "image-size": "2.0.4",
+    "lucide-react": "1.56.0",
+    "markdown-it": "15.0.2",
+    "markdown-it-emoji": "3.1.0",
+    "markdown-it-mark": "4.0.0",
+    "markdown-it-sub": "2.0.0",
+    "markdown-it-sup": "2.0.0",
+    "markdown-it-task-lists": "2.1.1",
+    "mermaid": "12.1.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2"
+  },
+  "devDependencies": {
+    "@babel/parser": "8.0.4",
+    "@types/markdown-it": "14.2.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "i18next-cli": "1.75.3",
+    "jsdom": "30.1.1",
+    "playwright": "1.64.0",
+    "sharp": "0.35.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.4"
+  },
+  "build": {
+    "appId": "org.omarkie.desktop",
+    "productName": "Omarkie",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "shared/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dir"
+      ],
+      "identity": null,
+      "icon": "build/icon.icns"
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown"
+        ],
+        "name": "Markdown document",
+        "role": "Editor"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron": true
+  },
+  "author": {
+    "name": "gafgpt-cmd",
+    "url": "https://github.com/gafgpt-cmd"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gafgpt-cmd/omarkie.git"
+  },
+  "homepage": "https://github.com/gafgpt-cmd/omarkie#readme",
+  "bugs": {
+    "url": "https://github.com/gafgpt-cmd/omarkie/issues"
+  }
+}

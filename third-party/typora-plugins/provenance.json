@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/obgnail/typora_plugin",
+  "revision": "4a856129a9dbefaa963bfba4aacd3e5484bde60a",
+  "license": "MIT",
+  "files": [
+    "plugin/dark.js",
+    "plugin/no_image.js",
+    "plugin/blur.js",
+    "plugin/read_only.js",
+    "plugin/static_markers.js",
+    "plugin/collapse_list.js",
+    "plugin/auto_number.js",
+    "plugin/collapse_paragraph.js"
+  ],
+  "note": "Unmodified upstream sources; Omarkie provides the compatibility host.",
+  "sha256": {
+    "dark.js": "99ba411b9f30c495443abc5e21ef8ff0171ed85ee73cc84f2b21fced06f86166",
+    "no_image.js": "f9bef63f085a2fdfad2b6086b6071beecb6a107bcd25676f49728c2674ff6b41",
+    "blur.js": "55b3b543bc2ad44b1c62b2b83dfbd643e404ce0663ef2aa2e36ec53ea391f4ef",
+    "read_only.js": "ba46ee1eee1b1f1b59a32fc6cd202c0c759fd3d43e58f921d7223e8577015794",
+    "static_markers.js": "72141946c48f0d12ceada587c4f37b6b3427a56afbf7755b5218335eb2fadd4b",
+    "collapse_list.js": "f25de30885f412082805effd5731bd1f4113c70dbdfdfcc288bbbd7d30f94ba3",
+    "auto_number.js": "8d21246d5ff5dabc296c6ad3ade6e174c7c2b3c7d64f8918b15970edd70a75c1",
+    "collapse_paragraph.js": "84b41d15d5d2059fcb813f6871061af837e1569e4b7eb37bbe217d8a0f416572"
+  }
+}

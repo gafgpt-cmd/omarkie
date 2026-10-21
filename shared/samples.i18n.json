@@ -1,0 +1,30 @@
+{
+  "en": [
+    {
+      "name": "Welcome.md",
+      "content": "# Words, back to words.\n\nA quiet Markdown writing space. Files stay on your computer; ideas stay on the page.\n\nClick any paragraph to start editing.\n\n## Start from the first line\n\n- Write your ideas in Markdown\n- Switch between live rendering and source\n- Save as plain .md files\n\n## Write without distraction\n\nA clean interface keeps you on the content itself,\nnot on formatting, styles or complicated features.\n\n> Keep your attention for the words.\n\n| Action | Shortcut |\n| --- | --- |\n| Save | ⌘ S |\n| Find | ⌘ F |\n\n## Make it yours\n\nOpen **Preferences** (⌘ ,) to choose a theme such as Toypora, Toyzetlr or Omarchy, and the fonts for text, headings, code and the interface.\n"
+    },
+    {
+      "name": "Writing sample.md",
+      "content": "# Today, write a little.\n\nNo need to wait for a complete idea. Open a document and write the first sentence.\n\n## A small checklist\n\n- [x] Give the idea a title\n- [ ] Write down three points\n- [ ] Leave time for one revision\n\n## Make the complex clear\n\n```javascript\nconst ideas = ['observe', 'record', 'connect'];\nideas.forEach(idea => console.log(idea));\n```\n\nSometimes writing is like a simple formula:\n\n$$\nE = mc^2\n$$\n\n## See the thinking\n\n```mermaid\ngraph LR\n    A[Observe] --> B[Record]\n    B --> C[Organize]\n    C --> D[Write]\n```\n\n> One paragraph at a time, one thing per paragraph.\n"
+    },
+    {
+      "name": "Markdown syntax.md",
+      "content": "# Markdown syntax\n\nA Markdown file is plain text and opens in any editor.\n\n## Common formatting\n\n**Bold**, *italic*, ~~strikethrough~~ and `inline code`.\n\n### Lists\n\n1. First thing\n2. Second thing\n   - A side note\n\n### Links and images\n\n[CommonMark documentation](https://commonmark.org/)\n\nAfter saving a document you can paste or drop local images. They are copied into the `.assets` folder next to the document.\n\n## Editing and saving\n\nEdit the formatted text directly; Markdown marks appear only when the cursor enters bold, links and other inline formatting. Code blocks are edited on their own. Switching to source mode never rewrites the file.\n\nExisting files save automatically. A new draft asks where to save first; if another program changes the file on disk, you get a conflict notice and the draft is kept.\n\nUse the menu bar or the ••• menu for autosave, themes, focus mode and PDF export.\n\n## Privacy\n\nRemote images and embeds are blocked by default, so opening a note never contacts other servers. Turn them on in Preferences if you need them.\n"
+    }
+  ],
+  "es": [
+    {
+      "name": "Bienvenida.md",
+      "content": "# Que las palabras vuelvan a ser palabras.\n\nUn espacio tranquilo para escribir en Markdown. Los archivos se quedan en tu ordenador; las ideas, en la página.\n\nHaz clic en cualquier párrafo para empezar a editar.\n\n## Empieza por la primera línea\n\n- Escribe tus ideas en Markdown\n- Alterna entre vista renderizada y código fuente\n- Guarda como archivos .md normales\n\n## Escribe sin distracciones\n\nUna interfaz limpia te mantiene en el contenido,\nno en el formato, los estilos ni funciones complicadas.\n\n> Guarda tu atención para las palabras.\n\n| Acción | Atajo |\n| --- | --- |\n| Guardar | ⌘ S |\n| Buscar | ⌘ F |\n\n## Hazlo tuyo\n\nAbre **Preferencias** (⌘ ,) para elegir un tema como Toypora, Toyzetlr u Omarchy, y las fuentes del texto, los títulos, el código y la interfaz.\n"
+    },
+    {
+      "name": "Ejemplo de escritura.md",
+      "content": "# Hoy, escribe un poco.\n\nNo hace falta esperar a tener una idea completa. Abre un documento y escribe la primera frase.\n\n## Una pequeña lista\n\n- [x] Darle un título a la idea\n- [ ] Anotar tres puntos\n- [ ] Dejar tiempo para una revisión\n\n## Explica lo complejo con claridad\n\n```javascript\nconst ideas = ['observar', 'anotar', 'conectar'];\nideas.forEach(idea => console.log(idea));\n```\n\nA veces escribir es como una fórmula sencilla:\n\n$$\nE = mc^2\n$$\n\n## Ver el razonamiento\n\n```mermaid\ngraph LR\n    A[Observar] --> B[Anotar]\n    B --> C[Ordenar]\n    C --> D[Escribir]\n```\n\n> Un párrafo cada vez, una sola idea por párrafo.\n"
+    },
+    {
+      "name": "Sintaxis Markdown.md",
+      "content": "# Sintaxis Markdown\n\nUn archivo Markdown es texto plano y se abre en cualquier editor.\n\n## Formato habitual\n\n**Negrita**, *cursiva*, ~~tachado~~ y `código en línea`.\n\n### Listas\n\n1. Primera cosa\n2. Segunda cosa\n   - Una nota aparte\n\n### Enlaces e imágenes\n\n[Documentación de CommonMark](https://commonmark.org/)\n\nDespués de guardar un documento puedes pegar o arrastrar imágenes locales. Se copian en la carpeta `.assets` junto al documento.\n\n## Editar y guardar\n\nEdita directamente el texto con formato; las marcas de Markdown solo aparecen cuando el cursor entra en una negrita, un enlace u otro formato en línea. Los bloques de código se editan aparte. Cambiar al modo código fuente nunca reescribe el archivo.\n\nLos archivos existentes se guardan solos. Un borrador nuevo pregunta primero dónde guardarlo; si otro programa cambia el archivo en disco, verás un aviso de conflicto y el borrador se conserva.\n\nUsa la barra de menús o el menú ••• para el guardado automático, los temas, el modo enfoque y la exportación a PDF.\n\n## Privacidad\n\nLas imágenes y contenidos remotos están bloqueados por defecto: abrir una nota nunca contacta con otros servidores. Actívalos en Preferencias si los necesitas.\n"
+    }
+  ]
+}
