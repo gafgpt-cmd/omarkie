@@ -17,3 +17,12 @@ export function electronSeries({ override, installed, recommended, minimum = min
 export function installedPackages() {
   try { return execFileSync("pacman", ["-Qq"], { encoding: "utf8" }).split("\n"); } catch { return []; }
 }
+// pkgver of the Arch package. At the release tag it is the plain version; a build N commits past it
+// is `<version>.r<N>.g<hash>`, which pacman sorts as newer, so `pacman -Q omarkie` names the build.
+export function archPkgver(version, describe) {
+  const match = /^v(.+)-(\d+)-g([0-9a-f]+)$/.exec(describe.trim());
+  return match && match[1] === version && match[2] !== "0" ? `${version}.r${match[2]}.g${match[3]}` : version;
+}
+export function describeBuild(version) {
+  try { return execFileSync("git", ["describe", "--tags", "--long", "--match", `v${version}`], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch { return ""; }
+}

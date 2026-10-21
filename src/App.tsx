@@ -129,7 +129,9 @@ export default function App() {
   useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar).catch(() => {}); }, [focus, typewriter, sidebar]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (session.ready) void refreshThemes().catch(e => session.setMessage(e.message)); }, [session.ready]);
-  const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme"));
+  const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
+  // omarkie-theme also stores the automatic default; only a theme the user picked is kept over Omarchy.
+  function chooseTheme(next: string | ((value: string) => string)) { localStorage.setItem("omarkie-theme-chosen", "true"); themeUnset.current = false; setTheme(next); }
   async function refreshOmarchy() {
     const palette = await host.omarchyTheme().catch(() => null); setOmarchy(palette);
     if (palette && themeUnset.current) { themeUnset.current = false; setTheme("omarchy"); }
@@ -149,7 +151,7 @@ export default function App() {
   async function clearBackground() {
     await host.clearBackground(); ++backgroundRequest.current; setBackground(null); localStorage.setItem(backgroundRevisionKey,crypto.randomUUID());
   }
-  async function installTheme() { const selected = await host.installTheme(); if (selected) { await refreshThemes(); setTheme("custom:" + selected); } }
+  async function installTheme() { const selected = await host.installTheme(); if (selected) { await refreshThemes(); chooseTheme("custom:" + selected); } }
   async function importDocument() {
     try { const imported = await host.importDocument(); if (!imported) return; const content = imported.markdown ?? htmlToMarkdown(imported.html || ""), record = { id: crypto.randomUUID(), path: null, name: imported.name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }
     catch (e) { session.setMessage((e as Error).message); }
@@ -219,7 +221,7 @@ export default function App() {
       setTab(action === "file-tree" ? "tree" : action);
       setSidebar(true);
     } else if (action === "theme")
-      setTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
+      chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
     else if (action === "focus") setFocus((value) => !value);
     else if (action === "typewriter") setTypewriter(value => !value);
     else if (action === "new-file" || action === "new-folder") setFileOperation({ action, path: session.folder || undefined, name: action === "new-file" ? t("未命名.md") : t("新文件夹") });
@@ -333,7 +335,7 @@ export default function App() {
         close={session.close}
         jump={(line) => editor()?.jump(line)}
         theme={theme}
-        toggleTheme={() => setTheme(value => toggledTheme(value, omarchy?.mode !== "light"))}
+        toggleTheme={() => chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"))}
       />
       <main className={`writing-area ${background ? "has-background" : ""}`} aria-label={t("写作空间")} inert={session.fileOperationBusy}>
         {background && <div className="background-image editor-background" data-editor-background="true" aria-hidden="true" style={backgroundStyle(background,preferences)} />}
@@ -428,7 +430,7 @@ export default function App() {
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) requestAnimationFrame(() => editors.current.get(record.id)?.jump(match.line)); }} />}
-      {dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={setTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
+      {dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       {dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}
       {dialog === "quick-open" && <QuickOpen documents={session.documents} files={session.files} recent={session.recent} openRecent={path => session.recentAction("open", path)} select={session.setActiveId} open={session.openToken} close={closeDialog} />}
       {dialog && ["table", "link", "reference-link", "footnote"].includes(dialog) && <InsertDialog kind={dialog as InsertKind} selected={selectedText} close={closeDialog} submit={value => {
