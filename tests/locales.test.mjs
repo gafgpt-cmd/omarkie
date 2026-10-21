@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { register } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { findKeys, getTranslations } from "i18next-cli";
 import { createTranslator } from "../shared/i18n.mjs";
 
@@ -13,14 +14,15 @@ export async function resolve(specifier, context, next) {
 }`)}`);
 const { bundledPlugins } = await import("../src/plugins/catalog.ts");
 
-const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+// Forward slashes: the extractor takes glob patterns, and a URL pathname is "/D:/..." on Windows.
+const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const cjk = /[　-〿一-鿿＀-￯]/;
 const languages = ["en", "es", "ca", "ro"];
 const config = {
   locales: languages,
   extract: {
-    input: ["src/**/*.{ts,tsx}", "electron/*.mjs", "shared/*.mjs"].map(pattern => path.join(root, pattern)), ignore: [path.join(root, "src/demo/**")],
-    output: path.join(root, "shared/locales/{{language}}.json"), functions: ["t"], defaultNS: false,
+    input: ["src/**/*.{ts,tsx}", "electron/*.mjs", "shared/*.mjs"].map(pattern => `${root}/${pattern}`), ignore: [`${root}/src/demo/**`],
+    output: `${root}/shared/locales/{{language}}.json`, functions: ["t"], defaultNS: false,
     keySeparator: false, nsSeparator: false, contextSeparator: "_", pluralSeparator: "_", extractFromComments: false,
   },
 };
