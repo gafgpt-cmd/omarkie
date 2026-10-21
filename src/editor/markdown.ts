@@ -54,8 +54,9 @@ md.renderer.rules.fence = (tokens, index, options, env, self) =>
 const imageSizes = new Map<string, [number, number]>();
 if (typeof document !== "undefined")
   document.addEventListener("load", event => {
-    const image = event.target;
-    if (image instanceof HTMLImageElement && image.naturalWidth) imageSizes.set(image.getAttribute("src") || "", [image.naturalWidth, image.naturalHeight]);
+    // Tag check, not instanceof: DOM test environments expose document without the HTMLImageElement global.
+    const image = event.target as HTMLImageElement | null;
+    if (image?.tagName === "IMG" && image.naturalWidth) imageSizes.set(image.getAttribute("src") || "", [image.naturalWidth, image.naturalHeight]);
   }, true);
 // Sizes announced by the host before a document's first render, keyed like the image rule keys
 // them: by the raw source and by its Markdown-normalized form.
