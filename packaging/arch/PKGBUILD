@@ -1,6 +1,6 @@
 # Built by scripts/package-arch.mjs, which fills in the version and Electron series.
 pkgname=omarkie
-pkgver=@VERSION@
+pkgver=@PKGVER@
 pkgrel=1
 pkgdesc="@DESCRIPTION@"
 arch=('any')

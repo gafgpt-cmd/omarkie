@@ -5,7 +5,7 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
-import { electronSeries, installedPackages } from "./arch-electron.mjs";
+import { archPkgver, describeBuild, electronSeries, installedPackages } from "./arch-electron.mjs";
 
 // An Arch package that runs on the distribution's shared Electron instead of bundling Chromium.
 if (process.platform !== "linux") throw new Error("Build the Arch package on Linux.");
@@ -21,7 +21,9 @@ execFileSync("bsdtar", ["-cf", path.join(sources, "ThirdPartyLicenses.tar"), "-C
 await copyFile("LICENSE", path.join(sources, "LICENSE"));
 await copyFile("build/icon.png", path.join(sources, "omarkie.png"));
 await copyFile("packaging/arch/omarkie.desktop", path.join(sources, "omarkie.desktop"));
-const fill = text => text.replaceAll("@VERSION@", pkg.version).replaceAll("@ELECTRON@", electron).replaceAll("@DESCRIPTION@", pkg.description.replaceAll('"', "'"));
+const pkgver = archPkgver(pkg.version, describeBuild(pkg.version));
+console.log(`Arch package version: ${pkgver}`);
+const fill = text => text.replaceAll("@PKGVER@", pkgver).replaceAll("@VERSION@", pkg.version).replaceAll("@ELECTRON@", electron).replaceAll("@DESCRIPTION@", pkg.description.replaceAll('"', "'"));
 await writeFile(path.join(sources, "omarkie"), fill(await readFile("packaging/arch/omarkie", "utf8")), { mode: 0o755 });
 await writeFile(path.join(sources, "PKGBUILD"), fill(await readFile("packaging/arch/PKGBUILD", "utf8")));
 

@@ -30,6 +30,9 @@ try {
   await expect.poll(documentFont).toMatch(/JetBrains|monospace/);
   assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("omarkie-preferences"))).documentFont, "theme");
   passed.push("first run on Omarchy uses the live Omarchy theme and its font, leaving font preferences on theme default");
+  await page.evaluate(() => { localStorage.removeItem("omarkie-theme-chosen"); localStorage.setItem("omarkie-theme", "light"); });
+  await page.reload(); await expect(page.locator("html")).toHaveAttribute("data-theme", "omarchy");
+  passed.push("an install that only stored the old automatic default switches to the Omarchy theme");
   await expect(rich.locator(".markdown-toc a")).toHaveCount(2);
   const rejectedLink = await page.evaluate(async () => { const result = await window.desktop.openDocumentLink("fixture", "escaping.md"); return result.ok ? "" : result.error; });
   assert.match(rejectedLink, /当前文档目录之外/);
@@ -78,7 +81,9 @@ try {
   await mkdir(qa, { recursive: true }); await page.screenshot({ path: path.join(qa, "preferences-dark.png") });
   await preferences.getByLabel("主题", { exact: true }).selectOption("light");
   await preferences.getByLabel("正文字号").fill("16"); await preferences.getByRole("button", { name: "完成" }).click();
-  passed.push("preferences change rendering without changing source and apply font/theme live; Warm Paper brings its serif back");
+  await page.reload(); await expect(rich).toBeVisible(); await page.waitForTimeout(1000);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  passed.push("preferences change rendering without changing source and apply font/theme live; Warm Paper brings its serif back; a chosen theme survives reload over Omarchy");
   const currentText = await text(); assert.ok(currentText.includes("==高亮==")); await mode(true);
   await page.keyboard.press(quickOpen);
   const quick = page.getByRole("dialog", { name: "快速打开", exact: true });

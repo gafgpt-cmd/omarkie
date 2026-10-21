@@ -20,7 +20,7 @@ Omarkie is an open-source Markdown editor with live, inline rendering. Write dir
 
 - **Live Markdown editing**: headings, inline formatting, lists, tasks, tables, links, footnotes and YAML front matter. Edit code and formulas in place, or switch to the full source view.
 - **Themes and fonts**: 17 built-in themes, including Toypora, Toyzetlr and live Omarchy themes, plus pickers for the text, heading, code and interface fonts. The fonts are bundled, so documents look the same on any machine.
-- **Omarchy integration**: themes follow the current Omarchy palette and font, and update while the app is open when you run `omarchy-theme-set` or `omarchy-font-set`. On first launch under Omarchy, Omarkie starts with the Omarchy theme.
+- **Omarchy integration**: themes follow the current Omarchy palette and font, and update while the app is open when you run `omarchy-theme-set` or `omarchy-font-set`. Under Omarchy, Omarkie uses the Omarchy theme until you choose another theme yourself.
 - **A focused writing space**: menu bar, outline, focus and typewriter modes, word counts, find and replace, and personal background images.
 - **Works with Typora themes and plugins**: install Typora-style CSS themes, and use eight bundled community plugins or your own ([compatibility scope](docs/plugins.md)).
 - **Files you control**: folder tree, full-text search, quick open, recent files, autosave, session recovery and external-change conflict detection.
@@ -55,10 +55,25 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 | --- | --- | --- |
 | Arch, Omarchy, Manjaro | `omarkie-0.1.0-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.0-1-any.pkg.tar.zst` |
 | Debian, Ubuntu, Mint | `Omarkie-0.1.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.0-linux-x64.deb` |
-| Fedora, RHEL, openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
+| Fedora, RHEL | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
+| openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.0-1.x86_64.rpm` |
 | Any x64 distribution | `Omarkie-0.1.0-linux-x64.AppImage` | `chmod +x` the file and run it |
 
 The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+
+#### Update, uninstall and clean up
+
+To update, install the new package over the old one with the same command as above. There is no need to remove the old one first. On Arch, a rebuilt package with the same version number also replaces the installed one; on Debian, Fedora and openSUSE it needs `sudo apt reinstall ./<file>.deb`, `sudo dnf reinstall ./<file>.rpm` or `sudo zypper install --force ./<file>.rpm`.
+
+| | Arch, Omarchy, Manjaro | Debian, Ubuntu, Mint | Fedora, RHEL | openSUSE |
+| --- | --- | --- | --- | --- |
+| Which build is installed | `pacman -Q omarkie` | `dpkg -s omarkie` | `rpm -q omarkie` | `rpm -q omarkie` |
+| Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
+| Remove the unused Electron runtime too | `sudo pacman -Rs omarkie` | not needed (bundled) | not needed (bundled) | not needed (bundled) |
+
+A release build is named after its version (`0.1.0`). An Arch package built from a later commit is named `0.1.0.r<commits>.g<commit>`, for example `0.1.0.r3.gdcb6c9e`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
+
+Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
 
 ### Windows
 
