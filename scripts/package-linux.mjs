@@ -1,6 +1,7 @@
 import { build, Platform, Arch } from "electron-builder";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
@@ -37,10 +38,17 @@ await build({
   },
 });
 const names = targets.map(target => outputs[target]);
+// A full disk can leave a truncated RPM or Arch package while the build still exits 0; read every entry back.
+function verifyPayload(file) {
+  const listing = execFileSync("bsdtar", ["-tf", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (!/(^|\/)opt\/Omarkie\/omarkie$/m.test(listing)) throw new Error(`Package lacks the application binary: ${file}`);
+  if (file.endsWith(".pkg.tar.zst") && !/^pkgdesc = \S/m.test(execFileSync("bsdtar", ["-xOf", file, ".PKGINFO"], { encoding: "utf8" }))) throw new Error(`Package has no description: ${file}`);
+}
 const sums = [];
 for (const name of names) {
   const bytes = await readFile(path.join("release/linux", name));
   if (bytes.length < 1024 * 1024) throw new Error(`Unexpectedly small Linux package: ${name}`);
+  if (/\.(?:rpm|pkg\.tar\.zst)$/.test(name)) verifyPayload(path.join("release/linux", name));
   sums.push(`${createHash("sha256").update(bytes).digest("hex")}  ${name}`);
 }
 await writeFile("release/linux/SHA256SUMS-linux-x64.txt", sums.join("\n") + "\n");
