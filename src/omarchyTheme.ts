@@ -17,10 +17,11 @@ export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "oma
   const { dark, c, mix, vars } = colors(palette);
   const mono = `${palette.font ? JSON.stringify(palette.font) + "," : ""}"JetBrainsMono Nerd Font","JetBrains Mono",ui-monospace,monospace`;
   const scope = ':root[data-theme^="omarchy"]';
-  const css = `:root[data-theme][data-appearance]{${vars};--chrome-font:${mono};--document-font:"Open Sans",-apple-system,"Helvetica Neue",Arial,sans-serif}`
+  const css = `:root[data-theme][data-appearance]{${vars};--chrome-font:${mono};--document-font:${mono}}`
     + `.rich-document,.print-document{font-family:var(--document-font)}`
     + `${scope} :is(.toolbar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.rich-search,.cm-search,.table-tools,.toast,.leave-focus,.empty-document,.dialog-backdrop>*){font-family:var(--chrome-font)}`
     + `${scope} :is(.rich-document,.cm-content) :is(h1,h2,h3,h4,h5,h6){font-family:${mono};font-weight:700;letter-spacing:-.01em}`
+    + `${scope} :is(.rich-document,.print-document) :is(code,pre,.md-fence,.md-fence *,.md-fence-opening),${scope} .source-mode .cm-scroller{font-family:${mono}!important}`
     + `${scope} .rich-document h1{color:${c.red}}${scope} .rich-document h2{color:${c.green}}${scope} .rich-document h3{color:${c.yellow}}${scope} .rich-document h4{color:${c.blue}}${scope} .rich-document :is(h5,h6){color:${c.magenta}}`
     + `${scope} .rich-document a{color:${c.blue}}${scope} .rich-document strong{color:${c.bright_foreground || c.foreground}}${scope} .rich-document :is(h1,h2,h3,h4,h5,h6) strong{color:inherit}${scope} .rich-document mark{background:${mix(c.yellow, 30)};color:inherit}`
     + `${scope} .rich-document :not(pre)>code{color:${c.cyan};border-color:transparent}${scope} .rich-document .md-meta{color:${mix(c.foreground, 50)}}`

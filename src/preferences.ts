@@ -1,5 +1,5 @@
 import { backgroundDefaults } from "./background.ts";
-import { defaultFonts, fontIds, fontKeys, type FontPreferences } from "./fonts.ts";
+import { defaultFonts, fontIds, type FontPreferences } from "./fonts.ts";
 export interface Preferences extends FontPreferences {
   imageUploader: string; imageAutoUpload: boolean;
   remoteImages: boolean; imageFolder: string; imagePrefix: boolean; imageEscape: boolean;
@@ -27,7 +27,7 @@ export function loadPreferences(): Preferences {
     if (Number.isFinite(saved.readingSpeed)) next.readingSpeed = Math.max(50, Math.min(1000, saved.readingSpeed));
     if (Number.isFinite(saved.fontSize)) next.fontSize = Math.max(12, Math.min(28, saved.fontSize));
     if ([2, 4].includes(saved.tabSize)) next.tabSize = saved.tabSize;
-    for (const key of fontKeys) if (fontIds.includes(saved[key])) next[key] = saved[key];
+    for (const key of ["documentFont", "headingFont", "codeFont", "interfaceFont"] as const) if (fontIds.includes(saved[key])) next[key] = saved[key];
     return next;
   } catch { return { ...defaultPreferences }; }
 }

@@ -22,7 +22,6 @@ const catalog: Omit<FontChoice, "name">[] = [
   { id: "monospace", group: "system", stack: `monospace,${emoji}` },
 ];
 export const fontIds = ["theme", ...catalog.map(font => font.id)];
-export const fontKeys = ["documentFont", "headingFont", "codeFont", "interfaceFont"] as const;
 export const defaultFonts: FontPreferences = { documentFont: "theme", headingFont: "theme", codeFont: "theme", interfaceFont: "theme" };
 // Everything outside the document; themes set --chrome-font, the default replaces the platform UI font.
 export const chromeSelector = ".toolbar,.menu-bar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.file-context-menu,.rich-search,.cm-search,.table-tools,.toast,.leave-focus,.empty-document,.dialog-backdrop>*";
