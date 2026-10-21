@@ -59,7 +59,7 @@ Automated desktop suites use isolated temporary application data. To keep screen
 
 ## Build and install
 
-On Linux x64, run `npm run package:linux` to create a DEB, an AppImage and checksums in `release/linux/`.
+On Linux x64, run `npm run package:linux` to create a DEB, an RPM, an Arch package, an AppImage and checksums in `release/linux/`. The RPM needs `rpmbuild` and the Arch package needs `bsdtar`; set `OMARKIE_LINUX_TARGETS` (for example `deb,AppImage`) to build a subset.
 
 On macOS:
 
@@ -97,6 +97,6 @@ Do not commit generated bundles, test output, credentials, personal documents, o
 
 ## Publish a release
 
-Set the package version, commit the change, and push a matching `v<version>` tag. The [release workflow](.github/workflows/release.yml) builds on Ubuntu 22.04 x64, Windows x64 and Apple Silicon macOS runners. All three builds and required tests must pass before publication. Windows is installed and uninstalled; Linux tests the installed DEB and extracted AppImage payload, including recovery preservation on uninstall. The publisher verifies combined checksums before publishing DMG, EXE, two ZIPs, DEB, AppImage and `SHA256SUMS.txt`. Published assets are never overwritten by a rerun.
+Set the package version, commit the change, and push a matching `v<version>` tag. The [release workflow](.github/workflows/release.yml) builds on Ubuntu 22.04 x64, Windows x64 and Apple Silicon macOS runners. All three builds and required tests must pass before publication. Windows is installed and uninstalled; Linux tests the installed DEB and extracted AppImage payload, including recovery preservation on uninstall. The publisher verifies combined checksums before publishing DMG, EXE, two ZIPs, DEB, RPM, Arch package, AppImage and `SHA256SUMS.txt`. Published assets are never overwritten by a rerun.
 
 Changes on `main` run Linux/Windows acceptance without publishing; release notes are generated from merged pull requests. Linux builds use `npm run package:linux`; in an isolated Ubuntu x64 environment, `xvfb-run -a node tests/linux-install.mjs` installs/removes the DEB with sudo and runs both packaged payloads. Never run that installer test against your ordinary Linux installation.
