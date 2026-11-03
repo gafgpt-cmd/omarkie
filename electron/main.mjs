@@ -27,11 +27,13 @@ import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
+import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 if (process.env.OMARKIE_DATA_DIR)
   app.setPath("userData", process.env.OMARKIE_DATA_DIR);
 app.setName("Omarkie");
+seedDictionaries(dictionarySource(root), app.getPath("userData"));
 protocol.registerSchemesAsPrivileged([
   { scheme: "omarkie", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   {
@@ -330,6 +332,7 @@ app
         return new Response("Image unavailable", { status: 404 });
       }
     });
+    session.defaultSession.setSpellCheckerDictionaryDownloadURL(dictionaryDownloadURL(dictionarySource(root)));
     const devOrigin = development ? new URL(development).origin : null;
     session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) =>
       callback({ cancel: !!window && details.webContentsId === window.webContents.id && blocksRequest(details.url, devOrigin, remoteImages) }));

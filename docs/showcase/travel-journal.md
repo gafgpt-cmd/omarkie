@@ -76,7 +76,7 @@ Click a box to tick it. Start a line with `- [ ]` to add your own.
 Every note is an ordinary `.md` file in a folder you choose. Edits to a saved file are saved as you go, and **Ctrl+S** (**⌘S**) saves a new one. Many Markdown apps show a broken icon where a photo should be. Omarkie shows the **actual picture**, straight from the folder next to your note.
 
 > [!NOTE]
-> Pictures from the internet stay blocked until you turn on **Show remote images** in **Preferences**. Your own photos always show up, and nothing is uploaded anywhere.
+> Pictures from the internet stay blocked until you turn on **Show remote images** in **Preferences**. Your own photos always show up, and nothing is uploaded anywhere. No telemetry either: Omarkie never phones home.
 
 *Omarkie is open source. Every change is AI reviewed and tested before it lands, with [no-mistakes](https://github.com/kunchenguid/no-mistakes).*
 

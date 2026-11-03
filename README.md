@@ -16,6 +16,8 @@ Omarkie is an open-source Markdown editor with live, inline rendering. Write dir
 
 **Status:** early development, version **0.1.2**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
 
+**No telemetry.** Omarkie never phones home: no analytics, no crash reports, no update checks, and the spellcheck dictionaries are built in.
+
 Every change is AI reviewed and tested before it lands, with [no-mistakes](https://github.com/kunchenguid/no-mistakes) (automated review, tests, lint and CI).
 
 ## Features

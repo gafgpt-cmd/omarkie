@@ -31,7 +31,8 @@
     "test:background-desktop": "node tests/background-desktop.mjs",
     "package:linux": "npm run build && node scripts/icon.mjs && node scripts/package-linux.mjs",
     "package:arch": "npm run build && node scripts/icon.mjs && node scripts/package-arch.mjs",
-    "test:parity": "node tests/parity-desktop.mjs"
+    "test:parity": "node tests/parity-desktop.mjs",
+    "dictionaries": "node scripts/spellcheck-dictionaries.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",

@@ -2,6 +2,7 @@ import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { licenseNotices } from "./license-notices.mjs";
+import { spellcheckDictionaries } from "./spellcheck-dictionaries.mjs";
 
 // Folders the Electron host reads at runtime, at the same relative paths as in the repository.
 export const applicationFolders = ["dist", "electron", "shared", "docs/showcase"];
@@ -16,6 +17,7 @@ export async function prepareElectronApplication(platform) {
   await cp("build/icon.png", path.join(application, "icon.png"));
   await licenseNotices(path.join(application, "ThirdPartyLicenses"));
   await cp("third-party/typora-plugins", path.join(application, "ThirdPartyLicenses/typora-plugins"), { recursive: true });
+  await spellcheckDictionaries(path.join(application, "dictionaries"), path.join(application, "ThirdPartyLicenses/hunspell-dictionaries"));
   await writeFile(path.join(application, "package.json"), JSON.stringify({
     name: pkg.name, version: pkg.version, description: pkg.description,
     main: pkg.main, type: "module", license: pkg.license, author: pkg.author,

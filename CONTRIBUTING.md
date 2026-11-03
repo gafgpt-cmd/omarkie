@@ -59,6 +59,8 @@ Automated desktop suites use isolated temporary application data. To keep screen
 
 ## Build and install
 
+Packaging downloads Electron's Hunspell spellcheck dictionaries once, checked against pinned SHA-256 hashes, into `build/cache`; the app ships them so it never fetches a dictionary itself. For development runs, `npm run dictionaries` puts them in `dictionaries/`.
+
 On Linux x64, run `npm run package:linux` to create a DEB, an RPM, an AppImage and checksums in `release/linux/`. The RPM needs `rpmbuild` and `bsdtar`, which reads the package back to reject a truncated build; set `OMARKIE_LINUX_TARGETS` (for example `deb,AppImage`) to build a subset. On Arch, `npm run package:arch` builds a package for the shared `electronNN` runtime with `makepkg` into `release/arch/`; its launcher (`packaging/arch/omarkie`) reports a missing runtime and offers the install.
 
 On macOS:
