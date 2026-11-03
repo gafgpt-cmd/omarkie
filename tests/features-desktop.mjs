@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, mkdir, symlink, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-features-"));
 const file = path.join(directory, "功能验收.md"), original = "# 功能验收\n\n普通文字。\n\n[toc]\n\n## 另一个标题\n\n脚注[^fn1]。\n\n[^fn1]: 注释内容\n\n==高亮== H~2~O X^2^ :smile: <u>下划线</u>\n";
 await writeFile(file, original);
@@ -14,10 +15,11 @@ await mkdir(path.join(directory, "子目录")); await writeFile(path.join(direct
 await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, folder: directory, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "功能验收.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), bom: false, lineEnding: "\n" }] }));
 const state = path.join(directory, "state"); await mkdir(path.join(state, "omarchy", "current", "theme"), { recursive: true });
 await writeFile(path.join(state, "omarchy", "current", "theme", "colors.toml"), 'background = "#1a1b26"\nforeground = "#a9b1d6"\naccent = "#7aa2f7"\n');
-const env = { ...process.env, OMARKIE_DATA_DIR: directory, XDG_STATE_HOME: state, OMARKIE_LANGUAGE: "zh" }; delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
-const application = await electron.launch({ args: [process.cwd()], env });
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, XDG_STATE_HOME: state, OMARKIE_LANGUAGE: "zh" }); delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 const page = await application.firstWindow(), errors = [], passed = [], qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-features-qa";
 page.on("pageerror", error => errors.push(error.message));
+await fullSize(application, page);
 const rich = page.locator(".rich-document"), source = page.locator(".source-surface .cm-content");
 async function mode(rendered) { const button = page.locator(".source-toggle"); if (((await button.getAttribute("aria-pressed")) === "true") === rendered) await button.click(); await expect(rendered ? rich : source).toBeVisible(); }
 // Linux and Windows use the pcKey shortcuts from shared/commands.json.

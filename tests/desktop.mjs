@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { fullSize } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-"));
-const env = { ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" };
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
 const errors = [],
@@ -16,7 +16,7 @@ const errors = [],
 let application, currentPage;
 async function launch() {
   application = await electron.launch({
-    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: [] } : { args: [root] }),
+    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: headlessArguments } : { args: [root, ...headlessArguments] }),
     env, timeout: 30000,
   });
   const page = await application.firstWindow({ timeout: 20000 });

@@ -58,7 +58,7 @@ The screenshots use five of the built-in themes: Toyzetlr, Toypora, Toyzetlr Nig
 | **Omarchy × Toypora** | Your live Omarchy palette | Toypora's classic reading fonts |
 | **Toypora × Omarchy** | Toypora's classic colors | Your Omarchy font, Liberation Sans text |
 
-Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Liberation Sans and Serif, your current Omarchy font, or the system fonts. **Restore Toypora classic reading** brings back the classic set in one click.
+Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Arimo, Tinos, your available Omarchy font, or the system fonts. Local-only fonts appear when they are installed. **Restore Toypora classic reading** brings back the classic set in one click.
 
 | Toypora | Omarchy | Fonts |
 | --- | --- | --- |

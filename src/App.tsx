@@ -126,7 +126,9 @@ export default function App() {
     localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
   }, [preferences]);
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar).catch(() => {}); }, [focus, typewriter, sidebar]);
+  const checked = { source: !rendered, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
+  const menuContext = editor()?.context() || "";
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, rendered, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (session.ready) void refreshThemes().catch(e => session.setMessage(e.message)); }, [session.ready]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -235,6 +237,10 @@ export default function App() {
     else if (action === "find-previous") editor()?.findNext(true);
     else if (action === "undo") editor()?.undo();
     else if (action === "redo") editor()?.redo();
+    else if (["cut", "copy", "paste", "select-all"].includes(action)) {
+      editor()?.focus();
+      void window.desktop?.editRole(action === "select-all" ? "selectAll" : action);
+    }
     else if (action === "bold") editor()?.wrap("**", "**");
     else if (action === "italic") editor()?.wrap("*", "*");
     else if (action === "underline") editor()?.wrap("<u>", "</u>");
@@ -269,13 +275,13 @@ export default function App() {
   useEffect(() => host.onCommand((command) => commands.current(command)), []);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if (imeKey(event) || pluginContext.current.editor()?.composing() || (event.target as HTMLElement)?.closest('input,textarea,select,[role="dialog"]')) return;
+      if (imeKey(event) || pluginContext.current.editor()?.composing() || document.querySelector(".utility-dialog") || (event.target as HTMLElement)?.closest('input,textarea,select,[role="dialog"]')) return;
       if (event.key === "Escape") {
         setFocus(false);
         setAbout(false);
       }
       const action = commandForKey(event);
-      if (host.native && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
+      if (window.desktop?.windowAction && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
       if (action) {
         event.preventDefault();
         event.stopPropagation();
@@ -308,6 +314,7 @@ export default function App() {
       className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}`}
     >
       <Toolbar
+        checked={checked}
         name={active?.name || ""}
         edited={!!active && active.content !== active.savedContent}
         rendered={rendered}

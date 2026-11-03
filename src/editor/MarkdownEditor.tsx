@@ -145,7 +145,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           .catch(() => {});
     }
     function focusEditor() {
-      if (activeMode.current) rich.current?.restore();
+      if (activeMode.current && rich.current) rich.current.restore(rich.current.bookmark());
       else source.current?.focus();
     }
     // Beyond the rich-mode limits (12 MB, or one block over 256 KB) the source view takes over, with one notice per document.

@@ -14,9 +14,9 @@ const catalog: Omit<FontChoice, "name">[] = [
   { id: "literata", group: "toyzetlr", stack: `Literata,Georgia,${emoji},serif` },
   { id: "inter", group: "toyzetlr", stack: `Inter,"Helvetica Neue",Arial,${emoji},sans-serif` },
   { id: "omarchy", group: "omarchy", stack: `${jetbrains},${emoji},monospace` },
-  { id: "jetbrains-mono", group: "omarchy", stack: `${jetbrains},${emoji},monospace` },
-  { id: "liberation-sans", group: "omarchy", stack: `"Liberation Sans",Arimo,Arial,${emoji},sans-serif` },
-  { id: "liberation-serif", group: "omarchy", stack: `"Liberation Serif",Tinos,"Times New Roman",${emoji},serif` },
+  { id: "jetbrains-mono", group: "omarchy", stack: `"JetBrains Mono",${emoji},monospace` },
+  { id: "liberation-sans", group: "omarchy", stack: `Arimo,Arial,${emoji},sans-serif` },
+  { id: "liberation-serif", group: "omarchy", stack: `Tinos,"Times New Roman",${emoji},serif` },
   { id: "sans-serif", group: "system", stack: `sans-serif,${emoji}` },
   { id: "serif", group: "system", stack: `serif,${emoji}` },
   { id: "monospace", group: "system", stack: `monospace,${emoji}` },
@@ -30,7 +30,7 @@ export function fontChoices(omarchyFont: string | null): FontChoice[] {
   const names: Record<string, string> = {
     "open-sans": "Open Sans", literata: "Literata", inter: "Inter", "pt-serif": "PT Serif", merriweather: "Merriweather", lato: "Lato", vollkorn: "Vollkorn", helvetica: "Helvetica Neue",
     "toypora-mono": "Lucida Console", omarchy: t("Omarchy 当前字体（{{font}}）", { font: omarchyFont || "JetBrainsMono Nerd Font" }),
-    "jetbrains-mono": "JetBrainsMono Nerd Font", "liberation-sans": "Liberation Sans", "liberation-serif": "Liberation Serif",
+    "jetbrains-mono": "JetBrains Mono", "liberation-sans": "Arimo", "liberation-serif": "Tinos",
     "sans-serif": t("系统无衬线字体"), serif: t("系统衬线字体"), monospace: t("系统等宽字体"),
   };
   return catalog.map(font => ({ ...font, name: names[font.id], stack: font.id === "omarchy" && omarchyFont ? `${JSON.stringify(omarchyFont)},${font.stack}` : font.stack }));

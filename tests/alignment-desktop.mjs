@@ -5,19 +5,21 @@ import { mkdtemp, writeFile, mkdir, readFile, realpath, stat } from "node:fs/pro
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-alignment-")));
 const file = path.join(directory, "对齐验收.md"), content = '# 对齐验收\n\nA12 a34\n\n**bold *middle* tail**\n\n| A | B |\n| --- | --- |\n| C | D |\n\n![图](.assets/pixel.png)\n\n> [!NOTE]\n> 提示内容\n\n<div><strong>HTML 预览</strong></div>\n';
 await mkdir(path.join(directory, ".assets")); await mkdir(path.join(directory, "空目录"));
 await writeFile(path.join(directory, ".assets/pixel.png"), await sharp({ create: { width: 120, height: 80, channels: 4, background: "#96abc1" } }).png().toBuffer());
 await writeFile(file, content); await writeFile(path.join(directory, "另一页.md"), "# 另一页\n\n## 跳转目标\n\nNeedle 42\n");
 await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, folder: directory, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "对齐验收.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, lineEnding: "\n" }] }));
-const env = { ...process.env, OMARKIE_DATA_DIR: directory }; delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
-const application = await electron.launch({ args: [process.cwd()], env }), page = await application.firstWindow();
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory }); delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
+const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env }), page = await application.firstWindow();
 const errors = [], passed = [], qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-alignment-qa";
 const originalPush = passed.push.bind(passed); passed.push = (...values) => { console.log(...values); return originalPush(...values); };
 page.on("pageerror", error => errors.push(error.message)); await mkdir(qa, { recursive: true });
+await fullSize(application, page);
 const rich = page.locator(".document-editor:not([hidden]) .rich-document");
-async function menu(name) { await page.getByRole("button", { name: "更多操作", exact: true }).click(); await page.getByRole("menuitem", { name, exact: true }).click(); }
+async function menu(name) { await page.getByRole("button", { name: "更多操作", exact: true }).click(); await page.getByRole("menuitem", { name, exact: true }).or(page.getByRole("menuitemcheckbox", { name, exact: true })).click(); }
 async function source() { if (await page.locator(".source-toggle").getAttribute("aria-pressed") !== "true") await page.locator(".source-toggle").click(); return (await page.locator(".document-editor:not([hidden]) .source-surface .cm-line").allTextContents()).join("\n"); }
 async function richMode() { if (await page.locator(".source-toggle").getAttribute("aria-pressed") === "true") await page.locator(".source-toggle").click(); await expect(rich).toBeVisible(); }
 try {

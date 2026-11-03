@@ -1,20 +1,24 @@
 import {_electron as electron,expect} from "playwright/test";
-import {mkdtemp,writeFile,readFile,mkdir,rm} from "node:fs/promises";
+import {mkdtemp,writeFile,readFile,mkdir,rename} from "node:fs/promises";
+import sharp from "sharp";
+import {fullSize,headlessArguments,isolatedEnvironment} from "./desktop-window.mjs";
 import path from "node:path";
 import os from "node:os";
 import assert from "node:assert/strict";
 import formats from "./background-formats.json" with {type:"json"};
 const directory = await mkdtemp(path.join(os.tmpdir(),"omarkie-background-desktop-"));
-const env={...process.env,OMARKIE_DATA_DIR:directory,OMARKIE_TEST_HIDDEN:"1",OMARKIE_LANGUAGE:"zh"};delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
+const env=await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:directory,OMARKIE_TEST_HIDDEN:"1",OMARKIE_LANGUAGE:"zh"});delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
 let application;
 try {
-  application=await electron.launch({args:[process.cwd()],env,timeout:30000});let page=await application.firstWindow();
+  application=await electron.launch({args:[process.cwd(),...headlessArguments],env,timeout:30000});let page=await application.firstWindow();
+  await fullSize(application,page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'偏好设置…',exact:true}).click();
-  for(const [format,encoded] of Object.entries(formats)) {
+  const actualFormats = { png: (await sharp({create:{width:16,height:16,channels:4,background:'#96abc1'}}).png().toBuffer()).toString('base64'), ...formats };
+  for(const [format,encoded] of Object.entries(actualFormats)) {
     const file=path.join(directory,'actual.'+format);await writeFile(file,Buffer.from(encoded,'base64'));
     await application.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
-    await page.getByRole('button',{name:format===Object.keys(formats)[0]?'选择图片…':'更换图片…',exact:true}).click();
+    await page.getByRole('button',{name:format===Object.keys(actualFormats)[0]?'选择图片…':'更换图片…',exact:true}).click();
     await expect(page.getByRole('group',{name:'背景图片',exact:true})).toContainText(path.basename(file));
     await expect(page.locator('.editor-background')).toBeVisible();
     assert.ok(JSON.parse(await readFile(path.join(directory,'background.json'),'utf8')).dataUrl.startsWith('data:image/'+format+';base64,'));
@@ -24,16 +28,32 @@ try {
   await page.getByRole('combobox',{name:'背景位置',exact:true}).selectOption('top');
   await page.getByRole('button',{name:'关闭偏好设置',exact:true}).click();
   await page.getByRole('button',{name:'源码',exact:true}).click();await expect(page.locator('.document-editor:not([hidden]) .source-surface>.cm-editor')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
-  await page.getByRole('button',{name:'即时渲染',exact:true}).click();await application.close();await rm(path.join(directory,'actual.webp'));
-  application=await electron.launch({args:[process.cwd()],env,timeout:30000});page=await application.firstWindow();
+  await page.getByRole('button',{name:'即时渲染',exact:true}).click();await application.close();await rename(path.join(directory,'actual.webp'),path.join(directory,'original.webp'));
+  application=await electron.launch({args:[process.cwd(),...headlessArguments],env,timeout:30000});page=await application.firstWindow();
+  await fullSize(application,page);
   await expect(page.locator('.editor-background')).toHaveCSS('opacity','0.4');await expect(page.locator('.editor-background')).toHaveCSS('background-position','50% 0%');
-  console.log('PASS: Electron restart restores background copy and settings after source removal');
+  console.log('PASS: Electron restart restores background copy and settings after source relocation');
   const exported=path.join(directory,'export.html');await application.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},exported);
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'导出 HTML…',exact:true}).click();
   await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain('Seven Days on the Lighthouse Coast');
   const html=await readFile(exported,'utf8');assert.ok(!html.includes('data:image/webp')&&!html.includes('data-editor-background'));
   console.log('PASS: actual Electron HTML export excludes the personal background');
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'偏好设置…',exact:true}).click();
+  const blur = page.getByRole('slider', { name: '背景模糊', exact: true });
+  await blur.press('Home'); for (let index = 0; index < 15; index++) await blur.press('ArrowRight');
+  await expect(page.locator('.editor-background')).toHaveCSS('filter', 'blur(15px)');
+  console.log('PASS: Background blur changes computed filter');
+  for (const [label, values, property, expected] of [['背景显示方式', ['cover', 'contain', 'repeat'], 'background-size', ['cover', 'contain', 'auto']], ['背景位置', ['center', 'top', 'bottom', 'left', 'right'], 'background-position', ['50% 50%', '50% 0%', '50% 100%', '0% 50%', '100% 50%']]]) {
+    for (const [index, value] of values.entries()) {
+      await page.getByRole('combobox', { name: label, exact: true }).selectOption(value);
+      await expect(page.locator('.editor-background')).toHaveCSS(property, expected[index]);
+      console.log('PASS: Background ' + label + ' ' + value);
+    }
+  }
+  await page.getByRole('button', { name: '重置效果', exact: true }).click();
+  await expect(page.locator('.editor-background')).toHaveCSS('filter', 'blur(0px)');
+  await expect(page.locator('.editor-background')).toHaveCSS('opacity', '0.18');
+  console.log('PASS: Background reset restores actual style defaults');
   await page.getByRole('button',{name:'清除背景',exact:true}).click();await expect(page.locator('.editor-background')).toHaveCount(0);
   const qa=process.env.OMARKIE_QA_DIR;if(qa){await mkdir(qa,{recursive:true});await page.screenshot({path:path.join(qa,'electron-background.png')});}
 } finally {await application?.close();}

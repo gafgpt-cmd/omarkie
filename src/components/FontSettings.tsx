@@ -5,8 +5,23 @@ import type { Preferences } from "../preferences";
 import { t } from "../i18n";
 export function FontSettings({ value, change, changeTheme }: { value: Preferences; change(next: Preferences): void; changeTheme(theme: string): void }) {
   const [omarchyFont, setOmarchyFont] = useState<string | null>(null);
+  const [localFonts, setLocalFonts] = useState<string[] | null>(null);
   useEffect(() => { void host.omarchyTheme().then(palette => setOmarchyFont(palette?.font ?? null)).catch(() => {}); }, []);
-  const choices = fontChoices(omarchyFont), groups = [["toypora", "Toypora"], ["toyzetlr", "Toyzetlr"], ["omarchy", "Omarchy"], ["system", t("系统")]] as const;
+  useEffect(() => {
+    let active = true;
+    void Promise.all([["helvetica", "Helvetica Neue"], ["toypora-mono", "Lucida Console"], ...(omarchyFont ? [["omarchy", omarchyFont]] : [])].map(async ([id, family]) => {
+      try { await new FontFace("omarkie-local-check", `local(${JSON.stringify(family)})`).load(); return id; }
+      catch { return ""; }
+    })).then(fonts => { if (active) setLocalFonts(fonts); });
+    return () => { active = false; };
+  }, [omarchyFont]);
+  useEffect(() => {
+    if (!localFonts) return;
+    let next = value;
+    for (const key of ["documentFont", "headingFont", "codeFont", "interfaceFont"] as const) if (["helvetica", "toypora-mono"].includes(value[key]) && !localFonts.includes(value[key])) next = { ...next, [key]: "theme" };
+    if (next !== value) change(next);
+  }, [localFonts, value, change]);
+  const choices = fontChoices(omarchyFont).filter(font => !["helvetica", "toypora-mono", "omarchy"].includes(font.id) || localFonts?.includes(font.id)), groups = [["toypora", "Toypora"], ["toyzetlr", "Toyzetlr"], ["omarchy", "Omarchy"], ["system", t("系统")]] as const;
   const fields = [["documentFont", t("正文字体")], ["headingFont", t("标题字体")], ["codeFont", t("代码字体")], ["interfaceFont", t("界面字体")]] as const;
   const select = (key: keyof FontPreferences, label: string) => <label key={key}>{label}<select aria-label={label} value={value[key]} onChange={e => change({ ...value, [key]: e.target.value })}>
     <option value="theme">{t("跟随主题")}</option>

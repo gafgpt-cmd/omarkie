@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 const call = (name, ...args) => ipcRenderer.invoke(`document:${name}`, ...args);
 contextBridge.exposeInMainWorld("desktop", {
+  viewState: (focus, typewriter, sidebar, checked, disabled, context) => call("viewState", focus, typewriter, sidebar, checked, disabled, context),
   language: () => ipcRenderer.sendSync("app:language"), setLanguage: choice => call("setLanguage", choice),
   readResource: address => call("readResource", address),
   imageSizes: (id, sources) => call("imageSizes", id, sources),
