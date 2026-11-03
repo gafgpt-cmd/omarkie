@@ -71,7 +71,15 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install desktop runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk pandoc libreoffice-writer
+        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk libreoffice-writer
+      - name: Install pinned Pandoc 3 for ODT acceptance
+        run: |
+          # Checksum: jgm/pandoc release 3.12.1 asset digest.
+          deb="$RUNNER_TEMP/pandoc.deb"
+          curl --fail --location --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --max-time 300 https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-1-amd64.deb --output "$deb"
+          echo "b4217ac7c54067c442f9d4cd38bcd0c184a43f3e7053431a12263a6f92a33ba2  $deb" | sha256sum --check --strict
+          sudo apt-get install -y "$deb"
+          pandoc --version | head -n 1
       - run: npm test
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"

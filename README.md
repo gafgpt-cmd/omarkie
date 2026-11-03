@@ -7,14 +7,14 @@
 <p align="center">Write in Markdown. Work directly on the page. Keep your files.</p>
 
 <p align="center">
-  <a href="https://github.com/gafgpt-cmd/omarkie/releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#themes-and-fonts">Themes and fonts</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">MIT License</a>
+  <a href="https://github.com/gafgpt-cmd/omarkie/releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#see-what-it-renders">See what it renders</a> · <a href="#themes-and-fonts">Themes and fonts</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">MIT License</a>
 </p>
 
 ![Omarkie with the Toyzetlr theme](docs/images/toyzetlr.png)
 
 Omarkie is an open-source Markdown editor with live, inline rendering. Write directly in the formatted document, switch to source when you need it, and keep ordinary `.md` files in your own folders. It feels at home on [Omarchy](https://omarchy.org): it follows your Omarchy theme and font live, and it runs on Linux, Windows and macOS.
 
-**Status:** early development, version **0.1.0**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+**Status:** early development, version **0.1.1**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
 
 ## Features
 
@@ -28,6 +28,21 @@ Omarkie is an open-source Markdown editor with live, inline rendering. Write dir
 - **Images, math and diagrams**: local and pasted images, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
 - **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252, with BOM and line endings preserved.
 - **Import and export**: HTML and PDF built in; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
+
+## See what it renders
+
+Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five sample documents live in [docs/showcase](docs/showcase). Open any of them in Omarkie and try it yourself. Every screenshot below is the real app.
+
+| | |
+| --- | --- |
+| [![A travel journal with a sunrise photo, rendered in Omarkie](docs/images/showcase-travel.png)](docs/showcase/travel-journal.md) | [![A recipe card with a cake photo and an ingredients table](docs/images/showcase-recipe.png)](docs/showcase/recipe-card.md) |
+| **[Seven Days on the Lighthouse Coast](docs/showcase/travel-journal.md)**<br>Local photos, highlights, quotes, callouts, footnotes and a packing checklist. | **[Midnight Lemon Olive Oil Cake](docs/showcase/recipe-card.md)**<br>A sized photo, aligned tables, task lists, a warning box and a little kitchen maths. |
+| [![A space explainer with formulas and a distance table in a dark theme](docs/images/showcase-space.png)](docs/showcase/space-explainer.md) | [![A project plan with a flowchart, highlighted YAML and a caution box](docs/images/showcase-plan.png)](docs/showcase/launch-plan.md) |
+| **[How Far Is a Light-Year?](docs/showcase/space-explainer.md)**<br>Inline and display math with MathJax, superscripts, a Mermaid diagram and Python code. | **[The Corner Garden: Launch Plan](docs/showcase/launch-plan.md)**<br>A table of contents, a Mermaid timeline and flowchart, checklists, budgets and highlighted YAML. |
+| [![A page of short poems with an ink painting in the Warm Paper theme](docs/images/showcase-poetry.png)](docs/showcase/poetry-and-type.md) | |
+| **[The Shape of Words](docs/showcase/poetry-and-type.md)**<br>Poems in type: bold, italic, strikethrough, highlights, sub and superscript, emoji. | |
+
+The screenshots use five of the built-in themes: Toyzetlr, Toypora, Toyzetlr Night, Plain White and Warm Paper. All the art in the samples is original and drawn for this project.
 
 ## Themes and fonts
 
@@ -53,13 +68,13 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 | Distribution | Package | Install |
 | --- | --- | --- |
-| Arch, Omarchy, Manjaro | `omarkie-0.1.0-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.0-1-any.pkg.tar.zst` |
-| Debian, Ubuntu, Mint | `Omarkie-0.1.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.0-linux-x64.deb` |
-| Fedora, RHEL | `omarkie-0.1.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.0-1.x86_64.rpm` |
-| openSUSE | `omarkie-0.1.0-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.0-1.x86_64.rpm` |
-| Any x64 distribution | `Omarkie-0.1.0-linux-x64.AppImage` | `chmod +x` the file and run it |
+| Arch, Omarchy, Manjaro | `omarkie-0.1.1-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.1-1-any.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.1.1-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.1-linux-x64.deb` |
+| Fedora, RHEL | `omarkie-0.1.1-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.1-1.x86_64.rpm` |
+| openSUSE | `omarkie-0.1.1-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.1-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.1.1-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.1-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 #### Update, uninstall and clean up
 
@@ -71,7 +86,7 @@ To update, install the new package over the old one with the same command as abo
 | Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
 | Remove the unused Electron runtime too | `sudo pacman -Rs omarkie` | not needed (bundled) | not needed (bundled) | not needed (bundled) |
 
-A release build is named after its version (`0.1.0`). An Arch package built from a later commit is named `0.1.0.r<commits>.g<commit>`, for example `0.1.0.r3.gdcb6c9e`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
+A release build is named after its version (`0.1.1`). An Arch package built from a later commit is named `0.1.1.r<commits>.g<commit>`, for example `0.1.1.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
 
 Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
 
@@ -85,7 +100,7 @@ Open the DMG and drag **Omarkie** into **Applications**. Requires macOS 14 or la
 
 ### Optional converters
 
-Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
+Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. ODT import is tested with Pandoc 3; older versions such as Debian 12's Pandoc 2.17 drop the header row of ODT tables, so on such systems install Pandoc 3 from its [releases](https://github.com/jgm/pandoc/releases). On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
 
 ## Build from source
 

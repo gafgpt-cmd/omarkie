@@ -1,6 +1,6 @@
 {
   "name": "omarkie",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A local Markdown writing space with live rendering and lossless source editing.",
   "private": true,
   "type": "module",
