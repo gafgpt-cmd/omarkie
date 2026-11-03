@@ -23,6 +23,7 @@
     "registerDraft",
     "open",
     "openFolder",
+    "showcase",
     "scan",
     "openToken",
     "save",

@@ -365,6 +365,24 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     }
     return value
   }
+  // The showcase notes ship in the app's resources; only files missing from the user's copy are added, so edits are kept.
+  static let showcaseDocuments = ["travel-journal.md", "recipe-card.md", "space-explainer.md", "launch-plan.md", "poetry-and-type.md"]
+  static func copyMissing(from source: URL, to target: URL) throws {
+    let manager = FileManager.default
+    try manager.createDirectory(at: target, withIntermediateDirectories: true)
+    for name in try manager.contentsOfDirectory(atPath: source.path) {
+      let from = source.appendingPathComponent(name), to = target.appendingPathComponent(name)
+      var directory: ObjCBool = false
+      guard manager.fileExists(atPath: from.path, isDirectory: &directory) else { continue }
+      if directory.boolValue { try copyMissing(from: from, to: to) }
+      else if !manager.fileExists(atPath: to.path) { try manager.copyItem(at: from, to: to) }
+    }
+  }
+  static func openShowcase(_ store: DocumentStore, names: [String]) throws -> (URL, [DocumentRecord]) {
+    let folder = store.dataDirectory.appendingPathComponent("Showcase")
+    try copyMissing(from: Bundle.main.resourceURL!.appendingPathComponent("showcase"), to: folder)
+    return (folder, try names.map { try store.open(folder.appendingPathComponent($0)) })
+  }
   static func openEncoded(_ file: URL, store: DocumentStore) throws -> DocumentRecord {
     do { return try store.open(file) }
     catch let error as NativeFailure where error.code == "INVALID_ENCODING" {
@@ -469,31 +487,15 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         return try jsonValue(seed)
       }
       if let session = try store.restore() { return try jsonValue(session) }
-      let language = args.first as? String ?? "zh"
-      let resources = Bundle.main.resourceURL!
-      let samples: [[String: String]]
-      if language == "zh" {
-        samples = try JSONSerialization.jsonObject(
-          with: Data(contentsOf: resources.appendingPathComponent("samples.json"))) as! [[String: String]]
-      } else {
-        let localized = try JSONSerialization.jsonObject(
-          with: Data(contentsOf: resources.appendingPathComponent("samples.i18n.json"))) as! [String: [[String: String]]]
-        samples = localized[language] ?? localized["en"]!
-      }
-      var folderName = args.count > 1 ? args[1] as? String ?? "" : ""
-      if folderName.isEmpty || folderName.contains("/") || folderName.hasPrefix(".") { folderName = "示例笔记" }
-      let folder = store.dataDirectory.appendingPathComponent(folderName)
-      var records = [DocumentRecord]()
-      for sample in samples {
-        let file = folder.appendingPathComponent(sample["name"]!)
-        if !FileManager.default.fileExists(atPath: file.path) {
-          try atomicWrite(file, Data(sample["content"]!.utf8))
-        }
-        records.append(try store.open(file))
-      }
+      let (folder, records) = try Self.openShowcase(store, names: Self.showcaseDocuments)
       _ = try store.scan(folder)
       return try jsonValue(
         SessionRecord(documents: records, activeId: records.first?.id, folder: folder.path))
+    case "showcase":
+      let (folder, records) = try Self.openShowcase(store, names: [Self.showcaseDocuments[0]])
+      var result = try store.scan(folder)
+      result["document"] = try jsonValue(records[0])
+      return result
     case "registerDraft":
       let value = try arg(args, 0, [String: Any].self)
       let record = try JSONDecoder().decode(

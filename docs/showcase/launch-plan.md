@@ -13,12 +13,17 @@ opening: First Saturday of May
 
 [TOC]
 
+*This list of headings builds itself from the page. Add one anywhere with **Paragraph → Table of Contents**.*
+
 ## The idea
 
 We are turning the empty lot on the corner into a shared vegetable garden. Anyone on the street can claim a bed, grow what they like and swap the extras. This page is our plan, our checklist and our memory, all in one Markdown file.
 
 > [!NOTE]
 > This is a living document. Tick boxes as you finish things and add your name next to anything you pick up.
+
+> [!TIP]
+> The box at the very top of this file is YAML front matter: a few labelled facts about the page. **Paragraph → YAML Front Matter** adds one to any note.
 
 ## Milestones
 
@@ -60,6 +65,9 @@ timeline
 
 All amounts in euros. We are ==under budget== so far.
 
+> [!TIP]
+> Lost in a big folder? **Ctrl+F** (**⌘F**) finds words on this page, **Ctrl+Shift+F** (**⌘⇧F**) searches every note in the folder, and **Ctrl+P** (**⌘⇧O**) opens a file by name.
+
 ## How a bed gets claimed
 
 ```mermaid
@@ -96,3 +104,5 @@ skip_if_rain_mm: 5
 ---
 
 *Questions? Knock on number 14, or leave a note in the box by the gate.* :mailbox_with_mail:
+
+Need to share the plan? **File → Export PDF…** or **File → Export HTML…** makes a copy anyone can open.

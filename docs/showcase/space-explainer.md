@@ -52,6 +52,8 @@ flowchart TD
   D --> E[Redshift of the far universe]
 ```
 
+Every diagram here is a few lines of text in a `mermaid` code block. Click it to edit the words and watch the picture redraw.
+
 ## Parallax: the thumb trick
 
 Hold up your thumb and close one eye, then the other. Your thumb jumps. Stars do the same as the Earth moves around the Sun. The size of the jump, the angle $p$, gives the distance:
@@ -61,6 +63,9 @@ d\,[\text{parsec}] = \frac{1}{p\,[\text{arcsecond}]}
 $$
 
 One parsec is about 3.26 light-years[^parsec].
+
+> [!TIP]
+> Click any formula to edit it in place. Use single dollar signs, `$E = mc^2$`, inside a sentence and double ones on their own lines for a big centred formula.
 
 ## Try it yourself
 
@@ -77,6 +82,8 @@ sun = 1.496e11                        # metres
 print(f"Sunlight takes {sun / SPEED_OF_LIGHT / 60:.1f} minutes")
 ```
 
+Code keeps its colours for many languages. Start a block with three backticks and a language name, or use **Paragraph → Code Fences**.
+
 ## Fun facts to share at dinner
 
 - The light from some stars you see tonight left them before the pyramids were built.
@@ -86,5 +93,7 @@ print(f"Sunlight takes {sun / SPEED_OF_LIGHT / 60:.1f} minutes")
 
 > [!IMPORTANT]
 > Every formula on this page is plain text in the file, between dollar signs. Omarkie renders it with MathJax, fully offline.
+
+Long page? Open **Display → Outline** to jump between headings.
 
 [^parsec]: The name comes from **par**allax of one arc**sec**ond. Astronomers like short words.

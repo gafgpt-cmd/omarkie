@@ -26,6 +26,7 @@ import { readOmarchyTheme, watchOmarchyTheme } from "./omarchy.mjs";
 import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
+import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 if (process.env.OMARKIE_DATA_DIR)
@@ -161,24 +162,12 @@ const handlers = {
   restore: async () => {
     const restored = await store.restore();
     if (restored) return restored;
-    const localized = language === "zh" ? null : JSON.parse(await readFile(path.join(root, "shared/samples.i18n.json"), "utf-8"));
-    const samples = localized ? localized[language] ?? localized.en : JSON.parse(
-      await readFile(path.join(root, "shared/samples.json"), "utf-8"),
-    );
-    const folder = path.join(app.getPath("userData"), t("示例笔记"));
-    const documents = [];
-    for (const sample of samples) {
-      const file = path.join(folder, sample.name);
-      try {
-        await readFile(file);
-      } catch (error) {
-        if (error.code === "ENOENT") await atomicWrite(file, process.platform !== "darwin" ? sample.content.replace(/⌘\s*/g, "Ctrl+") : sample.content);
-        else throw error;
-      }
-      documents.push(await store.open(file));
-    }
-    await store.scan(folder);
-    return { documents, activeId: documents[0].id, folder };
+    const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
+    return { documents, activeId: documents[0].id, folder: folder.folder };
+  },
+  showcase: async () => {
+    const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName), [showcaseDocuments[0]]);
+    return { ...folder, document: documents[0] };
   },
   draft: (_, record) => store.registerDraft(record),
   open: async () => {

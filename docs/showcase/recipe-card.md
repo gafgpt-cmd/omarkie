@@ -39,11 +39,17 @@ This is the cake you bake when friends say they will "drop by for a minute". It 
 > [!WARNING]
 > Do not open the oven in the first 30 minutes. The middle will sink, and you will be sad.
 
+> [!TIP]
+> **Make your own checklist.** Start a line with `- [ ]`, or pick **Paragraph → Task List**. Click a box when a step is done. Numbers in the ingredients table line up on the right because of the colon in `-----:` under the heading.
+
 ## The glaze
 
 Mix 100 g icing sugar with 2 tbsp lemon juice. It should run off the spoon *slowly*, like honey. Pour it over the warm cake and let it drip down the sides.
 
 ~~Wait until it cools completely~~ Eat one slice warm. Nobody will tell.
+
+> [!TIP]
+> Select a few words and press **Ctrl+B** (**⌘B**) for bold or **Ctrl+I** (**⌘I**) for italic. **Format → Highlight** paints text like a marker, and **Format → Strikethrough** crosses it out.
 
 ## Baker's notes
 
@@ -63,4 +69,10 @@ $$
 
 So you need about ==one and a half times== the batter. Baking time goes up by roughly 10 minutes.
 
+Formulas are plain text between dollar signs. Click this one to change it, or add your own with **Paragraph → Math Block**.
+
 Oven conversions: 180 °C is about 356 °F, or gas mark 4. Water boils at 100 °C at sea level, because H~2~O is stubborn like that.
+
+---
+
+*The photo at the top uses a small HTML tag, `<img src="…" width="560">`, to choose its size. A plain `![description](images/lemon-cake.jpg)` works too and fills the width.*

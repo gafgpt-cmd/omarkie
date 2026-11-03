@@ -203,6 +203,7 @@ export default function App() {
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();
     else if (action === "open") void session.open();
     else if (action === "folder") void session.openFolder();
+    else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);

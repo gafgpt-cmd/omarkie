@@ -41,6 +41,9 @@ Type is the voice of a page. A heading says *listen*. A quote says *someone else
 >
 > *Advice from a writing class, long ago*
 
+> [!TIP]
+> **Give the page a new voice.** Open **Preferences** (**Ctrl+,** or **⌘,**) and try a theme such as Toypora, Toyzetlr or Warm Paper, then pick fonts for text, headings and code. **Display → Toggle Light/Dark Theme** switches to night colours.
+
 ## The parts of a page
 
 | Element | Markdown | What it says |
@@ -58,6 +61,8 @@ The 1^st^ draft is for you. The 2^nd^ is for the reader.
 A footnote waits at the bottom like a friend at the door.
 Chemists write CO~2~. Poets write *breath*.
 
+Type `:` and a few letters, like `:sun`, and Omarkie suggests an emoji. :sunny:
+
 ## Haiku in three fonts of mood
 
 > **morning ink drying**
@@ -74,5 +79,8 @@ and it will still say **hello**. :wave:
 ---
 
 *Try this page with different themes and fonts in* **Preferences**. *The words stay the same. The voice changes.* :art:
+
+> [!TIP]
+> Want quiet? **F8** turns on Focus Mode and **F9** keeps your line in the middle of the screen with Typewriter Mode. **Paragraph → Footnote…** adds a note like the one below.
 
 [^more]: Hover the little number to read the note. The note itself lives wherever you write it, usually at the end.

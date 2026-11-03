@@ -124,5 +124,8 @@
     {"label":"切换明暗主题","action":"theme"},
     {"label":"偏好设置…","action":"preferences","key":"Mod-,"},
     {"label":"插件管理…","action":"plugins"}
+  ]},
+  {"title":"帮助","items":[
+    {"label":"展示示例","action":"showcase"}
   ]}
 ]

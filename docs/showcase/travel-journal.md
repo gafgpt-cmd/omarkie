@@ -7,7 +7,7 @@ tags: [travel, journal, photos]
 
 # Seven Days on the Lighthouse Coast :sunrise_over_mountains:
 
-*A travel journal with real pictures in it. Open this file in Omarkie and the pictures sit right on the page, next to the words they belong to.*
+**Welcome to Omarkie.** Write in plain Markdown and see a finished page as you type. Click any line of this journal to edit it, then press **Ctrl+/** (**⌘/** on a Mac) to see the plain text underneath.
 
 ![Sunrise over a quiet bay, with a small lighthouse on the rocks](images/coast-sunrise.jpg)
 
@@ -34,6 +34,9 @@ The path to the lighthouse is 4.2 km of cliff top, wild thyme and wind. The keep
 
 Every house in the old port is painted a different colour. A local told me it started so sailors could spot *their own* home from the sea. True or not, it is a lovely story.
 
+> [!TIP]
+> **Add your own photo.** Drag a picture onto the page or paste it. Omarkie copies it into an `.assets` folder next to your note, so words and pictures stay together. **Format → Insert Image…** works too.
+
 What I ate today:
 
 - Grilled sardines with lemon :fish:
@@ -56,6 +59,8 @@ A slow bus climbs to the village every two hours. From the church square you can
 | 4 | Hill village | 11 km | :church: |
 | 5 to 7 | Wherever the bus goes | ? | :sparkles: |
 
+Click into the table and press **Tab** to hop between cells. **Paragraph → Insert Table…** starts a new one.
+
 ## Packing list
 
 - [x] Good walking shoes
@@ -64,11 +69,24 @@ A slow bus climbs to the village every two hours. From the church square you can
 - [ ] A bigger memory card next time
 - [ ] Learn more than three words of the local language
 
-## Why this journal is a Markdown file
+Click a box to tick it. Start a line with `- [ ]` to add your own.
 
-Many Markdown apps show a broken icon or just a file name where a photo should be. Omarkie shows the **actual picture**, from the folder next to your note. The photos live in `images/`, the words live here, and both stay on your own computer.
+## Where your words live
+
+Every note is an ordinary `.md` file in a folder you choose. Edits to a saved file are saved as you go, and **Ctrl+S** (**⌘S**) saves a new one. Many Markdown apps show a broken icon where a photo should be. Omarkie shows the **actual picture**, straight from the folder next to your note.
 
 > [!NOTE]
-> Pictures from the internet are blocked until you allow them. Your own photos always show up. Nothing is uploaded anywhere.
+> Pictures from the internet stay blocked until you turn on **Show remote images** in **Preferences**. Your own photos always show up, and nothing is uploaded anywhere.
+
+*Omarkie is open source. Every change is AI reviewed and tested before it lands, with [no-mistakes](https://github.com/kunchenguid/no-mistakes).*
+
+## Your next stops
+
+These five examples sit in a folder called **Showcase**, listed in the sidebar. Edit them, break them, delete them. **Help → Showcase Examples** brings back anything missing and never touches your changes. Hold **Ctrl** (**⌘** on a Mac) and click a link to open it:
+
+- [Midnight Lemon Olive Oil Cake](recipe-card.md): tables, checklists and a little kitchen maths :lemon:
+- [How Far Is a Light-Year?](space-explainer.md): formulas, code and a diagram :milky_way:
+- [The Corner Garden](launch-plan.md): plans, timelines and flowcharts :seedling:
+- [The Shape of Words](poetry-and-type.md): type, themes and fonts :art:
 
 [^museum]: Open Thursday to Sunday. Entry is free, but there is a jar for donations, and the volunteers make very good tea.
