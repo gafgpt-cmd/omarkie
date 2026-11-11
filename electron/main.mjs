@@ -384,7 +384,12 @@ app
           decodeURIComponent(id),
           decodeURIComponent(rest.join("/")),
         );
-        return net.fetch(pathToFileURL(await photoPreviews.get(file, Number(url.searchParams.get("preview")))).href);
+        const served = await photoPreviews.get(file, Number(url.searchParams.get("preview")));
+        const response = await net.fetch(pathToFileURL(served).href);
+        if (!url.searchParams.has("preview") || served !== file) return response;
+        // The original stands in until the preview exists; keep Chromium from reusing it for this preview URL.
+        const headers = new Headers(response.headers); headers.set("Cache-Control", "no-store");
+        return new Response(response.body, { status: response.status, headers });
       } catch {
         return new Response("Image unavailable", { status: 404 });
       }

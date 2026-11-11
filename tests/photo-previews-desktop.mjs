@@ -18,11 +18,14 @@ try {
   const page = await app.firstWindow(), image = page.locator(".rich-document img").first();
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate(image => image.complete && image.naturalWidth > 0 && image.currentSrc.includes("?preview="))).toBe(true);
-  assert.equal(await image.evaluate(image => image.naturalWidth), 4500, "cold view serves original immediately");
+  // srcset w-descriptors make naturalWidth layout-dependent; decode to read the served pixel size.
+  const pixels = () => image.evaluate(async image => { const bitmap = await createImageBitmap(image); try { return [bitmap.width, bitmap.height]; } finally { bitmap.close(); } });
+  assert.equal((await pixels())[0], 4500, "cold view serves original immediately");
   await expect.poll(async () => { try { return (await readdir(path.join(root, "photo-previews"))).some(name => name.endsWith(".webp")); } catch { return false; } }, { timeout: 15000 }).toBe(true);
   await page.reload();
-  await expect.poll(() => image.evaluate(image => image.complete && image.naturalWidth > 0 && image.naturalWidth < 4500)).toBe(true);
-  const result = await image.evaluate(image => ({ width: image.naturalWidth, height: image.naturalHeight, selected: image.currentSrc, original: image.src }));
+  await expect.poll(async () => await image.evaluate(image => image.complete && image.naturalWidth > 0) && (await pixels())[0] < 4500).toBe(true);
+  const [width, height] = await pixels();
+  const result = { width, height, ...await image.evaluate(image => ({ selected: image.currentSrc, original: image.src })) };
   const bucket = Number(new URL(result.selected).searchParams.get("preview"));
   assert.ok(result.width <= bucket); assert.ok(result.height > result.width, "EXIF orientation survives preview generation");
   assert.ok(!result.original.includes("preview="));
