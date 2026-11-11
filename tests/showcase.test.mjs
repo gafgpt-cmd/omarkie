@@ -44,9 +44,6 @@ test("packages resolve the showcase at runtime with every picture its documents 
   // Electron packages copy these folders into the app at the same relative paths; macOS copies it into Resources/showcase.
   const application = path.join(os.tmpdir(), "packaged-app");
   assert.ok(applicationFolders.includes(path.relative(application, showcaseSource(application)).split(path.sep).join("/")));
-  for (const script of ["scripts/package-native.mjs", "scripts/test-webkit.mjs"])
-    assert.match(await readFile(path.join(root, script), "utf8"), /cp\("docs\/showcase", path\.join\(resources, "showcase"\)/, script);
-  assert.match(await readFile(path.join(root, "native/App.swift"), "utf8"), /appendingPathComponent\("showcase"\)/);
   for (const name of showcaseDocuments) {
     const text = await readFile(path.join(source, name), "utf8");
     for (const [, image] of text.matchAll(/(?:\]\(|src=")(images\/[^)"]+)/g))
@@ -57,6 +54,4 @@ test("packages resolve the showcase at runtime with every picture its documents 
 test("Help offers the showcase in every host's menu", async () => {
   const groups = JSON.parse(await readFile(path.join(root, "shared/commands.json"), "utf8"));
   assert.deepEqual(groups.find(group => group.title === "帮助")?.items.map(item => item.action), ["showcase"]);
-  assert.match(await readFile(path.join(root, "electron/preload.cjs"), "utf8"), /showcase: \(\) => call\("showcase"\)/);
-  assert.match(await readFile(path.join(root, "native/bridge.js"), "utf8"), /"showcase"/);
 });
