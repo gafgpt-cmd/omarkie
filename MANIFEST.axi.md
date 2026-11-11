@@ -1,15 +1,15 @@
 # MANIFEST.axi.md
 
-gafgpt-cmd/omarkie-dev: Omarkie private development: all branches, unfinished work and planning. Public gafgpt-cmd/omarkie gets finished code and packages only.
-Shared rules: agentic-dotfiles-linux `docs/WORKFLOW.axi.md`. Check: `repo-audit.sh --check <dir|gh:gafgpt-cmd/omarkie-dev>`.
+gafgpt-cmd/omarkie: Markdown editor with live, inline rendering. Themes and fonts that follow Omarchy. Linux, Windows, macOS.
+Shared rules: agentic-dotfiles-linux `docs/WORKFLOW.axi.md`. Check: `repo-audit.sh --check <dir|gh:gafgpt-cmd/omarkie>`.
 
 ## identity
 Owner home(s) do the work. Fork details: fork.json + FORK.md.
 ```json
 {"identity": {
   "manifest_schema": 1,
-  "repo": "gafgpt-cmd/omarkie-dev",
-  "visibility": "private",
+  "repo": "gafgpt-cmd/omarkie",
+  "visibility": "public",
   "default_branch": "main",
   "owner_homes": [],
   "is_fork": false,
@@ -50,7 +50,7 @@ Default branch only through no-mistakes; branch-to-branch merges need the fast c
 No installed copy known. Local clones stay clean on main and current; work happens in worktrees.
 ```json
 {"deploy": {
-  "live_checkouts": ["~/Projects/omarkie-dev","~/firstmate/projects/omarkie-dev"],
+  "live_checkouts": [],
   "update": "pull-ff-only",
   "runtime_written": [],
   "build_stamp": null,
