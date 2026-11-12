@@ -16,7 +16,7 @@ Remove personal information and credentials from examples.
 
 ## Set up development
 
-Use Node.js 26 and npm. Linux and Windows builds use Electron; the macOS build needs macOS 14+ and the Xcode Command Line Tools. Install Pandoc 3 for the complete conversion suites (the ODT import test skips on older Pandoc).
+Use Node.js 26 and npm. Linux and Windows builds use Electron; the macOS build needs macOS 14+ and the Xcode Command Line Tools. Install Pandoc 3 and LibreOffice for the complete conversion suites (the ODT import test skips when Pandoc is older than 3.12.1 and LibreOffice is missing).
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
