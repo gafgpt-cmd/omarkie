@@ -70,7 +70,7 @@ export async function convertImport(file, directory) {
   const needsOffice = legacy || oldODT, office = needsOffice ? await libreOfficePath() : "";
   if (!pandoc || (needsOffice && !office)) {
     if (process.platform === "darwin") { const {stdout} = await exec("/usr/bin/textutil",["-convert","html","-stdout",file],{timeout:30000,maxBuffer:20*1024*1024}); return {html:stdout,name}; }
-    if (oldODT) throw new Error(t("当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。"));
+    if (oldODT) throw new Error(t("当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。"));
     throw new Error(legacy ? t("导入 DOC / RTF 需要安装 LibreOffice 和 Pandoc；也可先另存为 DOCX。") : t("导入此格式需要安装 Pandoc，可在偏好设置中选择其可执行文件。"));
   }
   if (!directory) throw new Error(t("缺少导入资源存储目录。"));

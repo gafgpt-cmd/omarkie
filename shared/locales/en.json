@@ -275,7 +275,7 @@
   "引用": "Quote",
   "引用标识": "Reference ID",
   "当前": "Current",
-  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。": "The installed Pandoc needs LibreOffice to import ODT. You can also upgrade to Pandoc 3.x.",
+  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。": "The installed Pandoc needs LibreOffice to import ODT. You can also upgrade to Pandoc 3.12.1.",
   "当前匹配": "Current match",
   "当前宿主未提供废纸篓。": "The current host does not provide a Trash.",
   "当前文件夹": "Current folder",

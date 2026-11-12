@@ -283,7 +283,7 @@
   "引用": "Cita",
   "引用标识": "Identificador de referència",
   "当前": "Actual",
-  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。": "La importació d'ODT amb la versió actual de Pandoc requereix LibreOffice; també es pot actualitzar a Pandoc 3.x.",
+  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。": "La importació d'ODT amb la versió actual de Pandoc requereix LibreOffice; també es pot actualitzar a Pandoc 3.12.1.",
   "当前匹配": "Coincidència actual",
   "当前宿主未提供废纸篓。": "Aquest entorn no disposa de paperera.",
   "当前文件夹": "Carpeta actual",

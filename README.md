@@ -104,7 +104,7 @@ Open the DMG and drag **Omarkie** into **Applications**. Requires macOS 14 or la
 
 ### Optional converters
 
-Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. ODT import is tested with Pandoc 3; older versions such as Debian 12's Pandoc 2.17 drop the header row of ODT tables, so on such systems install Pandoc 3 from its [releases](https://github.com/jgm/pandoc/releases). On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
+Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. Pandoc before 3.12.1 drops equations and table header rows from ODT, so ODT import with it goes through LibreOffice; install LibreOffice or Pandoc 3.12.1+ from its [releases](https://github.com/jgm/pandoc/releases). On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
 
 ## Build from source
 

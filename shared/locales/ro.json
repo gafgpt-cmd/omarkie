@@ -283,7 +283,7 @@
   "引用": "Citat",
   "引用标识": "Identificator de referință",
   "当前": "Actual:",
-  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。": "Importul ODT cu versiunea actuală de Pandoc necesită LibreOffice; alternativ, actualizați la Pandoc 3.x.",
+  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。": "Importul ODT cu versiunea actuală de Pandoc necesită LibreOffice; alternativ, actualizați la Pandoc 3.12.1.",
   "当前匹配": "Potrivirea curentă",
   "当前宿主未提供废纸篓。": "Mediul actual nu oferă un coș de gunoi.",
   "当前文件夹": "Dosarul curent",
