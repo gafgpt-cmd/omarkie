@@ -55,3 +55,10 @@ test('failed import cleans temporary conversion and extracted resources',{skip:!
   assert.deepEqual(await readdir(path.join(directory,'Imported')),[]);
   assert.deepEqual(await readdir(directory),['Imported']);
 });
+test('ODT Pandoc version gate: 3.12.0 lossy, 3.12.1 lossless, 2.x lossy',{skip:process.platform==='win32'},async t=>{
+  const root = await mkdtemp(path.join(os.tmpdir(),'omarkie-ver-')); t.after(()=>rm(root,{recursive:true,force:true}));
+  for (const [version,expected] of [['3.12.0',false],['3.12.1',true],['3.13',true],['2.17.1.1',false]]) {
+    const stub = path.join(root,'pandoc-'+version); await writeFile(stub,`#!/bin/sh\necho "pandoc ${version}"\n`,{mode:0o755});
+    assert.equal(await pandocReadsODTLosslessly(stub),expected,version);
+  }
+});

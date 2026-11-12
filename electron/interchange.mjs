@@ -66,7 +66,7 @@ export async function convertImport(file, directory) {
   const format = pandoc ? await importFormat(pandoc) : "";
   // Pandoc's ODT reader before 3.12.1 omits equations and table headers. LibreOffice's
   // DOCX bridge retains those structures instead of silently dropping them.
-  const oldODT = /\.odt$/i.test(file) && (format.startsWith("markdown") || !(await pandocReadsODTLosslessly(pandoc)));
+  const oldODT = /\.odt$/i.test(file) && !!pandoc && (format.startsWith("markdown") || !(await pandocReadsODTLosslessly(pandoc)));
   const needsOffice = legacy || oldODT, office = needsOffice ? await libreOfficePath() : "";
   if (!pandoc || (needsOffice && !office)) {
     if (process.platform === "darwin") { const {stdout} = await exec("/usr/bin/textutil",["-convert","html","-stdout",file],{timeout:30000,maxBuffer:20*1024*1024}); return {html:stdout,name}; }
