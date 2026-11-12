@@ -7,10 +7,11 @@ import {mkdtemp,writeFile,readFile,readdir,rm} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL,fileURLToPath} from 'node:url';
-import {convertImport,pandocPath,libreOfficePath} from '../electron/interchange.mjs';
+import {convertImport,pandocPath,libreOfficePath,pandocReadsODTLosslessly} from '../electron/interchange.mjs';
 const exec = promisify(execFile), pandoc = await pandocPath(), office = await libreOfficePath();
-// ODT import is tested with Pandoc 3; older versions such as Debian 12's 2.17 drop the header row of ODT tables.
+// Pandoc's ODT reader is lossy before 3.12.1; import then bridges through LibreOffice, so the ODT test needs it there.
 const pandocMajor = pandoc ? Number((await exec(pandoc,['--version'])).stdout.match(/^pandoc\S*\s+(\d+)/)?.[1] ?? 0) : 0;
+const odtSkip = !pandoc || (!office && !(await pandocReadsODTLosslessly(pandoc)) && 'ODT import of this Pandoc needs LibreOffice, which is not installed');
 if (process.env.OMARKIE_REQUIRE_CONVERTERS) { assert.ok(pandoc,'Pandoc must be installed for release acceptance'); assert.ok(pandocMajor>=3,'Release acceptance needs Pandoc 3 or newer'); assert.ok(office,'LibreOffice must be installed for release acceptance'); }
 const pixels = Buffer.from(Array.from({length:12*8*3},(_,index)=>(index*37)%256));
 const png = await sharp(pixels,{raw:{width:12,height:8,channels:3}}).png().toBuffer();
@@ -21,7 +22,7 @@ async function fixture(t) {
   const md = path.join(root,'复杂 input.md'); await writeFile(md,source);
   return {root,md};
 }
-for (const format of ['docx','odt','epub']) test(`actual ${format} import retains text, table, code, math, notes and persistent embedded image`,{skip:!pandoc||(format==='odt'&&pandocMajor<3&&`ODT import is tested with Pandoc 3; older versions such as Debian 12's Pandoc 2.17 drop the header row of ODT tables (found Pandoc ${pandocMajor})`)},async t=>{
+for (const format of ['docx','odt','epub']) test(`actual ${format} import retains text, table, code, math, notes and persistent embedded image`,{skip:format==='odt'?odtSkip:!pandoc},async t=>{
   const {root,md} = await fixture(t), file = path.join(root,'converted.'+format);
   await exec(pandoc,[md,'--from=markdown','--to='+format,'--output='+file,'--resource-path='+root]);
   const imported = await convertImport(file,path.join(root,'session'));

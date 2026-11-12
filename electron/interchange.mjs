@@ -51,6 +51,12 @@ async function importFormat(pandoc) {
   if (!stdout.includes("tex_math_dollars")) return "markdown+pipe_tables+tex_math_dollars+footnotes-simple_tables-multiline_tables-grid_tables-implicit_figures-link_attributes";
   return "gfm+tex_math_dollars+footnotes" + (stdout.includes("tex_math_gfm") ? "-tex_math_gfm" : "");
 }
+// Pandoc's ODT reader drops equations before 3.12.1 and table header rows before 3.8.
+export async function pandocReadsODTLosslessly(pandoc) {
+  const {stdout} = await exec(pandoc,["--version"],{timeout:10000,maxBuffer:100000});
+  const [major=0,minor=0,patch=0] = (stdout.match(/^pandoc\S*\s+(\d+(?:\.\d+)*)/)?.[1] ?? "0").split(".").map(Number);
+  return major>3 || (major===3 && (minor>12 || (minor===12 && patch>=1)));
+}
 export async function convertImport(file, directory) {
   const name = path.basename(file).replace(/\.[^.]+$/, ".md");
   if ((await stat(file)).size > 20*1024*1024) throw new Error(t("导入文档必须小于 20 MB。"));
@@ -58,9 +64,9 @@ export async function convertImport(file, directory) {
   if (/\.txt$/i.test(file)) return { markdown: await readFile(file, "utf8"), name };
   const pandoc = await pandocPath(), legacy = /\.(doc|rtf)$/i.test(file);
   const format = pandoc ? await importFormat(pandoc) : "";
-  // Pandoc 2.x's ODT reader omits equations and table headers. LibreOffice's
+  // Pandoc's ODT reader before 3.12.1 omits equations and table headers. LibreOffice's
   // DOCX bridge retains those structures instead of silently dropping them.
-  const oldODT = /\.odt$/i.test(file) && format.startsWith("markdown");
+  const oldODT = /\.odt$/i.test(file) && (format.startsWith("markdown") || !(await pandocReadsODTLosslessly(pandoc)));
   const needsOffice = legacy || oldODT, office = needsOffice ? await libreOfficePath() : "";
   if (!pandoc || (needsOffice && !office)) {
     if (process.platform === "darwin") { const {stdout} = await exec("/usr/bin/textutil",["-convert","html","-stdout",file],{timeout:30000,maxBuffer:20*1024*1024}); return {html:stdout,name}; }
