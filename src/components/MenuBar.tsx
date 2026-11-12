@@ -3,10 +3,9 @@ import { commandGroups, commandKey, commandsByAction, shortcutLabel, type Comman
 import { t } from "../i18n";
 // Linux hides the native menu bar (its font cannot follow the theme); this one renders the same commands with theme styles.
 // Clipboard roles run in the main process: Chromium refuses a scripted paste.
-const editing: Record<string, string> = { cut: "cut", copy: "copy", paste: "paste", "select-all": "selectAll" };
 const appMenu = { title: "Omarkie", items: [{ label: "关于 Omarkie", action: "about" }, ...["preferences", "plugins", "close-window"].map(action => commandsByAction.get(action)!)] };
 const menus = [appMenu, ...commandGroups.map(group => ({ ...group, items: group.items.filter(item => !["preferences", "plugins", "close-window"].includes(item.action)) }))];
-export function MenuBar({ command, rendered, disabled, context }: { command(action: string): void; rendered: boolean; disabled: boolean; context: string }) {
+export function MenuBar({ command, rendered, disabled, context, checked = {} }: { command(action: string): void; rendered: boolean; disabled: boolean; context: string; checked?: Record<string, boolean> }) {
   const [open, setOpen] = useState<number | null>(null), root = useRef<HTMLElement>(null);
   useEffect(() => {
     if (open === null) return;
@@ -24,13 +23,13 @@ export function MenuBar({ command, rendered, disabled, context }: { command(acti
     return () => { document.removeEventListener("mousedown", dismiss); document.removeEventListener("keydown", keyboard); };
   }, [open]);
   const off = (item: CommandDefinition) => !!item.context && (disabled || (["rich", "table"].includes(item.context) && !rendered) || (item.context === "table" && context !== "table_open"));
-  const run = (item: CommandDefinition) => { setOpen(null); if (editing[item.action]) void window.desktop?.editRole(editing[item.action]); else command(item.action); };
+  const run = (item: CommandDefinition) => { setOpen(null); command(item.action); };
   // mousedown default would move focus out of the editor and drop its selection before the command runs.
   return <nav className="menu-bar" ref={root} aria-label={t("菜单栏")} onMouseDown={event => event.preventDefault()}>
     {menus.map((menu, index) => <div className="menu-bar-item" key={menu.title}>
       <button type="button" aria-haspopup="menu" aria-expanded={open === index} onClick={() => setOpen(open === index ? null : index)} onMouseEnter={() => open !== null && setOpen(index)}>{menu === appMenu ? menu.title : t(menu.title)}</button>
       {open === index && <div className="more-menu menu-bar-panel" role="menu" aria-label={menu === appMenu ? menu.title : t(menu.title)}>
-        {menu.items.map(item => <button type="button" role="menuitem" key={item.action} disabled={off(item)} onClick={() => run(item)}><span>{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}
+        {menu.items.filter(item => !["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction).map(item => <button type="button" role={item.action in checked ? "menuitemcheckbox" : "menuitem"} aria-label={t(item.label)} aria-checked={checked[item.action]} key={item.action} disabled={off(item)} onClick={() => run(item)}><span>{item.action in checked && (checked[item.action] ? "✓ " : "")}{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}
       </div>}
     </div>)}
   </nav>;

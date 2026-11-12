@@ -62,6 +62,7 @@ export interface Host {
   themes(): Promise<{ id: string; name: string; css: string }[]>;
   installTheme(): Promise<string | null>;
   omarchyTheme(): Promise<import("./themes").OmarchyPalette | null>;
+  spellcheckLanguages(languages?: string[]): Promise<string[]>;
   setRemoteImages(allow: boolean): Promise<unknown>;
   background(): Promise<import("./background").BackgroundAsset | null>;
   chooseBackground(): Promise<import("./background").BackgroundAsset | null>;
@@ -72,7 +73,8 @@ export interface Host {
   conversionSettings(choose?: boolean): Promise<{ pandoc: string; word: boolean; libreOffice?: string }>;
   importDocument(): Promise<{ html?: string; markdown?: string; name: string } | null>;
   exportConverted(id: string, format: string, source: string, html: string): Promise<string | null>;
-  restore(language?: string, folderName?: string): Promise<Recovery | null>;
+  restore(): Promise<Recovery | null>;
+  showcase(): Promise<FolderResult & { document: DocumentRecord }>;
   registerDraft(record: DocumentRecord): Promise<unknown>;
   open(): Promise<DocumentRecord | null>;
   openFolder(): Promise<FolderResult | null>;

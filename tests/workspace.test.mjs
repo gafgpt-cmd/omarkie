@@ -52,3 +52,19 @@ test("opening an already owned path cannot silently accept an external edit", as
   await assert.rejects(store.save(original.id, "dirty draft"), { code: "EXTERNAL_CHANGE" }); assert.equal(await readFile(file, "utf8"), "external edit");
   assert.equal((await store.reload(original.id)).content, "external edit");
 });
+test("vault search includes large notes and more than 30 MiB without blocking timers", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-large-search-")), workspace = new Workspace(directory), files = [];
+  const body = ("ordinary text ".repeat(256) + "\n").repeat(1000);
+  for (let index = 0; index < 11; index++) {
+    const file = path.join(directory, `${index}.md`); await writeFile(file, body + `vault-needle-${index}\n`);
+    files.push({ path: file, relative: `${index}.md`, token: `${index}` });
+  }
+  const oversized = path.join(directory, "oversized.md"); await writeFile(oversized, "x".repeat(8 * 1024 * 1024 + 1));
+  let ticks = 0; const timer = setInterval(() => ticks++, 1);
+  try {
+    const result = await workspace.search([...files, { path: oversized }], "vault-needle", { regex: false });
+    assert.equal(result.matches.length, 11); assert.equal(result.skipped, 1); assert.equal(result.truncated, false); assert.ok(ticks > 0);
+    assert.equal((await workspace.search(files, "ordinary", { regex: false })).matches.length, 500);
+    const expired = await workspace.search(files, "absent", { timeout: 0 }); assert.equal(expired.timedOut, true);
+  } finally { clearInterval(timer); }
+});

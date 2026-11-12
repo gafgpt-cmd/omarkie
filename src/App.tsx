@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FilePlus2, FolderOpen, X, AlertCircle } from "lucide-react";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
@@ -6,7 +6,8 @@ import { Toolbar } from "./components/Toolbar";
 import { Sidebar } from "./components/Sidebar";
 import { MarkdownEditor } from "./editor/MarkdownEditor";
 import type { EditorHandle } from "./editor/MarkdownEditor";
-import { extractHeadings, renderMarkdown, setMarkdownOptions } from "./editor/markdown";
+import { fontFacesReady } from "./fontFaces.ts";
+import { loadHighlighting, extractHeadings, renderMarkdown, setMarkdownOptions } from "./editor/markdown";
 import { host } from "./host";
 import { refreshDiagrams, renderDiagrams } from "./editor/diagrams";
 import { renderMath } from "./editor/math";
@@ -14,13 +15,12 @@ import { exportHtml, portableHtml, conversionMarkdown } from "./editor/print";
 import { commandForKey, commandKey, commandsByAction } from "./commands";
 import { loadPreferences } from "./preferences";
 import { applyFonts } from "./fonts";
-import { PreferencesDialog } from "./components/PreferencesDialog";
+const PreferencesDialog = lazy(() => import("./components/PreferencesDialog").then(module => ({ default: module.PreferencesDialog })));
 import { InsertDialog } from "./components/InsertDialog";
 import type { InsertKind } from "./components/InsertDialog";
 import { QuickOpen } from "./components/QuickOpen";
 import { Dialog } from "./components/Dialog";
 import { imageReferences, updateImageReferences } from "./editor/images";
-import { htmlToMarkdown } from "./editor/clipboard";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
 import type { FileOperation } from "./types";
@@ -30,15 +30,18 @@ import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
 import { useSettled } from "./useSettled";
 import { countCharacters } from "./characters";
-import { PluginRuntime } from "./plugins/runtime";
+import type { PluginRuntime } from "./plugins/runtime";
 import { t } from "./i18n";
+import { afterDocumentPaint } from "./plugins/startup";
 import { bundledPlugins, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
 import type { PluginDefinition, PluginState } from "./plugins/types";
-import { PluginsDialog } from "./components/PluginsDialog";
+const PluginsDialog = lazy(() => import("./components/PluginsDialog").then(module => ({ default: module.PluginsDialog })));
 import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 export default function App() {
+  const [painted, setPainted] = useState(false);
+  const [runtimeReady, setRuntimeReady] = useState(false);
   const editors = useRef(new Map<string, EditorHandle>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
@@ -75,6 +78,11 @@ export default function App() {
   pluginContext.current = { active, editor, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
   useEffect(() => {
+    if (!painted || !Object.values(pluginPreferences).some(value => value.enabled)) { setRuntimeReady(false); return; }
+    let cancelled = false;
+    let loaded: PluginRuntime | null = null;
+    void import("./plugins/runtime").then(({ PluginRuntime }) => {
+    if (cancelled) return;
     const runtime = new PluginRuntime({
       getMarkdown: () => pluginContext.current.editor()?.markdown() ?? pluginContext.current.active?.content ?? "", getPath: () => pluginContext.current.active?.path || null,
       getSelection: () => pluginContext.current.editor()?.selectionText() || "",
@@ -86,18 +94,24 @@ export default function App() {
       reservedHotkeys: [...commandsByAction.values()].map(command => commandKey(command) || "").filter(Boolean),
       saveConfig: (id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config: { ...previous[id]?.config, ...config } } })),
     });
-    pluginRuntime.current = runtime;
-    return () => { pluginRuntime.current = null; void runtime.destroy(); };
-  }, []);
+    loaded = runtime; pluginRuntime.current = runtime; setRuntimeReady(true);
+    }).catch(error => session.setMessage(error.message));
+    return () => { cancelled = true; pluginRuntime.current = null; void loaded?.destroy(); };
+  }, [painted, Object.values(pluginPreferences).some(value => value.enabled)]);
   useEffect(() => {
-    if (!session.ready) return;
+    if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
-  }, [session.ready, dialog === "plugins"]);
+  }, [painted, dialog === "plugins"]);
   useEffect(() => {
     localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
     if (!session.ready || !active) return;
-    for (const definition of pluginDefinitions) void pluginRuntime.current?.setEnabled(definition, !!pluginPreferences[definition.id]?.enabled);
-  }, [pluginDefinitions, pluginPreferences, session.ready, !!active]);
+    for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
+    if (!pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    return afterDocumentPaint(() => {
+      for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
+    });
+  }, [pluginDefinitions, pluginPreferences, session.ready, !!active, runtimeReady]);
+  useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
   useEffect(() => { pluginRuntime.current?.documentChanged(); }, [active?.id, active?.path, active?.content]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !rendered); }, [rendered]);
@@ -126,9 +140,11 @@ export default function App() {
     localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
   }, [preferences]);
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar).catch(() => {}); }, [focus, typewriter, sidebar]);
+  const checked = { source: !rendered, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
+  const menuContext = editor()?.context() || "";
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, rendered, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
-  useEffect(() => { if (session.ready) void refreshThemes().catch(e => session.setMessage(e.message)); }, [session.ready]);
+  useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
   // omarkie-theme also stores the automatic default; only a theme the user picked is kept over Omarchy.
   function chooseTheme(next: string | ((value: string) => string)) { localStorage.setItem("omarkie-theme-chosen", "true"); themeUnset.current = false; setTheme(next); }
@@ -136,9 +152,9 @@ export default function App() {
     const palette = await host.omarchyTheme().catch(() => null); setOmarchy(palette);
     if (palette && themeUnset.current) { themeUnset.current = false; setTheme("omarchy"); }
   }
-  useEffect(() => { void refreshOmarchy(); }, []);
-  useEffect(() => { const remove = applyTheme(theme, themes, omarchy); void refreshDiagrams().catch(() => {}); return remove; }, [theme, themes, omarchy]);
-  useEffect(() => applyFonts(preferences, omarchy?.font ?? null), [preferences.documentFont, preferences.headingFont, preferences.codeFont, preferences.interfaceFont, omarchy]);
+  useEffect(() => { if (painted) void refreshOmarchy(); }, [painted]);
+  useLayoutEffect(() => { const remove = applyTheme(theme, themes, omarchy); void refreshDiagrams().catch(() => {}); return remove; }, [theme, themes, omarchy]);
+  useLayoutEffect(() => applyFonts(preferences, omarchy?.font ?? null), [preferences.documentFont, preferences.headingFont, preferences.codeFont, preferences.interfaceFont, omarchy]);
   async function refreshBackground() {
     const request = ++backgroundRequest.current, asset = await host.background();
     if (request === backgroundRequest.current) setBackground(asset);
@@ -153,7 +169,7 @@ export default function App() {
   }
   async function installTheme() { const selected = await host.installTheme(); if (selected) { await refreshThemes(); chooseTheme("custom:" + selected); } }
   async function importDocument() {
-    try { const imported = await host.importDocument(); if (!imported) return; const content = imported.markdown ?? htmlToMarkdown(imported.html || ""), record = { id: crypto.randomUUID(), path: null, name: imported.name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }
+    try { const imported = await host.importDocument(); if (!imported) return; const content = imported.markdown ?? (await import("./editor/clipboard")).htmlToMarkdown(imported.html || ""), record = { id: crypto.randomUUID(), path: null, name: imported.name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }
     catch (e) { session.setMessage((e as Error).message); }
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
@@ -164,7 +180,9 @@ export default function App() {
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
     try {
       await host.persist({ documents: session.documents, activeId: session.activeId });
+      await loadHighlighting();
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
+      await fontFacesReady();
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
       const result = kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
@@ -203,6 +221,7 @@ export default function App() {
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();
     else if (action === "open") void session.open();
     else if (action === "folder") void session.openFolder();
+    else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
@@ -234,6 +253,10 @@ export default function App() {
     else if (action === "find-previous") editor()?.findNext(true);
     else if (action === "undo") editor()?.undo();
     else if (action === "redo") editor()?.redo();
+    else if (["cut", "copy", "paste", "select-all"].includes(action)) {
+      editor()?.focus();
+      void window.desktop?.editRole(action === "select-all" ? "selectAll" : action);
+    }
     else if (action === "bold") editor()?.wrap("**", "**");
     else if (action === "italic") editor()?.wrap("*", "*");
     else if (action === "underline") editor()?.wrap("<u>", "</u>");
@@ -264,17 +287,27 @@ export default function App() {
     })().catch(error => session.setMessage(error.message));
     else editor()?.command(action);
   };
-  useEffect(() => { if (session.ready && window.desktop?.ready) void window.desktop.ready(); }, [session.ready]);
+  useEffect(() => {
+    if (!session.ready) return;
+    performance.mark("omarkie:session-restored");
+    void window.desktop?.ready?.();
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => {
+      performance.mark("omarkie:first-document-painted");
+      setPainted(true);
+    }); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [session.ready]);
   useEffect(() => host.onCommand((command) => commands.current(command)), []);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
-      if (imeKey(event) || pluginContext.current.editor()?.composing() || (event.target as HTMLElement)?.closest('input,textarea,select,[role="dialog"]')) return;
+      if (imeKey(event) || pluginContext.current.editor()?.composing() || document.querySelector(".utility-dialog") || (event.target as HTMLElement)?.closest('input,textarea,select,[role="dialog"]')) return;
       if (event.key === "Escape") {
         setFocus(false);
         setAbout(false);
       }
       const action = commandForKey(event);
-      if (host.native && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
+      if (window.desktop?.windowAction && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
       if (action) {
         event.preventDefault();
         event.stopPropagation();
@@ -307,6 +340,7 @@ export default function App() {
       className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}`}
     >
       <Toolbar
+        checked={checked}
         name={active?.name || ""}
         edited={!!active && active.content !== active.savedContent}
         rendered={rendered}
@@ -430,8 +464,9 @@ export default function App() {
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) requestAnimationFrame(() => editors.current.get(record.id)?.jump(match.line)); }} />}
-      {dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
-      {dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}
+      <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
+      </Suspense>
+      <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>
       {dialog === "quick-open" && <QuickOpen documents={session.documents} files={session.files} recent={session.recent} openRecent={path => session.recentAction("open", path)} select={session.setActiveId} open={session.openToken} close={closeDialog} />}
       {dialog && ["table", "link", "reference-link", "footnote"].includes(dialog) && <InsertDialog kind={dialog as InsertKind} selected={selectedText} close={closeDialog} submit={value => {
         if (dialog === "link") editor()?.insert(`[${(value.label || value.value || "链接").replace(/[\[\]]/g, character => "\\" + character)}](${value.value})`);
@@ -460,7 +495,7 @@ export default function App() {
             <h2>Omarkie</h2>
             <p>{t("让文字，回到文字。")}</p>
             <p className="about-details">
-              {appVersion} · {t("本地 Markdown 写作空间")}
+              {appVersion} ({document.querySelector<HTMLMetaElement>('meta[name="omarkie-build"]')?.content || "dev"}) · {t("本地 Markdown 写作空间")}
               <br />
               {t("MIT 开源 · 独立实现")}
             </p>

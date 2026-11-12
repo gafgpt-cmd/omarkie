@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
-import { language, t } from "./i18n";
+import { t } from "./i18n";
 import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
   const prepareEditor = useRef(canPrepare); prepareEditor.current = canPrepare;
@@ -37,7 +37,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
   useEffect(() => {
     let disposed = false;
     void host
-      .restore(language, t("示例笔记"))
+      .restore()
       .then(async (session) => {
         if (disposed) return;
         const records = session?.documents || [];
@@ -244,6 +244,19 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
         setRecent(await host.recent());
         reportFolderScan(result);
       }
+    } catch (error) {
+      notify(error);
+    }
+  }
+  async function openShowcase() {
+    try {
+      const result = await host.showcase();
+      if (result.folder) {
+        setFiles(result.files);
+        setFolder(result.folder);
+        reportFolderScan(result);
+      }
+      await add(result.document);
     } catch (error) {
       notify(error);
     }
@@ -468,6 +481,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     create,
     open,
     openFolder,
+    openShowcase,
     openToken,
     refresh,
     close,

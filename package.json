@@ -1,6 +1,6 @@
 {
   "name": "omarkie",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A local Markdown writing space with live rendering and lossless source editing.",
   "private": true,
   "type": "module",
@@ -13,13 +13,14 @@
     "start": "electron .",
     "test": "node --import ./tests/setup-language.mjs --test tests/*.test.mjs",
     "test:desktop": "node tests/desktop.mjs",
+    "test:perf": "node tests/perf-desktop.mjs",
     "package:mac": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs",
     "install:app": "npm run package:mac && node scripts/install.mjs",
     "test:native": "node scripts/test-native.mjs",
     "package:preview": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs --preview",
     "test:webkit": "npm run build && node scripts/test-webkit.mjs",
     "test:kernel-desktop": "node tests/kernel-desktop.mjs",
-    "test:features": "node tests/features-desktop.mjs",
+    "test:features": "node tests/features-desktop.mjs && node tests/menu-desktop.mjs && node tests/background-desktop.mjs && node tests/plugin-package-desktop.mjs",
     "test:alignment": "node tests/alignment-desktop.mjs",
     "test:encoding": "node tests/encoding-desktop.mjs",
     "package:dmg": "npm run package:mac && node scripts/package-dmg.mjs",
@@ -31,7 +32,8 @@
     "test:background-desktop": "node tests/background-desktop.mjs",
     "package:linux": "npm run build && node scripts/icon.mjs && node scripts/package-linux.mjs",
     "package:arch": "npm run build && node scripts/icon.mjs && node scripts/package-arch.mjs",
-    "test:parity": "node tests/parity-desktop.mjs"
+    "test:parity": "node tests/parity-desktop.mjs",
+    "dictionaries": "node scripts/spellcheck-dictionaries.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",
@@ -99,6 +101,7 @@
       "dist/**/*",
       "electron/**/*",
       "shared/**/*",
+      "docs/showcase/**/*",
       "package.json"
     ],
     "asar": true,

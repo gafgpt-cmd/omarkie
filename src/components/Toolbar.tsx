@@ -28,6 +28,7 @@ interface Props {
   autosave: boolean;
   disabled: boolean;
   context: string;
+  checked?: Record<string, boolean>;
 }
 export function Toolbar(props: Props) {
   const [open, setOpen] = useState(false),
@@ -62,7 +63,7 @@ export function Toolbar(props: Props) {
   return (
     <>
       <header className="toolbar">
-        {window.desktop && /Linux/.test(navigator.platform) && <MenuBar command={props.command} rendered={props.rendered} disabled={props.disabled} context={props.context} />}
+        {window.desktop && /Linux/.test(navigator.platform) && <MenuBar command={props.command} rendered={props.rendered} disabled={props.disabled} context={props.context} checked={props.checked} />}
         <span className="document-title" title={props.name}>
           {props.name || "Omarkie"}
           {props.edited && <span className="title-edited"> — {t("已编辑")}</span>}
@@ -106,7 +107,8 @@ export function Toolbar(props: Props) {
             }}>
               {items.map(({ action, icon: Icon, label, shortcut }) => (
                 <button
-                  role="menuitem"
+                  role={action in (props.checked || {}) ? "menuitemcheckbox" : "menuitem"}
+                  aria-checked={props.checked?.[action]}
                   aria-label={label}
                   disabled={
                     !props.rendered &&
@@ -118,16 +120,16 @@ export function Toolbar(props: Props) {
                     props.command(action);
                   }}
                 >
-                  <Icon size={16} />
+                  {props.checked?.[action] ? <Check size={16} /> : <Icon size={16} />}
                   <span>{label}</span>
                   <kbd aria-hidden="true">{shortcut}</kbd>
                 </button>
               ))}
               {commandGroups.filter(group => ["段落", "表格", "格式", "显示", "编辑", "文件"].includes(group.title)).map(group => {
-                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action));
-                return <section className="command-group" key={group.title}><div className="menu-divider" /><p>{t(group.title)}</p>{extra.map(item => <button key={item.action} role="menuitem" aria-label={t(item.label)} disabled={
+                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction));
+                return <section className="command-group" key={group.title}><div className="menu-divider" /><p>{t(group.title)}</p>{extra.map(item => <button key={item.action} role={item.action in (props.checked || {}) ? "menuitemcheckbox" : "menuitem"} aria-checked={props.checked?.[item.action]} aria-label={t(item.label)} disabled={
                   !!item.context && (props.disabled || (["rich", "table"].includes(item.context) && !props.rendered) || (item.context === "table" && props.context !== "table_open"))
-                } onClick={() => { setOpen(false); props.command(item.action); }}><span className="menu-check" /><span>{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}</section>;
+                } onClick={() => { setOpen(false); props.command(item.action); }}><span className="menu-check">{props.checked?.[item.action] && <Check size={16} />}</span><span>{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}</section>;
               })}
               <div className="menu-divider" />
               <button

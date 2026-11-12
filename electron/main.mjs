@@ -12,6 +12,7 @@ import {
 } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
@@ -26,11 +27,20 @@ import { readOmarchyTheme, watchOmarchyTheme } from "./omarchy.mjs";
 import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
+import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
+import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
+const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
+function startupMark(name) {
+  if (!traceStartup) return;
+  performance.mark(`omarkie:${name}`);
+  console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
+}
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 if (process.env.OMARKIE_DATA_DIR)
   app.setPath("userData", process.env.OMARKIE_DATA_DIR);
 app.setName("Omarkie");
+seedDictionaries(dictionarySource(root), app.getPath("userData"));
 protocol.registerSchemesAsPrivileged([
   { scheme: "omarkie", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   {
@@ -39,6 +49,9 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 let languageChoice = "auto", language = "zh", buildMenu = () => {}, remoteImages = false;
+let viewChecked = {};
+let menuDefinitions = [], viewDisabled = true, viewContext = "";
+const commandEnabled = item => !item.context || !viewDisabled && (!["rich", "table"].includes(item.context) || !viewChecked.source) && (item.context !== "table" || viewContext === "table_open");
 function applyLanguage(choice) {
   languageChoice = choice;
   language = resolveLanguage(choice, app.getPreferredSystemLanguages());
@@ -50,6 +63,8 @@ let window,
   closing = false;
 const pending = [];
 let rendererReady = false;
+let revealWindow = () => {};
+
 const pluginToken = randomUUID();
 const authorizedPlugin = item => item && ({ ...item, url: item.url + "?token=" + pluginToken });
 function openFiles(files) {
@@ -87,6 +102,19 @@ ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== wi
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
 const handlers = {
+  viewState: (_, _focus, _typewriter, _sidebar, checked, disabled, context) => {
+    viewChecked = checked || {};
+    viewDisabled = disabled === true;
+    viewContext = context;
+    for (const action of ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"]) {
+      const item = Menu.getApplicationMenu()?.getMenuItemById(action);
+      if (item) item.checked = checked?.[action] === true;
+    }
+    for (const definition of menuDefinitions) {
+      const item = Menu.getApplicationMenu()?.getMenuItemById(definition.action);
+      if (item) item.enabled = commandEnabled(definition);
+    }
+  },
   background: () => readBackground(store.dataDir),
   clearBackground: () => clearBackground(store.dataDir),
   chooseBackground: async () => {
@@ -108,10 +136,15 @@ const handlers = {
   },
   plugins: async () => (await plugins(store.dataDir)).map(authorizedPlugin),
   removePlugin: async (_, id) => { if (!/^local-[a-f0-9]{64}$/.test(id)) throw new Error(t("插件标识无效。")); const root = await realpath(path.join(store.dataDir, "plugins")); if (path.dirname(root) !== await realpath(store.dataDir)) throw new Error(t("插件目录无效。")); for (const suffix of [".json", ".mjs"]) { const file = path.join(root, id + suffix); try { if (path.dirname(await realpath(file)) !== root) throw new Error(t("插件资源路径无效。")); await shell.trashItem(file); } catch (error) { if (error.code !== "ENOENT") throw error; } } return true; },
-  installPlugin: async (folder = false) => { const result = await dialog.showOpenDialog(window, folder ? { title: t("安装插件文件夹"), properties: ["openDirectory"] } : { filters: [{ name: "JavaScript", extensions: ["js", "cjs"] }], properties: ["openFile"] }); return result.canceled ? null : authorizedPlugin(await installPlugin(result.filePaths[0], store.dataDir)); },
+  installPlugin: async (_, folder = false) => { const result = await dialog.showOpenDialog(window, folder ? { title: t("安装插件文件夹"), properties: ["openDirectory"] } : { filters: [{ name: "JavaScript", extensions: ["js", "cjs"] }], properties: ["openFile"] }); return result.canceled ? null : authorizedPlugin(await installPlugin(result.filePaths[0], store.dataDir)); },
   themes: () => themes(store.dataDir),
   omarchyTheme: () => readOmarchyTheme(),
   editRole: async (event, role) => { if (["cut", "copy", "paste", "selectAll"].includes(role)) event.sender[role](); },
+  spellcheckLanguages: (_, languages) => {
+    const available = session.defaultSession.availableSpellCheckerLanguages;
+    if (Array.isArray(languages) && process.platform !== "darwin") session.defaultSession.setSpellCheckerLanguages([...new Set(languages.filter(code => typeof code === "string" && available.includes(code)))]);
+    return available;
+  },
   setRemoteImages: async (_, value) => { remoteImages = value === true; return true; },
   setLanguage: async (_, choice) => {
     if (choice !== "auto" && !languages.some(([code]) => code === choice)) throw new Error(t("语言无效。"));
@@ -122,7 +155,7 @@ const handlers = {
   installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : installTheme(result.filePaths[0], store.dataDir); },
   readResource: async (_, address) => exportResource(address,store,path.join(root,"dist")),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
-  conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) process.env.OMARKIE_PANDOC = result.filePaths[0]; } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
+  conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   exportConverted: async (_, id, format, source, html) => { const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format; const result = await dialog.showSaveDialog(window, { defaultPath: record.name.replace(/\.[^.]+$/, "." + ext) }); return result.canceled ? null : convertExport(store.dataDir, format, source, html, result.filePath); },
   imageAction: async (_, id, sources, action, options) => {
@@ -136,7 +169,12 @@ const handlers = {
     if (action === "delete") { const result = await dialog.showMessageBox(window,{type:"warning",message:t("删除图片文件？"),detail:t("图片文件会移到废纸篓，文档中的引用也会移除。"),buttons:[t("取消"),t("移到废纸篓")],defaultId:0,cancelId:0}); if(result.response !== 1) return null; }
     return imageAction({store,id,sources,action,options,destination,directory,trash:file=>shell.trashItem(file),notice:message=>window.webContents.send("app:command",{action:"notice",message})});
   },
-  ready: async () => { rendererReady = true; for (const file of pending.splice(0)) {
+  ready: async () => {
+    if (traceStartup) {
+      const marks = await window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))');
+      for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
+    }
+    rendererReady = true; revealWindow(); for (const file of pending.splice(0)) {
     try { send({ action: "opened", document: await store.open(file) }); }
     catch (error) { showError(error); }
   } return true; },
@@ -160,25 +198,25 @@ const handlers = {
   },
   restore: async () => {
     const restored = await store.restore();
-    if (restored) return restored;
-    const localized = language === "zh" ? null : JSON.parse(await readFile(path.join(root, "shared/samples.i18n.json"), "utf-8"));
-    const samples = localized ? localized[language] ?? localized.en : JSON.parse(
-      await readFile(path.join(root, "shared/samples.json"), "utf-8"),
-    );
-    const folder = path.join(app.getPath("userData"), t("示例笔记"));
-    const documents = [];
-    for (const sample of samples) {
-      const file = path.join(folder, sample.name);
-      try {
-        await readFile(file);
-      } catch (error) {
-        if (error.code === "ENOENT") await atomicWrite(file, process.platform !== "darwin" ? sample.content.replace(/⌘\s*/g, "Ctrl+") : sample.content);
-        else throw error;
+    if (pending.length) {
+      const documents = [...(restored?.documents || [])];
+      let activeId = restored?.activeId;
+      for (const file of pending.splice(0)) {
+        try {
+          const record = await store.open(file), index = documents.findIndex(item => item.id === record.id);
+          if (index < 0) documents.push(record); else documents[index] = record;
+          activeId = record.id;
+        } catch (error) { showError(error); }
       }
-      documents.push(await store.open(file));
+      if (documents.length) return { ...restored, documents, activeId };
     }
-    await store.scan(folder);
-    return { documents, activeId: documents[0].id, folder };
+    if (restored) return restored;
+    const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
+    return { documents, activeId: documents[0].id, folder: folder.folder };
+  },
+  showcase: async () => {
+    const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName), [showcaseDocuments[0]]);
+    return { ...folder, document: documents[0] };
   },
   draft: (_, record) => store.registerDraft(record),
   open: async () => {
@@ -187,14 +225,20 @@ const handlers = {
       properties: ["openFile"],
       filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown"] }],
     });
-    return result.canceled ? null : store.open(result.filePaths[0]);
+    if (result.canceled) return null;
+    const record = await store.open(result.filePaths[0]);
+    await workspace.remember(record.path);
+    return record;
   },
   folder: async () => {
     const result = await dialog.showOpenDialog(window, {
       title: t("打开笔记文件夹"),
       properties: ["openDirectory"],
     });
-    return result.canceled ? null : store.scan(result.filePaths[0]);
+    if (result.canceled) return null;
+    const scanned = await store.scan(result.filePaths[0]);
+    await workspace.remember(scanned.folder, true);
+    return scanned;
   },
   scan: () => store.scan(),
   token: async (_, token) => { const record = await store.openToken(token); await workspace.remember(record.path); return record; },
@@ -313,9 +357,11 @@ const handlers = {
 app
   .whenReady()
   .then(async () => {
+    startupMark("main-process-ready");
     if (process.platform !== "darwin" && !app.hasSingleInstanceLock()) return;
     store = new DocumentStore(app.getPath("userData"));
     workspace = new Workspace(app.getPath("userData"));
+    if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
     applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());
     ipcMain.on("app:language", event => { event.returnValue = event.sender === window?.webContents ? { language, choice: languageChoice } : null; });
     protocol.handle("omarkie", async request => {
@@ -328,6 +374,8 @@ app
         return new Response(bytes, { headers });
       } catch { return new Response("Resource unavailable", { status: 404 }); }
     });
+    const photoPreviews = new PhotoPreviews(path.join(store.dataDir, "photo-previews"),
+      (file, width) => chromiumPreview(window.webContents, file, width), file => shell.trashItem(file));
     protocol.handle("omarkie-asset", async (request) => {
       try {
         const url = new URL(request.url);
@@ -336,11 +384,17 @@ app
           decodeURIComponent(id),
           decodeURIComponent(rest.join("/")),
         );
-        return net.fetch(pathToFileURL(file).href);
+        const served = await photoPreviews.get(file, Number(url.searchParams.get("preview")));
+        const response = await net.fetch(pathToFileURL(served).href);
+        if (!url.searchParams.has("preview") || served !== file) return response;
+        // The original stands in until the preview exists; keep Chromium from reusing it for this preview URL.
+        const headers = new Headers(response.headers); headers.set("Cache-Control", "no-store");
+        return new Response(response.body, { status: response.status, headers });
       } catch {
         return new Response("Image unavailable", { status: 404 });
       }
     });
+    session.defaultSession.setSpellCheckerDictionaryDownloadURL(dictionaryDownloadURL(dictionarySource(root)));
     const devOrigin = development ? new URL(development).origin : null;
     session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) =>
       callback({ cancel: !!window && details.webContentsId === window.webContents.id && blocksRequest(details.url, devOrigin, remoteImages) }));
@@ -373,11 +427,24 @@ app
         webPreferences: {
           backgroundThrottling: process.env.OMARKIE_TEST_HIDDEN !== "1",
           preload: path.join(root, "electron/preload.cjs"),
+          v8CacheOptions: "code",
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
         },
       });
+      const created = window;
+      let paintReady = false, revealing = false;
+      revealWindow = () => {
+        if (!paintReady || !rendererReady || revealing || created.isDestroyed()) return;
+        revealing = true;
+        void created.webContents.executeJavaScript('getComputedStyle(document.documentElement).getPropertyValue("--paper").trim()').catch(() => "").then(color => {
+          if (created.isDestroyed()) return;
+          if (/^#[0-9a-f]{3,8}$/i.test(color)) created.setBackgroundColor(color);
+          if (process.env.OMARKIE_TEST_HIDDEN !== "1") { created.show(); startupMark("window-shown"); }
+        });
+      };
+      created.once("ready-to-show", () => { paintReady = true; revealWindow(); });
       session.defaultSession.setPermissionRequestHandler((_, __, callback) =>
         callback(false),
       );
@@ -404,17 +471,21 @@ app
         app.quit();
       }
     });
-    const command = (action) => () => send(action);
+    createWindow();
+    const command = (action) => item => {
+      if (item?.type === "checkbox") item.checked = viewChecked[action] === true;
+      send(action);
+    };
     const groups = JSON.parse(await readFile(path.join(root, "shared/commands.json"), "utf8"));
+    menuDefinitions = groups.flatMap(group => group.items);
     const roles = { "cut:": "cut", "copy:": "copy", "paste:": "paste", "selectAll:": "selectAll" };
     const accelerator = key => key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
     buildMenu = () => Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: "Omarkie", submenu: [{ label: t("关于 Omarkie"), click: command("about") }, { label: t("偏好设置…"), accelerator: "CommandOrControl+,", click: command("preferences") }, ...(process.platform === "darwin" ? [{ type: "separator" }, { role: "hide", label: t("隐藏 Omarkie") }, { role: "hideOthers", label: t("隐藏其他应用") }] : []), { type: "separator" }, { label: t("退出 Omarkie"), accelerator: "CommandOrControl+Q", click: command("quit") }] },
-      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => item.action !== "preferences").map(item => ({ label: t(item.label), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
+      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"].includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
       { role: "windowMenu", label: t("窗口") }
     ]));
     buildMenu();
-    createWindow();
     if (process.platform === "linux") watchOmarchyTheme(() => send("omarchy-theme"));
     app.on("activate", () => {
       if (!window) {

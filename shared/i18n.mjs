@@ -6,17 +6,7 @@ import ro from "./locales/ro.json" with { type: "json" };
 
 // The Chinese UI text is the key; zh needs no catalogue.
 const resources = { en: { translation: en }, es: { translation: es }, ca: { translation: ca }, ro: { translation: ro } };
-export const languages = [["en", "English"], ["es", "Español"], ["ca", "Català"], ["ro", "Română"], ["zh", "中文"]];
-const supported = new Set(languages.map(([code]) => code));
-
-export function resolveLanguage(choice, locales = []) {
-  if (supported.has(choice)) return choice;
-  for (const locale of locales) {
-    const base = String(locale).toLowerCase().split(/[-_.]/)[0];
-    if (supported.has(base)) return base;
-  }
-  return "en";
-}
+export { languages, resolveLanguage } from "./languages.mjs";
 
 export function createTranslator(language) {
   const instance = i18next.createInstance();

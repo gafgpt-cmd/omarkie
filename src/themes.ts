@@ -1,3 +1,4 @@
+import { loadFontFaces } from "./fontFaces.ts";
 import { omarchyTheme, omarchyThemes, toyporaOmarchyTheme, type OmarchyPalette } from "./omarchyTheme.ts";
 export { toggledTheme, type OmarchyPalette } from "./omarchyTheme.ts";
 import { omarchyFontsTheme, toyporaThemes } from "./toyporaTheme.ts";
@@ -27,6 +28,7 @@ export function applyTheme(id: string, custom: { id: string; css: string }[] = [
   const selected = custom.find(theme => id === "custom:" + theme.id);
   const style = document.createElement("style"); style.dataset.customTheme = "true";
   style.textContent = builtin.css + (selected ? adaptThemeCss(selected.css) + ":root[data-theme][data-appearance]{--paper:var(--bg-color,#fff);--ink:var(--text-color,#333);--sidebar:var(--side-bar-bg-color,#fafafa);--accent:var(--primary-color,#326eaa)}" : "");
+  loadFontFaces(style.textContent || "");
   document.head.append(style);
   document.documentElement.dataset.theme = id;
   document.documentElement.dataset.appearance = builtin.dark ? "dark" : "light";

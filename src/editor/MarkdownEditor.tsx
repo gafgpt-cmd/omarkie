@@ -1,3 +1,6 @@
+import type { EditorView } from "@codemirror/view";
+import type { Compartment } from "@codemirror/state";
+import { codeMirror, loadCodeMirror } from "./loadCodeMirror.ts";
 import { codeSelectionCommand, selectionActions } from "./selectionCommands";
 import { ImageDialog } from "../components/ImageDialog";
 import { imageReferences } from "./images";
@@ -11,23 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { EditorState, Compartment } from "@codemirror/state";
-import {
-  EditorView,
-  keymap,
-  drawSelection,
-  highlightActiveLine,
-} from "@codemirror/view";
-import { defaultKeymap, indentWithTab } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import {
-  syntaxHighlighting,
-  defaultHighlightStyle,
-  bracketMatching,
-  indentUnit,
-} from "@codemirror/language";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { search, searchKeymap, openSearchPanel, findNext as cmFindNext, findPrevious as cmFindPrevious } from "@codemirror/search";
+
 import { MarkdownDocument, richTextLimit } from "./model.ts";
 import { RichEditor } from "./RichEditor.ts";
 import { host } from "../host";
@@ -119,16 +106,16 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         model.current?.refreshCaret(); rich.current.render(false);
       }
       if (source.current) source.current.contentDOM.spellcheck = preferences?.spellcheck ?? false;
-      source.current?.dispatch({ effects: sourceBehavior.current.reconfigure(sourceOptions()) });
-      if (typewriter && source.current && !activeMode.current) source.current.dispatch({ effects: EditorView.scrollIntoView(source.current.state.selection.main.head, { y: "center" }) });
+      source.current?.dispatch({ effects: sourceBehavior.current!.reconfigure(sourceOptions()) });
+      if (typewriter && source.current && !activeMode.current) source.current.dispatch({ effects: codeMirror!.EditorView.scrollIntoView(source.current.state.selection.main.head, { y: "center" }) });
     }
     function compositionFinished() {
       if (pendingOptions.current) applyViewOptions();
       callbacks.current.onCompositionEnd?.();
       setMode(requested.current);
     }
-    const sourceBehavior = useRef(new Compartment());
-    const sourceOptions = () => [EditorState.readOnly.of(viewOptions.current.readOnly), EditorView.editable.of(!viewOptions.current.readOnly), indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [closeBrackets(), keymap.of(closeBracketsKeymap)] : [])];
+    const sourceBehavior = useRef<Compartment | null>(null);
+    const sourceOptions = () => [codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
     const viewOptions = useRef({ preferences, typewriter, readOnly });
     viewOptions.current = { preferences, typewriter, readOnly };
     function historyState() {
@@ -145,7 +132,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           .catch(() => {});
     }
     function focusEditor() {
-      if (activeMode.current) rich.current?.restore();
+      if (activeMode.current && rich.current) rich.current.restore(rich.current.bookmark());
       else source.current?.focus();
     }
     // Beyond the rich-mode limits (12 MB, or one block over 256 KB) the source view takes over, with one notice per document.
@@ -245,13 +232,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     function ensureSource() {
       if (source.current || !sourceParent.current || !model.current) return;
       const doc = model.current;
-      source.current = new EditorView({
+      sourceBehavior.current ??= new codeMirror!.Compartment();
+      source.current = new codeMirror!.EditorView({
         parent: sourceParent.current,
-        state: EditorState.create({
+        state: codeMirror!.EditorState.create({
           doc: doc.text,
           selection: doc.selection,
           extensions: [
-            EditorState.phrases.of({
+            codeMirror!.EditorState.phrases.of({
               Find: t("查找"),
               Replace: t("替换为"),
               next: t("下一个"),
@@ -266,15 +254,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
               "current match": t("当前匹配"),
               "on line": t("所在行"),
             }),
-            drawSelection(),
-            EditorView.lineWrapping,
-            highlightActiveLine(),
-            markdown({ base: markdownLanguage }),
-            syntaxHighlighting(defaultHighlightStyle),
-            bracketMatching(),
-            sourceBehavior.current.of(sourceOptions()),
-            search({ top: true }),
-            keymap.of([
+            codeMirror!.drawSelection(),
+            codeMirror!.EditorView.lineWrapping,
+            codeMirror!.highlightActiveLine(),
+            codeMirror!.markdown({ base: codeMirror!.markdownLanguage }),
+            codeMirror!.syntaxHighlighting(codeMirror!.defaultHighlightStyle),
+            codeMirror!.bracketMatching(),
+            sourceBehavior.current!.of(sourceOptions()),
+            codeMirror!.search({ top: true }),
+            codeMirror!.keymap.of([
               {
                 key: "Mod-z",
                 run: () => {
@@ -289,15 +277,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                   return true;
                 },
               },
-              ...searchKeymap,
-              ...defaultKeymap,
-              indentWithTab,
+              ...codeMirror!.searchKeymap,
+              ...codeMirror!.defaultKeymap,
+              codeMirror!.indentWithTab,
             ]),
-            EditorView.contentAttributes.of({
+            codeMirror!.EditorView.contentAttributes.of({
               "aria-label": t("Markdown 源码编辑器"),
               spellcheck: "false",
             }),
-            EditorView.updateListener.of((update) => {
+            codeMirror!.EditorView.updateListener.of((update) => {
               if (syncing.current) return;
               const selected = update.state.selection.main;
               if (update.docChanged) {
@@ -333,11 +321,11 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                 );
                 callbacks.current.onSelection?.(update.state.sliceDoc(selected.from, selected.to));
                 if (viewOptions.current.typewriter) requestAnimationFrame(() => {
-                  if (source.current === update.view) update.view.dispatch({ effects: EditorView.scrollIntoView(selected.head, { y: "center" }) });
+                  if (source.current === update.view) update.view.dispatch({ effects: codeMirror!.EditorView.scrollIntoView(selected.head, { y: "center" }) });
                 });
               }
             }),
-            EditorView.domEventHandlers({
+            codeMirror!.EditorView.domEventHandlers({
               paste(event) {
                 const images = [...(event.clipboardData?.files || [])].filter(
                   (file) => file.type.startsWith("image/"),
@@ -383,6 +371,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       const doc = model.current;
       if (!doc) return;
       value = value && richAllowed(doc);
+      if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
       doc.closeGroup();
       if (value) {
@@ -416,7 +405,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         find: () => {
           if (!activeMode.current) {
             ensureSource();
-            openSearchPanel(source.current!);
+            codeMirror!.openSearchPanel(source.current!);
             return;
           }
           setSearchOpen(true);
@@ -433,7 +422,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
             );
             source.current.dispatch({
               selection: { anchor: target.from },
-              effects: EditorView.scrollIntoView(target.from, {
+              effects: codeMirror!.EditorView.scrollIntoView(target.from, {
                 y: "start",
                 yMargin: 30,
               }),
@@ -477,7 +466,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           return selected ? source.current!.state.sliceDoc(selected.from, selected.to) : "";
         },
         clearFormat: () => { if (activeMode.current && !viewOptions.current.readOnly) rich.current?.clearFormat(); },
-        findNext: (back = false) => { if (activeMode.current) findNext(back); else if (source.current) (back ? cmFindPrevious : cmFindNext)(source.current); },
+        findNext: (back = false) => { if (activeMode.current) findNext(back); else if (source.current) (back ? codeMirror!.cmFindPrevious : codeMirror!.cmFindNext)(source.current); },
         undo: () => history(),
         redo: () => history(true),
         focus: focusEditor,
@@ -534,6 +523,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         source.current?.destroy();
         rich.current = null;
         source.current = null;
+        model.current = null;
       };
     }, []);
     useEffect(() => {

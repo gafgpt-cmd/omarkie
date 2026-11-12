@@ -299,7 +299,7 @@ export class DocumentStore {
   async persist(session) {
     if (!session || !Array.isArray(session.documents))
       throw new Error(t("恢复数据无效。"));
-    const documents = session.documents.slice(0, 100).map((document) => {
+    const documents = session.documents.map((document) => {
       const record = this.require(document.id);
       if (
         typeof document.content !== "string" ||
@@ -332,7 +332,7 @@ export class DocumentStore {
       if (session.version !== 1 || !Array.isArray(session.documents))
         return null;
       const documents = [];
-      for (const record of session.documents.slice(0, 100)) {
+      for (const record of session.documents) {
         if (typeof record.id !== "string" || typeof record.content !== "string")
           continue;
         if (record.path) {

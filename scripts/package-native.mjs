@@ -1,8 +1,9 @@
-import { mkdir, cp, writeFile, rm, readdir } from "node:fs/promises";
+import { mkdir, cp, writeFile, rm, readdir, readFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { licenseNotices } from "./license-notices.mjs";
 import pkg from "../package.json" with { type: "json" };
+import { archPkgver, describeBuild } from "./arch-electron.mjs";
 const preview = process.argv.includes("--preview");
 const app = path.resolve(
     preview
@@ -39,9 +40,11 @@ execFileSync(
 );
 await rm(path.join(resources, "dist"), { recursive: true, force: true });
 await cp("dist", path.join(resources, "dist"), { recursive: true });
+const index = path.join(resources, "dist/index.html");
+await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
 await cp("native/bridge.js", path.join(resources, "bridge.js"));
-await cp("shared/samples.json", path.join(resources, "samples.json"));
-await cp("shared/samples.i18n.json", path.join(resources, "samples.i18n.json"));
+await rm(path.join(resources, "showcase"), { recursive: true, force: true });
+await cp("docs/showcase", path.join(resources, "showcase"), { recursive: true });
 await cp("shared/commands.json", path.join(resources, "commands.json"));
 await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
 await cp("build/icon.icns", path.join(resources, "icon.icns"));

@@ -1,12 +1,11 @@
+import type { EditorView } from "@codemirror/view";
+import type { Compartment } from "@codemirror/state";
+import { codeMirror, loadCodeMirror } from "./loadCodeMirror.ts";
 import { codeSelectionCommand, selectionActions, wordRange } from "./selectionCommands.ts";
 import emojiNames from "markdown-it-emoji/lib/data/full.mjs";
 import { clearInlineFormats } from "./inlineFormats.ts";
 import type { InlineFormat } from "./inlineFormats.ts";
-import { EditorState, Compartment } from "@codemirror/state";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { indentUnit } from "@codemirror/language";
-import { EditorView, keymap, drawSelection } from "@codemirror/view";
-import { defaultKeymap, indentMore, indentLess } from "@codemirror/commands";
+
 import { MarkdownDocument } from "./model.ts";
 import type { DocumentNode, SelectionBookmark } from "./model.ts";
 import type { DocumentHeading, FootnoteDefinition } from "./markdownExtensions.ts";
@@ -21,11 +20,11 @@ import {
 import type { Leaf } from "./richRender.ts";
 import { renderDiagrams } from "./diagrams.ts";
 import { renderMath } from "./math.ts";
-import { fenceLanguage } from "./fenceLanguage.ts";
+
 import { applyBlockCommand } from "./blockCommands.ts";
 import type { BlockArguments } from "./blockCommands.ts";
-import { htmlToMarkdown } from "./clipboard.ts";
-import { inlineTokens, markdownOptionsVersion } from "./markdown.ts";
+
+import { highlightCode, loadHighlighting, inlineTokens, markdownOptionsVersion } from "./markdown.ts";
 import { imeKey } from "./composition.ts";
 import { t } from "../i18n.ts";
 export interface RichCallbacks {
@@ -81,6 +80,7 @@ export class RichEditor {
     },
     estimate: (node: DocumentNode): number => this.estimateHeight(node),
   };
+  private pendingFence: HTMLElement | null = null;
   private fence: { id: string; leaf: Leaf; view: EditorView } | null = null;
   private emojiPopup: HTMLDivElement;
   private emojiOptions: string[] = [];
@@ -103,8 +103,8 @@ export class RichEditor {
     event.preventDefault(); event.stopImmediatePropagation();
   };
   private scrollFrame = 0;
-  private fenceBehavior = new Compartment();
-  private fenceOptions() { return [EditorState.readOnly.of(this.readOnly), EditorView.editable.of(!this.readOnly), indentUnit.of(" ".repeat(this.tabSize)), ...(this.autoPair ? [closeBrackets(), keymap.of(closeBracketsKeymap)] : [])]; }
+  private fenceBehavior: Compartment | null = null;
+  private fenceOptions() { return [codeMirror!.EditorState.readOnly.of(this.readOnly), codeMirror!.EditorView.editable.of(!this.readOnly), codeMirror!.indentUnit.of(" ".repeat(this.tabSize)), ...(this.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])]; }
   readonly root: HTMLElement;
   readonly model: MarkdownDocument;
   readonly documentId: string;
@@ -168,7 +168,28 @@ export class RichEditor {
     root.parentElement!.append(this.tableToolbar);
     this.render(false);
   }
+  private codeObserver: IntersectionObserver | null = null;
+  private highlightVisibleCode() {
+    if (typeof IntersectionObserver === "undefined") return;
+    this.codeObserver ??= new IntersectionObserver(entries => {
+      for (const entry of entries) if (entry.isIntersecting) {
+        const code = entry.target as HTMLElement;
+        this.codeObserver?.unobserve(code);
+        const source = code.textContent || "", language = code.dataset.highlightLanguage || "";
+        void loadHighlighting().then(() => {
+          if (this.root.contains(code) && !code.closest(".fence-editing") && code.textContent === source) { code.innerHTML = highlightCode(source, language); code.dataset.highlightReady = "true"; this.scheduleMeasure(); }
+        }).catch(() => {});
+      }
+    });
+    this.codeObserver.disconnect();
+    for (const code of this.root.querySelectorAll<HTMLElement>("code[data-highlight-language]:not([data-highlight-ready])")) {
+      if (!code.dataset.highlightLanguage) continue;
+      this.codeObserver.observe(code);
+    }
+  }
   destroy() {
+    this.pendingFence = null;
+    this.codeObserver?.disconnect();
     if (this.compositionTimer !== null) clearTimeout(this.compositionTimer);
     for (const type of ["beforeinput", "keydown", "paste", "cut", "drop", "compositionstart"]) this.root.removeEventListener(type, this.protectReadOnly, true);
     cancelAnimationFrame(this.scrollFrame);
@@ -451,6 +472,7 @@ export class RichEditor {
     this.measure();
     if (restore && !this.fence) this.restore();
     this.mutating = false;
+    this.highlightVisibleCode();
     void renderDiagrams(this.root).catch(() => {}).then(() => this.scheduleMeasure());
     void renderMath(this.root).catch(() => {}).then(() => this.scheduleMeasure());
   }
@@ -603,7 +625,7 @@ export class RichEditor {
     this.tabSize = options.tabSize;
     this.typewriter = options.typewriter;
     this.autoPair = options.autoPair ?? false;
-    this.fence?.view.dispatch({ effects: this.fenceBehavior.reconfigure(this.fenceOptions()) });
+    this.fence?.view.dispatch({ effects: this.fenceBehavior!.reconfigure(this.fenceOptions()) });
     this.updateWritingMode();
   }
   private updateWritingMode() {
@@ -941,7 +963,7 @@ export class RichEditor {
       if (changed) this.publish(); else if (leaf) this.render();
       this.callbacks.compositionFinished();
   }
-  private paste = (event: ClipboardEvent) => {
+  private paste = async (event: ClipboardEvent) => {
     if ((event.target as HTMLElement).closest(".cm-editor")) return;
     const images = [...(event.clipboardData?.files || [])].filter(file => file.type.startsWith("image/"));
     if (images.length) {
@@ -952,13 +974,19 @@ export class RichEditor {
     }
     const html = event.clipboardData?.getData("text/html");
     const plain = event.clipboardData?.getData("text/plain") || "";
+    const own = event.clipboardData?.getData("text/x-omarkie-markdown");
     const cell = window.getSelection()?.anchorNode?.parentElement?.closest("td,th");
+    const selection = this.bookmark(), revision = this.model.text;
+    event.preventDefault();
+    const htmlToMarkdown = html && (!own || cell && /<table\b/i.test(html)) ? (await import("./clipboard.ts")).htmlToMarkdown : (text: string) => text;
+    if (!this.root.isConnected || this.readOnly) return;
+    if (this.model.text === revision) { this.model.selection = selection; this.restore(selection, false); }
     if (cell && (plain.includes("\t") || html && /<table\b/i.test(html))) {
       const table = html ? new DOMParser().parseFromString(html, "text/html").querySelector("table") : null;
       const grid = table ? [...table.rows].map(row => [...row.cells].map(cell => htmlToMarkdown(cell.innerHTML))) : plain.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").map(line => line.split("\t"));
       if (this.pasteTable(grid, cell as HTMLTableCellElement)) { event.preventDefault(); return; }
     }
-    const text = event.clipboardData?.getData("text/x-omarkie-markdown") || (html ? htmlToMarkdown(html) : event.clipboardData?.getData("text/plain"));
+    const text = own || (html ? htmlToMarkdown(html) : plain);
     if (text !== undefined) {
       event.preventDefault();
       this.insert(text, "paste");
@@ -1019,6 +1047,7 @@ export class RichEditor {
       container
         .querySelectorAll(".md-meta,.md-object-source,.md-ui")
         .forEach((e) => e.remove());
+      for (const image of container.querySelectorAll("img")) { image.removeAttribute("srcset"); image.removeAttribute("sizes"); }
       const plainCopy = container.cloneNode(true) as HTMLElement;
       plainCopy.querySelectorAll("td,th").forEach(cell => cell.append("\t"));
       plainCopy.querySelectorAll("p,li,h1,h2,h3,h4,h5,h6,tr,br").forEach(block => block.append("\n"));
@@ -1110,6 +1139,7 @@ export class RichEditor {
       }
     }
     const fence = target.closest<HTMLElement>("[data-fence]");
+    if (!fence) this.pendingFence = null;
     if (fence && !target.closest(".cm-editor")) this.activateFence(fence);
     const object = target.closest<HTMLElement>('.md-inline[data-mark="math"],.md-inline[data-mark="sub"],.md-inline[data-mark="sup"],.md-inline[data-mark="emoji"],.md-inline[data-mark="image"]');
     if (object && target.closest(".md-view")) { const leaf = this.leaves.get(object.closest<HTMLElement>("[data-leaf]")!.dataset.leaf!)!; const at = leaf.positions[Number(object.dataset.inlineFrom)] + (object.dataset.mark === "image" ? 2 : 1); this.model.selection = { anchor: at, head: at }; this.restore(); }
@@ -1646,6 +1676,7 @@ export class RichEditor {
       ?.scrollIntoView({ block: "start" });
   }
   releaseFence() {
+    this.pendingFence = null;
     if (!this.fence) return;
     const id = this.fence.id;
     this.fence.view.destroy();
@@ -1654,6 +1685,9 @@ export class RichEditor {
     this.render(false);
   }
   private activateFence(element: HTMLElement) {
+    if (!codeMirror) { this.pendingFence = element; void loadCodeMirror().then(() => { if (this.pendingFence === element && element.isConnected && this.root.contains(element)) this.activateFence(element); }).catch(() => {}); return; }
+    this.pendingFence = null;
+    this.fenceBehavior ??= new codeMirror.Compartment();
     if (this.fence && this.fence.leaf.id === element.dataset.fence) return;
     const key = element.dataset.fence!;
     this.releaseFence();
@@ -1664,24 +1698,24 @@ export class RichEditor {
     if (!leaf || !body) return;
     body.replaceChildren();
     element.classList.add("fence-editing");
-    const view = new EditorView({
+    const view = new codeMirror!.EditorView({
       parent: body,
-      state: EditorState.create({
+      state: codeMirror!.EditorState.create({
         doc: leaf.raw,
         selection: {
           anchor: Math.max(0, leaf.positions.findLastIndex(position => position <= this.model.selection.anchor)),
           head: Math.max(0, leaf.positions.findLastIndex(position => position <= this.model.selection.head)),
         },
         extensions: [
-          this.fenceBehavior.of(this.fenceOptions()),
-          fenceLanguage(
+          this.fenceBehavior!.of(this.fenceOptions()),
+          codeMirror!.fenceLanguage(
             element.classList.contains("md-math")
               ? "math"
               : element.querySelector(".fence-language")?.textContent || "",
           ),
-          drawSelection(),
-          EditorView.lineWrapping,
-          keymap.of([
+          codeMirror!.drawSelection(),
+          codeMirror!.EditorView.lineWrapping,
+          codeMirror!.keymap.of([
             {
               key: "Mod-z",
               run: () => {
@@ -1699,15 +1733,15 @@ export class RichEditor {
             {
               key: "Tab",
               run: (cm) => {
-                if (!cm.state.selection.main.empty) return indentMore(cm);
+                if (!cm.state.selection.main.empty) return codeMirror!.indentMore(cm);
                 cm.dispatch(cm.state.replaceSelection(" ".repeat(this.tabSize)));
                 return true;
               },
             },
-            { key: "Shift-Tab", run: indentLess },
-            ...defaultKeymap,
+            { key: "Shift-Tab", run: codeMirror!.indentLess },
+            ...codeMirror!.defaultKeymap,
           ]),
-          EditorView.updateListener.of((update) => {
+          codeMirror!.EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             const current = this.model.node(leaf.nodeId);
             if (!current) return;

@@ -706,5 +706,11 @@
   "菜单栏": "Barra de menús",
   "学术写作：Literata · 绿色点缀": "Escriptura acadèmica: Literata · detalls en verd",
   "学术写作 · 夜间": "Escriptura acadèmica · nit",
-  "示例笔记": "Notes d'exemple"
+  "帮助": "Ajuda",
+  "展示示例": "Exemples de mostra",
+  "示例笔记": "Notes d'exemple",
+  "Omarchy（自动）": "Omarchy (automàtic)",
+  "Toypora 纸张 · Omarchy 标题": "Paper Toypora · encapçalaments Omarchy",
+  "拼写检查语言": "Llengües del corrector ortogràfic",
+  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Els diccionaris integrats funcionen sense connexió i sense descàrregues de xarxa. macOS fa servir les llengües del corrector del sistema."
 }

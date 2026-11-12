@@ -252,7 +252,7 @@ export function renderNode(
         const { id, raw } = fenceLeaf(token.map?.[0] || 0);
         if (/^(mermaid|sequence|flow)$/.test(token.info.trim()))
           return `<div class="md-fence" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId)}</div><pre class="fence-body"><code>${escapeHtml(token.content)}</code></pre><span class="fence-language">${token.info.trim()}</span></div>`;
-        return `<div class="md-fence" contenteditable="false" data-fence="${id}"><pre class="fence-body"><code data-leaf="${id}">${highlightCode(raw, token.info.trim().split(/\s/)[0])}</code></pre><span class="fence-language">${escapeHtml(token.info)}</span></div>`;
+        return `<div class="md-fence" contenteditable="false" data-fence="${id}"><pre class="fence-body"><code data-highlight-language="${escapeHtml(token.info.trim().split(/\s/)[0])}" data-leaf="${id}">${highlightCode(raw, token.info.trim().split(/\s/)[0])}</code></pre><span class="fence-language">${escapeHtml(token.info)}</span></div>`;
       },
       { ...environment, lineOffset: node.line - 1 },
     );

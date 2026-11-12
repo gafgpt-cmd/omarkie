@@ -1,0 +1,34 @@
+import { _electron as electron, expect } from "playwright/test";
+import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import os from "node:os";
+import path from "node:path";
+const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-startup-"));
+const content = "# Startup\n\nReadable restored text.\n\n```js\nconst answer = 42;\n```\n", file = path.join(directory, "startup.md");
+await writeFile(file, content, "utf8");
+await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, folder: directory, activeId: "startup", documents: [{ id: "startup", path: file, name: "startup.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, lineEnding: "\n" }] }), "utf8");
+const env = { ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh", OMARKIE_TRACE_STARTUP: "1" };
+delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+const app = await electron.launch({ args: [process.cwd()], env });
+try {
+  const page = await app.firstWindow(), errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await expect(page.locator(".rich-document:visible")).toContainText("Readable restored text.");
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByName("omarkie:first-document-painted").length)).toBe(1);
+  const loaded = () => page.evaluate(() => performance.getEntriesByType("resource").map(entry => entry.name));
+  assert.ok(!(await loaded()).some(url => /codeMirror-|clipboard-/.test(url)), "reading needs neither CodeMirror nor Turndown");
+  assert.ok(!(await loaded()).some(url => /\/(?:en|es|ca|ro)-/.test(url)), "Chinese startup needs no translation catalogs");
+  await expect(page.locator(".md-fence .hljs-keyword")).toHaveText("const");
+  await page.keyboard.press("Control+/");
+  const source = page.locator(".source-mode:visible .cm-content");
+  await expect(source).toContainText("const answer = 42;");
+  await source.click(); await page.keyboard.press("Control+End"); await page.keyboard.insertText("\nsource edit");
+  await page.keyboard.press("Control+/");
+  await expect(page.locator(".rich-document:visible")).toContainText("source edit");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".rich-document:visible")).not.toContainText("source edit");
+  await page.locator(".md-fence").click();
+  await expect(page.locator(".fence-editing .cm-content")).toContainText("const answer = 42;");
+  assert.deepEqual(errors, []);
+} finally { await app.close(); }

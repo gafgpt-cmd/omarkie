@@ -48,6 +48,12 @@ Each window has its own web view, document store, model and session file. Openin
 
 The bridge only accepts the main frame of the local app origin. Remote images, media and embeds are off by default: the renderer strips remote attributes and, in Electron, `webRequest` cancels every non-loopback request from the window until the user allows remote images. Sanitised HTML drops scripts, event handlers and forged editor attributes.
 
+Spellcheck languages are stored with editor preferences and validated against Electron’s available languages before applying them to the default session. Bundled en-US, es-ES, ca and ro-RO `.bdic` dictionaries are seeded into the profile, and the dictionary download URL points at the app's own local dictionaries folder. Other languages find nothing there and simply have no spellcheck; no Google dictionary host is contacted. System Hunspell `.aff`/`.dic` files in `/usr/share/hunspell` are not Chromium `.bdic` dictionaries and cannot be used directly. macOS uses the system spellchecker and its language settings.
+
+Packagers stamp the Git-derived build ID into the packaged HTML metadata for About, using the same version calculation as Arch; unpackaged builds show `dev`. Release artifact filenames keep the package version.
+
+Vault search reads one file at a time (8 MiB per file, 512 MiB total), yields between files, and keeps the 5-second deadline and 500-result cap.
+
 `electron/workspace.mjs` (and `native/Workspace.swift`) manage folder tokens, recent items, full-text search, copy/rename/move/Trash and a one-step undo for file operations. Image moves copy everything first and only then move originals to the Trash.
 
 ## Encodings and conversion
@@ -64,5 +70,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - `npm run test:desktop`, `test:parity`, `test:background-desktop`: Electron editing, saving, images, export and recovery.
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (macOS key bindings).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.
+
+**Speed budgets.** After `npm run build`, `npm run test:perf` measures desktop startup, large-note opening/scrolling and lazy photo loading with isolated profiles and cached generated fixtures. `tests/perf-budgets.json` sets budgets of 1000 / 1500 / 300 / 150 ms respectively; current builds are expected to fail. Results include medians, decoded image dimensions and loaded-image counts in `/tmp/omarkie-perf-qa/perf-results.json` (`OMARKIE_QA_DIR` overrides the directory). Set `OMARKIE_PERF_RUNS` (default 3), `OMARKIE_PERF_REPORT_ONLY=1`, or `OMARKIE_EXECUTABLE` with optional `OMARKIE_APP` for an installed executable/asar.
 
 Automated composition checks do not replace manual input-method testing.

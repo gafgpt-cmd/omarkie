@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { fullSize } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
 const dataDir = await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-"));
-const env = { ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" };
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
 const errors = [],
@@ -16,14 +16,14 @@ const errors = [],
 let application, currentPage;
 async function launch() {
   application = await electron.launch({
-    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: [] } : { args: [root] }),
+    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: headlessArguments } : { args: [root, ...headlessArguments] }),
     env, timeout: 30000,
   });
   const page = await application.firstWindow({ timeout: 20000 });
   currentPage = page;
   page.on("pageerror", (error) => errors.push(error.message));
   await fullSize(application, page);
-  await page.getByRole("button", { name: "欢迎.md", exact: true }).waitFor();
+  await page.getByRole("button", { name: "travel-journal.md", exact: true }).waitFor();
   return page;
 }
 async function menu(page, name) {
@@ -53,24 +53,19 @@ async function waitForFile(file, predicate, timeout = 6000) {
 try {
   let page = await launch();
   await expect(
-    page.getByRole("heading", { name: "让文字，回到文字。" }),
+    page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
   ).toBeVisible();
+  assert.ok(await page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.decode().then(() => image.naturalWidth > 0)));
   await page.screenshot({ path: path.join(qa, "desktop.png") });
-  passed.push("Packaged renderer loads, welcome document renders, no overlay");
-  const original = await readFile(
-    path.join(dataDir, "示例笔记/欢迎.md"),
-    "utf-8",
-  );
-  if (process.platform === "win32") {
-    assert.ok(original.includes("Ctrl+S"));
-    assert.ok(!original.includes("⌘"));
-  }
+  passed.push("Packaged renderer loads, the showcase opens with its photos, no overlay");
+  const welcome = path.join(dataDir, "Showcase/travel-journal.md");
+  const original = await readFile(welcome, "utf-8");
   await mode(page, false);
   const editor = page.locator(".document-editor:not([hidden]) .cm-content");
-  await expect(editor).toContainText("# 让文字，回到文字。");
+  await expect(editor).toContainText("# Seven Days on the Lighthouse Coast");
   await mode(page, true);
   assert.equal(
-    await readFile(path.join(dataDir, "示例笔记/欢迎.md"), "utf-8"),
+    await readFile(welcome, "utf-8"),
     original,
   );
   passed.push("Switching modes preserves original Markdown byte for byte");
@@ -78,7 +73,6 @@ try {
   await editor.click();
   await editor.press("ControlOrMeta+End");
   await page.keyboard.insertText("\n中文输入验收：你好，世界。\n");
-  const welcome = path.join(dataDir, "示例笔记/欢迎.md");
   await waitForFile(welcome, (text) =>
     text.includes("中文输入验收：你好，世界。"),
   );
@@ -88,17 +82,17 @@ try {
   await editor.press("ControlOrMeta+Shift+z");
   await waitForFile(welcome, (text) => text.includes("中文输入验收"));
   passed.push("Undo and redo persist correct file contents");
-  await page.getByRole("button", { name: "写作示例.md", exact: true }).click();
+  await page.getByRole("button", { name: "space-explainer.md", exact: true }).click();
   await mode(page, true);
   await expect(
-    page.locator(".document-editor:not([hidden]) .mathjax-node svg"),
+    page.locator(".document-editor:not([hidden]) .mathjax-node svg").first(),
   ).toBeVisible();
   await expect(
     page.locator(".document-editor:not([hidden]) .mermaid-block svg"),
   ).toBeVisible();
   await expect(
     page.locator(".document-editor:not([hidden]) .mermaid-block svg"),
-  ).toContainText("观察");
+  ).toContainText("Parallax");
   passed.push(
     "Math, code, tasks and Mermaid with visible labels render",
   );
@@ -176,10 +170,10 @@ try {
     "Image paste copies bytes and renders through the local asset protocol",
   );
   await sidebarTab(page, "文件");
-  await page.getByRole("button", { name: "欢迎.md", exact: true }).click();
+  await page.getByRole("button", { name: "travel-journal.md", exact: true }).click();
   await sidebarTab(page, "大纲");
   await page
-    .getByRole("button", { name: "写作，不必分心", exact: true })
+    .getByRole("button", { name: "The route at a glance", exact: true })
     .click();
   await sidebarTab(page, "文件");
   passed.push("Outline navigates to the selected Markdown heading");

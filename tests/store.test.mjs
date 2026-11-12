@@ -32,6 +32,16 @@ test("atomic save preserves BOM, CRLF, original text and file permissions", asyn
   assert.equal(await readFile(file, "utf-8"), text);
   assert.equal((await stat(file)).mode, before);
 });
+test("recovery preserves every draft and active document beyond 100 open documents", async () => {
+  const { store, directory } = await setup();
+  const documents = Array.from({ length: 125 }, (_, index) => store.registerDraft({ id: `draft-${index}`, name: `draft-${index}.md`, content: `Unsaved draft ${index}` }));
+  const activeId = documents.at(-1).id;
+  await store.persist({ documents, activeId });
+  const restored = await new DocumentStore(path.join(directory, "recovery")).restore();
+  assert.equal(restored.documents.length, documents.length);
+  assert.equal(restored.activeId, activeId);
+  assert.deepEqual(restored.documents.map(document => [document.id, document.content]), documents.map(document => [document.id, document.content]));
+});
 test("external edits and deletion are never overwritten by ordinary save", async () => {
   const { store, file, record } = await setup();
   await writeFile(file, "外部修改");

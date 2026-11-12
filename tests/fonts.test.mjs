@@ -10,7 +10,7 @@ import { watchOmarchyTheme } from "../electron/omarchy.mjs";
 
 test("font catalog covers the classic reading fonts and Omarchy defaults", () => {
   const names = fontChoices(null).map(font => font.name);
-  for (const name of ["Literata", "Inter", "Open Sans", "PT Serif", "Merriweather", "Lato", "Vollkorn", "Helvetica Neue", "Lucida Console", "JetBrainsMono Nerd Font", "Liberation Sans", "Liberation Serif"]) assert.ok(names.includes(name), name);
+  for (const name of ["Literata", "Inter", "Open Sans", "PT Serif", "Merriweather", "Lato", "Vollkorn", "Helvetica Neue", "Lucida Console", "JetBrains Mono", "Arimo", "Tinos"]) assert.ok(names.includes(name), name);
   for (const font of fontChoices(null)) assert.match(font.stack, /"Noto Color Emoji"/);
   assert.deepEqual(fontIds.slice(0, 1), ["theme"]);
 });

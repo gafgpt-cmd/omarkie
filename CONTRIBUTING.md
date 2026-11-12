@@ -51,13 +51,15 @@ Additional suites:
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
-| `npm run test:features` | Outline, tables, preferences, navigation, and writing modes | macOS desktop |
+| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, and writing modes | Electron; Linux runs headless |
 | `npm run test:alignment` | File workflows, themes, images, and conversion | macOS desktop + Pandoc |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | macOS desktop |
 
 Automated desktop suites use isolated temporary application data. To keep screenshots and reports outside the checkout, set `OMARKIE_QA_DIR` to an absolute output directory. Synthetic composition tests do not replace manual input-method checks.
 
 ## Build and install
+
+Packaging downloads Electron's Hunspell spellcheck dictionaries once, checked against pinned SHA-256 hashes, into `build/cache`; the app ships them so it never fetches a dictionary itself. For development runs, `npm run dictionaries` puts them in `dictionaries/`.
 
 On Linux x64, run `npm run package:linux` to create a DEB, an RPM, an AppImage and checksums in `release/linux/`. The RPM needs `rpmbuild` and `bsdtar`, which reads the package back to reject a truncated build; set `OMARKIE_LINUX_TARGETS` (for example `deb,AppImage`) to build a subset. On Arch, `npm run package:arch` builds a package for the shared `electronNN` runtime with `makepkg` into `release/arch/`; its launcher (`packaging/arch/omarkie`) reports a missing runtime and offers the install.
 

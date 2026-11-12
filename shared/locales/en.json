@@ -696,5 +696,11 @@
   "菜单栏": "Menu bar",
   "学术写作：Literata · 绿色点缀": "Academic writing: Literata · green accents",
   "学术写作 · 夜间": "Academic writing · night",
-  "示例笔记": "Sample notes"
+  "帮助": "Help",
+  "展示示例": "Showcase Examples",
+  "示例笔记": "Sample notes",
+  "Omarchy（自动）": "Omarchy (auto)",
+  "Toypora 纸张 · Omarchy 标题": "Toypora paper · Omarchy headings",
+  "拼写检查语言": "Spellcheck languages",
+  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Bundled dictionaries work offline without network downloads. macOS uses system spellcheck languages."
 }

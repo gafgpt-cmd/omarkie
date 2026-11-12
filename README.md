@@ -14,7 +14,11 @@
 
 Omarkie is an open-source Markdown editor with live, inline rendering. Write directly in the formatted document, switch to source when you need it, and keep ordinary `.md` files in your own folders. It feels at home on [Omarchy](https://omarchy.org): it follows your Omarchy theme and font live, and it runs on Linux, Windows and macOS.
 
-**Status:** early development, version **0.1.1**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+**Status:** early development, version **0.1.2**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+
+**No telemetry.** Omarkie never phones home: no analytics, no crash reports, no update checks, and the spellcheck dictionaries are built in.
+
+Every change is AI reviewed and tested before it lands, with [no-mistakes](https://github.com/kunchenguid/no-mistakes) (automated review, tests, lint and CI).
 
 ## Features
 
@@ -31,7 +35,7 @@ Omarkie is an open-source Markdown editor with live, inline rendering. Write dir
 
 ## See what it renders
 
-Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five sample documents live in [docs/showcase](docs/showcase). Open any of them in Omarkie and try it yourself. Every screenshot below is the real app.
+Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five documents live in [docs/showcase](docs/showcase), and they come with the app: Omarkie opens them the first time you start it, and **Help → Showcase Examples** brings them back any time without touching your edits. Each one also shows how to do things in Omarkie. Every screenshot below is the real app.
 
 | | |
 | --- | --- |
@@ -54,7 +58,7 @@ The screenshots use five of the built-in themes: Toyzetlr, Toypora, Toyzetlr Nig
 | **Omarchy × Toypora** | Your live Omarchy palette | Toypora's classic reading fonts |
 | **Toypora × Omarchy** | Toypora's classic colors | Your Omarchy font, Liberation Sans text |
 
-Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Liberation Sans and Serif, your current Omarchy font, or the system fonts. **Restore Toypora classic reading** brings back the classic set in one click.
+Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Arimo, Tinos, your available Omarchy font, or the system fonts. Local-only fonts appear when they are installed. **Restore Toypora classic reading** brings back the classic set in one click.
 
 | Toypora | Omarchy | Fonts |
 | --- | --- | --- |
@@ -68,13 +72,13 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 | Distribution | Package | Install |
 | --- | --- | --- |
-| Arch, Omarchy, Manjaro | `omarkie-0.1.1-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.1-1-any.pkg.tar.zst` |
-| Debian, Ubuntu, Mint | `Omarkie-0.1.1-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.1-linux-x64.deb` |
-| Fedora, RHEL | `omarkie-0.1.1-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.1-1.x86_64.rpm` |
-| openSUSE | `omarkie-0.1.1-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.1-1.x86_64.rpm` |
-| Any x64 distribution | `Omarkie-0.1.1-linux-x64.AppImage` | `chmod +x` the file and run it |
+| Arch, Omarchy, Manjaro | `omarkie-0.1.2-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.2-1-any.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.1.2-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.2-linux-x64.deb` |
+| Fedora, RHEL | `omarkie-0.1.2-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.2-1.x86_64.rpm` |
+| openSUSE | `omarkie-0.1.2-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.2-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.1.2-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.1-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.2-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 #### Update, uninstall and clean up
 
@@ -86,7 +90,7 @@ To update, install the new package over the old one with the same command as abo
 | Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
 | Remove the unused Electron runtime too | `sudo pacman -Rs omarkie` | not needed (bundled) | not needed (bundled) | not needed (bundled) |
 
-A release build is named after its version (`0.1.1`). An Arch package built from a later commit is named `0.1.1.r<commits>.g<commit>`, for example `0.1.1.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
+A release build is named after its version (`0.1.2`). An Arch package built from a later commit is named `0.1.2.r<commits>.g<commit>`, for example `0.1.2.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
 
 Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
 
@@ -118,7 +122,7 @@ npm run package:mac     # on macOS with Xcode Command Line Tools: release/native
 
 ## First steps
 
-Open a Markdown file or a folder, or start from the sample notes. Click the text to edit it. Enter continues a list or creates a paragraph; Tab moves through table cells.
+Open a Markdown file or a folder, or start from the Showcase examples (**Help → Showcase Examples**). Click the text to edit it. Enter continues a list or creates a paragraph; Tab moves through table cells.
 
 | Action | Linux / Windows | macOS |
 | --- | --- | --- |

@@ -328,3 +328,16 @@ test("host shutdown invalidates plugin APIs even while initialization is awaitin
   await ready;const stopped=run.destroy();assert.equal(locks.at(-1),false);release();await Promise.all([enabling,stopped]);
   assert.deepEqual(edits,[]);assert.equal(locks.at(-1),false);
 });
+test("disabled plugin loaders never run; pending enabled loads do not block document use or other plugins",async()=>{
+  const run=runtime(); let evaluated=0,release;
+  const plugin={id:'lazy',name:'lazy',description:'',config:{},load:async()=>{evaluated++;await new Promise(resolve=>release=resolve);return c=>class extends c.BasePlugin {};}};
+  try {
+    await run.value.setEnabled(plugin,false);assert.equal(evaluated,0);
+    const pending=run.value.setEnabled(plugin,true);await Promise.resolve();await Promise.resolve();
+    assert.equal(evaluated,1);assert.equal(run.states.lazy.status,'loading');
+    run.value.documentChanged();
+    await run.value.setEnabled(await definition('dark',{DARK_DEFAULT:false}),true);
+    assert.equal(run.states.dark.status,'ready');
+    release();await pending;assert.equal(run.states.lazy.status,'ready');
+  } finally {release?.();await run.value.destroy();}
+});

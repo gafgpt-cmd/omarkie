@@ -1,19 +1,26 @@
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { licenseNotices } from "./license-notices.mjs";
+import { spellcheckDictionaries } from "./spellcheck-dictionaries.mjs";
+import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
+// Folders the Electron host reads at runtime, at the same relative paths as in the repository.
+export const applicationFolders = ["dist", "electron", "shared", "docs/showcase"];
 // Ship only the Node file bridge's dependencies; Vite bundles the editor.
 export async function prepareElectronApplication(platform) {
   const application = path.resolve(`build/${platform}-app`);
   await rm(application, { recursive: true, force: true });
   await mkdir(application, { recursive: true });
-  for (const folder of ["dist", "electron", "shared"]) await cp(folder, path.join(application, folder), { recursive: true });
+  for (const folder of applicationFolders) await cp(folder, path.join(application, folder), { recursive: true });
+  const index = path.join(application, "dist/index.html");
+  await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
   for (const name of ["iconv-lite", "safer-buffer", "i18next", "image-size"]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
   await cp("LICENSE", path.join(application, "LICENSE"));
   await cp("build/icon.png", path.join(application, "icon.png"));
   await licenseNotices(path.join(application, "ThirdPartyLicenses"));
   await cp("third-party/typora-plugins", path.join(application, "ThirdPartyLicenses/typora-plugins"), { recursive: true });
+  await spellcheckDictionaries(path.join(application, "dictionaries"), path.join(application, "ThirdPartyLicenses/hunspell-dictionaries"));
   await writeFile(path.join(application, "package.json"), JSON.stringify({
     name: pkg.name, version: pkg.version, description: pkg.description,
     main: pkg.main, type: "module", license: pkg.license, author: pkg.author,

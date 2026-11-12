@@ -21,6 +21,8 @@ Mod means Control on Linux and Windows, and Command on macOS. Reserved editor sh
 
 The eight upstream files are included unchanged under `third-party/typora-plugins`, pinned to commit `4a856129a9dbefaa963bfba4aacd3e5484bde60a`, with their MIT license and provenance. They are compiled as ordinary modules; the host does not use `eval` or enable `unsafe-eval`. Runtime adapters normalize a small set of DOM selectors and upstream CSS transition units.
 
+Disabled bundled plugins are never imported or evaluated. Enabling dynamically imports only that plugin; saved enabled plugins start after the first document paint, without blocking document startup. Heavy optional features must keep this boundary.
+
 ## Installing another plugin
 
 Use **Install local plugin**, review the trust notice, and choose either a UTF-8 `.js` / `.cjs` file of at most 1 MB or **Choose plugin folder**. Installation creates a managed, content-addressed module and leaves it disabled. Enable it explicitly. To uninstall, use **Remove plugin**; desktop copies go to the operating system Trash and the original source file stays intact.

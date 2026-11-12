@@ -1,9 +1,11 @@
 import type { DocumentRecord, Host, Recovery, SessionSnapshot } from "./types";
-import zhSamples from "../shared/samples.json";
-import localizedSamples from "../shared/samples.i18n.json";
 import { browserBackground, chooseBrowserBackground } from "./browserBackground";
-import { language, t } from "./i18n";
+import { t } from "./i18n";
 const browserRecords = new Map<string, DocumentRecord>();
+// The showcase notes as text; the browser preview cannot read their pictures from a folder.
+const showcase = Object.entries(import.meta.glob<string>("../docs/showcase/*.md", { query: "?raw", import: "default", eager: true }))
+  .map(([file, content]) => ({ name: file.split("/").pop()!, content }))
+  .sort((a, b) => Number(b.name === "travel-journal.md") - Number(a.name === "travel-journal.md"));
 const key = "omarkie-session-v1";
 function draft(name: string, content: string): DocumentRecord {
   return {
@@ -28,6 +30,7 @@ function download(name: string, text: string, type = "text/markdown;charset=utf-
 }
 const browser: Host = {
   native: false,
+  async spellcheckLanguages() { return []; },
   async cancelClose() {},
   async windowAction() { return false; },
   async imageAction() { throw new Error(t("图片文件操作请使用桌面应用。")); },
@@ -49,11 +52,16 @@ const browser: Host = {
     if (raw && !Array.isArray(session?.documents)) { localStorage.setItem(key + "-backup", raw); session = null; }
     if (session) session.documents = session.documents.filter(record => record && typeof record.id === "string" && typeof record.name === "string" && typeof record.content === "string" && typeof record.savedContent === "string");
     session ??= {
-      documents: (language === "zh" ? zhSamples : localizedSamples[language as keyof typeof localizedSamples] ?? localizedSamples.en).map((sample) => draft(sample.name, /Mac/.test(navigator.platform) ? sample.content : sample.content.replace(/⌘\s*/g, "Ctrl+"))),
+      documents: showcase.map(sample => draft(sample.name, sample.content)),
     };
     for (const record of session.documents)
       browserRecords.set(record.id, record);
     return session;
+  },
+  async showcase() {
+    const record = draft(showcase[0].name, showcase[0].content);
+    browserRecords.set(record.id, record);
+    return { folder: null, files: [], truncated: false, document: record };
   },
   async registerDraft(record) {
     browserRecords.set(record.id, record);
@@ -159,6 +167,7 @@ export const host: Host = window.desktop
         if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
+          if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
             const error = new Error(response.error);
