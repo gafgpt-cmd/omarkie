@@ -105,7 +105,8 @@ try {
   await page.getByRole('button',{name:'源码',exact:true}).click();
   await expect(surface.locator('.source-surface .cm-content')).toContainText('Alice->Bob: Hello Bob');
   const sourceContent = surface.locator('.source-surface .cm-content');
-  await sourceContent.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home');
+  // The lazily loaded source editor may still place its caret after the switch; retry until the caret is at the document start.
+  await expect.poll(async () => { await sourceContent.press(process.platform === 'darwin' ? 'Meta+ArrowUp' : 'Control+Home'); return sourceContent.evaluate(element => { const selection = getSelection(); return selection.isCollapsed && element.querySelector('.cm-line')?.contains(selection.anchorNode) && selection.anchorOffset === 0; }); }).toBe(true);
   await sourceContent.press('ArrowRight'); await sourceContent.press('ArrowRight'); await sourceContent.press('ArrowRight');
   await sourceContent.press(`${mod}+d`); await page.keyboard.insertText('Selected');
   await saved(original.replace('Editing parity','Selected parity'));
