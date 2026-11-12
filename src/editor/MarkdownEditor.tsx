@@ -255,6 +255,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
               "on line": t("所在行"),
             }),
             codeMirror!.drawSelection(),
+            codeMirror!.highlightSpecialChars(),
             codeMirror!.EditorView.lineWrapping,
             codeMirror!.highlightActiveLine(),
             codeMirror!.markdown({ base: codeMirror!.markdownLanguage }),

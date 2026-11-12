@@ -6,7 +6,7 @@ import { launchFiles } from "../electron/launch-files.mjs";
 
 test("installed file associations preserve spaces and Unicode without treating switches as files", () => {
   const folder = path.resolve("notes");
-  assert.deepEqual(launchFiles(["Omarkie.exe", "--inspect.md", "会议 notes.md", "not.txt", "会议 notes.md"], true, folder), [path.join(folder, "会议 notes.md")]);
+  assert.deepEqual(launchFiles(["Omarkie.exe", "--inspect.md", "会议 notes.md", "not.txt", "会议 notes.md", "Book Name.PDF"], true, folder), [path.join(folder, "会议 notes.md"), path.join(folder, "Book Name.PDF")]);
 });
 test("development launch omits the Electron application directory", () => {
   assert.deepEqual(launchFiles(["electron", "editor.md", "note.markdown"], false), [path.resolve("note.markdown")]);

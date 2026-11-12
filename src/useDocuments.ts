@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
-import { t } from "./i18n";
+import { language, t } from "./i18n";
 import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
   const prepareEditor = useRef(canPrepare); prepareEditor.current = canPrepare;
@@ -37,7 +37,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
   useEffect(() => {
     let disposed = false;
     void host
-      .restore()
+      .restore(language, t("示例笔记"))
       .then(async (session) => {
         if (disposed) return;
         const records = session?.documents || [];
@@ -205,6 +205,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     }
     setDocuments((records) => [...records, record]);
     setActiveId(record.id);
+    if (record.controlCharacters) setMessage(t("“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。", { name: record.name, count: record.controlCharacters }));
     return record;
   }
   async function create() {

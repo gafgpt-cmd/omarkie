@@ -1,5 +1,5 @@
 export { EditorState, Compartment } from "@codemirror/state";
-export { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
+export { EditorView, keymap, drawSelection, highlightActiveLine, highlightSpecialChars } from "@codemirror/view";
 export { defaultKeymap, indentWithTab, indentMore, indentLess, selectParentSyntax } from "@codemirror/commands";
 export { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 export { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentUnit } from "@codemirror/language";

@@ -9,6 +9,7 @@ export interface DocumentRecord {
   conflict?: boolean;
   bom?: boolean;
   encoding?: string;
+  controlCharacters?: number;
 }
 export interface FileEntry {
   token: string;
@@ -73,7 +74,7 @@ export interface Host {
   conversionSettings(choose?: boolean): Promise<{ pandoc: string; word: boolean; libreOffice?: string }>;
   importDocument(): Promise<{ html?: string; markdown?: string; name: string } | null>;
   exportConverted(id: string, format: string, source: string, html: string): Promise<string | null>;
-  restore(): Promise<Recovery | null>;
+  restore(language?: string, folderName?: string): Promise<Recovery | null>;
   showcase(): Promise<FolderResult & { document: DocumentRecord }>;
   registerDraft(record: DocumentRecord): Promise<unknown>;
   open(): Promise<DocumentRecord | null>;

@@ -16,7 +16,7 @@ Remove personal information and credentials from examples.
 
 ## Set up development
 
-Use Node.js 26 and npm. Linux and Windows builds use Electron; the macOS build needs macOS 14+ and the Xcode Command Line Tools. Install Pandoc 3 and LibreOffice for the complete conversion suites (the ODT import test skips when Pandoc is older than 3.12.1 and LibreOffice is missing).
+Use Node.js 26 and npm. Linux and Windows builds use Electron; the macOS build needs macOS 14+ and the Xcode Command Line Tools. Install Pandoc 3 and LibreOffice for the complete conversion suites (the ODT import test skips when Pandoc is older than 3.12.1 and LibreOffice is missing). CI installs the latest Pandoc release (checked against its published digest) and LibreOffice Writer, and runs `npm test` with `OMARKIE_REQUIRE_CONVERTERS=1` so a missing converter fails instead of skipping.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
@@ -51,8 +51,8 @@ Additional suites:
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
-| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, and writing modes | Electron; Linux runs headless |
-| `npm run test:alignment` | File workflows, themes, images, and conversion | macOS desktop + Pandoc |
+| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, and file workflows | Electron; Linux runs headless |
+| `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | macOS desktop |
 
 Automated desktop suites use isolated temporary application data. To keep screenshots and reports outside the checkout, set `OMARKIE_QA_DIR` to an absolute output directory. Synthetic composition tests do not replace manual input-method checks.

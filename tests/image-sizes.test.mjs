@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -64,4 +64,35 @@ test("the renderer keys announced sizes the way the image rule looks them up", a
   assert.match(html, /vector\.svg"[^>]*width="64" height="48"/);
   // Sizes for another document do not leak.
   assert.doesNotMatch(renderMarkdown("![a](images/one.png)", "doc-2"), /width=/);
+});
+test("raw-space paths, Obsidian embeds, size attributes and file URLs render as images", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM("<!doctype html><body></body>", { url: "https://editor.test/" });
+  for (const key of ["window", "document", "Node", "HTMLElement", "Element", "DOMParser", "NodeFilter"]) globalThis[key] = dom.window[key];
+  const { renderMarkdown, localImageSources } = await import("../src/editor/markdown.ts");
+  const text = "![page](../_ATTACHMENTS/Book Name/Book Name_page1.png)\n\n![[plate.png]] ![[dir/plate two.jpg|300]] ![[plate.png|300x200]] ![[plate.png|A caption]]\n\n![w](a.png){width=300} ![p](a.png){width=50%}\n\n![f](file:///tmp/x.png)\n\n![[Some note]] ![[talk.mp3]]\n\n![not a path](just some words)\n";
+  assert.deepEqual(localImageSources(text), ["../_ATTACHMENTS/Book Name/Book Name_page1.png", "plate.png", "dir/plate two.jpg", "a.png", "file:///tmp/x.png", "Some note", "talk.mp3", "just some words"]);
+  const html = renderMarkdown(text, "doc-3"), images = [...new dom.window.DOMParser().parseFromString(html, "text/html").querySelectorAll("img")].map(image => [decodeURIComponent(decodeURIComponent(image.getAttribute("src").split("/").slice(4).join("/"))), image.getAttribute("width"), image.getAttribute("height"), image.getAttribute("alt")]);
+  assert.deepEqual(images, [
+    ["../_ATTACHMENTS/Book Name/Book Name_page1.png", null, null, "page"],
+    ["plate.png", null, null, "plate.png"], ["dir/plate two.jpg", "300", null, "dir/plate two.jpg"], ["plate.png", "300", "200", "plate.png"], ["plate.png", null, null, "A caption"],
+    ["a.png", "300", null, "w"], ["a.png", "50%", null, "p"],
+    ["file:///tmp/x.png", null, null, "f"],
+  ]);
+  assert.match(html, /<span class="wiki-embed">Some note<\/span>/); assert.match(html, /<audio controls[^>]*talk\.mp3/);
+  assert.match(html, /!\[not a path\]\(just some words\)/); assert.doesNotMatch(html, /\{width=/);
+});
+
+test("an attachment missing next to the note is found by name anywhere in its Obsidian vault", async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-vault-")); t.after(() => rm(root, { recursive: true, force: true }));
+  const { DocumentStore } = await import("../electron/store.mjs");
+  await mkdir(path.join(root, ".obsidian")); await mkdir(path.join(root, "Books"), { recursive: true }); await mkdir(path.join(root, "_ATTACHMENTS", "PDF_Images", "Book"), { recursive: true }); await mkdir(path.join(root, "Other", "PDF_Images", "Book"), { recursive: true });
+  const file = path.join(root, "Books", "Book.md"); await writeFile(file, "![[Book_page1.png]]");
+  for (const image of [path.join(root, "_ATTACHMENTS", "PDF_Images", "Book", "Book_page1.png"), path.join(root, "Other", "PDF_Images", "Book", "Book_page1.png"), path.join(root, "_ATTACHMENTS", "Unique.PNG")]) await writeFile(image, png);
+  const store = new DocumentStore(path.join(root, "session")), record = await store.open(file);
+  // A bare name takes the shortest matching path; a folder-qualified one picks its own copy.
+  assert.equal(await store.asset(record.id, "Book_page1.png"), path.join(await realpath(root), "Other", "PDF_Images", "Book", "Book_page1.png"));
+  assert.equal(await store.asset(record.id, encodeURIComponent("_ATTACHMENTS/PDF_Images/Book/Book_page1.png")), path.join(await realpath(root), "_ATTACHMENTS", "PDF_Images", "Book", "Book_page1.png"));
+  assert.equal(await store.asset(record.id, "unique.png"), path.join(await realpath(root), "_ATTACHMENTS", "Unique.PNG"));
+  await assert.rejects(store.asset(record.id, "missing.png"));
 });

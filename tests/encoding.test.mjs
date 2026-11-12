@@ -29,6 +29,16 @@ test("lossy conversion fails before writing; external conflict blocks recoding",
     assert.throws(() => decodeText(Buffer.from([0xff, 0x00, 0x01])), { code: "INVALID_ENCODING" });
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+test("a stray control byte opens and saves byte-exact; NUL or dense control bytes still refuse", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-control-"));
+  try { const file = path.join(directory, "book.md"), text = "# Book\n\nPage text\u0007 extracted from a PDF.\n".repeat(20); await writeFile(file, text);
+    const store = new DocumentStore(directory), record = await store.open(file);
+    assert.equal(record.content, text); assert.equal(record.controlCharacters, 20);
+    await store.save(record.id, record.content); assert.equal(await readFile(file, "utf8"), text);
+    assert.throws(() => decodeText(Buffer.from("text\u0000more")), { code: "INVALID_ENCODING" });
+    assert.throws(() => decodeText(Buffer.from("\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u000b\u000e".repeat(10))), { code: "INVALID_ENCODING" });
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test("untitled image survives first save and is readable from its persisted reference", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-draft-image-"));

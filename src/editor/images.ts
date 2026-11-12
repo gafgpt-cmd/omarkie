@@ -5,7 +5,8 @@ export function imageReferences(text: string): ImageReference[] {
   const lines = text.split("\n"), offsets = [0]; for (const line of lines) offsets.push(offsets.at(-1)! + line.length + 1);
   const blocked = parseBlocks(text).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind)).map(block => ({ from: offsets[block.fromLine - 1], to: offsets[block.toLine] }));
   for (const code of text.matchAll(/(`+)([^`]|(?!\1)`)*?\1/g)) blocked.push({ from: code.index, to: code.index + code[0].length });
-  const expression = /!\[((?:\\.|[^\]\\])*)\]\((<[^>]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*)(?:\s+["'][^"']*["'])?\)|<img\b[^>]*>/gi;
+  // Destinations: <angle>, plain (balanced parentheses), or a raw-space file path as Obsidian writes it.
+  const expression = /!\[((?:\\.|[^\]\\])*)\]\((<[^>]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,5})(?:\s+["'][^"']*["'])?\)|<img\b[^>]*>/gi;
   for (const match of text.matchAll(expression)) {
     if (blocked.some(range => match.index >= range.from && match.index < range.to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, match.index))) continue;
     let url = "", alt = "", width = "", height = "";

@@ -39,6 +39,9 @@ const md = new MarkdownIt({
   .use(configureMath)
   .use(mark).use(sub).use(sup).use(emoji, { shortcuts: {} })
   .use(configureDocumentSyntax).disable("html_inline");
+// Local file:// images resolve through the asset protocol; markdown-it rejects the scheme by default.
+const validateLink = md.validateLink;
+md.validateLink = url => /^file:\/\//i.test(url.trim()) || validateLink(url);
 // Bumped on every option change so cached block renders are invalidated.
 export let markdownOptionsVersion = 0;
 export function setMarkdownOptions(options: { highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean }) {
@@ -73,19 +76,16 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
 // the size prefetch, so a source inside a code fence costs the host one failed lookup at most.
 export function localImageSources(text: string) {
   const sources = new Set<string>();
-  for (const match of text.matchAll(/!\[(?:\\.|[^\]\\])*\]\((<[^>\n]*>|(?:\\.|[^\s)\\])*)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
-    const raw = match[1] !== undefined ? match[1].replace(/^<|>$/g, "").replace(/\\([()])/g, "$1") : match[2];
+  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|!\[(?:\\.|[^\]\\])*\]\((<[^>\n]*>|(?:\\.|[^)\\\n])*)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
+    const raw = match[1] ?? (match[2] !== undefined ? match[2].trim().replace(/\s+(["']).*\1$/, "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1") : match[3]);
     const source = raw.trim(), scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
     if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
   }
   return [...sources];
 }
-md.renderer.rules.image = (tokens, index, _options, env) => {
-  const token = tokens[index],
-    source = String(token.attrGet("src") || ""),
-    alt = md.utils.escapeHtml(token.content || t("图片"));
-  const documentId =
-    typeof env?.documentId === "string" ? env.documentId : undefined;
+// One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
+// a lone width keeps the natural aspect ratio when the natural size is known.
+function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string) {
   if (/^https?:\/\//i.test(source) && !allowRemoteImages)
     return `<span class="remote-image">${alt}${t("（远程图片：{{source}}）", { source: md.utils.escapeHtml(source) })}</span>`;
   const url = /^(?:https?:\/\/|data:image\/(?:png|jpeg|gif|webp);)/i.test(source)
@@ -93,13 +93,27 @@ md.renderer.rules.image = (tokens, index, _options, env) => {
     : documentId
       ? `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`
       : "";
-  const size = imageSizes.get(url);
-  // An image alone on its line is laid out as a centred figure.
-  // The rich editor renders each image on its own and says whether it fills its line.
-  const alone = typeof env?.standalone === "boolean" ? env.standalone : tokens.every((other, at) => at === index || other.type === "softbreak" || (other.type === "text" && !other.content.trim()));
-  return url
-    ? `<img src="${url}" alt="${alt}" loading="lazy" decoding="async"${size ? ` width="${size[0]}" height="${size[1]}"` : ""}${alone ? ' class="md-standalone"' : ""} />`
-    : `<span class="remote-image">${alt}（${md.utils.escapeHtml(source)}）</span>`;
+  if (!url) return `<span class="remote-image">${alt}（${md.utils.escapeHtml(source)}）</span>`;
+  const natural = imageSizes.get(url), size = width && !width.endsWith("%") && !height && natural ? [width, String(Math.round(Number(width) * natural[1] / natural[0]))] : width || height ? [width, height] : natural?.map(String);
+  return `<img src="${url}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ' class="md-standalone"' : ""} />`;
+}
+// An image alone on its line is laid out as a centred figure.
+// The rich editor renders each image on its own and says whether it fills its line.
+const standalone = (tokens: Token[], index: number, env: Record<string, unknown> | undefined) =>
+  typeof env?.standalone === "boolean" ? env.standalone : tokens.every((other, at) => at === index || other.type === "softbreak" || (other.type === "text" && !other.content.trim()));
+md.renderer.rules.image = (tokens, index, _options, env) => {
+  const token = tokens[index];
+  return imageHtml(String(token.attrGet("src") || ""), md.utils.escapeHtml(token.content || t("图片")), typeof env?.documentId === "string" ? env.documentId : undefined, standalone(tokens, index, env), String(token.attrGet("width") ?? "") || undefined, String(token.attrGet("height") ?? "") || undefined);
+};
+// Obsidian embeds resolve like Obsidian: next to the note first, then anywhere in the vault (host side).
+md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
+  const token = tokens[index], meta = (token.meta || {}) as { target?: string; width?: string; height?: string }, target = (meta.target || "").split("#")[0], documentId = typeof env?.documentId === "string" ? env.documentId : undefined;
+  const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target);
+  if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height);
+  const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
+  return media && documentId
+    ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
+    : `<span class="wiki-embed">${name}</span>`;
 };
 function cleanHtml(html: string, documentId?: string) {
   const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"] });
@@ -255,7 +269,7 @@ function countBlock(kind: string, source: string) {
   let fences = 0, images = 0;
   for (const token of md.parse(source, { fragment: true })) {
     if (token.type === "fence" && source.includes("\n")) fences++;
-    for (const child of token.children || []) if (child.type === "image" || child.type === "html_embed") images++;
+    for (const child of token.children || []) if (["image", "html_embed", "wiki_embed"].includes(child.type)) images++;
   }
   return { fences, images };
 }

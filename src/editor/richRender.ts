@@ -356,7 +356,10 @@ function tokenInlineHtml(
           ? object(unit, escapeHtml(visible), "entity", cursor)
           : escaped
             ? meta("\\") + escapeHtml(unit.slice(1))
-            : escapeHtml(unit);
+            // Stray control bytes (PDF extraction junk) show as their Control Pictures glyph; the source byte is kept.
+            : /^[\u0000-\u0008\u000b\u000e-\u001f]$/.test(unit)
+              ? object(unit, String.fromCharCode(0x2400 + unit.charCodeAt(0)), "entity", cursor)
+              : escapeHtml(unit);
       cursor += unit.length;
       decoded += visible;
     }
@@ -399,6 +402,7 @@ function tokenInlineHtml(
       continue;
     }
     if (token.type === "html_embed") { append(object(token.content, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.content.length; continue; }
+    if (token.type === "wiki_embed") { append(object(token.markup, renderMarkdown(token.markup, documentId, { ...environment, standalone: raw.trim() === token.markup }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.markup.length; continue; }
     if (token.type === "comment") {
       append(object(token.markup, `<span class="md-comment-view">${escapeHtml(token.content.trim()) || t("注释")}</span>`, "comment", cursor)); cursor += token.markup.length; continue;
     }
@@ -442,8 +446,10 @@ function tokenInlineHtml(
       const from = cursor,
         start = raw.indexOf("]", from + 2),
         after = suffix(start);
-      const end =
+      const attributes = typeof token.meta?.attributes === "string" ? token.meta.attributes : "";
+      let end =
         start < 0 ? from + token.content.length : start + after.length;
+      if (attributes && raw.startsWith(attributes, end)) end += attributes.length;
       const source = raw.slice(from, end);
       append(
         object(

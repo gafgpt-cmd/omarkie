@@ -702,5 +702,14 @@
   "Omarchy（自动）": "Omarchy (auto)",
   "Toypora 纸张 · Omarchy 标题": "Toypora paper · Omarchy headings",
   "拼写检查语言": "Spellcheck languages",
-  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Bundled dictionaries work offline without network downloads. macOS uses system spellcheck languages."
+  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Bundled dictionaries work offline without network downloads. macOS uses system spellcheck languages.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。": "“{{name}}” contains {{count}} control characters, shown as ␇ and similar symbols and kept unchanged when saved.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_one": "“{{name}}” contains {{count}} control character, shown as a symbol such as ␇ and kept unchanged when saved.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_other": "“{{name}}” contains {{count}} control characters, shown as ␇ and similar symbols and kept unchanged when saved.",
+  "PDF 转换器设置无效。": "The PDF converter setting is invalid.",
+  "PDF 转换器没有生成 Markdown 文件。": "The PDF converter produced no Markdown file.",
+  "正在把“{{name}}”转换为 Markdown…": "Converting “{{name}}” to Markdown…",
+  "未找到 PDF 转换器：请在 PATH 中提供 pdf-md，或设置 OMARKIE_PDF_CONVERTER。": "No PDF converter found: put pdf-md on PATH or set OMARKIE_PDF_CONVERTER.",
+  "无法把“{{name}}”转换为 Markdown。": "“{{name}}” could not be converted to Markdown.",
+  "在 PDF 阅读器中打开": "Open in PDF viewer"
 }

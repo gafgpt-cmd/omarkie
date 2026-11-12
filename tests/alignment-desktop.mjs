@@ -20,7 +20,8 @@ page.on("pageerror", error => errors.push(error.message)); await mkdir(qa, { rec
 await fullSize(application, page);
 const rich = page.locator(".document-editor:not([hidden]) .rich-document");
 async function menu(name) { await page.getByRole("button", { name: "更多操作", exact: true }).click(); await page.getByRole("menuitem", { name, exact: true }).or(page.getByRole("menuitemcheckbox", { name, exact: true })).click(); }
-async function source() { if (await page.locator(".source-toggle").getAttribute("aria-pressed") !== "true") await page.locator(".source-toggle").click(); return (await page.locator(".document-editor:not([hidden]) .source-surface .cm-line").allTextContents()).join("\n"); }
+// CodeMirror loads lazily: wait until the source lines render and two consecutive reads agree.
+async function source() { if (await page.locator(".source-toggle").getAttribute("aria-pressed") !== "true") await page.locator(".source-toggle").click(); const lines = page.locator(".document-editor:not([hidden]) .source-surface .cm-line"); await expect(lines.first()).toBeVisible(); let text = ""; await expect.poll(async () => { const previous = text; text = (await lines.allTextContents()).join("\n"); return text.trim() !== "" && text === previous; }, { intervals: [50] }).toBe(true); return text; }
 async function richMode() { if (await page.locator(".source-toggle").getAttribute("aria-pressed") === "true") await page.locator(".source-toggle").click(); await expect(rich).toBeVisible(); }
 try {
   await expect(rich.locator(".markdown-alert-note")).toBeVisible(); await expect(rich.locator(".md-html .fence-preview strong")).toHaveText("HTML 预览");

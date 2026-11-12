@@ -144,9 +144,7 @@ try {
     pass(`More checked mark: ${action}`, "Visible checkmark and ARIA state match the active writing mode");
   }
   if (!process.argv.includes("--commands-only") && !process.argv.includes("--workflows-only") && !process.argv.includes("--files-only")) {
-  await expect(rich().getByRole("heading", { name: /Seven Days on the Lighthouse Coast/ })).toBeVisible();
-  await page.getByRole("button", { name: "space-explainer.md", exact: true }).click({ force: true });
-  await expect(rich().getByRole("heading", { name: /How Far Is a Light-Year/ })).toBeVisible();
+  await expect(rich().getByRole("heading", { name: /Words, back to words/ })).toBeVisible();
   await menu("Help", "Showcase Examples");
   await expect(rich().getByRole("heading", { name: /Seven Days on the Lighthouse Coast/ })).toBeVisible();
   pass("Help > Showcase Examples", "Opens the bundled showcase");
@@ -165,9 +163,12 @@ try {
     await page.getByRole("button", { name: "space-explainer.md", exact: true }).click({ force: true });
     await expect(rich().getByRole("heading", { name: /How Far Is a Light-Year/ })).toBeVisible();
     await command("preferences");
-    await expect(preferences().getByLabel("Text font", { exact: true })).toHaveValue("theme");
-    await expect(preferences().getByLabel("Text font", { exact: true }).locator('option[value="helvetica"]')).toHaveCount(0);
-    pass("Unavailable saved local font", "Unavailable selection returns to theme default and is not offered");
+    // The saved choice is kept and still shown; only unchosen fields stop offering the missing font.
+    await expect(preferences().getByLabel("Text font", { exact: true })).toHaveValue("helvetica");
+    await expect(preferences().getByLabel("Heading font", { exact: true }).locator('option[value="helvetica"]')).toHaveCount(0);
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")).documentFont), "helvetica");
+    await preferences().getByLabel("Text font", { exact: true }).selectOption("theme");
+    pass("Unavailable saved local font", "A saved font missing on this system stays saved and selected; it is not offered elsewhere");
   }
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("DOM.enable"); await cdp.send("CSS.enable");
