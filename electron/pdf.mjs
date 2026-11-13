@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access, mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { access, constants, mkdir, readdir, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { t } from "./i18n.mjs";
@@ -16,7 +16,7 @@ async function executable(command, environment) {
   const suffixes = process.platform === "win32" && !/\.exe$/i.test(command) ? [".exe"] : [""];
   const candidates = path.isAbsolute(command) || /[\\/]/.test(command) ? [command]
     : (environment.PATH || "").split(path.delimiter).filter(Boolean).flatMap(root => suffixes.map(suffix => path.join(root, command + suffix)));
-  for (const file of candidates) try { await access(file); return file; } catch {}
+  for (const file of candidates) try { await access(file, process.platform === "win32" ? constants.F_OK : constants.X_OK); if ((await stat(file)).isFile()) return file; } catch {}
   return null;
 }
 export async function pdfConverter(dataDir, environment = process.env) {
