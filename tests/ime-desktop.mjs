@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { installPlugin } from "../electron/plugins.mjs";
+import { fullSize } from "./desktop-window.mjs";
 
 const data=await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-"));
 const qa=process.env.OMARKIE_QA_DIR || path.join(data,"evidence"); await mkdir(qa,{recursive:true});
@@ -26,9 +27,9 @@ const env={...process.env,OMARKIE_DATA_DIR:profile}; delete env.ELECTRON_RUN_AS_
 let app,page; const checks=[],errors=[];
 try {
   app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:[]}:{args:[process.cwd()]}),env,timeout:30000});
-  page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message));
+  page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message)); await fullSize(app,page);
   console.log('IME: launched');
-  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'欢迎.md',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name:'插件管理…',exact:true}).click();
   await page.getByRole('checkbox',{name:'启用IME-probe',exact:true}).check();
   await expect.poll(()=>page.evaluate(()=>!!window.imeProbe)).toBe(true);

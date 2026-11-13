@@ -283,7 +283,7 @@
   "引用": "Citat",
   "引用标识": "Identificator de referință",
   "当前": "Actual:",
-  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。": "Importul ODT cu versiunea actuală de Pandoc necesită LibreOffice; alternativ, actualizați la Pandoc 3.x.",
+  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。": "Importul ODT cu versiunea actuală de Pandoc necesită LibreOffice; alternativ, actualizați la Pandoc 3.12.1.",
   "当前匹配": "Potrivirea curentă",
   "当前宿主未提供废纸篓。": "Mediul actual nu oferă un coș de gunoi.",
   "当前文件夹": "Dosarul curent",
@@ -712,5 +712,15 @@
   "Omarchy（自动）": "Omarchy (automat)",
   "Toypora 纸张 · Omarchy 标题": "Hârtie Toypora · titluri Omarchy",
   "拼写检查语言": "Limbi pentru verificarea ortografică",
-  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Dicționarele incluse funcționează offline, fără descărcări din rețea. macOS folosește limbile corectorului de sistem."
+  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Dicționarele incluse funcționează offline, fără descărcări din rețea. macOS folosește limbile corectorului de sistem.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。": "„{{name}}” conține {{count}} caractere de control, afișate ca ␇ și simboluri similare și păstrate neschimbate la salvare.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_one": "„{{name}}” conține {{count}} caracter de control, afișat ca un simbol precum ␇ și păstrat neschimbat la salvare.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_few": "„{{name}}” conține {{count}} caractere de control, afișate ca ␇ și simboluri similare și păstrate neschimbate la salvare.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_other": "„{{name}}” conține {{count}} de caractere de control, afișate ca ␇ și simboluri similare și păstrate neschimbate la salvare.",
+  "PDF 转换器设置无效。": "Setarea convertorului PDF nu este validă.",
+  "PDF 转换器没有生成 Markdown 文件。": "Convertorul PDF nu a produs niciun fișier Markdown.",
+  "正在把“{{name}}”转换为 Markdown…": "Se convertește „{{name}}” în Markdown…",
+  "未找到 PDF 转换器：请在 PATH 中提供 pdf-md，或设置 OMARKIE_PDF_CONVERTER。": "Nu s-a găsit niciun convertor PDF: adăugați pdf-md în PATH sau setați OMARKIE_PDF_CONVERTER.",
+  "无法把“{{name}}”转换为 Markdown。": "„{{name}}” nu a putut fi convertit în Markdown.",
+  "在 PDF 阅读器中打开": "Deschide în vizualizatorul PDF"
 }

@@ -29,13 +29,13 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 - **Works with Typora themes and plugins**: install Typora-style CSS themes, and use eight bundled community plugins or your own ([compatibility scope](docs/plugins.md)).
 - **Files you control**: folder tree, full-text search, quick open, recent files, autosave, session recovery and external-change conflict detection.
 - **Private by default**: remote images and embeds are blocked until you allow them, so opening a note never contacts other servers.
-- **Images, math and diagrams**: local and pasted images, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
+- **Images, math and diagrams**: local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
 - **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252, with BOM and line endings preserved.
 - **Import and export**: HTML and PDF built in; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
 
 ## See what it renders
 
-Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five documents live in [docs/showcase](docs/showcase), and they come with the app: Omarkie opens them the first time you start it, and **Help → Showcase Examples** brings them back any time without touching your edits. Each one also shows how to do things in Omarkie. Every screenshot below is the real app.
+Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five documents live in [docs/showcase](docs/showcase), and they come with the app: **Help → Showcase Examples** opens them any time without touching your edits. The first start opens short Welcome, Writing sample and Markdown syntax notes in your language (English, Spanish, Catalan or Chinese). Each showcase document also shows how to do things in Omarkie. Every screenshot below is the real app.
 
 | | |
 | --- | --- |
@@ -104,7 +104,9 @@ Open the DMG and drag **Omarkie** into **Applications**. Requires macOS 14 or la
 
 ### Optional converters
 
-Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. ODT import is tested with Pandoc 3; older versions such as Debian 12's Pandoc 2.17 drop the header row of ODT tables, so on such systems install Pandoc 3 from its [releases](https://github.com/jgm/pandoc/releases). On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
+Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and other formats; select its executable in Preferences if it is not detected. Pandoc before 3.12.1 drops equations and table header rows from ODT, so ODT import with it goes through LibreOffice; install LibreOffice or Pandoc 3.12.1+ from its [releases](https://github.com/jgm/pandoc/releases). On Linux and Windows, legacy DOC/RTF import also needs [LibreOffice](https://www.libreoffice.org/download/download-libreoffice/).
+
+PDFs (Linux and Windows): **Open** a `.pdf`, or pass one to `omarkie`, and Omarkie opens a Markdown copy with its pictures, made by an external PDF-to-Markdown converter and kept in the data folder (`PDF/`), so an unchanged PDF opens again without converting. The converter is called as `<converter> <file.pdf> --output <folder>` and must write a `.md` file there. Omarkie uses `OMARKIE_PDF_CONVERTER` (a path, or a JSON list such as `["python3", "/path/to/orchestrator.py"]`), else a `pdf-converter` file with the same content in the data folder, else `pdf-md` on `PATH`. Without a converter, or when it fails, Omarkie offers to open the PDF in your PDF viewer.
 
 ## Build from source
 

@@ -72,14 +72,10 @@ jobs:
       - run: npm ci
       - name: Install desktop runtime libraries
         run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk libreoffice-writer
-      - name: Install pinned Pandoc 3 for ODT acceptance
-        run: |
-          # Checksum: jgm/pandoc release 3.12.1 asset digest.
-          deb="$RUNNER_TEMP/pandoc.deb"
-          curl --fail --location --silent --show-error --retry 3 --retry-all-errors --connect-timeout 30 --max-time 300 https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-1-amd64.deb --output "$deb"
-          echo "b4217ac7c54067c442f9d4cd38bcd0c184a43f3e7053431a12263a6f92a33ba2  $deb" | sha256sum --check --strict
-          sudo apt-get install -y "$deb"
-          pandoc --version | head -n 1
+      - name: Install the latest Pandoc, verified against its release digest
+        run: bash scripts/install-pandoc.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: npm test
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"
@@ -123,12 +119,26 @@ jobs:
       - run: npm ci
       - name: Install conversion tools for actual DOC, RTF and media acceptance
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Pinned upstream installers avoid the Chocolatey feed dependency.
-          # Checksums: jgm/pandoc release 3.12.1 and the LibreOffice mirror list.
+          # Latest upstream installers avoid the Chocolatey feed dependency; each is checked against the checksum its publisher lists.
+          $release = Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } -Uri https://api.github.com/repos/jgm/pandoc/releases/latest
+          $pandoc = $release.assets | Where-Object name -like '*-windows-x86_64.msi' | Select-Object -First 1
+          if (-not $pandoc -or $pandoc.digest -notmatch '^sha256:([0-9a-f]{64})$') { throw 'Latest Pandoc MSI or its sha256 digest is missing' }
+          $pandocSha = $pandoc.digest.Substring(7)
+          $stable = 'https://download.documentfoundation.org/libreoffice/stable/'
+          $listing = (curl.exe --fail --location --silent --show-error --retry 3 --retry-all-errors $stable) -join "`n"
+          if ($LASTEXITCODE -ne 0) { throw 'LibreOffice release listing failed' }
+          $version = [regex]::Matches($listing, 'href="(\d+(?:\.\d+)+)/"') | ForEach-Object { [version]$_.Groups[1].Value } | Sort-Object -Descending | Select-Object -First 1
+          if (-not $version) { throw 'No LibreOffice stable version found' }
+          $office = "${stable}$version/win/x86_64/LibreOffice_${version}_Win_x86-64.msi"
+          $officeSha = ((curl.exe --fail --location --silent --show-error --retry 3 --retry-all-errors "$office.sha256") -join ' ').Trim().Split(' ')[0].ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $officeSha -notmatch '^[0-9a-f]{64}$') { throw 'LibreOffice sha256 is missing' }
+          Write-Host "Pandoc $($release.tag_name), LibreOffice $version"
           $packages = @(
-            @{ Name = 'pandoc'; Url = 'https://github.com/jgm/pandoc/releases/download/3.12.1/pandoc-3.12.1-windows-x86_64.msi'; Sha256 = 'b6bf9f2c8408a1689272be5722e45f93ed9da17ba74321d0f7ef4e5a196605e8' },
-            @{ Name = 'libreoffice'; Url = 'https://download.documentfoundation.org/libreoffice/stable/26.8.1/win/x86_64/LibreOffice_26.8.1_Win_x86-64.msi'; Sha256 = 'c6298b10cfa1748bcbedad94c62ce771e240e5021bfd6d7a967cd571b04b5312' }
+            @{ Name = 'pandoc'; Url = $pandoc.browser_download_url; Sha256 = $pandocSha },
+            @{ Name = 'libreoffice'; Url = $office; Sha256 = $officeSha }
           )
           foreach ($package in $packages) {
             $installer = Join-Path $env:RUNNER_TEMP ($package.Name + '.msi')

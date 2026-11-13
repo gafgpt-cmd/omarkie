@@ -15,6 +15,7 @@ import iconv from "iconv-lite";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
 import { t } from "./i18n.mjs";
+import { findInVault, vaultRoot } from "./vault.mjs";
 
 export const digest = (value) =>
   createHash("sha256").update(value).digest("hex");
@@ -63,8 +64,11 @@ export function decodeText(bytes, requested) {
   let text;
   try { text = new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bom ? bytes.subarray(marker[1]) : bytes); }
   catch { throw Object.assign(new Error(t("无法按 {{encoding}} 读取文本，请选择文件的实际编码。", { encoding: encoding.toUpperCase() })), { code: "INVALID_ENCODING" }); }
-  if (/[\u0000-\u0008\u000b\u000e-\u001f]/.test(text)) throw Object.assign(new Error(t("文件包含非文本字符。")), { code: "INVALID_ENCODING" });
-  return { content: text, bom, encoding };
+  // Many control bytes mean binary data or a wrong encoding (UTF-16 read as UTF-8 is half NULs);
+  // a few stray ones, NUL included (PDF-extraction junk), are kept and reported.
+  const controlCharacters = text.match(/[\u0000-\u0008\u000b\u000e-\u001f]/g)?.length ?? 0, nuls = text.split("\u0000").length - 1;
+  if (controlCharacters > Math.max(64, text.length / 100) || (nuls > 1 && nuls * 10 > text.length)) throw Object.assign(new Error(t("文件包含非文本字符。")), { code: "INVALID_ENCODING" });
+  return { content: text, bom, encoding, ...(controlCharacters ? { controlCharacters } : {}) };
 }
 export function encodeText(text, encoding = "utf-8", bom = false) {
   if (!encodings.includes(encoding)) throw new Error(t("不支持的文本编码。"));
@@ -106,6 +110,7 @@ export class DocumentStore {
       diskHash: digest(bytes),
       lineEnding: text.includes("\r\n") ? "\r\n" : "\n",
       bom: decoded.bom, encoding: decoded.encoding,
+      ...(decoded.controlCharacters ? { controlCharacters: decoded.controlCharacters } : {}),
     };
     this.records.set(id, record);
     return { ...record };
@@ -376,6 +381,8 @@ export class DocumentStore {
     if (!/\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|ogg|mp3|wav|m4a)$/i.test(reference) || reference.includes("\0")) throw new Error(t("图片路径不可用。"));
     const base = await realpath(record.path ? path.dirname(record.path) : this.dataDir);
     let requested = path.resolve(base, reference);
+    // Obsidian vaults link attachments by name: look a missing relative reference up in the vault.
+    if (record.path && !path.isAbsolute(reference) && await lstat(requested).then(() => false, error => error.code === "ENOENT")) requested = await findInVault(await vaultRoot(base, this.folder), reference) || requested;
     if (process.platform === "darwin") { if (requested.startsWith("/var/")) requested = "/private" + requested; else if (requested.startsWith("/tmp/")) requested = "/private" + requested; }
     if (process.platform === "win32") {
       // realpath expands valid 8.3 names (RUNNER~1, PROGRA~1) and normalizes

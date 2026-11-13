@@ -15,6 +15,56 @@ export function alertTitle(kind: string) {
   return `<span class="markdown-alert-title"><svg class="alert-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4M8 4.3v1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>${label}</span>`;
 }
 export function configureDocumentSyntax(md: MarkdownIt) {
+  // Obsidian embeds: ![[file]], ![[dir/file]], ![[file|300]], ![[file|300x200]], ![[file|alt text]]; display only.
+  md.inline.ruler.before("image", "wiki_embed", (state, silent) => {
+    if (!state.src.startsWith("![[", state.pos)) return false;
+    const match = /^!\[\[([^[\]\n|]+)(?:\|([^[\]\n]*))?\]\]/.exec(state.src.slice(state.pos, state.posMax));
+    if (!match || !match[1].trim()) return false;
+    if (!silent) {
+      const token = state.push("wiki_embed", "img", 0), size = /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(match[2] || "");
+      token.markup = match[0]; token.content = !size && match[2]?.trim() ? match[2].trim() : match[1].trim();
+      token.meta = { target: match[1].trim(), width: size?.[1], height: size?.[2] };
+    }
+    state.pos += match[0].length; return true;
+  });
+  // Image paths with raw spaces, as Obsidian and Typora write them: ![alt](sub dir/my picture.png "title").
+  md.inline.ruler.after("image", "image_spaced", (state, silent) => {
+    if (!state.src.startsWith("![", state.pos)) return false;
+    const labelEnd = state.md.helpers.parseLinkLabel(state, state.pos + 1, false);
+    if (labelEnd < 0 || state.src[labelEnd + 1] !== "(") return false;
+    let end = labelEnd + 2, depth = 1;
+    for (; end < state.posMax; end++) {
+      const character = state.src[end];
+      if (character === "\\") end++;
+      else if (character === "\n") return false;
+      else if (character === "(") depth++;
+      else if (character === ")" && !--depth) break;
+    }
+    if (depth) return false;
+    const destination = /^(.*?\S)(?:\s+(["'])(.*)\2)?$/.exec(state.src.slice(labelEnd + 2, end).trim());
+    if (!destination || !/\s/.test(destination[1]) || !/\.[a-z0-9]{1,5}$/i.test(destination[1])) return false;
+    const href = state.md.normalizeLink(destination[1]);
+    if (!state.md.validateLink(href)) return false;
+    if (!silent) {
+      const content = state.src.slice(state.pos + 2, labelEnd), children: typeof state.tokens = [];
+      state.md.inline.parse(content, state.md, state.env, children);
+      const token = state.push("image", "img", 0);
+      token.attrs = [["src", href], ["alt", ""], ...(destination[3] ? [["title", destination[3]] as [string, string]] : [])];
+      token.children = children; token.content = content;
+    }
+    state.pos = end + 1; return true;
+  });
+  // Size attributes after an image (Pandoc, kramdown): ![](a.png){width=300 height=200}, {width=50%}.
+  md.core.ruler.after("inline", "image_attributes", state => {
+    for (const block of state.tokens) for (const [index, image] of (block.children || []).entries()) {
+      const next = block.children![index + 1];
+      if (image.type !== "image" || next?.type !== "text") continue;
+      const match = /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(next.content);
+      if (!match) continue;
+      for (const [, key, value] of match[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) image.attrSet(key, value.replace(/px$/, ""));
+      image.meta = { ...image.meta, attributes: match[0] }; next.content = next.content.slice(match[0].length);
+    }
+  });
   md.inline.ruler.before("emphasis", "html_break", (state, silent) => {
     const match = /^<br\s*\/?>/i.exec(state.src.slice(state.pos));
     if (!match) return false;

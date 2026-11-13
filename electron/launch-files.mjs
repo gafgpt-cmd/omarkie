@@ -8,6 +8,6 @@ export function launchFiles(argv, packaged, cwd = process.cwd()) {
     if (!value.startsWith("file:")) return value;
     try { return fileURLToPath(value); } catch { return ""; }
   })
-    .filter(value => !value.startsWith("-") && /\.(md|markdown|mdown)$/i.test(value))
+    .filter(value => !value.startsWith("-") && /\.(md|markdown|mdown|pdf)$/i.test(value))
     .map(value => path.resolve(cwd, value)))];
 }

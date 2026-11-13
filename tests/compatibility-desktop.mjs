@@ -9,6 +9,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {pathToFileURL} from 'node:url';
 import {pandocPath,libreOfficePath} from '../electron/interchange.mjs';
+import {fullSize} from './desktop-window.mjs';
 const exec = promisify(execFile), pandoc = await pandocPath(), office = await libreOfficePath();
 assert.ok(pandoc && office,'Install Pandoc and LibreOffice for actual conversion acceptance');
 const data = await mkdtemp(path.join(os.tmpdir(),'omarkie-compatibility-'));
@@ -26,8 +27,8 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 let application,page; const checks=[],errors=[];
 try {
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[]} : {args:[process.cwd()]}),env,timeout:30000});
-  page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message));
-  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
+  page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
+  await expect(page.getByRole('button',{name:'欢迎.md',exact:true})).toBeVisible();
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});
   const command = action=>application.evaluate(({BrowserWindow},action)=>BrowserWindow.getAllWindows()[0].webContents.send('app:command',{action}),action);
   const openDialog = async file=>application.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
@@ -71,7 +72,7 @@ try {
   await page.screenshot({path:path.join(qa,'compatibility.png')});
   await application.close(); application=null;
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[savedDoc]} : {args:[process.cwd(),savedDoc]}),env,timeout:30000});
-  page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message));
+  page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
   const reopened = page.locator('.document-editor:not([hidden]) .rich-document');
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});
   await page.getByRole('button',{name:'Imported saved.md',exact:true}).click();

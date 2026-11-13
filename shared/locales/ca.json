@@ -283,7 +283,7 @@
   "引用": "Cita",
   "引用标识": "Identificador de referència",
   "当前": "Actual",
-  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.x。": "La importació d'ODT amb la versió actual de Pandoc requereix LibreOffice; també es pot actualitzar a Pandoc 3.x.",
+  "当前 Pandoc 的 ODT 导入需要 LibreOffice；也可升级到 Pandoc 3.12.1。": "La importació d'ODT amb la versió actual de Pandoc requereix LibreOffice; també es pot actualitzar a Pandoc 3.12.1.",
   "当前匹配": "Coincidència actual",
   "当前宿主未提供废纸篓。": "Aquest entorn no disposa de paperera.",
   "当前文件夹": "Carpeta actual",
@@ -712,5 +712,15 @@
   "Omarchy（自动）": "Omarchy (automàtic)",
   "Toypora 纸张 · Omarchy 标题": "Paper Toypora · encapçalaments Omarchy",
   "拼写检查语言": "Llengües del corrector ortogràfic",
-  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Els diccionaris integrats funcionen sense connexió i sense descàrregues de xarxa. macOS fa servir les llengües del corrector del sistema."
+  "内置词典可离线使用，无需联网下载。macOS 使用系统拼写检查语言。": "Els diccionaris integrats funcionen sense connexió i sense descàrregues de xarxa. macOS fa servir les llengües del corrector del sistema.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。": "«{{name}}» conté {{count}} caràcters de control; es mostren com a ␇ i símbols semblants i es conserven intactes en desar.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_one": "«{{name}}» conté {{count}} caràcter de control; es mostra com un símbol com ␇ i es conserva intacte en desar.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_many": "«{{name}}» conté {{count}} caràcters de control; es mostren com a ␇ i símbols semblants i es conserven intactes en desar.",
+  "“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。_other": "«{{name}}» conté {{count}} caràcters de control; es mostren com a ␇ i símbols semblants i es conserven intactes en desar.",
+  "PDF 转换器设置无效。": "La configuració del convertidor de PDF no és vàlida.",
+  "PDF 转换器没有生成 Markdown 文件。": "El convertidor de PDF no ha generat cap fitxer Markdown.",
+  "正在把“{{name}}”转换为 Markdown…": "S'està convertint «{{name}}» a Markdown…",
+  "未找到 PDF 转换器：请在 PATH 中提供 pdf-md，或设置 OMARKIE_PDF_CONVERTER。": "No s'ha trobat cap convertidor de PDF: afegeix pdf-md al PATH o defineix OMARKIE_PDF_CONVERTER.",
+  "无法把“{{name}}”转换为 Markdown。": "No s'ha pogut convertir «{{name}}» a Markdown.",
+  "在 PDF 阅读器中打开": "Obre al visor de PDF"
 }

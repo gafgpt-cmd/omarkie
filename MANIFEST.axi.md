@@ -95,6 +95,8 @@ Weekly: vibe-clean, branch prune, repo-audit.sh --check, dark-feature review.
 Ways this repo broke before.
 ```json
 {
-  "traps": []
+  "traps": [
+    "omarkie-dev main is stale since v0.1.1: never push or sync dev main to public; it reverts #10. Code work lands here."
+  ]
 }
 ```

@@ -13,9 +13,10 @@ const catalogs: Record<string, () => Promise<{ default: Record<string, string> }
   en: () => import("../shared/locales/en.json", { with: { type: "json" } }), es: () => import("../shared/locales/es.json", { with: { type: "json" } }),
   ca: () => import("../shared/locales/ca.json", { with: { type: "json" } }), ro: () => import("../shared/locales/ro.json", { with: { type: "json" } }),
 };
-const translation = catalogs[language] ? (await catalogs[language]()).default : {};
+// Missing keys fall back to English, never to the Chinese source key; Chinese needs no catalog.
+const [translation, english] = await Promise.all([catalogs[language] ? catalogs[language]().then(module => module.default) : {}, language !== "zh" && language !== "en" ? catalogs.en().then(module => module.default) : undefined]);
 const instance = i18next.createInstance();
-instance.init({ lng: language, fallbackLng: false, resources: { [language]: { translation } }, initAsync: false,
+instance.init({ lng: language, fallbackLng: english ? "en" : false, resources: { [language]: { translation }, ...(english ? { en: { translation: english } } : {}) }, initAsync: false,
   keySeparator: false, nsSeparator: false, returnEmptyString: false,
   interpolation: { escapeValue: false, nestingPrefix: `\u0000$t(`, nestingSuffix: `)\u0000` },
 });

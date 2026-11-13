@@ -43,6 +43,8 @@ await cp("dist", path.join(resources, "dist"), { recursive: true });
 const index = path.join(resources, "dist/index.html");
 await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
 await cp("native/bridge.js", path.join(resources, "bridge.js"));
+await cp("shared/samples.json", path.join(resources, "samples.json"));
+await cp("shared/samples.i18n.json", path.join(resources, "samples.i18n.json"));
 await rm(path.join(resources, "showcase"), { recursive: true, force: true });
 await cp("docs/showcase", path.join(resources, "showcase"), { recursive: true });
 await cp("shared/commands.json", path.join(resources, "commands.json"));

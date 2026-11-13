@@ -28,7 +28,9 @@ import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
+import { openSamples, sampleNotes } from "./samples.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
+import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -61,7 +63,7 @@ let window,
   store, workspace,
   dirty = false,
   closing = false;
-const pending = [];
+const pending = [], pendingPdfs = [];
 let rendererReady = false;
 let revealWindow = () => {};
 
@@ -69,8 +71,8 @@ const pluginToken = randomUUID();
 const authorizedPlugin = item => item && ({ ...item, url: item.url + "?token=" + pluginToken });
 function openFiles(files) {
   for (const file of files) {
-    if (window && rendererReady) store.open(file)
-      .then(document => send({ action: "opened", document })).catch(showError);
+    if (window && rendererReady) (isPdf(file) ? openPdf(file) : store.open(file))
+      .then(document => document && send({ action: "opened", document })).catch(showError);
     else pending.push(file);
   }
 }
@@ -96,7 +98,23 @@ const send = (command) =>
     "app:command",
     typeof command === "string" ? { action: command } : command,
   );
-const showError = (error) => dialog.showErrorBox("Omarkie", error.message);
+// Open errors go to the window's message bar; a native error box blocks the app (and aborts headless runs).
+const showError = (error) => window && rendererReady ? send({ action: "notice", message: error.message }) : console.error(error);
+// A PDF opens as its Markdown copy; without a converter, or when conversion fails, it can open in the PDF viewer.
+async function openPdf(file) {
+  let reason;
+  try {
+    const converter = await pdfConverter(store.dataDir);
+    if (converter) {
+      send({ action: "notice", message: t("正在把“{{name}}”转换为 Markdown…", { name: path.basename(file) }) });
+      return await store.open(await convertPdf(file, store.dataDir, converter));
+    }
+    reason = t("未找到 PDF 转换器：请在 PATH 中提供 pdf-md，或设置 OMARKIE_PDF_CONVERTER。");
+  } catch (error) { reason = String(error.stderr || "").trim().split("\n").at(-1) || error.message; }
+  const answer = await dialog.showMessageBox(window, { type: "info", message: t("无法把“{{name}}”转换为 Markdown。", { name: path.basename(file) }), detail: reason, buttons: [t("取消"), t("在 PDF 阅读器中打开")], defaultId: 1, cancelId: 0 });
+  if (answer.response === 1) { const failure = await shell.openPath(file); if (failure) throw new Error(failure); }
+  return null;
+}
 const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
@@ -174,7 +192,8 @@ const handlers = {
       const marks = await window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))');
       for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
     }
-    rendererReady = true; revealWindow(); for (const file of pending.splice(0)) {
+    rendererReady = true; revealWindow(); openFiles(pendingPdfs.splice(0)); for (const file of pending.splice(0)) {
+    if (isPdf(file)) { openFiles([file]); continue; }
     try { send({ action: "opened", document: await store.open(file) }); }
     catch (error) { showError(error); }
   } return true; },
@@ -197,22 +216,24 @@ const handlers = {
     } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
   },
   restore: async () => {
-    const restored = await store.restore();
+    // Launch-file problems are reported in the window's message bar, never a modal box.
+    const restored = await store.restore(), notices = [];
     if (pending.length) {
       const documents = [...(restored?.documents || [])];
       let activeId = restored?.activeId;
       for (const file of pending.splice(0)) {
+        if (isPdf(file)) { pendingPdfs.push(file); continue; }
         try {
           const record = await store.open(file), index = documents.findIndex(item => item.id === record.id);
           if (index < 0) documents.push(record); else documents[index] = record;
           activeId = record.id;
-        } catch (error) { showError(error); }
+          if (record.controlCharacters) notices.push(t("“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。", { name: record.name, count: record.controlCharacters }));
+        } catch (error) { notices.push(error.message); }
       }
-      if (documents.length) return { ...restored, documents, activeId };
+      if (documents.length) return { ...restored, documents, activeId, restoreError: [restored?.restoreError, ...notices].filter(Boolean).join(" ") || undefined };
     }
-    if (restored) return restored;
-    const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
-    return { documents, activeId: documents[0].id, folder: folder.folder };
+    const result = restored || await openSamples(store, await sampleNotes(root, language), path.join(app.getPath("userData"), t("示例笔记")));
+    return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },
   showcase: async () => {
     const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName), [showcaseDocuments[0]]);
@@ -223,10 +244,11 @@ const handlers = {
     const result = await dialog.showOpenDialog(window, {
       title: t("打开 Markdown 文件"),
       properties: ["openFile"],
-      filters: [{ name: "Markdown", extensions: ["md", "markdown", "mdown"] }],
+      filters: [{ name: "Markdown / PDF", extensions: ["md", "markdown", "mdown", "pdf"] }],
     });
     if (result.canceled) return null;
-    const record = await store.open(result.filePaths[0]);
+    const file = result.filePaths[0], record = isPdf(file) ? await openPdf(file) : await store.open(file);
+    if (!record) return null;
     await workspace.remember(record.path);
     return record;
   },

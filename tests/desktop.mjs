@@ -23,7 +23,7 @@ async function launch() {
   currentPage = page;
   page.on("pageerror", (error) => errors.push(error.message));
   await fullSize(application, page);
-  await page.getByRole("button", { name: "travel-journal.md", exact: true }).waitFor();
+  await page.getByRole("button", { name: "欢迎.md", exact: true }).waitFor();
   return page;
 }
 async function menu(page, name) {
@@ -53,16 +53,19 @@ async function waitForFile(file, predicate, timeout = 6000) {
 try {
   let page = await launch();
   await expect(
-    page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
+    page.getByRole("heading", { name: "让文字，回到文字。" }),
   ).toBeVisible();
-  assert.ok(await page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.decode().then(() => image.naturalWidth > 0)));
   await page.screenshot({ path: path.join(qa, "desktop.png") });
-  passed.push("Packaged renderer loads, the showcase opens with its photos, no overlay");
-  const welcome = path.join(dataDir, "Showcase/travel-journal.md");
+  passed.push("Packaged renderer loads, welcome document renders, no overlay");
+  const welcome = path.join(dataDir, "示例笔记/欢迎.md");
   const original = await readFile(welcome, "utf-8");
+  if (process.platform === "win32") {
+    assert.ok(original.includes("Ctrl+S"));
+    assert.ok(!original.includes("⌘"));
+  }
   await mode(page, false);
   const editor = page.locator(".document-editor:not([hidden]) .cm-content");
-  await expect(editor).toContainText("# Seven Days on the Lighthouse Coast");
+  await expect(editor).toContainText("# 让文字，回到文字。");
   await mode(page, true);
   assert.equal(
     await readFile(welcome, "utf-8"),
@@ -82,7 +85,7 @@ try {
   await editor.press("ControlOrMeta+Shift+z");
   await waitForFile(welcome, (text) => text.includes("中文输入验收"));
   passed.push("Undo and redo persist correct file contents");
-  await page.getByRole("button", { name: "space-explainer.md", exact: true }).click();
+  await page.getByRole("button", { name: "写作示例.md", exact: true }).click();
   await mode(page, true);
   await expect(
     page.locator(".document-editor:not([hidden]) .mathjax-node svg").first(),
@@ -92,7 +95,7 @@ try {
   ).toBeVisible();
   await expect(
     page.locator(".document-editor:not([hidden]) .mermaid-block svg"),
-  ).toContainText("Parallax");
+  ).toContainText("观察");
   passed.push(
     "Math, code, tasks and Mermaid with visible labels render",
   );
@@ -170,13 +173,20 @@ try {
     "Image paste copies bytes and renders through the local asset protocol",
   );
   await sidebarTab(page, "文件");
-  await page.getByRole("button", { name: "travel-journal.md", exact: true }).click();
+  await page.getByRole("button", { name: "欢迎.md", exact: true }).click();
   await sidebarTab(page, "大纲");
   await page
-    .getByRole("button", { name: "The route at a glance", exact: true })
+    .getByRole("button", { name: "写作，不必分心", exact: true })
     .click();
   await sidebarTab(page, "文件");
   passed.push("Outline navigates to the selected Markdown heading");
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", { action: "showcase" }));
+  await expect(
+    page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
+  ).toBeVisible();
+  // Poll instead of decode(): the photo's src may still switch to its screen-size preview, which rejects a pending decode.
+  await expect.poll(() => page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  passed.push("Help > Showcase Examples opens the showcase with its photos");
   const target = path.join(dataDir, "验收文档.md");
   await application.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });

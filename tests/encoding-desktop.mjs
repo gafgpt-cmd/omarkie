@@ -4,13 +4,14 @@ import { mkdtemp, writeFile, readFile, mkdir, realpath } from 'node:fs/promises'
 import path from 'node:path';
 import os from 'node:os';
 import { digest, encodeText, decodeText } from '../electron/store.mjs';
+import { fullSize } from './desktop-window.mjs';
 const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'omarkie-encoding-ui-'))), file = path.join(directory, '编码验收.md');
 const initial = '# 编码验收\r\n\r\n原始中文。\r\n\r\n输入区：\r\n';
 await writeFile(file, encodeText(initial, 'gbk'));
 await writeFile(path.join(directory, 'session.json'), JSON.stringify({ version: 1, activeId: 'fixture', folder: directory, documents: [{ id: 'fixture', path: file, name: '编码验收.md', content: initial, savedContent: initial, diskHash: digest(await readFile(file)), encoding: 'gbk', bom: false, lineEnding: '\r\n' }] }));
-const env = { ...process.env, OMARKIE_DATA_DIR: directory }; delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
+const env = { ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: 'zh' }; delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
 const app = await electron.launch({ args: [process.cwd()], env }), page = await app.firstWindow(), errors = [], passed = [];
-page.on('pageerror', error => errors.push(error.message));
+page.on('pageerror', error => errors.push(error.message)); await fullSize(app, page);
 const qa = process.env.OMARKIE_QA_DIR || '/tmp/omarkie-encoding-qa'; await mkdir(qa, { recursive: true });
 const rich = page.locator('.document-editor:not([hidden]) .rich-document'), encodingButton = page.getByRole('button', { name: '更改文本编码' });
 const dialog = () => page.getByRole('dialog', { name: '文本编码', exact: true });

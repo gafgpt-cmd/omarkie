@@ -15,17 +15,12 @@ export function FontSettings({ value, change, changeTheme }: { value: Preference
     })).then(fonts => { if (active) setLocalFonts(fonts); });
     return () => { active = false; };
   }, [omarchyFont]);
-  useEffect(() => {
-    if (!localFonts) return;
-    let next = value;
-    for (const key of ["documentFont", "headingFont", "codeFont", "interfaceFont"] as const) if (["helvetica", "toypora-mono"].includes(value[key]) && !localFonts.includes(value[key])) next = { ...next, [key]: "theme" };
-    if (next !== value) change(next);
-  }, [localFonts, value, change]);
-  const choices = fontChoices(omarchyFont).filter(font => !["helvetica", "toypora-mono", "omarchy"].includes(font.id) || localFonts?.includes(font.id)), groups = [["toypora", "Toypora"], ["toyzetlr", "Toyzetlr"], ["omarchy", "Omarchy"], ["system", t("系统")]] as const;
+  // Fonts the system lacks are hidden as new choices, but a saved choice stays selectable and saved; its stack falls back when rendered.
+  const choices = fontChoices(omarchyFont), available = (font: { id: string }) => !["helvetica", "toypora-mono", "omarchy"].includes(font.id) || localFonts?.includes(font.id), groups = [["toypora", "Toypora"], ["toyzetlr", "Toyzetlr"], ["omarchy", "Omarchy"], ["system", t("系统")]] as const;
   const fields = [["documentFont", t("正文字体")], ["headingFont", t("标题字体")], ["codeFont", t("代码字体")], ["interfaceFont", t("界面字体")]] as const;
   const select = (key: keyof FontPreferences, label: string) => <label key={key}>{label}<select aria-label={label} value={value[key]} onChange={e => change({ ...value, [key]: e.target.value })}>
     <option value="theme">{t("跟随主题")}</option>
-    {groups.map(([group, name]) => <optgroup key={group} label={name}>{choices.filter(font => font.group === group).map(font => <option key={font.id} value={font.id}>{font.name}</option>)}</optgroup>)}
+    {groups.map(([group, name]) => <optgroup key={group} label={name}>{choices.filter(font => font.group === group && (available(font) || font.id === value[key])).map(font => <option key={font.id} value={font.id}>{font.name}</option>)}</optgroup>)}
   </select></label>;
   return <fieldset><legend>{t("字体")}</legend>
     <div className="form-grid">{fields.map(([key, label]) => select(key, label))}</div>
