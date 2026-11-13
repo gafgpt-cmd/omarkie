@@ -64,9 +64,10 @@ export function decodeText(bytes, requested) {
   let text;
   try { text = new TextDecoder(encoding, { fatal: true, ignoreBOM: true }).decode(bom ? bytes.subarray(marker[1]) : bytes); }
   catch { throw Object.assign(new Error(t("无法按 {{encoding}} 读取文本，请选择文件的实际编码。", { encoding: encoding.toUpperCase() })), { code: "INVALID_ENCODING" }); }
-  // NUL or many control bytes mean binary data or a wrong encoding; a few stray ones (PDF-extraction junk) are kept and reported.
-  const controlCharacters = text.match(/[\u0000-\u0008\u000b\u000e-\u001f]/g)?.length ?? 0;
-  if (text.includes("\u0000") || controlCharacters > Math.max(64, text.length / 100)) throw Object.assign(new Error(t("文件包含非文本字符。")), { code: "INVALID_ENCODING" });
+  // Many control bytes mean binary data or a wrong encoding (UTF-16 read as UTF-8 is half NULs);
+  // a few stray ones, NUL included (PDF-extraction junk), are kept and reported.
+  const controlCharacters = text.match(/[\u0000-\u0008\u000b\u000e-\u001f]/g)?.length ?? 0, nuls = text.split("\u0000").length - 1;
+  if (controlCharacters > Math.max(64, text.length / 100) || (nuls > 1 && nuls * 10 > text.length)) throw Object.assign(new Error(t("文件包含非文本字符。")), { code: "INVALID_ENCODING" });
   return { content: text, bom, encoding, ...(controlCharacters ? { controlCharacters } : {}) };
 }
 export function encodeText(text, encoding = "utf-8", bom = false) {

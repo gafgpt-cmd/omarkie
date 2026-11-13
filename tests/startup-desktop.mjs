@@ -9,9 +9,9 @@ const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-startup-"));
 const content = "# Startup\n\nReadable restored text.\n\n```js\nconst answer = 42;\n```\n", file = path.join(directory, "startup.md");
 await writeFile(file, content, "utf8");
 await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, folder: directory, activeId: "startup", documents: [{ id: "startup", path: file, name: "startup.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, lineEnding: "\n" }] }), "utf8");
-const env = { ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh", OMARKIE_TRACE_STARTUP: "1" };
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh", OMARKIE_TRACE_STARTUP: "1" });
 delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
-const app = await electron.launch({ args: [process.cwd()], env });
+const app = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 try {
   const page = await app.firstWindow(), errors = [];
   page.on("pageerror", error => errors.push(error.message));

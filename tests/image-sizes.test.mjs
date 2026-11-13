@@ -90,9 +90,12 @@ test("an attachment missing next to the note is found by name anywhere in its Ob
   const file = path.join(root, "Books", "Book.md"); await writeFile(file, "![[Book_page1.png]]");
   for (const image of [path.join(root, "_ATTACHMENTS", "PDF_Images", "Book", "Book_page1.png"), path.join(root, "Other", "PDF_Images", "Book", "Book_page1.png"), path.join(root, "_ATTACHMENTS", "Unique.PNG")]) await writeFile(image, png);
   const store = new DocumentStore(path.join(root, "session")), record = await store.open(file);
-  // A bare name takes the shortest matching path; a folder-qualified one picks its own copy.
-  assert.equal(await store.asset(record.id, "Book_page1.png"), path.join(await realpath(root), "Other", "PDF_Images", "Book", "Book_page1.png"));
-  assert.equal(await store.asset(record.id, encodeURIComponent("_ATTACHMENTS/PDF_Images/Book/Book_page1.png")), path.join(await realpath(root), "_ATTACHMENTS", "PDF_Images", "Book", "Book_page1.png"));
+  // The attachment folder is searched before the rest of the vault; a folder-qualified name picks its own copy.
+  assert.equal(await store.asset(record.id, "Book_page1.png"), path.join(await realpath(root), "_ATTACHMENTS", "PDF_Images", "Book", "Book_page1.png"));
+  assert.equal(await store.asset(record.id, encodeURIComponent("Other/PDF_Images/Book/Book_page1.png")), path.join(await realpath(root), "Other", "PDF_Images", "Book", "Book_page1.png"));
   assert.equal(await store.asset(record.id, "unique.png"), path.join(await realpath(root), "_ATTACHMENTS", "Unique.PNG"));
   await assert.rejects(store.asset(record.id, "missing.png"));
+  // Obsidian's own attachment folder setting is honoured first.
+  await mkdir(path.join(root, "Media")); await writeFile(path.join(root, "Media", "Book_page1.png"), png); await writeFile(path.join(root, ".obsidian", "app.json"), JSON.stringify({ attachmentFolderPath: "Media" }));
+  assert.equal(await store.asset(record.id, "Book_page1.png"), path.join(await realpath(root), "Media", "Book_page1.png"));
 });

@@ -29,7 +29,8 @@ for (const format of ['docx','odt','epub']) test(`actual ${format} import retain
   assert.match(imported.markdown,/中文 heading/); assert.match(imported.markdown,/\|.*one.*中文/);
   assert.match(imported.markdown.replace(/[ *]/g,''),/\|A\|B\|/);
   // ODT bridged through LibreOffice (Pandoc before 3.12.1) keeps code text but may bold highlighted keywords and lose the fence.
-  assert.match(imported.markdown.replace(/\*\*/g,''),/let answer = 42/); assert.match(imported.markdown.replace(/\\text\{([^}]*)\}/g,"$1").replace(/\s+/g,""),/\$\$?E=mc/);
+  const bridged = format === 'odt' && !(await pandocReadsODTLosslessly(pandoc));
+  assert.match(bridged ? imported.markdown.replace(/\*\*/g,'') : imported.markdown,/let answer = 42/); assert.match(imported.markdown.replace(/\\text\{([^}]*)\}/g,"$1").replace(/\s+/g,""),/\$\$?E=mc/);
   assert.match(imported.markdown,/Footnote text/);
   const image = imported.markdown.match(/(?:src="|\]\(<?)([^"\s)>]+)/)?.[1]; assert.ok(image,imported.markdown);
   const resource = image.startsWith("file:") ? fileURLToPath(image) : decodeURIComponent(image), extracted = await readFile(resource);

@@ -349,7 +349,8 @@ function tokenInlineHtml(
         entity?.[0] ||
         escaped?.[0] ||
         String.fromCodePoint(raw.codePointAt(cursor)!);
-      const visible = decodeMarkdownText(unit);
+      // markdown-it turns NUL into U+FFFD in token text; the source keeps the NUL.
+      const visible = unit === "\u0000" ? "\uFFFD" : decodeMarkdownText(unit);
       if (!value.startsWith(decoded + visible)) break;
       html +=
         entity && visible !== unit

@@ -20,9 +20,12 @@ test("the converter comes from the environment, the data folder or PATH, and non
   await writeFile(path.join(data, "pdf-converter"), process.execPath + "\n");
   assert.deepEqual(await pdfConverter(data, {}), [process.execPath]);
   const bin = path.join(root, "bin"), empty = path.join(root, "empty"); await mkdir(bin); await mkdir(empty);
-  const shim = path.join(bin, process.platform === "win32" ? "pdf-md.cmd" : "pdf-md"); await writeFile(shim, "", { mode: 0o755 });
+  const shim = path.join(bin, process.platform === "win32" ? "pdf-md.exe" : "pdf-md"); await writeFile(shim, "", { mode: 0o755 });
   assert.deepEqual(await pdfConverter(empty, { PATH: bin }), [shim]);
   assert.equal(await pdfConverter(empty, { PATH: empty }), null);
+  // A bare interpreter name in the argv resolves on PATH, like `["python3", "/path/to/orchestrator.py"]`.
+  const interpreter = path.basename(process.execPath).replace(/\.exe$/i, "");
+  assert.deepEqual(await pdfConverter(empty, { PATH: path.dirname(process.execPath), OMARKIE_PDF_CONVERTER: JSON.stringify([interpreter, script]) }), [process.execPath, script]);
   await assert.rejects(pdfConverter(empty, { OMARKIE_PDF_CONVERTER: '["", 1]' }));
 });
 
@@ -37,6 +40,14 @@ test("a PDF converts once into a Markdown copy with its pictures; a changed PDF 
   await utimes(pdf, new Date(), new Date(Date.now() + 5000));
   assert.notEqual(await convertPdf(pdf, data, converter), markdown);
   assert.equal((await readFile(calls, "utf8")).length, 2);
+});
+
+test("a leftover copy folder without Markdown is replaced by the next conversion", async t => {
+  const { pdf, data, converter } = await fixture(t);
+  const markdown = await convertPdf(pdf, data, converter), { rm: remove } = await import("node:fs/promises");
+  for (const name of [path.basename(markdown), "notes.md"]) await remove(path.join(path.dirname(markdown), name));
+  assert.equal(await convertPdf(pdf, data, converter), markdown);
+  assert.match(await readFile(markdown, "utf8"), /# Converted/);
 });
 
 test("a failing converter or one that writes no Markdown leaves no copy behind", async t => {

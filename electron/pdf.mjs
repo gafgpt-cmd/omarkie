@@ -10,17 +10,21 @@ const exec = promisify(execFile);
 // It is configured as an executable path or a JSON argv array, in OMARKIE_PDF_CONVERTER or the data folder's
 // `pdf-converter` file, else found on PATH as `pdf-md`. Without one, the PDF opens in the system viewer instead.
 export const isPdf = file => /\.pdf$/i.test(file);
+// A bare command (`python3`, `pdf-md`) is looked up on PATH, as a shell would; Windows needs a real executable
+// because execFile cannot start .cmd/.bat files.
+async function executable(command, environment) {
+  const suffixes = process.platform === "win32" && !/\.exe$/i.test(command) ? [".exe"] : [""];
+  const candidates = path.isAbsolute(command) || /[\\/]/.test(command) ? [command]
+    : (environment.PATH || "").split(path.delimiter).filter(Boolean).flatMap(root => suffixes.map(suffix => path.join(root, command + suffix)));
+  for (const file of candidates) try { await access(file); return file; } catch {}
+  return null;
+}
 export async function pdfConverter(dataDir, environment = process.env) {
   const configured = environment.OMARKIE_PDF_CONVERTER || (await readFile(path.join(dataDir, "pdf-converter"), "utf8").catch(() => "")).trim();
-  const names = process.platform === "win32" ? ["pdf-md.exe", "pdf-md.cmd"] : ["pdf-md"];
-  const candidates = configured
-    ? [configured.startsWith("[") ? JSON.parse(configured) : [configured]]
-    : (environment.PATH || "").split(path.delimiter).filter(Boolean).flatMap(root => names.map(name => [path.join(root, name)]));
-  for (const argv of candidates) {
-    if (!Array.isArray(argv) || !argv.length || argv.some(part => typeof part !== "string")) throw new Error(t("PDF 转换器设置无效。"));
-    try { await access(argv[0]); return argv; } catch {}
-  }
-  return null;
+  const argv = configured ? (configured.startsWith("[") ? JSON.parse(configured) : [configured]) : ["pdf-md"];
+  if (!Array.isArray(argv) || !argv.length || argv.some(part => typeof part !== "string" || !part)) throw new Error(t("PDF 转换器设置无效。"));
+  const command = await executable(argv[0], environment);
+  return command ? [command, ...argv.slice(1)] : null;
 }
 async function markdownIn(folder, depth = 0) {
   let best = null;
@@ -43,7 +47,11 @@ export async function convertPdf(file, dataDir, converter, timeout = 30 * 60 * 1
   try {
     await exec(converter[0], [...converter.slice(1), source, "--output", partial], { timeout, maxBuffer: 20 * 1024 * 1024, windowsHide: true });
     if (!await markdownIn(partial)) throw new Error(t("PDF 转换器没有生成 Markdown 文件。"));
-    await rename(partial, folder);
+    // A copy may already exist: the same PDF converted twice at once, or a leftover folder without its Markdown.
+    await rename(partial, folder).catch(async () => {
+      if (await markdownIn(folder).catch(() => null)) return;
+      await rm(folder, { recursive: true, force: true }); await rename(partial, folder);
+    });
     return (await markdownIn(folder)).file;
   } finally { await rm(partial, { recursive: true, force: true }); }
 }

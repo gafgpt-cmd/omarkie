@@ -51,7 +51,7 @@ Additional suites:
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
-| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, and file workflows | Electron; Linux runs headless |
+| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, file workflows, PDF open, and startup (explicit file skips the restored session) | Electron; Linux runs headless |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | macOS desktop |
 
