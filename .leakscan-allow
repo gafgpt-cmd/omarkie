@@ -1,0 +1,8 @@
+# Allowlist syntax quotes approved matches; reviewed configuration, not leaked content.
+^\.leakscan-allow:
+# The public repository's own name and owner: functional identity.
+:gafgpt-cmd$
+:omarkie$
+# Shared public workflow rules and required gate wiring named by the manifest.
+^MANIFEST\.axi\.md:agentic-dotfiles$
+^MANIFEST\.axi\.md:\.no-mistakes/
