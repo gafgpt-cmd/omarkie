@@ -58,7 +58,7 @@ Vault search reads one file at a time (8 MiB per file, 512 MiB total), yields be
 
 ## Encodings and conversion
 
-Unicode is detected from the BOM; other encodings are chosen explicitly. Before saving, every code point is checked to round-trip, so a lossy save never touches the file. Pandoc handles DOCX, ODT, EPUB and other formats, with a local Lua filter for HTML blocks; Mermaid diagrams become PNGs in the converted copy only. Legacy DOC/RTF go through LibreOffice to DOCX first on Linux and Windows; macOS can also use `textutil`.
+Unicode is detected from the BOM; other encodings are chosen explicitly. Before saving, every code point is checked to round-trip, so a lossy save never touches the file. Pandoc handles DOCX, ODT, EPUB and other formats, with a local Lua filter for HTML blocks; Mermaid diagrams become PNGs in the converted copy only. Legacy DOC/RTF, and ODT when Pandoc is older than 3.12.1 (it drops equations and table header rows), go through LibreOffice to DOCX first on Linux and Windows; macOS can also use `textutil`.
 
 ## Plugins
 
@@ -68,7 +68,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 
 - `npm test`: editor kernel, file layer, themes, fonts and translations.
 - `npm run test:desktop`, `test:parity`, `test:background-desktop`: Electron editing, saving, images, export and recovery.
-- `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (macOS key bindings).
+- `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (scope per suite: CONTRIBUTING.md).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.
 
 **Speed budgets.** After `npm run build`, `npm run test:perf` measures desktop startup, large-note opening/scrolling and lazy photo loading with isolated profiles and cached generated fixtures. `tests/perf-budgets.json` sets budgets of 1000 / 1500 / 300 / 150 ms respectively; current builds are expected to fail. Results include medians, decoded image dimensions and loaded-image counts in `/tmp/omarkie-perf-qa/perf-results.json` (`OMARKIE_QA_DIR` overrides the directory). Set `OMARKIE_PERF_RUNS` (default 3), `OMARKIE_PERF_REPORT_ONLY=1`, or `OMARKIE_EXECUTABLE` with optional `OMARKIE_APP` for an installed executable/asar.
