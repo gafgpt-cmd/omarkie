@@ -9,10 +9,16 @@ export function imageReferences(text: string): ImageReference[] {
   const expression = /!\[((?:\\.|[^\]\\])*)\]\((<[^>]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,5})(?:\s+["'][^"']*["'])?\)|<img\b[^>]*>/gi;
   for (const match of text.matchAll(expression)) {
     if (blocked.some(range => match.index >= range.from && match.index < range.to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, match.index))) continue;
-    let url = "", alt = "", width = "", height = "";
+    let url = "", alt = "", width = "", height = "", end = match.index + match[0].length;
     if (match[0].startsWith("<")) { const attributes = new DOMParser().parseFromString(match[0], "text/html").querySelector("img"); url = attributes?.getAttribute("src") || ""; alt = attributes?.getAttribute("alt") || ""; width = attributes?.getAttribute("width") || ""; height = attributes?.getAttribute("height") || ""; }
-    else { url = (match[2] || "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1"); alt = match[1].replace(/\\([\[\]])/g, "$1"); }
-    if (url) result.push({ from: match.index, to: match.index + match[0].length, source: match[0], url, alt, width, height });
+    else {
+      const attributes = /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(match.index + match[0].length));
+      if (attributes) {
+        for (const [, key, value] of attributes[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { const size = value.replace(/px$/, ""); if (key === "width") width = size; else height = size; }
+        end += attributes[0].length;
+      }
+      url = (match[2] || "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1"); alt = match[1].replace(/\\([\[\]])/g, "$1"); }
+    if (url) result.push({ from: match.index, to: end, source: text.slice(match.index, end), url, alt, width, height });
   }
   return result;
 }

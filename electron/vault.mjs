@@ -58,7 +58,8 @@ async function lookup(folder, parts) {
   };
   const found = await find();
   if (found || Date.now() - cached.built < retryAfter) return found;
-  indexes.set(folder, cached = { built: Date.now(), byName: buildIndex(folder) });
+  if (indexes.get(folder) === cached) indexes.set(folder, { built: Date.now(), byName: buildIndex(folder) });
+  cached = indexes.get(folder);
   return find();
 }
 
