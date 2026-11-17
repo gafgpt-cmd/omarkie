@@ -16,7 +16,9 @@ Remove personal information and credentials from examples.
 
 ## Set up development
 
-Use Node.js 26 and npm. Linux and Windows builds use Electron; the macOS build needs macOS 14+ and the Xcode Command Line Tools. Install Pandoc 3 and LibreOffice for the complete conversion suites (the ODT import test skips when Pandoc is older than 3.12.1 and LibreOffice is missing). CI installs the latest Pandoc release (checked against its published digest) and LibreOffice Writer, and runs `npm test` with `OMARKIE_REQUIRE_CONVERTERS=1` so a missing converter fails instead of skipping.
+Use Node.js 26 and npm. Linux and Windows use Electron; macOS needs macOS 14+ and Xcode Command Line Tools.
+Install Pandoc 3 and LibreOffice for conversion tests.
+CI installs the latest digest-verified Pandoc and LibreOffice Writer, then runs `npm run verify` with `OMARKIE_REQUIRE_CONVERTERS=1`.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
@@ -35,11 +37,10 @@ The development command launches Vite and an Electron host. `npm run dev` runs a
 4. Run the checks relevant to your change and describe the results in the pull request.
 5. Update user documentation when behavior or requirements change.
 
-Core checks:
+Required compatibility checks:
 
 ```sh
-npm test
-npm run build
+npm run verify
 ```
 
 Additional suites:
@@ -52,6 +53,7 @@ Additional suites:
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
 | `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, file workflows, PDF open, and startup (explicit file skips the restored session) | Electron; Linux runs headless |
+| `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron; runs in CI and no-mistakes |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | macOS desktop |
 

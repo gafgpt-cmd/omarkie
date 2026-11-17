@@ -67,6 +67,8 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 ## Tests
 
 - `npm test`: editor kernel, file layer, themes, fonts and translations.
+- `npm run verify`: build, unit tests and `test:preserve`; required by CI and no-mistakes.
+- Restore/revert changes keep shipped behavior. Feature removal or weakened checks needs explicit approval, not an older-version baseline.
 - `npm run test:desktop`, `test:parity`, `test:background-desktop`: Electron editing, saving, images, export and recovery.
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (scope per suite: CONTRIBUTING.md).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.

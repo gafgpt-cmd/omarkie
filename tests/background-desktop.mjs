@@ -12,7 +12,7 @@ let application;
 try {
   application=await electron.launch({args:[process.cwd(),...headlessArguments],env,timeout:30000});let page=await application.firstWindow();
   await fullSize(application,page);
-  await expect(page.getByRole('button',{name:'欢迎.md',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'偏好设置…',exact:true}).click();
   const actualFormats = { png: (await sharp({create:{width:16,height:16,channels:4,background:'#96abc1'}}).png().toBuffer()).toString('base64'), ...formats };
   for(const [format,encoded] of Object.entries(actualFormats)) {

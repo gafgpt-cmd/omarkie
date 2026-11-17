@@ -1,5 +1,14 @@
-# Mirrors .github/workflows/ci.yml. Desktop/Electron suites (test:desktop, test:features...) stay manual.
+# Same compatibility checks locally and in CI.
 commands:
-  prepare: ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
-  test: npm test
+  prepare: npm ci
+  test: npm run verify
   lint: npx tsc -b
+review:
+  path_instructions:
+    - path: "*"
+      instructions: |
+        Preserve shipped behavior when fixing or restoring.
+        A restore request does not authorize removing features or replacing the current contract with an older release.
+        Keep the five illustrated introductions, local/Obsidian pictures, editing, menus, plugins, exports and saved-session recovery.
+        Require executable compatibility proof. Do not hide failures by removing controls, weakening expectations, skipping tests or making budgets report-only.
+        Any intentional feature removal or reduced coverage needs the user's explicit approval for that exact change.

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fullSize } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 const data = await mkdtemp(path.join(os.tmpdir(), "omarkie-parity-"));
 const qa = process.env.OMARKIE_QA_DIR || path.join(data, "evidence");
@@ -11,15 +11,15 @@ await mkdir(qa, {recursive:true});
 const file = path.join(data,"Editing parity 中文.md");
 const original = '# Editing parity\n\n- alpha\n- beta\n- gamma\n\n> - quoted one\n> - quoted two\n\n| A | B |\n| --- | --- |\n| cellA | cellB |\n| cellC | cellD |\n\n```javascript\nlet first = 1;\nlet second = 2;\n```\n\n```sequence\nAlice->Bob: Hello Bob\nNote right of Bob: Bob thinks\nBob-->Alice: I am good thanks\n```\n\n```flow\nst=>start: Start\nop=>operation: Work\ncond=>condition: Ready?\ne=>end: End\nst->op->cond\ncond(yes)->e\ncond(no)->op\n```\n';
 await writeFile(file,original);
-const env = {...process.env,OMARKIE_DATA_DIR:path.join(data,"session")};
+const env = await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:path.join(data,"session"),OMARKIE_LANGUAGE:"zh"});
 delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
 let application,page;
 const errors = [], checks = [];
 try {
-  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[]} : {args:[process.cwd()]}),env,timeout:30000});
+  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:headlessArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on("pageerror",error => errors.push(error.message));
   await fullSize(application, page);
-  await expect(page.getByRole('button',{name:'欢迎.md',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
   await application.evaluate(({dialog},file) => {dialog.showOpenDialog = async () => ({canceled:false,filePaths:[file]});},file);
   const menu = async name => {await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name,exact:true}).click();};
   await menu('打开文件');

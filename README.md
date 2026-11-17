@@ -35,7 +35,10 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 
 ## See what it renders
 
-Many Markdown readers show a broken icon where your photo should be. Omarkie shows the picture, straight from the folder next to your note. These five documents live in [docs/showcase](docs/showcase), and they come with the app: **Help → Showcase Examples** opens them any time without touching your edits. The first start opens short Welcome, Writing sample and Markdown syntax notes in your language (English, Spanish, Catalan or Chinese). Each showcase document also shows how to do things in Omarkie. Every screenshot below is the real app.
+Five illustrated introductions ship with the app in [docs/showcase](docs/showcase).
+First launch opens all five, with the travel journal active.
+**Help → Showcase Examples** opens them again, restores missing files and keeps your edits.
+Each note demonstrates pictures, tables, formulas or diagrams. Every screenshot below is the real app.
 
 | | |
 | --- | --- |
