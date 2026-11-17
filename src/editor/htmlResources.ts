@@ -1,4 +1,5 @@
 import DOMPurify from "dompurify";
+export const bundledImageUrls = new Map<string, string>();
 // Keep the normal safe link protocols plus this app's document-scoped media
 // scheme. File URLs are rewritten before sanitization, never enabled globally.
 const allowedURI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|omarkie-asset):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;

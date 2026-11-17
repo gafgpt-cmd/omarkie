@@ -1,6 +1,6 @@
 # Same compatibility checks locally and in CI.
 commands:
-  prepare: npm ci
+  prepare: npm ci && npx playwright install chromium
   test: npm run verify
   lint: npx tsc -b
 review:

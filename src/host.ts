@@ -1,11 +1,17 @@
 import type { DocumentRecord, Host, Recovery, SessionSnapshot } from "./types";
 import { browserBackground, chooseBrowserBackground } from "./browserBackground";
 import { t } from "./i18n";
+import { bundledImageUrls } from "./editor/htmlResources";
 const browserRecords = new Map<string, DocumentRecord>();
-// The showcase notes as text; the browser preview cannot read their pictures from a folder.
+const showcaseImages = new Map(Object.entries(import.meta.glob<string>("../docs/showcase/images/*", { query: "?url", import: "default", eager: true }))
+  .map(([file, url]) => [file.replace("../docs/showcase/", ""), url]));
 const showcase = Object.entries(import.meta.glob<string>("../docs/showcase/*.md", { query: "?raw", import: "default", eager: true }))
   .map(([file, content]) => ({ name: file.split("/").pop()!, content }))
   .sort((a, b) => Number(b.name === "travel-journal.md") - Number(a.name === "travel-journal.md"));
+function registerShowcaseImages(record: DocumentRecord) {
+  for (const [source, url] of showcaseImages)
+    bundledImageUrls.set(`omarkie-asset://local/${encodeURIComponent(record.id)}/${encodeURIComponent(source)}`, url);
+}
 const key = "omarkie-session-v1";
 function draft(name: string, content: string): DocumentRecord {
   return {
@@ -54,13 +60,16 @@ const browser: Host = {
     session ??= {
       documents: showcase.map(sample => draft(sample.name, sample.content)),
     };
-    for (const record of session.documents)
+    for (const record of session.documents) {
       browserRecords.set(record.id, record);
+      if (showcase.some(sample => sample.name === record.name)) registerShowcaseImages(record);
+    }
     return session;
   },
   async showcase() {
     const record = draft(showcase[0].name, showcase[0].content);
     browserRecords.set(record.id, record);
+    registerShowcaseImages(record);
     return { folder: null, files: [], truncated: false, document: record };
   },
   async registerDraft(record) {
