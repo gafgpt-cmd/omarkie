@@ -1,5 +1,6 @@
 import { readFile, realpath, stat, mkdir, copyFile, rename, open } from "node:fs/promises";
 import path from "node:path";
+import { newNote } from "../shared/new-note.mjs";
 import vm from "node:vm";
 import { atomicWrite, encodeText, decodeText } from "./store.mjs";
 import { t } from "./i18n.mjs";
@@ -29,7 +30,7 @@ export class Workspace {
     else { const name = operation.name; if (!name || name.startsWith(".") || /[/\\:\0]/.test(name) || Buffer.byteLength(name) > 240) throw new Error(t("文件名称无效。")); destination = path.join(["new-file", "new-folder"].includes(action) ? source : path.dirname(source), name); }
     await this.absent(destination); if (under(source, destination) && !["new-file", "new-folder"].includes(action)) throw new Error(t("目标位于自身内部。"));
     if (action === "new-folder") await mkdir(destination);
-    else if (action === "new-file") { if (!/\.(md|markdown|mdown)$/i.test(destination)) throw new Error(t("需要 Markdown 扩展名。")); const handle = await open(destination, "wx", 0o600); await handle.close(); }
+    else if (action === "new-file") { if (!/\.(md|markdown|mdown)$/i.test(destination)) throw new Error(t("需要 Markdown 扩展名。")); const handle = await open(destination, "wx", 0o600); try { await handle.writeFile(newNote(path.basename(destination)), "utf8"); } finally { await handle.close(); } }
     else if (action === "duplicate") { const record = [...store.records.values()].find(item => item.path === source), bytes = record && encodeText(record.content, record.encoding, record.bom); await copyFile(source, destination, 1); if (bytes) await atomicWrite(destination, bytes); }
     else if (["move", "rename"].includes(action)) { await rename(source, destination); this.undo = { from: destination, to: source }; return { fromPath: source, toPath: destination }; }
     else throw new Error(t("文件操作无效。"));

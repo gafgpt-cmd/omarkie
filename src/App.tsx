@@ -24,7 +24,9 @@ import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
 import type { FileOperation } from "./types";
-import type { Command } from "./types";
+import type { Command, ConversionOptions } from "./types";
+import type { ToolTab } from "./components/DocumentTools";
+const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -56,6 +58,7 @@ export default function App() {
   const [typewriter, setTypewriter] = useState(false);
   const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
+  const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -174,7 +177,7 @@ export default function App() {
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
-  async function exportDocument(kind: string) {
+  async function exportDocument(kind: string, options?: ConversionOptions) {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
@@ -184,7 +187,7 @@ export default function App() {
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
-      const result = kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
+      const result = options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
     } catch (error) { session.setMessage((error as Error).message); }
     finally { document.body.classList.remove("printing"); exportingRef.current = false; setExporting(false); }
@@ -223,6 +226,7 @@ export default function App() {
     else if (action === "folder") void session.openFolder();
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
+    else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
     else if (action === "close") void session.close();
@@ -428,6 +432,11 @@ export default function App() {
                   }}
                   onSelection={text => { if (record.id === session.activeId) setSelection(text); }}
                   onCompositionEnd={() => { if (record.id === session.activeId) pluginRuntime.current?.documentChanged(); }}
+                  onReference={async url => {
+                    if (url.startsWith("#")) { const heading = extractHeadings(record.content).find(heading => heading.id === decodeURIComponent(url.slice(1))); if (heading) editors.current.get(record.id)?.jump(heading.line); return; }
+                    if (session.folder || /^omarkie-(wiki|tag):/.test(url)) setTools({ tab: "references", id: record.id, request: url });
+                    else await host.openDocumentLink(record.id, url);
+                  }}
                 />
               </div>
             ))}
@@ -460,6 +469,25 @@ export default function App() {
           </button>
         </div>
       )}
+      <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
+        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} initial={tools.tab} request={tools.request}
+        close={() => setTools(null)}
+        open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) requestAnimationFrame(() => editors.current.get(opened.id)?.jump(line)); }}
+        change={async item => {
+          if (readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
+          const record = item.token ? await session.openToken(item.token) : session.documents.find(record => record.id === tools.id);
+          if (!record) throw new Error(t("文档不可用"));
+          for (let attempt = 0; !editors.current.has(record.id) && attempt < 120; attempt++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          const target = editors.current.get(record.id);
+          if (!target || target.composing()) throw new Error(t("当前不可编辑"));
+          if (target.markdown() !== item.before) throw new Error(t("预览已过期，请重新预览后再应用。"));
+          const normalized = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\n/g, record.lineEnding || "\n");
+          if (normalized(item.before) !== item.before || normalized(item.after) !== item.after) throw new Error(t("混合换行符的笔记未修改。请先在副本中明确统一换行符。"));
+          target.transform(() => item.after);
+        }}
+        create={async (name, content) => { const record = { id: crypto.randomUUID(), path: null, name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }}
+        convert={async (format, options) => { if (session.activeId !== tools.id) throw new Error(t("请先选择原笔记再导出")); await exportDocument(format, options); }}
+      />}</Suspense>
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}

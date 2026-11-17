@@ -3,6 +3,18 @@ declare module "markdown-it-task-lists" {
   export default plugin;
 }
 declare module "*.css";
+declare module "*shared/wiki-syntax.mjs" { export const wikiSyntax: import("markdown-it").PluginSimple; }
+declare module "*shared/new-note.mjs" { export function newNote(name: string, now?: string): string; }
+declare module "*shared/frontmatter.mjs" {
+  export function properties(text: string): Record<string, unknown>;
+  export function setProperties(text: string, updates: Record<string, unknown>): string;
+  export function makeReady(text: string, name: string): string;
+  export function validateOKF(text: string, name?: string, root?: boolean): string[];
+}
+declare module "*shared/references.mjs" {
+  export function referenceIndex(snapshot: import("./types").VaultSnapshot): any;
+  export function bundlePlan(snapshot: import("./types").VaultSnapshot): import("./types").BundlePayload;
+}
 declare module "markdown-it-mark" { const plugin: import("markdown-it").PluginSimple; export default plugin; }
 declare module "markdown-it-sub" { const plugin: import("markdown-it").PluginSimple; export default plugin; }
 declare module "markdown-it-sup" { const plugin: import("markdown-it").PluginSimple; export default plugin; }

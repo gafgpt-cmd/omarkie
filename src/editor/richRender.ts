@@ -404,6 +404,10 @@ function tokenInlineHtml(
     }
     if (token.type === "html_embed") { append(object(token.content, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.content.length; continue; }
     if (token.type === "wiki_embed") { append(object(token.markup, renderMarkdown(token.markup, documentId, { ...environment, standalone: raw.trim() === token.markup }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.markup.length; continue; }
+    if (token.type === "wiki_link" || token.type === "vault_tag") {
+      const view = renderMarkdown(token.markup, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");
+      append(object(token.markup, view, "reference", cursor)); cursor += token.markup.length; continue;
+    }
     if (token.type === "comment") {
       append(object(token.markup, `<span class="md-comment-view">${escapeHtml(token.content.trim()) || t("注释")}</span>`, "comment", cursor)); cursor += token.markup.length; continue;
     }

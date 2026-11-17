@@ -20,7 +20,13 @@ export function imageReferences(text: string): ImageReference[] {
       url = (match[2] || "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1"); alt = match[1].replace(/\\([\[\]])/g, "$1"); }
     if (url) result.push({ from: match.index, to: end, source: text.slice(match.index, end), url, alt, width, height });
   }
-  return result;
+  for (const match of text.matchAll(/!\[\[([^\[\]\n|#]+)(?:\|([^\[\]\n]*))?\]\]/g)) {
+    if (blocked.some(range => match.index >= range.from && match.index < range.to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, match.index))) continue;
+    if (!/\.(png|jpe?g|gif|webp|avif|svg)$/i.test(match[1].trim())) continue;
+    const size = /^\s*(\d+)(?:x(\d+))?\s*$/i.exec(match[2] || "");
+    result.push({ from: match.index, to: match.index + match[0].length, source: match[0], url: match[1].trim(), alt: size ? match[1].trim() : match[2]?.trim() || match[1].trim(), width: size?.[1] || "", height: size?.[2] || "" });
+  }
+  return result.sort((a, b) => a.from - b.from);
 }
 export function imageMarkdown(url: string, alt: string, width = "", height = "") {
   const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

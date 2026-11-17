@@ -57,10 +57,11 @@ interface Props {
   onCursor(line: number, column: number): void;
   onSelection?(text: string): void;
   onCompositionEnd?(): void;
+  onReference?(url: string): Promise<void>;
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd },
+    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -68,8 +69,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const model = useRef<MarkdownDocument | null>(null),
       rich = useRef<RichEditor | null>(null),
       source = useRef<EditorView | null>(null);
-    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd });
-    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd };
+    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference });
+    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference };
     const initial = useRef(record),
       requested = useRef(rendered),
       activeMode = useRef(rendered);
@@ -498,7 +499,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
           image: (file) => void insertImage(file),
           link: (url) =>
-            void (/^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(original.id, url))
+            void (callbacks.current.onReference && !/^(?:https?:|mailto:)/i.test(url) ? callbacks.current.onReference(url) : /^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(original.id, url))
               .catch((error) => callbacks.current.onError(error.message)),
           compositionFinished,
         });

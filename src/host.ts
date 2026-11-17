@@ -36,6 +36,8 @@ function download(name: string, text: string, type = "text/markdown;charset=utf-
 }
 const browser: Host = {
   native: false,
+  async vaultSnapshot() { throw new Error(t("请在桌面应用中打开文件夹以使用知识库工具")); },
+  async exportBundle() { throw new Error(t("导出压缩包需要桌面应用")); },
   async spellcheckLanguages() { return []; },
   async cancelClose() {},
   async windowAction() { return false; },

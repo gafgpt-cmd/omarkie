@@ -1,4 +1,5 @@
 import { safeDocumentHtml } from "./htmlResources.ts";
+import { wikiSyntax } from "../../shared/wiki-syntax.mjs";
 import type { MarkdownIt } from "markdown-it";
 import { t } from "../i18n.ts";
 export interface DocumentHeading { line: number; level: number; text: string; id: string }
@@ -15,6 +16,7 @@ export function alertTitle(kind: string) {
   return `<span class="markdown-alert-title"><svg class="alert-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4M8 4.3v1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>${label}</span>`;
 }
 export function configureDocumentSyntax(md: MarkdownIt) {
+  md.use(wikiSyntax);
   // Obsidian embeds: ![[file]], ![[dir/file]], ![[file|300]], ![[file|300x200]], ![[file|alt text]]; display only.
   md.inline.ruler.before("image", "wiki_embed", (state, silent) => {
     if (!state.src.startsWith("![[", state.pos)) return false;

@@ -117,7 +117,7 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     : `<span class="wiki-embed">${name}</span>`;
 };
 function cleanHtml(html: string, documentId?: string) {
-  const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"] });
+  const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   for (const image of template.content.querySelectorAll("img")) {
     const source = image.getAttribute("src") || "";
@@ -252,6 +252,7 @@ export function editableHtml(
     })
     .join("");
   return DOMPurify.sanitize(html, {
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
     ADD_URI_SAFE_ATTR: ["src", "srcset"],
     ADD_ATTR: [
       "contenteditable",

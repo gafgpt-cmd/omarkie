@@ -236,9 +236,25 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           guard panel.runModal() == .OK, let destination = panel.url else { reply(id, ["ok": true, "value": NSNull()]); return }
           #endif
           let directory = store.dataDirectory, working = doc.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? directory
+          let options = args.count > 4 ? args[4] as? [String: Any] ?? [:] : [:]
           DispatchQueue.global(qos: .userInitiated).async {
             let result: [String: Any]
-            do { try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory); result = ["ok": true, "value": destination.path] }
+            do {
+              if format == "pdf" {
+                let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options)
+                DispatchQueue.main.async {
+                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store)
+                  self.pdfExporter = exporter
+                  exporter.export(markup) { result in
+                    do { try atomicWrite(destination, try result.get()); self.reply(id, ["ok": true, "value": destination.path]) }
+                    catch { self.reply(id, ["ok": false, "error": error.localizedDescription]) }
+                    self.pdfExporter = nil
+                  }
+                }
+                return
+              }
+              try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory, options: options); result = ["ok": true, "value": destination.path]
+            }
             catch { result = ["ok": false, "error": error.localizedDescription] }
             DispatchQueue.main.async { self.reply(id, result) }
           }
@@ -510,6 +526,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
       return try store.scan(file)
+    case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store)
+    case "exportBundle":
+      let payload = try arg(args, 0, [String: Any].self)
+      let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+      guard panel.runModal() == .OK, let directory = panel.url else { return nil }
+      return try owner.workspace.exportBundle(payload, store: store, parent: directory)
     case "scan": return try store.scan()
     case "openToken":
       let token = try arg(args, 0, String.self)
@@ -837,7 +859,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     let id = UUID().uuidString
     let location = directory.appendingPathComponent("windows/" + id)
     let draft = DocumentRecord(
-      id: id, name: "未命名.md", content: "", savedContent: "", lineEnding: "\n")
+      id: id, name: "未命名.md", content: Workspace.newNote("未命名.md"), savedContent: "", lineEnding: "\n")
     let host = makeWindow(directory: location, seed: SessionRecord(documents: [draft], activeId: id))
     if let previous {
       let group = previous.tabGroupID ?? UUID().uuidString

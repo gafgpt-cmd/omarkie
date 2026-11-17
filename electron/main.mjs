@@ -16,6 +16,7 @@ import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
+import { vaultSnapshot, exportBundle } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -174,7 +175,23 @@ const handlers = {
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
-  exportConverted: async (_, id, format, source, html) => { const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format; const result = await dialog.showSaveDialog(window, { defaultPath: record.name.replace(/\.[^.]+$/, "." + ext) }); return result.canceled ? null : convertExport(store.dataDir, format, source, html, result.filePath); },
+  vaultSnapshot: () => vaultSnapshot(store),
+  exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : exportBundle(store, payload, result.filePaths[0]); },
+  exportConverted: async (_, id, format, source, html, options) => {
+    const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
+    const result = await dialog.showSaveDialog(window, { defaultPath: record.name.replace(/\.[^.]+$/, "." + ext) });
+    if (result.canceled) return null;
+    return convertExport(store.dataDir, format, source, html, result.filePath, options, async markup => {
+      const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, partition: "document-export-" + randomUUID() } });
+      try {
+        preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !request.url.startsWith("data:") }));
+        preview.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+        const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
+        await preview.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(`<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup));
+        return await preview.webContents.printToPDF({ printBackground: true, pageSize: "A4" });
+      } finally { preview.destroy(); }
+    });
+  },
   imageAction: async (_, id, sources, action, options) => {
     store.require(id);
     if (!Array.isArray(sources) || !sources.length || sources.length > 200 || sources.some(source => typeof source !== "string") || !["copy", "move", "delete", "upload"].includes(action)) throw new Error(t("图片操作无效。"));

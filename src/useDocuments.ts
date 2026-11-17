@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
+import { newNote } from "../shared/new-note.mjs";
 import { t } from "./i18n";
 import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
@@ -215,7 +216,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
       id,
       path: null,
       name,
-      content: "",
+      content: newNote(name),
       savedContent: "",
       diskHash: null,
       lineEnding: "\n",

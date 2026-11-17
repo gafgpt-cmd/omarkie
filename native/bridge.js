@@ -24,7 +24,7 @@
     "open",
     "openFolder",
     "showcase",
-    "scan",
+    "scan", "vaultSnapshot", "exportBundle",
     "openToken",
     "save",
     "persist",

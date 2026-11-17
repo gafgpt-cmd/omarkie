@@ -1,0 +1,12 @@
+.utility-dialog:has(.workflow-tabs) { width: min(920px, 94vw); max-width: 94vw; }
+.workflow-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.workflow-tabs button[aria-pressed="true"] { font-weight: 700; outline: 2px solid currentColor; }
+.utility-dialog:has(.workflow-tabs) section { margin-block: 16px; }
+.utility-dialog:has(.workflow-tabs) textarea { display: block; width: 100%; min-height: 80px; font-family: monospace; }
+.utility-dialog:has(.workflow-tabs) input:not([type="checkbox"]):not([type="file"]) { display: block; width: 100%; }
+.utility-dialog:has(.workflow-tabs) label { display: block; margin-block: 12px; }
+.utility-dialog:has(.workflow-tabs) pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: 12px; border: 1px solid var(--border); }
+.utility-dialog:has(.workflow-tabs) button { margin: 4px; }
+.utility-dialog:has(.workflow-tabs) dd { overflow-wrap: anywhere; }
+.utility-dialog:has(.workflow-tabs) svg g[role="button"] { cursor: pointer; }
+.utility-dialog:has(.workflow-tabs) svg g:focus { outline: 2px solid currentColor; }

@@ -54,7 +54,13 @@ export interface Command {
   anchor?: string;
   line?: number;
 }
+export interface VaultNote { token: string; relative: string; content: string }
+export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean }
+export interface BundlePayload { notes: VaultNote[]; assets: { source: string; relative: string }[]; index: string; log: string }
+export interface ConversionOptions { bibliography?: string; style?: "vancouver"; letterhead?: { name: string; detail: string } }
 export interface Host {
+  vaultSnapshot(): Promise<VaultSnapshot>;
+  exportBundle(payload: BundlePayload): Promise<string | null>;
   native: boolean;
   cancelClose(): Promise<unknown>;
   windowAction(action: string): Promise<unknown>;
@@ -73,7 +79,7 @@ export interface Host {
   removePlugin(id: string): Promise<unknown>;
   conversionSettings(choose?: boolean): Promise<{ pandoc: string; word: boolean; libreOffice?: string }>;
   importDocument(): Promise<{ html?: string; markdown?: string; name: string } | null>;
-  exportConverted(id: string, format: string, source: string, html: string): Promise<string | null>;
+  exportConverted(id: string, format: string, source: string, html: string, options?: ConversionOptions): Promise<string | null>;
   restore(): Promise<Recovery | null>;
   showcase(): Promise<FolderResult & { document: DocumentRecord }>;
   registerDraft(record: DocumentRecord): Promise<unknown>;
