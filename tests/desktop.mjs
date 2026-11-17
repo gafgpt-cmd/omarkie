@@ -216,9 +216,9 @@ try {
   ).toBeVisible();
   // Poll instead of decode(): the photo's src may still switch to its screen-size preview, which rejects a pending decode.
   await expect.poll(() => page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect.poll(() => readFile(missingNote).catch(() => null)).toEqual(noteBytes);
+  await expect.poll(() => readFile(missingPhoto).catch(() => null)).toEqual(photoBytes);
   assert.deepEqual(await readFile(welcome), editedTravel);
-  assert.deepEqual(await readFile(missingNote), noteBytes);
-  assert.deepEqual(await readFile(missingPhoto), photoBytes);
   passed.push("Help > Showcase Examples restores missing notes and photos without overwriting an edited travel journal");
   const target = path.join(dataDir, "验收文档.md");
   await application.evaluate(({ dialog }, file) => {
