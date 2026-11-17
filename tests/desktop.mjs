@@ -1,6 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, realpath, rename } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
@@ -8,7 +8,7 @@ import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-wind
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
-const dataDir = await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-"));
+const dataDir = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-")));
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
@@ -53,7 +53,7 @@ async function waitForFile(file, predicate, timeout = 6000) {
 }
 try {
   let page = await launch();
-  await expect(page.locator(".document-editor:not([hidden])").getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(page.locator(".document-editor:not([hidden])").getByRole("heading", { name: "Seven Days on the Lighthouse Coast 🌄", exact: true })).toBeVisible();
   for (const name of ["travel-journal.md", "recipe-card.md", "space-explainer.md", "launch-plan.md", "poetry-and-type.md"])
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   const firstPhoto = page.locator(".document-editor:not([hidden]) img").first();
@@ -65,7 +65,7 @@ try {
   const original = await readFile(welcome, "utf-8");
   await mode(page, false);
   const editor = page.locator(".document-editor:not([hidden]) .cm-content");
-  await expect(editor.locator(".cm-line").first()).toBeVisible();
+  await expect(editor).toContainText("# Seven Days on the Lighthouse Coast");
   await mode(page, true);
   assert.equal(
     await readFile(welcome, "utf-8"),
@@ -205,13 +205,21 @@ try {
   await expect.poll(() => page.locator(".document-editor:not([hidden]) .rich-scroller").evaluate(element => element.scrollTop)).toBeGreaterThan(0);
   await sidebarTab(page, "文件");
   passed.push("Outline navigates to the selected Markdown heading");
+  const editedTravel = await readFile(welcome);
+  const missingNote = path.join(dataDir, "Showcase/recipe-card.md"), missingPhoto = path.join(dataDir, "Showcase/images/harbour.jpg");
+  const noteBytes = await readFile(missingNote), photoBytes = await readFile(missingPhoto);
+  await rename(missingNote, missingNote + ".preserved");
+  await rename(missingPhoto, missingPhoto + ".preserved");
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", { action: "showcase" }));
   await expect(
     page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
   ).toBeVisible();
   // Poll instead of decode(): the photo's src may still switch to its screen-size preview, which rejects a pending decode.
   await expect.poll(() => page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
-  passed.push("Help > Showcase Examples opens the showcase with its photos");
+  assert.deepEqual(await readFile(welcome), editedTravel);
+  assert.deepEqual(await readFile(missingNote), noteBytes);
+  assert.deepEqual(await readFile(missingPhoto), photoBytes);
+  passed.push("Help > Showcase Examples restores missing notes and photos without overwriting an edited travel journal");
   const target = path.join(dataDir, "验收文档.md");
   await application.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });
