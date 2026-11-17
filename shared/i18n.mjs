@@ -3,9 +3,10 @@ import en from "./locales/en.json" with { type: "json" };
 import es from "./locales/es.json" with { type: "json" };
 import ca from "./locales/ca.json" with { type: "json" };
 import ro from "./locales/ro.json" with { type: "json" };
+import zh from "./locales/zh.json" with { type: "json" };
 
-// The Chinese UI text is the key; zh needs no catalogue.
-const resources = { en: { translation: en }, es: { translation: es }, ca: { translation: ca }, ro: { translation: ro } };
+// Chinese source keys fall through; the small catalog covers English-keyed controls.
+const resources = { zh: { translation: zh }, en: { translation: en }, es: { translation: es }, ca: { translation: ca }, ro: { translation: ro } };
 export { languages, resolveLanguage } from "./languages.mjs";
 
 export function createTranslator(language) {

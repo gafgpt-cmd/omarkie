@@ -26,6 +26,10 @@ export function PreferencesDialog({ value, change, theme, changeTheme, themes, i
     <fieldset><legend>{t("插件")}</legend><p className="dialog-note">{t("无图阅读、只读模式、段落聚焦与常显语法标记等社区插件。")}</p><button onClick={plugins}>{t("管理插件…")}</button></fieldset>
     <fieldset><legend>{t("编辑器")}</legend><div className="form-grid">
       <label>{t("正文字号")}<input type="number" min={12} max={28} value={value.fontSize} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 28) change({ ...value, fontSize: n }); }} /></label>
+      <label>{t("Line height")}<input aria-label={t("Line height")} type="number" min={1} max={2.5} step={0.1} value={value.lineHeight} onChange={e => { const n = Number(e.target.value); if (n >= 1 && n <= 2.5) change({ ...value, lineHeight: n }); }} /></label>
+      <label>{t("Editor columns")}<input aria-label={t("Editor columns")} type="number" min={40} max={160} value={value.editorColumns} onChange={e => { const n = Number(e.target.value); if (n >= 40 && n <= 160) change({ ...value, editorColumns: Math.round(n) }); }} /></label>
+      <label className="checkbox-option"><input type="checkbox" checked={value.sourceLineNumbers} onChange={e => change({ ...value, sourceLineNumbers: e.target.checked })} />{t("Source line numbers")}</label>
+      <label className="checkbox-option"><input type="checkbox" checked={value.codeLineNumbers} onChange={e => change({ ...value, codeLineNumbers: e.target.checked })} />{t("Code block line numbers")}</label>
       <label>{t("阅读速度（词/分钟）")}<input type="number" min={50} max={1000} value={value.readingSpeed} onChange={e => { const n = Number(e.target.value); if (n >= 50 && n <= 1000) change({ ...value, readingSpeed: n }); }} /></label>
       <label>{t("缩进宽度")}<select aria-label={t("缩进宽度")} value={value.tabSize} onChange={e => change({ ...value, tabSize: Number(e.target.value) })}><option value={2}>{t("2 个空格")}</option><option value={4}>{t("4 个空格")}</option></select></label>
     </div></fieldset>

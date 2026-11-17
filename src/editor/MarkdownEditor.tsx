@@ -45,6 +45,9 @@ export interface EditorHandle {
   transform(change: (text: string) => string): void;
   headings(text: string): Heading[] | null;
   numbered(): { line: number; counter: string }[];
+  imageOffset(image: HTMLImageElement): number | undefined;
+  selectionRange(): { from: number; to: number; context: string } | undefined;
+  replaceRange(from: number, to: number, text: string, expected: string): boolean;
 }
 interface Props {
   document: DocumentRecord;
@@ -102,7 +105,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       pendingOptions.current = false;
       const { preferences, typewriter, readOnly } = viewOptions.current;
       if (rich.current) {
-        rich.current.setOptions({ spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, readOnly });
+        rich.current.setOptions({ spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly });
         model.current?.refreshCaret(); rich.current.render(false);
       }
       if (source.current) source.current.contentDOM.spellcheck = preferences?.spellcheck ?? false;
@@ -115,7 +118,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       setMode(requested.current);
     }
     const sourceBehavior = useRef<Compartment | null>(null);
-    const sourceOptions = () => [codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
+    const sourceOptions = () => [...(viewOptions.current.preferences?.sourceLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
     const viewOptions = useRef({ preferences, typewriter, readOnly });
     viewOptions.current = { preferences, typewriter, readOnly };
     function historyState() {
@@ -228,6 +231,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         publish();
         source.current.focus();
       }
+    }
+    function imageOffset(image: HTMLImageElement) {
+      const object = image.closest<HTMLElement>(".md-inline[data-mark='image']");
+      if (object) { const leaf = rich.current?.leaves.get(object.closest<HTMLElement>("[data-leaf]")?.dataset.leaf || ""); const position = leaf?.positions[Number(object.dataset.inlineFrom)]; if (position !== undefined) return position; }
+      const block = image.closest<HTMLElement>("[data-cid]"), node = model.current?.nodes.find(item => item.id === block?.dataset.cid);
+      if (!node || !block) return undefined;
+      const index = [...block.querySelectorAll("img")].indexOf(image), reference = imageReferences(node.source)[index];
+      return reference ? node.from + reference.from : undefined;
     }
     function ensureSource() {
       if (source.current || !sourceParent.current || !model.current) return;
@@ -400,6 +411,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       ref,
       () => ({
         view: () => source.current,
+        imageOffset,
+        selectionRange: () => { const doc = model.current; if (!doc) return; return { from: Math.min(doc.selection.anchor, doc.selection.head), to: Math.max(doc.selection.anchor, doc.selection.head), context: activeMode.current ? doc.nodeAt(doc.selection.head)?.kind || "" : "source" }; },
+        replaceRange: (from, to, text, expected) => {
+          const doc = model.current;
+          if (!doc || editingBlocked() || from < 0 || to < from || to > doc.text.length || doc.text.slice(from, to) !== expected) return false;
+          doc.closeGroup(); rich.current?.releaseFence(); doc.replace(from, to, text, "reading-command", { anchor: from + text.length, head: from + text.length });
+          if (activeMode.current) rich.current?.render(); else syncSource(); publish(); focusEditor(); return true;
+        },
         composing: isComposing,
         markdown: () => model.current?.toMarkdown() || "",
         transform: change => { const doc = model.current; if (!doc || editingBlocked()) return; doc.closeGroup(); const next = change(doc.text); if (next !== doc.text) { doc.replace(0, doc.text.length, next, "document-command"); if (activeMode.current) rich.current?.render(false); else syncSource(); publish(); } },
@@ -551,7 +570,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     });
     useEffect(() => {
       applyViewOptions();
-    }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, typewriter, readOnly]);
+    }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, preferences?.sourceLineNumbers, preferences?.codeLineNumbers, preferences?.lineHeight, preferences?.editorColumns, preferences?.fontSize, typewriter, readOnly]);
     useLayoutEffect(() => {
       // Focus once after the mode's DOM is visible, before keyboard input.
       // A delayed frame can restore an older caret after a navigation key.
@@ -560,7 +579,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     }, [visibleMode]);
     return (
       <div
-        className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"}`}
+        className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"} ${preferences?.codeLineNumbers ? "code-line-numbers" : ""}`}
       >
         {searchOpen && visibleMode && (
           <div
@@ -627,17 +646,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         }} />}
         <div className="rich-scroller" hidden={!visibleMode} onDoubleClick={event => {
           const image = (event.target as HTMLElement).closest("img"); if (!image || readOnly) return;
-          const object = image.closest<HTMLElement>(".md-inline[data-mark='image']");
-          let from: number | undefined;
-          if (object) { const leaf = rich.current?.leaves.get(object.closest<HTMLElement>("[data-leaf]")?.dataset.leaf || ""); from = leaf?.positions[Number(object.dataset.inlineFrom)]; }
-          const node = image.closest<HTMLElement>("[data-cid]"); if (from === undefined && node) from = model.current?.nodes.find(item => item.id === node.dataset.cid)?.from;
+          const from = imageOffset(image);
           const reference = imageReferences(model.current?.text || "").find(item => item.from === from);
           if (reference) { event.preventDefault(); setEditingImage(reference); }
         }} onContextMenu={event => { if ((event.target as HTMLElement).closest("img")) { event.preventDefault(); (event.target as HTMLElement).dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); } }}>
           <div className="rich-document" ref={root} />
         </div>
         <div
-          className="source-surface"
+          className={`source-surface ${preferences?.sourceLineNumbers ? "source-line-numbers" : ""}`}
           hidden={visibleMode}
           ref={sourceParent}
         />
