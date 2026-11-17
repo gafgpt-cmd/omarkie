@@ -50,7 +50,7 @@ The bridge only accepts the main frame of the local app origin. Remote images, m
 
 Spellcheck languages are stored with editor preferences and validated against Electron’s available languages before applying them to the default session. Bundled en-US, es-ES, ca and ro-RO `.bdic` dictionaries are seeded into the profile, and the dictionary download URL points at the app's own local dictionaries folder. Other languages find nothing there and simply have no spellcheck; no Google dictionary host is contacted. System Hunspell `.aff`/`.dic` files in `/usr/share/hunspell` are not Chromium `.bdic` dictionaries and cannot be used directly. macOS uses the system spellchecker and its language settings.
 
-Packagers stamp the Git-derived build ID into the packaged HTML metadata for About, using the same version calculation as Arch; unpackaged builds show `dev`. Release artifact filenames keep the package version.
+Packagers stamp the [build identity](../README.md#update-uninstall-and-clean-up) into the packaged HTML metadata for About; unpackaged builds show `dev`.
 
 Vault search reads one file at a time (8 MiB per file, 512 MiB total), yields between files, and keeps the 5-second deadline and 500-result cap.
 
@@ -67,8 +67,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 ## Tests
 
 - `npm test`: editor kernel, file layer, themes, fonts and translations.
-- `npm run verify`: build, unit tests and `test:preserve`; required by CI and no-mistakes.
-- Restore/revert changes keep shipped behavior. Feature removal or weakened checks needs explicit approval, not an older-version baseline.
+- Required compatibility checks and contribution rules: [CONTRIBUTING.md](../CONTRIBUTING.md#make-a-change).
 - `npm run test:desktop`, `test:parity`, `test:background-desktop`: Electron editing, saving, images, export and recovery.
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (scope per suite: CONTRIBUTING.md).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.

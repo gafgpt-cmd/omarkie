@@ -37,7 +37,8 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 
 Five illustrated introductions ship with the app in [docs/showcase](docs/showcase).
 First launch opens all five, with the travel journal active.
-**Help → Showcase Examples** opens them again, restores missing files and keeps your edits.
+Saved sessions and explicitly opened files take precedence; existing users keep their notes.
+**Help → Showcase Examples** opens the travel journal and shows the Showcase folder, restoring missing notes and pictures without overwriting edits.
 Each note demonstrates pictures, tables, formulas or diagrams. Every screenshot below is the real app.
 
 | | |
@@ -93,7 +94,10 @@ To update, install the new package over the old one with the same command as abo
 | Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
 | Remove the unused Electron runtime too | `sudo pacman -Rs omarkie` | not needed (bundled) | not needed (bundled) | not needed (bundled) |
 
-A release build is named after its version (`0.1.2`). An Arch package built from a later commit is named `0.1.2.r<commits>.g<commit>`, for example `0.1.2.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release. `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
+A build at its matching release tag uses the plain version (`0.1.2`). An Arch package built from a later commit is named `0.1.2.r<commits>.g<commit>`, for example `0.1.2.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release.
+Without the matching version tag, Git builds retain the source commit using another reachable version tag or a hash-only fallback (`.r0.g<commit>`).
+Packaged **About** shows the same build identity; other release artifact filenames keep the package version.
+`-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
 
 Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
 

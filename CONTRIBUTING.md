@@ -17,13 +17,15 @@ Remove personal information and credentials from examples.
 ## Set up development
 
 Use Node.js 26 and npm. Linux and Windows use Electron; macOS needs macOS 14+ and Xcode Command Line Tools.
-Install Pandoc 3 and LibreOffice for conversion tests.
-CI installs the latest digest-verified Pandoc and LibreOffice Writer, then runs `npm run verify` with `OMARKIE_REQUIRE_CONVERTERS=1`.
+`npm run verify` requires Pandoc 3, LibreOffice and Playwright Chromium.
+On Linux, missing Chromium system libraries can be installed with `npx playwright install --with-deps chromium`.
+CI uses GitHub-hosted Ubuntu, installs the latest digest-verified Pandoc and LibreOffice Writer, then runs the required checks below with `OMARKIE_REQUIRE_CONVERTERS=1`.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
 cd omarkie
 npm ci
+npx playwright install chromium
 npm run dev:app
 ```
 
@@ -33,31 +35,38 @@ The development command launches Vite and an Electron host. `npm run dev` runs a
 
 1. Create a branch for one fix or feature.
 2. Keep Markdown, selection, and undo behavior intact. Do not change existing documents as a side effect of rendering.
+   Restore/revert requests do not authorize shipped-feature removal or reduced test coverage; either needs explicit approval.
 3. Add a regression test when fixing a data-loss, encoding, selection, or editing-history bug.
 4. Run the checks relevant to your change and describe the results in the pull request.
 5. Update user documentation when behavior or requirements change.
 
-Required compatibility checks:
+Required compatibility checks in CI and no-mistakes:
 
 ```sh
 npm run verify
 ```
 
-Additional suites:
+Includes the production build, unit tests, browser startup and Electron compatibility suites.
+
+Focused suites:
 
 | Command | Coverage | Environment |
 | --- | --- | --- |
 | `npm run test:native` | File bytes, atomic saves, recovery, conflicts, and workspace operations | macOS |
 | `npm run test:webkit` | Actual WKWebView, native bridge, document conversion, and PDF export | macOS + Pandoc |
+| `npm run test:browser` | Illustrated startup, decoded pictures, source roundtrip and restored drafts | Playwright Chromium; run `npm run build` first |
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
 | `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, file workflows, PDF open, and startup (explicit file skips the restored session) | Electron; Linux runs headless |
-| `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron; runs in CI and no-mistakes |
+| `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron + Pandoc + LibreOffice |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
-| `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | macOS desktop |
+| `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | Electron; Linux runs headless |
 
-Automated desktop suites use isolated temporary application data. To keep screenshots and reports outside the checkout, set `OMARKIE_QA_DIR` to an absolute output directory. Synthetic composition tests do not replace manual input-method checks.
+Automated desktop suites use isolated temporary application data.
+Menu and converter compatibility fixtures use `test-results/` on a filesystem supporting native Trash; Trash is not mocked.
+To keep screenshots and reports outside the checkout, set `OMARKIE_QA_DIR` to an absolute output directory.
+Synthetic composition tests do not replace manual input-method checks.
 
 ## Build and install
 
@@ -91,7 +100,7 @@ After packaging on Windows, `npm run test:windows` installs the EXE into an isol
 | `src/components/` | Dialogs and navigation |
 | `native/` | AppKit/WebKit host, files, images, and conversion |
 | `electron/` | Linux/Windows release host, development, and desktop regression |
-| `shared/` | Commands and starter documents shared by the hosts |
+| `shared/` | Commands and translations shared by the hosts |
 | `tests/` | Unit, native, and desktop integration tests |
 | `design/` | Original icon and design sources |
 
