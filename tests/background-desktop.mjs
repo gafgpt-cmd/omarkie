@@ -35,7 +35,7 @@ try {
   console.log('PASS: Electron restart restores background copy and settings after source relocation');
   const exported=path.join(directory,'export.html');await application.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},exported);
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'导出 HTML…',exact:true}).click();
-  await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain('让文字');
+  await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain('Seven Days on the Lighthouse Coast');
   const html=await readFile(exported,'utf8');assert.ok(!html.includes('data:image/webp')&&!html.includes('data-editor-background'));
   console.log('PASS: actual Electron HTML export excludes the personal background');
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'偏好设置…',exact:true}).click();
