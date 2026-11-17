@@ -43,6 +43,9 @@ import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 export default function App() {
   const [painted, setPainted] = useState(false);
+  const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
+  const firstDocumentPainted = useRef(false);
+  const [paintedDocument, setPaintedDocument] = useState<string | null>(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const editors = useRef(new Map<string, EditorHandle>());
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
@@ -78,6 +81,7 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const activeEditorReady = active ? readyEditors[active.id] : undefined;
   useEffect(() => {
     setMountedDocuments(current => {
       let removed = false;
@@ -126,14 +130,17 @@ export default function App() {
   useEffect(() => {
     if (!session.ready || !active) return;
     for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
-    if (!pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    if (!activeEditorReady || paintedDocument !== active.id || !pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
     return afterDocumentPaint(() => {
       for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
     });
-  }, [pluginDefinitions, pluginPreferences, session.ready, !!active, runtimeReady]);
+  }, [pluginDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
-  useEffect(() => { pluginRuntime.current?.documentChanged(); }, [active?.id, active?.path, active?.content]);
+  useEffect(() => {
+    if (!activeEditorReady || paintedDocument !== active?.id || !pluginRuntime.current) return;
+    return afterDocumentPaint(() => pluginRuntime.current?.documentChanged());
+  }, [active?.id, active?.path, active?.content, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !rendered); }, [rendered]);
   useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", sidebar); }, [sidebar]);
   async function installPlugin(folder = false) { const installed = await host.installPlugin(folder); if (installed) setInstalledPlugins(previous => [...previous.filter(item => item.id !== installed.id), { ...installed, description: t("本地插件，通过兼容接口运行。"), config: {} }]); }
@@ -316,13 +323,20 @@ export default function App() {
     if (!session.ready) return;
     performance.mark("omarkie:session-restored");
     void window.desktop?.ready?.();
-    let second = 0;
-    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => {
-      performance.mark("omarkie:first-document-painted");
-      setPainted(true);
-    }); });
-    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
   }, [session.ready]);
+  useEffect(() => {
+    if (!session.ready || active && !activeEditorReady) return;
+    const id = active?.id;
+    return afterDocumentPaint(() => {
+      if (pluginContext.current.active?.id !== id) return;
+      if (id && !firstDocumentPainted.current) {
+        performance.mark("omarkie:first-document-painted", { detail: { id, mode: activeEditorReady } });
+        firstDocumentPainted.current = true;
+      }
+      setPaintedDocument(id || null);
+      setPainted(true);
+    });
+  }, [session.ready, active?.id, activeEditorReady]);
   useEffect(() => host.onCommand((command) => commands.current(command)), []);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -453,6 +467,14 @@ export default function App() {
                   }}
                   onSelection={text => { if (record.id === session.activeId) setSelection(text); }}
                   onCompositionEnd={() => { if (record.id === session.activeId) pluginRuntime.current?.documentChanged(); }}
+                  onReady={mode => {
+                    if (mode && record.id === session.activeId) performance.mark("omarkie:editor-ready", { detail: { id: record.id, mode } });
+                    setReadyEditors(current => {
+                      if (mode) return current[record.id] === mode ? current : { ...current, [record.id]: mode };
+                      if (!Object.hasOwn(current, record.id)) return current;
+                      const next = { ...current }; delete next[record.id]; return next;
+                    });
+                  }}
                   onReference={async url => {
                     if (url.startsWith("#")) { const heading = extractHeadings(record.content).find(heading => heading.id === decodeURIComponent(url.slice(1))); if (heading) editors.current.get(record.id)?.jump(heading.line); return; }
                     if (session.folder || /^omarkie-(wiki|tag):/.test(url)) setTools({ tab: "references", id: record.id, request: url });

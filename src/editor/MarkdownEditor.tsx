@@ -61,10 +61,11 @@ interface Props {
   onSelection?(text: string): void;
   onCompositionEnd?(): void;
   onReference?(url: string): Promise<void>;
+  onReady?(mode: "rich" | "source" | null): void;
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference },
+    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -72,14 +73,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const model = useRef<MarkdownDocument | null>(null),
       rich = useRef<RichEditor | null>(null),
       source = useRef<EditorView | null>(null);
-    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference });
-    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference };
+    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady });
+    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady };
     const initial = useRef(record),
       requested = useRef(rendered),
       activeMode = useRef(rendered);
     const [visibleMode, setVisibleMode] = useState(
       rendered && record.content.length <= richTextLimit,
     );
+    const [readyMode, setReadyMode] = useState<"rich" | "source" | null>(null);
     const oversizedNotice = useRef(false);
     const [editingImage, setEditingImage] = useState<ImageReference | null>(null);
     const imageQueue = useRef(Promise.resolve());
@@ -233,7 +235,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         source.current.focus();
       }
     }
-    function imageOffset(image: HTMLImageElement) {
+    function logicalImageOffset(image: HTMLImageElement) {
       const object = image.closest<HTMLElement>(".md-inline[data-mark='image']");
       if (object) { const leaf = rich.current?.leaves.get(object.closest<HTMLElement>("[data-leaf]")?.dataset.leaf || ""); const position = leaf?.positions[Number(object.dataset.inlineFrom)]; if (position !== undefined) return position; }
       const block = image.closest<HTMLElement>("[data-cid]"), node = model.current?.nodes.find(item => item.id === block?.dataset.cid);
@@ -391,7 +393,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       value = value && richAllowed(doc);
       if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
-      if (value === activeMode.current && (value ? rich.current : source.current)) return;
+      if (value === activeMode.current && (value ? rich.current : source.current)) { setReadyMode(value ? "rich" : "source"); return; }
       doc.closeGroup();
       if (value) {
         if (!activeMode.current && source.current) {
@@ -410,18 +412,23 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       }
       activeMode.current = value;
       setVisibleMode(value);
+      if (value ? rich.current : source.current) setReadyMode(value ? "rich" : "source");
       historyState();
     }
     useImperativeHandle(
       ref,
       () => ({
         view: () => source.current,
-        imageOffset,
-        selectionRange: () => { const doc = model.current; if (!doc) return; return { from: Math.min(doc.selection.anchor, doc.selection.head), to: Math.max(doc.selection.anchor, doc.selection.head), context: activeMode.current ? doc.nodeAt(doc.selection.head)?.kind || "" : "source" }; },
+        imageOffset: image => { const from = logicalImageOffset(image), doc = model.current; return from === undefined || !doc ? undefined : sourceOffset(doc.toMarkdown(), from); },
+        selectionRange: () => { const doc = model.current; if (!doc) return; const source = doc.toMarkdown(); return { from: sourceOffset(source, Math.min(doc.selection.anchor, doc.selection.head)), to: sourceOffset(source, Math.max(doc.selection.anchor, doc.selection.head)), context: activeMode.current ? doc.nodeAt(doc.selection.head)?.kind || "" : "source" }; },
         replaceRange: (from, to, text, expected) => {
           const doc = model.current;
-          if (!doc || editingBlocked() || from < 0 || to < from || to > doc.text.length || doc.text.slice(from, to) !== expected) return false;
-          doc.closeGroup(); rich.current?.releaseFence(); doc.replace(from, to, text, "reading-command", { anchor: from + text.length, head: from + text.length });
+          if (!doc || editingBlocked()) return false;
+          doc.closeGroup(); rich.current?.releaseFence();
+          const source = doc.toMarkdown();
+          if (from < 0 || to < from || to > source.length || source.slice(from, to) !== expected) return false;
+          const position = (source.slice(0, from) + text).replace(/\r\n?/g, "\n").length;
+          doc.replaceSource(source.slice(0, from) + text + source.slice(to), "reading-command", { anchor: position, head: position });
           if (activeMode.current) rich.current?.render(); else syncSource(); publish(); focusEditor(); return true;
         },
         composing: isComposing,
@@ -543,6 +550,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       }
       return () => {
         cancelled = true;
+        callbacks.current.onReady?.(null);
         if (compositionTimer.current !== null) clearTimeout(compositionTimer.current);
         rich.current?.destroy();
         source.current?.destroy();
@@ -573,6 +581,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     useEffect(() => {
       applyViewOptions();
     }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, preferences?.sourceLineNumbers, preferences?.codeLineNumbers, preferences?.lineHeight, preferences?.editorColumns, preferences?.fontSize, typewriter, readOnly]);
+    useLayoutEffect(() => {
+      if (readyMode && (readyMode === "rich") === visibleMode && (visibleMode ? rich.current : source.current)) callbacks.current.onReady?.(readyMode);
+    }, [readyMode, visibleMode]);
     useLayoutEffect(() => {
       // Focus once after the mode's DOM is visible, before keyboard input.
       // A delayed frame can restore an older caret after a navigation key.
@@ -648,7 +659,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         }} />}
         <div className="rich-scroller" hidden={!visibleMode} onDoubleClick={event => {
           const image = (event.target as HTMLElement).closest("img"); if (!image || readOnly) return;
-          const from = imageOffset(image);
+          const from = logicalImageOffset(image);
           const reference = imageReferences(model.current?.text || "").find(item => item.from === from);
           if (reference) { event.preventDefault(); setEditingImage(reference); }
         }} onContextMenu={event => { if ((event.target as HTMLElement).closest("img")) { event.preventDefault(); (event.target as HTMLElement).dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); } }}>
