@@ -391,6 +391,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       value = value && richAllowed(doc);
       if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
+      if (value === activeMode.current && (value ? rich.current : source.current)) return;
       doc.closeGroup();
       if (value) {
         if (!activeMode.current && source.current) {
