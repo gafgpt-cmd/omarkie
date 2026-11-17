@@ -30,14 +30,14 @@ export function DocumentTools({ record, documents, files, initial, request, clos
   async function scan() {
     const value = await host.vaultSnapshot();
     value.notes = value.notes.map(note => {
-      const draft = documents.find(document => document.path === files.find(file => file.token === note.token)?.path);
+      const draft = documents.find(document => document.path === (note.path || files.find(file => file.token === note.token)?.path));
       return draft ? { ...note, content: draft.content } : note;
     });
     setSnapshot(value); return value;
   }
   useEffect(() => { if (["references", "backlinks", "graph"].includes(initial)) void run(scan); }, []);
   const index = useMemo(() => snapshot && referenceIndex(snapshot), [snapshot]);
-  const current = index?.notes.find((note: any) => record.path && record.path === files.find(file => file.token === note.token)?.path);
+  const current = index?.notes.find((note: any) => record.path && record.path === (note.path || files.find(file => file.token === note.token)?.path));
   let values: Record<string, unknown> = {}; let yamlError = "";
   try { values = properties(record.content); } catch (error) { yamlError = (error as Error).message; }
   const target = request?.startsWith("omarkie-wiki:") ? decoded(request.slice(13)) : request && !request.startsWith("omarkie-tag:") ? request : "";

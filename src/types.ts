@@ -54,7 +54,7 @@ export interface Command {
   anchor?: string;
   line?: number;
 }
-export interface VaultNote { token: string; relative: string; content: string }
+export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean }
 export interface BundlePayload { notes: VaultNote[]; assets: { source: string; relative: string }[]; index: string; log: string }
 export interface ConversionOptions { bibliography?: string; style?: "vancouver"; letterhead?: { name: string; detail: string } }

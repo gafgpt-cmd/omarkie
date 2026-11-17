@@ -130,7 +130,7 @@ final class Workspace {
       let file = try workflowFile(root, relative: relative), size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
       if size > 8 * 1024 * 1024 || total + size > 64 * 1024 * 1024 { truncated = true; continue }
       let data = try Data(contentsOf: file); total += data.count
-      do { let (content, _, _) = try store.decode(data); notes.append(["token": token, "relative": relative, "content": content]) } catch { truncated = true }
+      do { let (content, _, _) = try store.decode(data); notes.append(["token": token, "relative": relative, "content": content, "path": file.path]) } catch { truncated = true }
     }
     let media = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"]
     func walk(_ directory: URL, depth: Int) throws {

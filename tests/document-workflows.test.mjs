@@ -109,6 +109,7 @@ test("host snapshot/export uses selected-folder scope, bounded copied output and
   if (process.platform !== "win32") await symlink(path.join(root, "outside.md"), path.join(vault, "escape.md"));
   const store = new DocumentStore(path.join(root, "session")); await store.scan(vault);
   const snapshot = await vaultSnapshot(store); assert.equal(snapshot.notes.length, 1);
+  assert.equal(snapshot.notes[0].path, path.join(vault, "note.md"));
   const plan = bundlePlan(snapshot, "2026-01-01"), destination = await exportBundle(store, plan, output);
   assert.equal(await readFile(path.join(vault, "note.md"), "utf8"), source);
   assert.equal(await readFile(path.join(destination, "assets/images/picture space.png"), "utf8"), "synthetic image");

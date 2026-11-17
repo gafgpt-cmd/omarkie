@@ -21,7 +21,7 @@ export async function vaultSnapshot(store) {
     const file = await owned(root, entry.relative), info = await lstat(file);
     if (!info.isFile() || info.size > 8 * 1024 * 1024 || total + info.size > 64 * 1024 * 1024) { truncated = true; continue; }
     const bytes = await readFile(file); total += bytes.length;
-    try { notes.push({ token: entry.token, relative: entry.relative.split(path.sep).join("/"), content: decodeText(bytes).content }); }
+    try { notes.push({ token: entry.token, relative: entry.relative.split(path.sep).join("/"), content: decodeText(bytes).content, path: file }); }
     catch { truncated = true; }
   }
   async function walk(directory, depth) {
