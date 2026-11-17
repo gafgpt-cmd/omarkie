@@ -5,13 +5,16 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
+import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Build Linux x64 releases on a Linux x64 machine.");
 // rpm needs rpmbuild and bsdtar; OMARKIE_LINUX_TARGETS narrows the set on hosts without them. Arch: scripts/package-arch.mjs.
+const identity = archPkgver(pkg.version, describeBuild(pkg.version));
+const version = identity === pkg.version ? pkg.version : identity.replace(`${pkg.version}.r`, `${pkg.version}+r`);
 const outputs = {
-  deb: `Omarkie-${pkg.version}-linux-x64.deb`,
-  AppImage: `Omarkie-${pkg.version}-linux-x64.AppImage`,
-  rpm: `omarkie-${pkg.version}-1.x86_64.rpm`,
+  deb: `Omarkie-${version}-linux-x64.deb`,
+  AppImage: `Omarkie-${version}-linux-x64.AppImage`,
+  rpm: `omarkie-${version}-1.x86_64.rpm`,
 };
 const targets = (process.env.OMARKIE_LINUX_TARGETS || Object.keys(outputs).join(",")).split(",").map(target => target.trim()).filter(Boolean);
 for (const target of targets) if (!outputs[target]) throw new Error(`Unknown Linux target: ${target}`);
@@ -21,12 +24,13 @@ await build({
   publish: "never",
   config: {
     appId: pkg.build.appId, productName: pkg.build.productName,
+    extraMetadata: { version },
     directories: { app: application, output: "release/linux" },
     files: ["**/*"], asar: true, npmRebuild: false,
     electronVersion: pkg.devDependencies.electron,
     linux: {
       executableName: "omarkie", icon: "build/icon.png", category: "Office",
-      artifactName: "Omarkie-${version}-linux-x64.${ext}",
+      artifactName: `Omarkie-${version}-linux-x64.\${ext}`,
       maintainer: "gafgpt-cmd <239689105+gafgpt-cmd@users.noreply.github.com>",
       mimeTypes: ["text/markdown", "text/x-markdown"],
       syncDesktopName: true,

@@ -45,6 +45,7 @@ export default function App() {
   const [painted, setPainted] = useState(false);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const editors = useRef(new Map<string, EditorHandle>());
+  const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
@@ -77,6 +78,14 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  useEffect(() => {
+    setMountedDocuments(current => {
+      let removed = false;
+      for (const id of current) if (!session.documents.some(record => record.id === id)) { removed = true; break; }
+      if (!removed && (!session.activeId || current.has(session.activeId))) return current;
+      return new Set(session.documents.filter(record => record.id === session.activeId || current.has(record.id)).map(record => record.id));
+    });
+  }, [session.activeId, session.documents]);
   const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
   pluginContext.current = { active, editor, preferences, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
@@ -136,8 +145,8 @@ export default function App() {
   }
   const settledContent = useSettled(active?.content || "", active?.id);
   const headings = useMemo(
-    () => (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent),
-    [settledContent, preferences],
+    () => sidebar && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
+    [settledContent, preferences, sidebar, tab, active?.id],
   );
   const characters = useMemo(
     () => countCharacters(settledContent),
@@ -419,7 +428,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            {session.documents.map((record) => (
+            {session.documents.map((record) => record.id === session.activeId || mountedDocuments.has(record.id) ? (
               <div
                 className="document-editor"
                 hidden={record.id !== session.activeId}
@@ -451,7 +460,7 @@ export default function App() {
                   }}
                 />
               </div>
-            ))}
+            ) : null)}
             <article
               className="print-document"
               ref={printDocument}
@@ -493,8 +502,6 @@ export default function App() {
           const target = editors.current.get(record.id);
           if (!target || target.composing()) throw new Error(t("当前不可编辑"));
           if (target.markdown() !== item.before) throw new Error(t("预览已过期，请重新预览后再应用。"));
-          const normalized = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\n/g, record.lineEnding || "\n");
-          if (normalized(item.before) !== item.before || normalized(item.after) !== item.after) throw new Error(t("混合换行符的笔记未修改。请先在副本中明确统一换行符。"));
           target.transform(() => item.after);
         }}
         create={async (name, content) => { const record = { id: crypto.randomUUID(), path: null, name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }}

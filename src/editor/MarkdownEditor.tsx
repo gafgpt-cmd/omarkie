@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 
-import { MarkdownDocument, richTextLimit } from "./model.ts";
+import { MarkdownDocument, richTextLimit, sourceOffset } from "./model.ts";
 import { RichEditor } from "./RichEditor.ts";
 import { host } from "../host";
 import type { DocumentRecord } from "../types";
@@ -311,13 +311,18 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                   : update.transactions.some((t) => t.isUserEvent("input.type"))
                     ? "typing"
                     : "source-command";
-                doc.replace(
-                  0,
-                  doc.text.length,
-                  update.state.doc.toString(),
-                  kind,
-                  { anchor: selected.anchor, head: selected.head },
-                );
+                const selection = { anchor: selected.anchor, head: selected.head };
+                if (doc.tracksLineEndings) {
+                  const source = doc.toMarkdown(), parts: string[] = [];
+                  let raw = 0, logical = 0;
+                  update.changes.iterChanges((from, to, _from, _to, inserted) => {
+                    const first = sourceOffset(source, from - logical, raw), last = sourceOffset(source, to - from, first);
+                    parts.push(source.slice(raw, first), inserted.toString().replace(/\n/g, doc.lineEnding));
+                    raw = last; logical = to;
+                  });
+                  parts.push(source.slice(raw));
+                  doc.replaceSource(parts.join(""), kind, selection);
+                } else doc.replace(0, doc.text.length, update.state.doc.toString(), kind, selection);
                 publish();
               } else if (update.selectionSet) {
                 doc.selection = {
@@ -392,7 +397,6 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           const s = source.current.state.selection.main;
           doc.selection = { anchor: s.anchor, head: s.head };
         }
-        doc.endSourceSession();
         doc.refreshCaret();
         rich.current?.render(false);
       } else {
@@ -400,7 +404,6 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           doc.selection = rich.current?.bookmark() || doc.selection;
           rich.current?.releaseFence();
         }
-        doc.beginSourceSession();
         ensureSource();
         syncSource();
       }
@@ -422,7 +425,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         },
         composing: isComposing,
         markdown: () => model.current?.toMarkdown() || "",
-        transform: change => { const doc = model.current; if (!doc || editingBlocked()) return; doc.closeGroup(); const next = change(doc.text); if (next !== doc.text) { doc.replace(0, doc.text.length, next, "document-command"); if (activeMode.current) rich.current?.render(false); else syncSource(); publish(); } },
+        transform: change => { const doc = model.current; if (!doc || editingBlocked()) return; doc.closeGroup(); const current = doc.toMarkdown(), next = change(current); if (next !== current) { doc.replaceSource(next, "document-command"); if (activeMode.current) rich.current?.render(false); else syncSource(); publish(); } },
         find: () => {
           if (!activeMode.current) {
             ensureSource();
@@ -560,10 +563,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         return;
       model.current.replaceExternal(record.content, record.lineEnding);
       if (activeMode.current) rich.current?.render(false);
-      else {
-        model.current.beginSourceSession();
-        syncSource();
-      }
+      else syncSource();
       historyState();
     }, [record.content]);
     useEffect(() => {

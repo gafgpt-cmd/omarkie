@@ -18,7 +18,7 @@
 - Note/folder make-ready previews each proposed change.
 - Apply uses editor history; normal conflict-aware saving remains responsible for disk writes.
 - Re-preview after any intervening edit.
-- Mixed-line-ending notes fail closed before applying properties. The editor currently normalizes mixed endings on any edit; use an explicitly normalized copy instead.
+- Properties preserve mixed line endings through the byte-aware model and shared undo history.
 - Upkeep reports only. No asset deletion.
 
 ## Bounds

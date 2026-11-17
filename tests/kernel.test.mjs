@@ -311,31 +311,6 @@ test("table cells edit in place, Tab creates another row, and alignment is a rev
   assert.equal(f.root.querySelectorAll("tbody tr").length, 2);
   f.close();
 });
-test("source mode has isolated undo and commits one transaction when returning to rich mode", () => {
-  const f = fixture("正文\n");
-  point(f.editor, 1);
-  input(f.root, "insertText", "新");
-  f.model.beginSourceSession();
-  assert.equal(f.model.canUndo, false);
-  f.model.replace(0, f.model.text.length, "# 正新文\n", "source-command");
-  assert.equal(f.model.undo(), true);
-  assert.equal(f.model.text, "正新文\n");
-  assert.equal(f.model.undo(), false);
-  f.model.redo();
-  f.model.replace(
-    f.model.text.length,
-    f.model.text.length,
-    "源码新增\n",
-    "source-command",
-  );
-  f.model.endSourceSession();
-  f.editor.render();
-  f.editor.undo();
-  assert.equal(f.model.text, "正新文\n");
-  f.editor.undo();
-  assert.equal(f.model.text, "正文\n");
-  f.close();
-});
 test("Backspace removes a complete grapheme, and an external update resets the document history", () => {
   const f = fixture("A👨‍👩‍👧‍👦B\n");
   point(f.editor, f.model.text.indexOf("B"));

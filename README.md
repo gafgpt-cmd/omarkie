@@ -23,6 +23,7 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 ## Features
 
 - **Live Markdown editing**: headings, inline formatting, lists, tasks, tables, links, footnotes and YAML front matter. Edit code and formulas in place, or switch to the full source view.
+- **Shared undo/redo**: rich and source views keep edits in order. Switching views preserves history; each IME commit remains one step.
 - **Themes and fonts**: 17 built-in themes, including Toypora, Toyzetlr and live Omarchy themes, plus pickers for the text, heading, code and interface fonts. The fonts are bundled, so documents look the same on any machine.
 - **Omarchy integration**: themes follow the current Omarchy palette and font, and update while the app is open when you run `omarchy-theme-set` or `omarchy-font-set`. Under Omarchy, Omarkie uses the Omarchy theme until you choose another theme yourself.
 - **A focused writing space**: menu bar, outline, focus and typewriter modes, word counts, find and replace, and personal background images.
@@ -30,7 +31,7 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 - **Files you control**: folder tree, full-text search, quick open, recent files, autosave, session recovery and external-change conflict detection.
 - **Private by default**: remote images and embeds are blocked until you allow them, so opening a note never contacts other servers.
 - **Images, math and diagrams**: local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
-- **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252, with BOM and line endings preserved.
+- **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252. BOM and mixed line endings survive edits, transforms and undo.
 - **Import and export**: HTML and PDF built in; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
 
 ## See what it renders
@@ -153,13 +154,14 @@ npm test          # editor and file-layer unit tests
 npm run build     # type check and production build
 ```
 
+Linux full verification requires Xvfb: `xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" npm run verify'`.
+
 Linux and Windows use Electron; the macOS release uses a native Swift/AppKit host with WKWebView. Both share the same TypeScript/React interface and editing model. Desktop suites, packaging and the project layout are described in [CONTRIBUTING.md](CONTRIBUTING.md) and [the architecture](docs/architecture.md).
 
 ## Current limitations
 
 - Documents are limited to 20 MB. Files over 12,000,000 characters, or with a single block over 256,000 characters, open in source mode.
 - Legacy encodings without a BOM need an explicit encoding choice.
-- Rich and source editing keep separate undo histories; source changes join the rich history as one step when you switch back.
 - Format conversion can change layout. Keep the original file when importing.
 - Third-party themes, plugins, input methods and image hosts vary in compatibility.
 

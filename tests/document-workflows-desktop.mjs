@@ -79,13 +79,20 @@ try {
   await dialog.getByRole("button", { name: "Export copied OKF bundle", exact: true }).click(); await expect(dialog.getByText(/Copied bundle exported:/)).toBeVisible(); await page.screenshot({ path: path.join(qa, "writing-export.png") });
   await close(); await page.getByRole("button", { name: "mixed.md", exact: true }).click();
   await menu("Properties…"); await dialog.getByRole("button", { name: "Preview property change", exact: true }).click(); await dialog.getByRole("button", { name: "Apply previewed changes", exact: true }).click();
-  await expect(dialog.getByText("Mixed-line-ending note left unchanged. Normalize line endings explicitly in a copy first.", { exact: true })).toBeVisible();
-  assert.equal(await readFile(path.join(vault, "mixed.md"), "utf8"), mixedSource);
-  await close(); await page.getByRole("button", { name: "cyclic.md", exact: true }).click(); await menu("Properties…");
+  await expect(dialog.getByText("Changes applied to drafts", { exact: true })).toBeVisible(); await close();
+  const mixedPath = path.join(vault, "mixed.md"), mixedBody = mixedSource.slice(mixedSource.indexOf("\r\n---\r\n") + 7);
+  const expectedMixed = mixedSource.replace("\r\n---\r\n", '\r\n"type": "Reference"\r\n---\r\n');
+  await rich.click(); await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(mixedPath, "utf8"), { timeout: 20000 }).toBe(expectedMixed);
+  const savedMixed = await readFile(mixedPath, "utf8"); assert.equal(savedMixed.slice(savedMixed.indexOf("\r\n---\r\n") + 7), mixedBody);
+  await page.screenshot({ path: path.join(qa, "mixed-properties.png") });
+  await rich.click(); await page.keyboard.press("ControlOrMeta+z"); await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(mixedPath, "utf8"), { timeout: 20000 }).toBe(mixedSource);
+  await page.getByRole("button", { name: "cyclic.md", exact: true }).click(); await menu("Properties…");
   await expect(dialog.getByText("Edit this YAML alias in source mode.", { exact: true })).toBeVisible();
   assert.equal(await readFile(path.join(vault, "cyclic.md"), "utf8"), cyclicSource);
   assert.equal(await readFile(file, "utf8"), source); assert.deepEqual(errors, []); assert.deepEqual(outbound, []);
-  console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings fail closed", "cyclic YAML properties do not crash", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));
+  console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings preserve exact body and undo", "cyclic YAML properties do not crash", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));
 } catch (error) {
   await page.screenshot({ path: path.join(qa, "failure.png") });
   await writeFile(path.join(qa, "failure.txt"), String(error) + "\n" + await page.locator("body").innerText());

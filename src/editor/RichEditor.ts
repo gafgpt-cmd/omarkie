@@ -383,8 +383,21 @@ export class RichEditor {
       ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
     this.expandInline();
   }
+  private caretBounds() {
+    const selection = window.getSelection();
+    if (!selection?.isCollapsed || !selection.rangeCount || !this.root.contains(selection.focusNode)) return null;
+    const range = selection.getRangeAt(0);
+    const rect = typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect() : null;
+    if (rect?.height) return rect;
+    const element = selection.focusNode?.nodeType === Node.ELEMENT_NODE ? selection.focusNode as HTMLElement : selection.focusNode?.parentElement;
+    return element?.closest<HTMLElement>("[data-cid]")?.getBoundingClientRect() || null;
+  }
   render(restore = true) {
     if (this.composing) return;
+    const scroller = this.windowed ? this.root.parentElement : null;
+    const caret = scroller && this.caretBounds();
+    const bounds = caret?.height && scroller ? scroller.getBoundingClientRect() : null;
+    const keepCaret = bounds && caret && caret.top < bounds.bottom && caret.bottom > bounds.top;
     this.mutating = true;
     const fresh = new Map<string, Leaf>();
     const desired: HTMLElement[] = [];
@@ -479,6 +492,13 @@ export class RichEditor {
     }
     this.measure();
     if (restore && !this.fence) this.restore();
+    if (keepCaret) {
+      const caret = this.caretBounds(), bounds = scroller!.getBoundingClientRect();
+      if (caret?.height) {
+        if (caret.top < bounds.top) scroller!.scrollTop -= bounds.top - caret.top;
+        else if (caret.bottom > bounds.bottom) scroller!.scrollTop += caret.bottom - bounds.bottom;
+      }
+    }
     this.mutating = false;
     this.highlightVisibleCode();
     void renderDiagrams(this.root).catch(() => {}).then(() => this.scheduleMeasure());
