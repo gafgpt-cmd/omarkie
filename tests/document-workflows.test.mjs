@@ -87,6 +87,13 @@ test("copied bundles rewrite note/image aliases, raw spaces, dimensions and rese
   assert.throws(() => bundlePlan({ ...snapshot, truncated: true }));
   assert.throws(() => bundlePlan({ ...snapshot, notes: [note("start.md", "[[missing]]")] }));
 });
+test("explicit image size attributes override wiki dimensions once in copied bundles", () => {
+  const source = "![[picture space.png|100 x 60]]{width=400 height=240}";
+  const plan = bundlePlan({ notes: [note("start.md", source)], assets: [{ relative: "picture space.png" }], truncated: false });
+  assert.ok(plan.notes[0].content.includes("![picture space.png](../assets/picture%20space.png){width=400 height=240}"));
+  assert.equal((plan.notes[0].content.match(/\{width=/g) || []).length, 1);
+  assert.equal(source, "![[picture space.png|100 x 60]]{width=400 height=240}");
+});
 test("duplicate images remain referenced in upkeep, but ambiguous bundle export is refused", () => {
   const snapshot = { notes: [note("start.md", "![[photo.png|wide]]")], assets: [{ relative: "a/photo.png" }, { relative: "b/photo.png" }, { relative: "unused.png" }], truncated: false };
   const index = referenceIndex(snapshot);

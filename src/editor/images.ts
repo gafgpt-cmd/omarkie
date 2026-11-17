@@ -23,8 +23,14 @@ export function imageReferences(text: string): ImageReference[] {
   for (const match of text.matchAll(/!\[\[([^\[\]\n|#]+)(?:\|([^\[\]\n]*))?\]\]/g)) {
     if (blocked.some(range => match.index >= range.from && match.index < range.to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, match.index))) continue;
     if (!/\.(png|jpe?g|gif|webp|avif|svg)$/i.test(match[1].trim())) continue;
-    const size = /^\s*(\d+)(?:x(\d+))?\s*$/i.exec(match[2] || "");
-    result.push({ from: match.index, to: match.index + match[0].length, source: match[0], url: match[1].trim(), alt: size ? match[1].trim() : match[2]?.trim() || match[1].trim(), width: size?.[1] || "", height: size?.[2] || "" });
+    const size = /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(match[2] || "");
+    let end = match.index + match[0].length, width = size?.[1] || "", height = size?.[2] || "";
+    const attributes = /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(end));
+    if (attributes) {
+      for (const [, key, value] of attributes[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { const dimension = value.replace(/px$/, ""); if (key === "width") width = dimension; else height = dimension; }
+      end += attributes[0].length;
+    }
+    result.push({ from: match.index, to: end, source: text.slice(match.index, end), url: match[1].trim(), alt: size ? match[1].trim() : match[2]?.trim() || match[1].trim(), width, height });
   }
   return result.sort((a, b) => a.from - b.from);
 }

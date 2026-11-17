@@ -11,8 +11,8 @@ interface SyntaxEnvironment {
 export function headingSlug(text: string) {
   return text.normalize("NFC").toLowerCase().trim().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, "").replace(/\s+/g, "-") || "section";
 }
-export function alertTitle(kind: string) {
-  const label = kind[0].toUpperCase() + kind.slice(1).toLowerCase();
+export function alertTitle(kind: string, custom = false) {
+  const label = custom ? "" : kind[0].toUpperCase() + kind.slice(1).toLowerCase();
   return `<span class="markdown-alert-title"><svg class="alert-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 7v4M8 4.3v1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>${label}</span>`;
 }
 export function configureDocumentSyntax(md: MarkdownIt) {
@@ -60,10 +60,12 @@ export function configureDocumentSyntax(md: MarkdownIt) {
   md.core.ruler.after("inline", "image_attributes", state => {
     for (const block of state.tokens) for (const [index, image] of (block.children || []).entries()) {
       const next = block.children![index + 1];
-      if (image.type !== "image" || next?.type !== "text") continue;
+      if (!["image", "wiki_embed"].includes(image.type) || next?.type !== "text") continue;
       const match = /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(next.content);
       if (!match) continue;
-      for (const [, key, value] of match[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) image.attrSet(key, value.replace(/px$/, ""));
+      for (const [, key, value] of match[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) {
+        if (image.type === "wiki_embed") image.meta = { ...image.meta, [key]: value.replace(/px$/, "") }; else image.attrSet(key, value.replace(/px$/, ""));
+      }
       image.meta = { ...image.meta, attributes: match[0] }; next.content = next.content.slice(match[0].length);
     }
   });
@@ -76,15 +78,19 @@ export function configureDocumentSyntax(md: MarkdownIt) {
   md.renderer.rules.html_break = () => "<br>";
   md.renderer.rules.html_block = (tokens, index, _options, env) => safeDocumentHtml(tokens[index].content, typeof env?.documentId === "string" ? env.documentId : undefined);
   md.renderer.rules.alert_marker = (tokens, index) => alertTitle(tokens[index].content);
+  md.renderer.rules.text = (tokens, index) => {
+    const token = tokens[index], callout = token.meta?.callout as { type: string; custom: boolean; length: number } | undefined;
+    return callout ? alertTitle(callout.type, callout.custom) + md.utils.escapeHtml(token.content.slice(callout.length)) : md.utils.escapeHtml(token.content);
+  };
   md.core.ruler.after("inline", "alert_blocks", state => {
     for (let i = 0; i < state.tokens.length - 2; i++) {
       const token = state.tokens[i], inline = state.tokens[i + 2];
       if (token.type !== "blockquote_open" || inline.type !== "inline") continue;
-      const match = /^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:\n|$)/i.exec(inline.content); if (!match) continue;
+      const match = /^\[!([\w-]+)\]([+-]?)/.exec(inline.content); if (!match) continue;
       token.attrJoin("class", `markdown-alert markdown-alert-${match[1].toLowerCase()}`);
-      const title = match[1][0].toUpperCase() + match[1].slice(1).toLowerCase(); token.attrSet("data-alert", title);
+      token.attrSet("data-alert", match[1]); token.attrSet("data-callout-fold", match[2]);
       const marker = inline.children?.[0];
-      if (marker?.type === "text" && marker.content === match[0].trim()) { marker.type = "alert_marker"; marker.markup = marker.content; marker.content = title; }
+      if (marker?.type === "text") marker.meta = { ...marker.meta, callout: { type: match[1], length: match[0].length, custom: !!inline.content.slice(match[0].length).split("\n")[0].trim() } };
     }
   });
   md.block.ruler.before("hr", "frontmatter", (state, startLine, endLine, silent) => {

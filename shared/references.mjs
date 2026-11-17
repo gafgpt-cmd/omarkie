@@ -33,7 +33,14 @@ export function references(text) {
     const wiki = match[2] !== undefined, html = match[0].startsWith("<");
     const target = html ? /\bsrc\s*=\s*["']([^"']+)["']/i.exec(match[0])?.[1] : wiki ? match[2].trim() : match[6].replace(/^<|>$/g, "").replace(/\\([()])/g, "$1");
     if (!target) continue;
-    result.push({ target, image: html || !!(wiki ? match[1] : match[4]), wiki, alias: wiki ? match[3] : match[5], from: match.index, to: match.index + match[0].length, line: text.slice(0, match.index).split("\n").length, source: match[0] });
+    const image = html || !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3] : match[5];
+    const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
+    let to = match.index + match[0].length, width = size?.[1] || "", height = size?.[2] || "";
+    const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
+    const dimensions = html ? match[0] : attributes?.[1] || "";
+    for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
+    if (attributes) to += attributes[0].length;
+    result.push({ target, image, wiki, alias, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
   }
   for (const match of text.matchAll(/(!?)\[([^\]\n]+)\](?:[ \t]*\[([^\]\n]*)\])?/g)) {
     if (blocked(match.index) || text[match.index + match[0].length] === "(" || result.some(ref => match.index >= ref.from && match.index < ref.to)) continue;
@@ -115,9 +122,9 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       const target = resolved.candidates[0], destination = target.content !== undefined ? portable(target.relative) : "assets/" + target.relative.replaceAll("\\", "/");
       const depth = portable(note.relative).split("/").length - 1, url = encode("../".repeat(depth) + destination) + (resolved.fragment ? "#" + encodeURIComponent(resolved.fragment) : "");
       let label = ref.alias || ref.target;
-      const size = ref.image && ref.wiki && /^\d+(?:x\d+)?$/.test(label);
-      if (size) label = target.relative.split("/").at(-1);
-      const replacement = `${ref.image ? "!" : ""}[${label.replace(/[\[\]\\]/g, "\\$&")}](${url})${size ? `{width=${ref.alias.split("x")[0]}${ref.alias.includes("x") ? " height=" + ref.alias.split("x")[1] : ""}}` : ""}`;
+      if (ref.dimensionAlias) label = target.relative.split("/").at(-1);
+      const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
+      const replacement = `${ref.image ? "!" : ""}[${label.replace(/[\[\]\\]/g, "\\$&")}](${url})${dimensions}`;
       content = content.slice(0, ref.from) + replacement + content.slice(ref.to);
     }
     content = makeReady(content, note.relative);

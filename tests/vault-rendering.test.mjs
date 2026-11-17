@@ -19,6 +19,17 @@ test("wiki aliases and tags render authorized application links without source r
   assert.ok(holder.querySelector('.md-view a[href^="omarkie-wiki:"]'));
   assert.equal(renderMarkdown('[unsafe](javascript:alert(1))').includes('href="javascript:'), false);
 });
+test("resized captioned wiki images keep one portable width across reading and export", async () => {
+  const { resizedImage } = await import("../src/plugins/reading/imageSyntax.ts");
+  const { bundlePlan } = await import("../shared/references.mjs");
+  const source = resizedImage("![[folder/my picture.png|Caption]]", 320, 200);
+  const [image] = imageReferences(source);
+  assert.equal(image.source, source); assert.equal(image.to, source.length); assert.equal(image.width, "320"); assert.equal(image.alt, "Caption");
+  const holder = document.createElement("article"); holder.innerHTML = renderMarkdown(source, "fixture"); assert.equal(holder.querySelector("img").getAttribute("width"), "320");
+  const plan = bundlePlan({ notes: [{ token: "note", relative: "note.md", content: source }], assets: [{ relative: "folder/my picture.png" }], truncated: false });
+  assert.ok(plan.notes[0].content.includes("![Caption](../assets/folder/my%20picture.png){width=320}"));
+  assert.equal((plan.notes[0].content.match(/\{width=/g) || []).length, 1);
+});
 test("wiki image aliases/dimensions and raw-space references share export image inventory", () => {
   const source = '![[my picture.png|300x200]]\n![[folder/another.png|Caption]]\n![raw](folder/raw space.png)\n`![[ignored.png]]`\n';
   const images = imageReferences(source);

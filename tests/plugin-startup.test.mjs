@@ -7,19 +7,22 @@ test("bundled catalog never evaluates disabled modules, and enable imports only 
   const evaluated = [];
   const hooks = registerHooks({
     load(url, context, next) {
-      if (!url.endsWith('?typora-plugin')) return next(url, context);
+      if (!url.endsWith('?typora-plugin') && !url.includes('/src/plugins/reading/')) return next(url, context);
       return { format: 'module', shortCircuit: true, source: `globalThis.__pluginEvaluated.push(${JSON.stringify(url)}); export default () => class {};` };
     },
   });
   globalThis.__pluginEvaluated = evaluated;
   try {
     const { bundledPlugins } = await import('../src/plugins/catalog.ts');
-    assert.equal(bundledPlugins.length, 8);
+    assert.equal(bundledPlugins.length, 15);
     assert.deepEqual(evaluated, []);
     assert.ok(bundledPlugins.every(plugin => !plugin.factory && typeof plugin.load === 'function'));
-    await bundledPlugins[0].load();
+    await bundledPlugins.find(plugin => plugin.id === 'auto_number').load();
     assert.equal(evaluated.length, 1);
     assert.match(evaluated[0], /auto_number/);
+    await bundledPlugins.find(plugin => plugin.id === 'callouts').load();
+    assert.equal(evaluated.length, 2);
+    assert.match(evaluated[1], /reading\/callouts/);
   } finally { hooks.deregister(); delete globalThis.__pluginEvaluated; }
 });
 

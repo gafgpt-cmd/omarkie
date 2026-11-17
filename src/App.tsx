@@ -77,8 +77,8 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
-  const pluginContext = useRef({ active, editor, notify: session.setMessage });
-  pluginContext.current = { active, editor, notify: session.setMessage };
+  const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
+  pluginContext.current = { active, editor, preferences, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
   useEffect(() => {
     if (!painted || !Object.values(pluginPreferences).some(value => value.enabled)) { setRuntimeReady(false); return; }
@@ -92,6 +92,14 @@ export default function App() {
       getDocumentId: () => pluginContext.current.active?.id || "",
       getNumbered: () => pluginContext.current.editor()?.numbered() || [],
       composing: () => !!pluginContext.current.editor()?.composing(),
+      editable: () => !!pluginContext.current.active && !!pluginContext.current.editor()?.richMode(),
+      getHeadings: () => { const current = pluginContext.current.editor(), text = current?.markdown() || ""; return current?.headings(text) || extractHeadings(text); },
+      jump: line => pluginContext.current.editor()?.jump(line),
+      imageOffset: image => pluginContext.current.editor()?.imageOffset(image),
+      selectionRange: () => pluginContext.current.editor()?.selectionRange(),
+      replaceRange: (from, to, text, expected) => pluginContext.current.editor()?.replaceRange(from, to, text, expected) ?? false,
+      getWidth: () => pluginContext.current.preferences.editorColumns,
+      setWidth: editorColumns => setPreferences(previous => ({ ...previous, editorColumns: Math.max(40, Math.min(160, Math.round(editorColumns))) })),
       insert: text => pluginContext.current.editor()?.insert(text), replace: text => pluginContext.current.editor()?.transform(() => text),
       setReadOnly, notify: text => pluginContext.current.notify(text), changed: (id, state) => setPluginStates(previous => ({ ...previous, [id]: state })),
       reservedHotkeys: [...commandsByAction.values()].map(command => commandKey(command) || "").filter(Boolean),
@@ -105,8 +113,8 @@ export default function App() {
     if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
   }, [painted, dialog === "plugins"]);
+  useEffect(() => { localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences)); }, [pluginPreferences]);
   useEffect(() => {
-    localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
     if (!session.ready || !active) return;
     for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
     if (!pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
@@ -142,6 +150,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
+    document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
+    document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
+    pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
   const checked = { source: !rendered, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
   const menuContext = editor()?.context() || "";
@@ -238,6 +249,7 @@ export default function App() {
     }
     else if (action === "quit") void session.quit();
     else if (action === "close-window") void session.closeWindow();
+    else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRendered((value) => !value);
     else if (action === "sidebar") setSidebar((value) => !value);
     else if (action === "outline" || action === "files" || action === "file-tree") {

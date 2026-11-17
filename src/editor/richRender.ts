@@ -117,7 +117,7 @@ export function renderNode(
   environment: Record<string, unknown> = {},
 ): HTMLElement {
   const holder = document.createElement("div");
-  const alert = /^\s*>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i.exec(node.source);
+  const alert = /(?:^|\n)[ \t]*(?:>[ \t]*)+\[!([\w-]+)\]/.exec(node.source);
   if (alert) environment = { ...environment, alertType: alert[1].toUpperCase() };
   let pointer = 0,
     index = 0;
@@ -396,14 +396,17 @@ function tokenInlineHtml(
     return raw.slice(at, end);
   };
   for (const token of inlineTokens(raw, environment)) {
-    if (cursor === 0 && token.type === "text" && environment.alertType && token.content === `[!${environment.alertType}]`) { const title = String(environment.alertType).toLowerCase(); append(object(token.content, alertTitle(title), "alert", 0)); cursor += token.content.length; continue; }
+    if (cursor === 0 && token.type === "text" && environment.alertType) {
+      const marker = /^\[!([\w-]+)\]([+-]?)/.exec(token.content);
+      if (marker) { append(object(marker[0], alertTitle(marker[1], !!raw.slice(marker[0].length).split("\n")[0].trim()), "alert", 0)); cursor += marker[0].length; token.content = token.content.slice(marker[0].length); if (!token.content) continue; }
+    }
     if (token.type === "html_break") {
       cursor += token.markup.length;
       append(`<span class="md-meta md-cell-break">${escapeHtml(token.markup)}</span><br>${cursor === raw.length ? '<br class="md-ui" data-break-placeholder>' : ''}`);
       continue;
     }
     if (token.type === "html_embed") { append(object(token.content, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.content.length; continue; }
-    if (token.type === "wiki_embed") { append(object(token.markup, renderMarkdown(token.markup, documentId, { ...environment, standalone: raw.trim() === token.markup }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.markup.length; continue; }
+    if (token.type === "wiki_embed") { const source = token.markup + (token.meta?.attributes || ""); append(object(source, renderMarkdown(source, documentId, { ...environment, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_link" || token.type === "vault_tag") {
       const view = renderMarkdown(token.markup, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");
       append(object(token.markup, view, "reference", cursor)); cursor += token.markup.length; continue;

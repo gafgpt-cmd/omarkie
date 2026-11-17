@@ -10,6 +10,14 @@ test("PC shortcuts use the Windows/Linux profile rather than the Mac alternative
   assert.equal(commandForKey(event('KeyI',{ctrlKey:true,shiftKey:true})),'image');
   assert.equal(commandForKey(event('Digit5',{altKey:true,shiftKey:true})),'strike');
 });
+test("display size shortcuts no longer change paragraph structure", () => {
+  for (const platform of ['MacIntel', 'Linux x86_64']) {
+    Object.defineProperty(navigator, 'platform', { value: platform, configurable: true });
+    const modifiers = platform === 'MacIntel' ? { metaKey: true } : { ctrlKey: true };
+    for (const [code, action] of [['Equal', 'text-larger'], ['Minus', 'text-smaller'], ['Digit0', 'text-reset']]) assert.equal(commandForKey(event(code, modifiers)), action);
+    assert.equal(commandForKey(event('Equal', { ...modifiers, altKey: true })), 'heading-up');
+  }
+});
 test("Mac shortcuts retain their documented bindings and each platform has no duplicate accelerator",()=>{
   Object.defineProperty(navigator,'platform',{value:'MacIntel',configurable:true});
   assert.equal(commandForKey(event('KeyT',{metaKey:true})),'newTab');

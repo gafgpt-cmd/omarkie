@@ -1,0 +1,21 @@
+Reading ports
+
+Source: https://github.com/obgnail/typora_plugin
+Revision: 4a856129a9dbefaa963bfba4aacd3e5484bde60a
+Copyright (c) 2023 obgnail
+License: MIT, reproduced in LICENSE in this directory.
+
+Inspected source -> adapted module in src/plugins/reading:
+- plugin/callouts/index.js + index.css -> callouts.ts
+- plugin/image_viewer/index.js + index.css -> imageViewer.ts
+- plugin/resize_image.js -> resizeImage.ts
+- plugin/collapse_table.js -> foldTables.ts
+- plugin/editor_width_slider.js -> widthSlider.ts
+- plugin/slash_commands.js -> slashCommands.ts
+- plugin/right_outline/index.js + index.css -> rightOutline.ts
+
+Ports retain only required behavior.
+Host internals replaced with existing owned editor/runtime APIs.
+Resize commits source edits; temporary previews cancel without writes.
+No upstream eval, network icon, download, autoplay or remote-location code included.
+No telemetry or phone-home code included.

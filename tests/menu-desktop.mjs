@@ -803,7 +803,7 @@ try {
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
   await installed.getByRole("checkbox").uncheck({ force: true });
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
-  await expect(page.locator(".plugin-card")).toHaveCount(8);
+  await expect(page.locator(".plugin-card")).toHaveCount(15);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toHaveCount(0);
   pass("Install and remove local plugin", "Trust gate, installed stylesheet and removal work");

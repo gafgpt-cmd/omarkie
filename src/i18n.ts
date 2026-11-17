@@ -10,10 +10,11 @@ const desktop: { language: string; choice: string } | null = typeof window !== "
 export const languageChoice: string = forced || desktop?.choice || (typeof localStorage !== "undefined" && localStorage.getItem(languageKey)) || "auto";
 export const language: string = forced ? resolveLanguage(forced) : desktop?.language || resolveLanguage(languageChoice, typeof navigator === "undefined" ? [] : [...(navigator.languages || []), navigator.language]);
 const catalogs: Record<string, () => Promise<{ default: Record<string, string> }>> = {
+  zh: () => import("../shared/locales/zh.json", { with: { type: "json" } }),
   en: () => import("../shared/locales/en.json", { with: { type: "json" } }), es: () => import("../shared/locales/es.json", { with: { type: "json" } }),
   ca: () => import("../shared/locales/ca.json", { with: { type: "json" } }), ro: () => import("../shared/locales/ro.json", { with: { type: "json" } }),
 };
-// Missing keys fall back to English, never to the Chinese source key; Chinese needs no catalog.
+// Chinese source keys need no entries; its small catalog translates English-keyed controls.
 const [translation, english] = await Promise.all([catalogs[language] ? catalogs[language]().then(module => module.default) : {}, language !== "zh" && language !== "en" ? catalogs.en().then(module => module.default) : undefined]);
 const instance = i18next.createInstance();
 instance.init({ lng: language, fallbackLng: english ? "en" : false, resources: { [language]: { translation }, ...(english ? { en: { translation: english } } : {}) }, initAsync: false,
