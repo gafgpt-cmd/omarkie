@@ -1,13 +1,14 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, realpath, rename } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
-const dataDir = await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-"));
+const dataDir = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-desktop-")));
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: dataDir, OMARKIE_LANGUAGE: "zh" });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
@@ -23,7 +24,7 @@ async function launch() {
   currentPage = page;
   page.on("pageerror", (error) => errors.push(error.message));
   await fullSize(application, page);
-  await page.getByRole("button", { name: "欢迎.md", exact: true }).waitFor();
+  await page.getByRole("button", { name: "travel-journal.md", exact: true }).waitFor();
   return page;
 }
 async function menu(page, name) {
@@ -52,20 +53,19 @@ async function waitForFile(file, predicate, timeout = 6000) {
 }
 try {
   let page = await launch();
-  await expect(
-    page.getByRole("heading", { name: "让文字，回到文字。" }),
-  ).toBeVisible();
+  await expect(page.locator(".document-editor:not([hidden])").getByRole("heading", { name: "Seven Days on the Lighthouse Coast 🌄", exact: true })).toBeVisible();
+  for (const name of ["travel-journal.md", "recipe-card.md", "space-explainer.md", "launch-plan.md", "poetry-and-type.md"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  const firstPhoto = page.locator(".document-editor:not([hidden]) img").first();
+  await expect(firstPhoto).toBeVisible();
+  await expect.poll(() => firstPhoto.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
   await page.screenshot({ path: path.join(qa, "desktop.png") });
-  passed.push("Packaged renderer loads, welcome document renders, no overlay");
-  const welcome = path.join(dataDir, "示例笔记/欢迎.md");
+  passed.push("First launch opens all five illustrated introductions and decodes the first photo");
+  const welcome = path.join(dataDir, "Showcase/travel-journal.md");
   const original = await readFile(welcome, "utf-8");
-  if (process.platform === "win32") {
-    assert.ok(original.includes("Ctrl+S"));
-    assert.ok(!original.includes("⌘"));
-  }
   await mode(page, false);
   const editor = page.locator(".document-editor:not([hidden]) .cm-content");
-  await expect(editor).toContainText("# 让文字，回到文字。");
+  await expect(editor).toContainText("# Seven Days on the Lighthouse Coast");
   await mode(page, true);
   assert.equal(
     await readFile(welcome, "utf-8"),
@@ -85,7 +85,7 @@ try {
   await editor.press("ControlOrMeta+Shift+z");
   await waitForFile(welcome, (text) => text.includes("中文输入验收"));
   passed.push("Undo and redo persist correct file contents");
-  await page.getByRole("button", { name: "写作示例.md", exact: true }).click();
+  await page.getByRole("button", { name: "space-explainer.md", exact: true }).click();
   await mode(page, true);
   await expect(
     page.locator(".document-editor:not([hidden]) .mathjax-node svg").first(),
@@ -95,7 +95,7 @@ try {
   ).toBeVisible();
   await expect(
     page.locator(".document-editor:not([hidden]) .mermaid-block svg"),
-  ).toContainText("观察");
+  ).toContainText("Radar");
   passed.push(
     "Math, code, tasks and Mermaid with visible labels render",
   );
@@ -172,21 +172,54 @@ try {
   passed.push(
     "Image paste copies bytes and renders through the local asset protocol",
   );
+  const imageFolder = path.join(dataDir, "Picture checks"), assets = path.join(imageFolder, "assets");
+  await mkdir(assets, { recursive: true });
+  await mkdir(path.join(imageFolder, ".obsidian"));
+  const picture = path.join(assets, "picture with spaces.png");
+  await writeFile(picture, tinyPng);
+  const pictureFile = path.join(imageFolder, "Pictures.md"), pictureSource = [
+    "# Pictures", "",
+    "![raw-space image](assets/picture with spaces.png)", "",
+    "![[picture with spaces.png|40x30]]", "",
+    `![absolute image](${pathToFileURL(picture).href}){width=30}`, "",
+    '<img src="assets/picture with spaces.png" alt="HTML image" width="20">', "",
+  ].join("\n");
+  await writeFile(pictureFile, pictureSource);
+  await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, pictureFile);
+  await menu(page, "打开文件");
+  const pictureEditor = page.locator(".document-editor:not([hidden])");
+  for (const alt of ["raw-space image", "picture with spaces.png", "absolute image", "HTML image"]) {
+    const image = pictureEditor.getByRole("img", { name: alt, exact: true });
+    await image.scrollIntoViewIfNeeded();
+    await expect.poll(() => image.evaluate(element => element.complete && element.naturalWidth > 0)).toBe(true);
+  }
+  await expect(pictureEditor.getByRole("img", { name: "picture with spaces.png", exact: true })).toHaveAttribute("width", "40");
+  await expect(pictureEditor.getByRole("img", { name: "absolute image", exact: true })).toHaveAttribute("width", "30");
+  await mode(page, false); await mode(page, true);
+  assert.equal(await readFile(pictureFile, "utf8"), pictureSource);
+  passed.push("Raw-space, Obsidian-vault, file URL and HTML pictures decode without rewriting Markdown");
   await sidebarTab(page, "文件");
-  await page.getByRole("button", { name: "欢迎.md", exact: true }).click();
+  await page.getByRole("button", { name: "travel-journal.md", exact: true }).click();
   await sidebarTab(page, "大纲");
-  await page
-    .getByRole("button", { name: "写作，不必分心", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Your next stops", exact: true }).click();
+  await expect.poll(() => page.locator(".document-editor:not([hidden]) .rich-scroller").evaluate(element => element.scrollTop)).toBeGreaterThan(0);
   await sidebarTab(page, "文件");
   passed.push("Outline navigates to the selected Markdown heading");
+  const editedTravel = await readFile(welcome);
+  const missingNote = path.join(dataDir, "Showcase/recipe-card.md"), missingPhoto = path.join(dataDir, "Showcase/images/harbour.jpg");
+  const noteBytes = await readFile(missingNote), photoBytes = await readFile(missingPhoto);
+  await rename(missingNote, missingNote + ".preserved");
+  await rename(missingPhoto, missingPhoto + ".preserved");
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", { action: "showcase" }));
   await expect(
     page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
   ).toBeVisible();
   // Poll instead of decode(): the photo's src may still switch to its screen-size preview, which rejects a pending decode.
   await expect.poll(() => page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
-  passed.push("Help > Showcase Examples opens the showcase with its photos");
+  await expect.poll(() => readFile(missingNote).catch(() => null)).toEqual(noteBytes);
+  await expect.poll(() => readFile(missingPhoto).catch(() => null)).toEqual(photoBytes);
+  assert.deepEqual(await readFile(welcome), editedTravel);
+  passed.push("Help > Showcase Examples restores missing notes and photos without overwriting an edited travel journal");
   const target = path.join(dataDir, "验收文档.md");
   await application.evaluate(({ dialog }, file) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: file });

@@ -28,7 +28,6 @@ import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
 import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
-import { openSamples, sampleNotes } from "./samples.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
@@ -232,7 +231,11 @@ const handlers = {
       }
       if (documents.length) return { ...restored, documents, activeId, restoreError: [restored?.restoreError, ...notices].filter(Boolean).join(" ") || undefined };
     }
-    const result = restored || await openSamples(store, await sampleNotes(root, language), path.join(app.getPath("userData"), t("示例笔记")));
+    let result = restored;
+    if (!result) {
+      const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
+      result = { documents, activeId: documents[0].id, folder: folder.folder };
+    }
     return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },
   showcase: async () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,stat,rename,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,stat,rename,rm,realpath} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
@@ -50,7 +50,7 @@ test('partial trash failure reports success only for files actually removed, whi
   assert.deepEqual(await readFile(path.join(f.directory,'moved.png')),png);
 });
 test('absolute image paths from the system temporary directory accept Windows short directory names',async t=>{
-  const f=await fixture(t),absolute=path.join(f.root,'one.png');
+  const f=await fixture(t),absolute=path.join(process.platform==='win32'?f.root:await realpath(f.root),'one.png');
   const resolved=await f.store.asset(f.record.id,absolute);
   assert.deepEqual(await readFile(resolved),png);
   const fileURL=(await import('node:url')).pathToFileURL(absolute).href;

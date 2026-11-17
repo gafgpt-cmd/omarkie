@@ -1,7 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, writeFile, mkdir, stat, symlink } from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { createServer } from "node:http";
@@ -14,7 +13,9 @@ if (process.platform !== "linux") {
   process.exit(0);
 }
 
-const data = await mkdtemp(path.join(os.tmpdir(), "omarkie-menu-"));
+// Native Trash may reject system-temporary mounts.
+await mkdir("test-results", { recursive: true });
+const data = await mkdtemp(path.resolve("test-results", "omarkie-menu-"));
 const qa = process.env.OMARKIE_QA_DIR || path.join(data, "evidence");
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: data, OMARKIE_TEST_HIDDEN: process.env.OMARKIE_TEST_HIDDEN ?? "1", OMARKIE_LANGUAGE: "en", XDG_STATE_HOME: path.join(data, "state"), XDG_CONFIG_HOME: path.join(data, "config"), XDG_DATA_HOME: path.join(data, "share") });
 delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
@@ -144,7 +145,7 @@ try {
     pass(`More checked mark: ${action}`, "Visible checkmark and ARIA state match the active writing mode");
   }
   if (!process.argv.includes("--commands-only") && !process.argv.includes("--workflows-only") && !process.argv.includes("--files-only")) {
-  await expect(rich().getByRole("heading", { name: /Words, back to words/ })).toBeVisible();
+  await fixture("# Other document\n");
   await menu("Help", "Showcase Examples");
   await expect(rich().getByRole("heading", { name: /Seven Days on the Lighthouse Coast/ })).toBeVisible();
   pass("Help > Showcase Examples", "Opens the bundled showcase");
@@ -844,18 +845,21 @@ try {
   await command("preferences");
   await preferences().getByLabel(t("PicGo Server 地址"), { exact: true }).fill(`http://127.0.0.1:${uploader.address().port}/upload`);
   await preferences().getByRole("button", { name: t("完成"), exact: true }).click({ force: true });
+  const uploadedFile = path.join(data, (await page.locator(".document-title").textContent()).trim());
   await command("upload-all-images");
   await expect.poll(() => uploads).toBe(1);
-  await expect.poll(() => sourceText()).toContain("https://example.invalid/audit-image.png");
+  await expect.poll(() => readFile(uploadedFile, "utf8")).toContain("https://example.invalid/audit-image.png");
+  assert.ok((await sourceText()).includes("https://example.invalid/audit-image.png"));
   pass("Upload All Images and PicGo address", "Loopback fixture receives actual image bytes and Markdown uses returned URL");
   await command("preferences");
   await preferences().getByLabel(t("插入后通过 PicGo 自动上传"), { exact: true }).check({ force: true });
   await preferences().getByRole("button", { name: t("完成"), exact: true }).click({ force: true });
-  await fixture("Audit text\n");
+  const automaticFile = await fixture("Audit text\n");
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, image);
   await command("image");
   await expect.poll(() => uploads).toBe(2);
-  await expect.poll(() => sourceText()).toContain("https://example.invalid/audit-image.png");
+  await expect.poll(() => readFile(automaticFile, "utf8")).toContain("https://example.invalid/audit-image.png");
+  assert.ok((await sourceText()).includes("https://example.invalid/audit-image.png"));
   await command("preferences");
   await preferences().getByLabel(t("插入后通过 PicGo 自动上传"), { exact: true }).uncheck({ force: true });
   await expect(preferences().getByLabel(t("显示远程图片"), { exact: true })).not.toBeChecked();

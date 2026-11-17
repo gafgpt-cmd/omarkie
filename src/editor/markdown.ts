@@ -12,6 +12,7 @@ import { full as emoji } from "markdown-it-emoji";
 import { configureDocumentSyntax } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
+import { bundledImageUrls } from "./htmlResources.ts";
 let allowRemoteImages = false;
 export interface Block {
   fromLine: number;
@@ -130,6 +131,8 @@ function cleanHtml(html: string, documentId?: string) {
       image.setAttribute("srcset", [800, 1200, 1600, 2400].map(width => `${image.src}?preview=${width} ${width}w`).join(", "));
     }
     if (size && !image.hasAttribute("width") && !image.hasAttribute("height")) { image.setAttribute("width", String(size[0])); image.setAttribute("height", String(size[1])); }
+    const bundled = bundledImageUrls.get(image.getAttribute("src") || "");
+    if (bundled) image.src = bundled;
   }
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll<Element>("[srcset],[poster],[style],[background],input[src],image")) {
     if (/https?:/i.test(element.getAttribute("srcset") || "")) element.removeAttribute("srcset");
