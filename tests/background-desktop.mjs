@@ -33,9 +33,14 @@ try {
   await fullSize(application,page);
   await expect(page.locator('.editor-background')).toHaveCSS('opacity','0.4');await expect(page.locator('.editor-background')).toHaveCSS('background-position','50% 0%');
   console.log('PASS: Electron restart restores background copy and settings after source relocation');
+  const exportText="Only this document belongs in the exported page.";
+  const documentFile=path.join(directory,"export-fixture.md");
+  await writeFile(documentFile,`# Export fixture\n\n${exportText}\n`,"utf8");
+  await application.evaluate(({dialog,BrowserWindow},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});BrowserWindow.getAllWindows()[0].webContents.send("app:command",{action:"open"});},documentFile);
+  await expect(page.locator(".document-editor:not([hidden]) .rich-document")).toContainText(exportText);
   const exported=path.join(directory,'export.html');await application.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},exported);
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'导出 HTML…',exact:true}).click();
-  await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain('Seven Days on the Lighthouse Coast');
+  await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain(exportText);
   const html=await readFile(exported,'utf8');assert.ok(!html.includes('data:image/webp')&&!html.includes('data-editor-background'));
   console.log('PASS: actual Electron HTML export excludes the personal background');
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'偏好设置…',exact:true}).click();
