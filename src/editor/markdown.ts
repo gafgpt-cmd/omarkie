@@ -62,14 +62,18 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
 // the size prefetch, so a source inside a code fence costs the host one failed lookup at most.
 export function localImageSources(text: string) {
   const sources = new Set<string>(), state = new md.inline.State(text, md, {}, []);
-  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|(!\[)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
+  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|(!\[)|(<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)/gi)) {
     let source: string;
     if (match[2]) {
       const labelEnd = md.helpers.parseLinkLabel(state, match.index + 1, false);
       const destination = labelEnd < 0 ? null : inlineDestination(md, text, labelEnd + 1);
       if (!destination) continue;
       source = destination.target;
-    } else source = match[1] !== undefined ? match[1].trim().replaceAll("%", "%25") : decodeHTMLAttribute(match[3].trim());
+    } else if (match[1] !== undefined) source = match[1].trim().replaceAll("%", "%25");
+    else {
+      const attribute = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[3]);
+      source = decodeHTMLAttribute(attribute?.[1] ?? attribute?.[2] ?? attribute?.[3] ?? "");
+    }
     const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
     if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
   }

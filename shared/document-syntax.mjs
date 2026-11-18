@@ -142,7 +142,7 @@ export function configureDocumentSyntax(md) {
     if (!state.env.fragment) state.env.headings = headings;
   });
   md.inline.ruler.before("emphasis", "html_embed", (state, silent) => {
-    const raw = state.src.slice(state.pos), match = /^(?:<img\b[^>]*>|<(span|a|ruby|abbr|small|b|i|strong|em|code|samp|time|label|video|audio)\b[^>]*>[\s\S]*?<\/\1>)/i.exec(raw);
+    const raw = state.src.slice(state.pos), match = /^(?:<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>|<(span|a|ruby|abbr|small|b|i|strong|em|code|samp|time|label|video|audio)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>[\s\S]*?<\/\1>)/i.exec(raw);
     if (!match) return false;
     if (!silent) { const token = state.push("html_embed", "span", 0); token.content = match[0]; token.markup = match[0]; token.meta = { from: state.pos, to: state.pos + match[0].length }; }
     state.pos += match[0].length; return true;

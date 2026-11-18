@@ -9,7 +9,7 @@ export function imageReferences(text: string): ImageReference[] {
   const blocked = parseBlocks(text).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind)).map(block => ({ from: offsets[block.fromLine - 1], to: offsets[block.toLine] }));
   for (const code of text.matchAll(/(`+)([^`]|(?!\1)`)*?\1/g)) blocked.push({ from: code.index, to: code.index + code[0].length });
   const state = new md.inline.State(text, md, {}, []);
-  const expression = /!\[|<img\b[^>]*>/gi;
+  const expression = /!\[|<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
     if (blocked.some(range => match.index >= range.from && match.index < range.to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, match.index))) continue;
     let url = "", alt = "", width = "", height = "", end = match.index + match[0].length;

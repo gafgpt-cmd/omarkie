@@ -156,6 +156,36 @@ test("supported inventory bounds select referenced assets without timing budgets
   const plan = bundlePlan(value); assert.equal(plan.assets.length, 50000); assert.equal(plan.notes.length, 1000);
 });
 
+test("one large note bounds range visits and prefix splitting while preserving results", () => {
+  const count = 50000, text = '# Top\n' + '![image](image.png) #tag `[[ignored]]`\n'.repeat(count) + '# Bottom\n';
+  const some = Array.prototype.some, split = String.prototype.split;
+  let visits = 0, splitCharacters = 0, parsed;
+  Array.prototype.some = function(callback, receiver) {
+    return some.call(this, (value, index, array) => { visits++; return callback.call(receiver, value, index, array); });
+  };
+  String.prototype.split = function(separator, limit) {
+    if (separator === "\n") splitCharacters += this.length;
+    return split.call(this, separator, limit);
+  };
+  try { parsed = references(text); }
+  finally { Array.prototype.some = some; String.prototype.split = split; }
+  assert.equal(parsed.references.length, count); assert.equal(parsed.tags.length, count);
+  assert.ok(parsed.references.every((ref, index) => ref.target === "image.png" && ref.line === index + 2 && ref.source === '![image](image.png)'));
+  assert.ok(parsed.tags.every((tag, index) => tag.tag === "tag" && tag.line === index + 2));
+  assert.deepEqual(parsed.headings.map(({ id, line }) => ({ id, line })), [{ id: "top", line: 1 }, { id: "bottom", line: count + 2 }]);
+  assert.ok(visits < count * 128, `${visits} array visits`);
+  assert.ok(splitCharacters < text.length * 64, `${splitCharacters} newline-split characters`);
+});
+
+test("range passes retain nested labels, HTML resources, footnotes, tags and CRLF line numbers", () => {
+  const text = ['# Top', '<a href="Project.md">Hidden #html [[ignored]]</a>', '[![thumb](photo.png)](Project.md) #outside', '`[[code]] #code` <!-- [[comment]] #comment -->', '$[[math]] #math$', '[^n]: ![foot](photo.png) #foot', '[[Project|hidden #alias]]', '# Bottom'].join("\r\n");
+  const parsed = references(text);
+  assert.deepEqual(parsed.references.map(({ target, line }) => ({ target, line })), [{ target: "Project.md", line: 2 }, { target: "Project.md", line: 3 }, { target: "photo.png", line: 3 }, { target: "photo.png", line: 6 }, { target: "Project", line: 7 }]);
+  assert.deepEqual(parsed.tags, [{ tag: "outside", line: 3 }, { tag: "foot", line: 6 }]);
+  assert.deepEqual(parsed.headings.map(({ id, line }) => ({ id, line })), [{ id: "top", line: 1 }, { id: "bottom", line: 8 }]);
+  for (const ref of parsed.references) assert.equal(text.slice(ref.from, ref.to), ref.source);
+});
+
 test("encoded hash note and image references survive real copied output", async () => {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "reference-hashes-"))), vault = path.join(root, "vault"), output = path.join(root, "output");
   await mkdir(vault); await mkdir(output);

@@ -59,6 +59,31 @@ for (const [markup, target] of cases) {
     assert.equal(doc.redo(), true); assert.equal(doc.toMarkdown(), expected);
   });
 }
+for (const quote of ['"', "'"]) for (const srcFirst of [false, true]) {
+  test(`quoted HTML delimiters keep complete ranges: ${quote} srcFirst=${srcFirst}`, () => {
+    const sourceAttribute = `src=${quote}figure.png${quote}`, altAttribute = `alt=${quote}A > B${quote}`;
+    const markup = `<img ${srcFirst ? sourceAttribute + ' ' + altAttribute : altAttribute + ' ' + sourceAttribute} width=${quote}240${quote} height=${quote}120${quote} class=${quote}keep${quote}>`;
+    for (const source of [`Before.\r\n\r\n${markup}\r\n\nAfter.\r\n`, `Before ${markup} after.\r\n`]) {
+      const [image] = imageReferences(source);
+      assert.equal(image.source, markup); assert.equal(image.url, "figure.png"); assert.equal(image.alt, "A > B");
+      assert.equal(source.slice(image.from, image.to), markup); assert.deepEqual(localImageSources(source), ["figure.png"]);
+      const article = document.createElement("article"); article.innerHTML = renderMarkdown(source, "fixture");
+      assert.equal(article.querySelectorAll("img").length, 1); assert.equal(article.querySelector("img").getAttribute("alt"), "A > B");
+      const value = { notes: [{ relative: "start.md", content: source }], assets: [{ relative: "figure.png" }], truncated: false };
+      assert.deepEqual(referenceIndex(value).broken, []); assert.deepEqual(referenceIndex(value).unused, []);
+      const copy = bundlePlan(value).notes[0].content; article.innerHTML = renderMarkdown(copy, "copy");
+      assert.equal(article.querySelector("img").getAttribute("alt"), "A > B");
+      assert.equal(article.querySelector("img").getAttribute("class"), "keep");
+      const doc = new MarkdownDocument(source), range = imageRange(doc.text, doc.text.indexOf("<img"));
+      assert.equal(range.source, markup);
+      const expected = markup.replace("240", "320").replace("120", "160"), resized = resizedImage(range.source, 320, 160);
+      assert.equal(resized, expected); doc.replace(range.from, range.to, resized, "document-command");
+      assert.equal(doc.toMarkdown(), source.replace(markup, expected));
+      assert.equal(doc.undo(), true); assert.equal(doc.toMarkdown(), source);
+    }
+  });
+}
+
 test("unclosed destinations cannot become partial resize ranges", () => {
   for (const source of ['![alt](plot(v2).png', '![alt](plot(v2.png)', '![alt](<plot(v2).png)']) {
     assert.deepEqual(imageReferences(source), []); assert.equal(imageRange(source, 0), undefined);

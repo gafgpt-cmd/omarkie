@@ -6,6 +6,27 @@ import { headingSlug as slug } from "./wiki-syntax.mjs";
 export { headingSlug as slug } from "./wiki-syntax.mjs";
 const md = createMarkdown();
 const key = value => value.normalize("NFC").toLowerCase();
+function upperBound(offsets, at) {
+  let low = 0, high = offsets.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (offsets[middle] <= at) low = middle + 1; else high = middle;
+  }
+  return low;
+}
+function rangeCursor(ranges) {
+  const merged = [];
+  for (const [from, to] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    if (to <= from) continue;
+    const last = merged.at(-1);
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to); else merged.push([from, to]);
+  }
+  let cursor = 0;
+  return at => {
+    while (cursor < merged.length && merged[cursor][1] <= at) cursor++;
+    return cursor < merged.length && merged[cursor][0] <= at;
+  };
+}
 export function normalizePath(value) {
   if (/[\0]|^[a-z][a-z\d+.-]*:|^[/\\]{2}/i.test(value)) return null;
   const parts = [];
@@ -32,15 +53,30 @@ export function references(text, options = {}) {
     if (!["inline", "footnote_definition"].includes(token.type) || !token.map) continue;
     const content = token.meta?.source ?? token.content, inlineLines = content.split("\n");
     const children = token.children || md.parseInline(content, { ...environment, fragment: true })[0].children || [];
+    const inlineOffsets = [0], sourceStarts = inlineLines.map((line, index) => {
+      inlineOffsets.push(inlineOffsets.at(-1) + line.length + 1);
+      const sourceLine = token.map[0] + index;
+      return offsets[sourceLine] + Math.max(0, lines[sourceLine].indexOf(line));
+    });
     const offset = at => {
-      const before = content.slice(0, at).split("\n"), line = token.map[0] + before.length - 1;
-      return offsets[line] + Math.max(0, lines[line].indexOf(inlineLines[before.length - 1])) + before.at(-1).length;
+      const line = upperBound(inlineOffsets, at) - 1;
+      return sourceStarts[line] + at - inlineOffsets[line];
     };
     for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) excluded.push([offset(child.meta.from), offset(child.meta.to), child.type === "html_embed"]);
   }
   for (const match of text.matchAll(/^ {0,3}\[(?!\^)[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
-  const blocked = (at, html = false) => excluded.some(([from, to, onlyHTML]) => at >= from && at < to && (!onlyHTML || !html)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, at));
+  const blockCursor = () => {
+    const common = rangeCursor(excluded.filter(range => !range[2])), markdown = rangeCursor(excluded.filter(range => range[2]));
+    return (at, html = false) => {
+      if (common(at) || !html && markdown(at)) return true;
+      let before = at;
+      while (text[before - 1] === "\\") before--;
+      return (at - before) % 2 !== 0;
+    };
+  };
+  let blocked = blockCursor();
+  const lineNumber = at => upperBound(offsets, at);
   const result = [];
   const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, from, to, html = false }) => {
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
@@ -49,7 +85,7 @@ export function references(text, options = {}) {
     const dimensions = html ? text.slice(from, to) : attributes?.[1] || "";
     for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
     if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, dimensionAlias: !!size, width, height, from, to, line: text.slice(0, from).split("\n").length, source: text.slice(from, to) });
+    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, dimensionAlias: !!size, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
   };
   const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
@@ -62,10 +98,12 @@ export function references(text, options = {}) {
     const image = html ? !anchor : !!match[1], alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : match[3]?.trim() || undefined;
     add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html });
   }
-  const literalRanges = result.map(ref => [ref.from, ref.to]), suffixRanges = [], state = new md.inline.State(text, md, environment, []);
+  const literal = rangeCursor(result.map(ref => [ref.from, ref.to])), suffixRanges = [], state = new md.inline.State(text, md, environment, []);
+  blocked = blockCursor();
   for (const match of text.matchAll(/!?\[/g)) {
     const from = match.index, image = match[0] === "![", open = from + (image ? 1 : 0);
-    if (blocked(from) || [...literalRanges, ...suffixRanges].some(([start, end]) => from >= start && from < end)) continue;
+    while (suffixRanges.length && from >= suffixRanges.at(-1)[1]) suffixRanges.pop();
+    if (blocked(from) || literal(from) || suffixRanges.length && from >= suffixRanges.at(-1)[0]) continue;
     const end = md.helpers.parseLinkLabel(state, open, !image);
     if (end < 0) continue;
     const alias = text.slice(open + 1, end), tail = text.slice(end + 1);
@@ -86,11 +124,13 @@ export function references(text, options = {}) {
     }
   }
   result.sort((a, b) => a.from - b.from);
-  const tags = [];
+  const tags = [], referenced = rangeCursor(result.map(ref => [ref.from, ref.to]));
+  blocked = blockCursor();
   for (const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gu)) {
     const at = match.index + match[1].length;
-    if (!blocked(at) && !result.some(ref => at >= ref.from && at < ref.to)) tags.push({ tag: match[2], line: text.slice(0, at).split("\n").length });
+    if (!blocked(at) && !referenced(at)) tags.push({ tag: match[2], line: lineNumber(at) });
   }
+  blocked = blockCursor();
   const headings = (environment.headings || []).filter(heading => !blocked(offsets[heading.line - 1])).map(({ text, id, line }) => ({ title: text, id, line }));
   return { references: result, tags, headings };
 }
