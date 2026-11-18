@@ -523,7 +523,7 @@ export default function App() {
         </div>
       )}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
-        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} initial={tools.tab} request={tools.request}
+        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
         open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
         change={async item => {

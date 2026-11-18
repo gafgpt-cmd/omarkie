@@ -14,6 +14,7 @@ async function owned(root, relative) {
 export async function vaultSnapshot(store) {
   if (!store.folder) throw new Error(t("请先打开文件夹"));
   const inventory = await store.scan(), root = inventory.folder, notes = [], assets = [];
+  const encodings = new Map([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding]));
   let truncated = inventory.truncated || inventory.skipped > 0, total = 0, entries = 0;
   const deadline = Date.now() + 5000;
   for (const entry of inventory.files.filter(entry => entry.isDirectory !== "true")) {
@@ -21,7 +22,7 @@ export async function vaultSnapshot(store) {
     const file = await owned(root, entry.relative), info = await lstat(file);
     if (!info.isFile() || info.size > 8 * 1024 * 1024 || total + info.size > 64 * 1024 * 1024) { truncated = true; continue; }
     const bytes = await readFile(file); total += bytes.length;
-    try { notes.push({ token: entry.token, relative: entry.relative.split(path.sep).join("/"), content: decodeText(bytes).content, path: file }); }
+    try { notes.push({ token: entry.token, relative: entry.relative.split(path.sep).join("/"), content: decodeText(bytes, store.hasBOM(bytes) ? undefined : encodings.get(file)).content, path: file }); }
     catch { truncated = true; }
   }
   async function walk(directory, depth) {

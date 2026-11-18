@@ -15,9 +15,13 @@ declare module "*shared/frontmatter.mjs" {
   export function makeReady(text: string, name: string): string;
   export function validateOKF(text: string, name?: string, root?: boolean): string[];
 }
+declare module "*shared/markdown.mjs" {
+  export function createMarkdown(options?: import("markdown-it").MarkdownItOptions): import("markdown-it").MarkdownIt;
+  export function setSyntaxOptions(md: import("markdown-it").MarkdownIt, options?: Partial<import("./preferences").Preferences>): void;
+}
 declare module "*shared/references.mjs" {
-  export function referenceIndex(snapshot: import("./types").VaultSnapshot): any;
-  export function bundlePlan(snapshot: import("./types").VaultSnapshot): import("./types").BundlePayload;
+  export function referenceIndex(snapshot: import("./types").VaultSnapshot, options?: Partial<import("./preferences").Preferences>): any;
+  export function bundlePlan(snapshot: import("./types").VaultSnapshot, date?: string, options?: Partial<import("./preferences").Preferences>): import("./types").BundlePayload;
 }
 declare module "markdown-it-mark" { const plugin: import("markdown-it").PluginSimple; export default plugin; }
 declare module "markdown-it-sub" { const plugin: import("markdown-it").PluginSimple; export default plugin; }

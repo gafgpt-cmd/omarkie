@@ -143,6 +143,15 @@ func runStoreTests() throws {
     do { _ = try workspace.exportBundle(payload, store: workflowStore, parent: workflowOutput) } catch { rejected = true }
     try expect(rejected, "bundle refuses hidden, traversal and symlink paths")
   }
+  let legacyWorkflowFile = workflowRoot.appendingPathComponent("legacy.md"), legacyWorkflowBytes = Data([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a])
+  try atomicWrite(legacyWorkflowFile, legacyWorkflowBytes)
+  let legacyWorkflowRecord = try workflowStore.open(legacyWorkflowFile, encoding: "windows-1252")
+  let legacyWorkflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  try expect((legacyWorkflowSnapshot["notes"] as! [[String: String]]).contains { $0["relative"] == "legacy.md" && $0["content"] == "# Café\n" }, "snapshot reuses an opened legacy encoding")
+  try expect(try Data(contentsOf: legacyWorkflowFile) == legacyWorkflowBytes && workflowStore.require(legacyWorkflowRecord.id).diskHash == hashData(legacyWorkflowBytes), "snapshot preserves legacy bytes and hashes")
+  try atomicWrite(legacyWorkflowFile, try DocumentStore.encode("# BOM wins\n", encoding: "utf-16le", bom: true))
+  let bomWorkflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  try expect((bomWorkflowSnapshot["notes"] as! [[String: String]]).contains { $0["relative"] == "legacy.md" && $0["content"] == "# BOM wins\n" }, "snapshot BOM overrides the previously chosen encoding")
   _ = try store.scan(directory)
   var latest = try store.require(record.id); latest.content = "未保存内容\r\n"; store.records[record.id] = latest
   let renamed = try workspace.execute(["action": "rename", "path": file.path, "name": "renamed.md"], store: store)

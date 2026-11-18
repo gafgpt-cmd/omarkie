@@ -64,6 +64,11 @@ final class Workspace {
       !name.contains("/"), !name.contains(":"), !name.contains("\\"), !name.contains("\0") else { throw NativeFailure("名称无效，请使用普通文件名。") }
     return parent.appendingPathComponent(name)
   }
+  private func moveExclusive(_ from: URL, _ to: URL) throws {
+    guard Darwin.renamex_np(from.path, to.path, UInt32(RENAME_EXCL)) == 0 else {
+      throw NativeFailure(errno == EEXIST ? "目标已存在，未覆盖任何文件。" : "文件操作无效。")
+    }
+  }
   func execute(_ operation: [String: String], store: DocumentStore) throws -> [String: String] {
     let fm = FileManager.default
     let action = operation["action"] ?? ""
@@ -71,7 +76,7 @@ final class Workspace {
       guard let item = undo else { throw NativeFailure("没有可撤销的文件操作。") }
       guard !fm.fileExists(atPath: item.to.path) else { throw NativeFailure("原位置已被占用，未覆盖任何文件。") }
       // Only restore the exact item retained by the last successful move or Trash operation.
-      try fm.moveItem(at: item.from, to: item.to)
+      try moveExclusive(item.from, item.to)
       undo = nil
       return ["fromPath": item.from.path, "toPath": item.to.path]
     }
@@ -112,7 +117,7 @@ final class Workspace {
       // The latest in-memory draft is the duplicate's content, without saving over the original.
       if let encoded { try atomicWrite(destination, encoded) }
     } else {
-      try fm.moveItem(at: source, to: destination)
+      try moveExclusive(source, destination)
       undo = FileUndo(from: destination, to: source)
       return ["fromPath": source.path, "toPath": destination.path]
     }
@@ -121,6 +126,7 @@ final class Workspace {
   func vaultSnapshot(_ store: DocumentStore) throws -> [String: Any] {
     guard let root = store.folder else { throw NativeFailure("请先打开文件夹") }
     let inventory = try store.scan(), files = inventory["files"] as? [[String: String]] ?? []
+    let encodings = Dictionary(store.records.values.compactMap { record in record.path.map { ($0, record.encoding ?? "utf-8") } }, uniquingKeysWith: { first, _ in first })
     var notes = [[String: String]](), assets = [[String: String]](), total = 0, count = 0
     var truncated = (inventory["truncated"] as? Bool ?? false) || (inventory["skipped"] as? Int ?? 0) > 0
     let deadline = Date().addingTimeInterval(5), fm = FileManager.default
@@ -130,7 +136,7 @@ final class Workspace {
       let file = try workflowFile(root, relative: relative), size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
       if size > 8 * 1024 * 1024 || total + size > 64 * 1024 * 1024 { truncated = true; continue }
       let data = try Data(contentsOf: file); total += data.count
-      do { let (content, _, _) = try store.decode(data); notes.append(["token": token, "relative": relative, "content": content, "path": file.path]) } catch { truncated = true }
+      do { let (content, _, _) = try store.decode(data, encoding: data.starts(with: [0xef, 0xbb, 0xbf]) || data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) ? nil : encodings[file.path]); notes.append(["token": token, "relative": relative, "content": content, "path": file.path]) } catch { truncated = true }
     }
     let media = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"]
     func walk(_ directory: URL, depth: Int) throws {

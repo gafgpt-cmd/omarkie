@@ -1,16 +1,10 @@
-import MarkdownIt from "markdown-it";
-import taskLists from "markdown-it-task-lists";
-import { configureMath } from "./mathMarkdown.ts";
+import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
 import DOMPurify from "dompurify";
 import { decodeHTMLAttribute } from "entities";
-import mark from "markdown-it-mark";
-import sub from "markdown-it-sub";
-import sup from "markdown-it-sup";
-import { full as emoji } from "markdown-it-emoji";
-import { configureDocumentSyntax } from "./markdownExtensions.ts";
+import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
 import { bundledImageUrls } from "./htmlResources.ts";
@@ -27,30 +21,19 @@ export interface Heading {
   text: string;
   id: string;
 }
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  breaks: true,
+const md = createMarkdown({
   highlight(code, language): string {
     return language && hljs?.getLanguage(language)
       ? hljs.highlight(code, { language, ignoreIllegals: true }).value
       : md.utils.escapeHtml(code);
   },
-})
-  .use(taskLists, { enabled: false })
-  .use(configureMath)
-  .use(mark).use(sub).use(sup).use(emoji, { shortcuts: {} })
-  .use(configureDocumentSyntax).disable("html_inline");
-// Local file:// images resolve through the asset protocol; markdown-it rejects the scheme by default.
-const validateLink = md.validateLink;
-md.validateLink = url => /^file:\/\//i.test(url.trim()) || validateLink(url);
+}).use(configureDocumentRendering);
 // Bumped on every option change so cached block renders are invalidated.
 export let markdownOptionsVersion = 0;
 export function setMarkdownOptions(options: { highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean }) {
   markdownOptionsVersion++;
   allowRemoteImages = (options as { remoteImages?: boolean }).remoteImages === true;
-  for (const [rule, enabled] of [["mark", options.highlight], ["sub", options.subscript], ["sup", options.superscript], ["emoji", options.emoji], ["math_inline", options.inlineMath]] as const)
-    enabled ? md.enable(rule, true) : md.disable(rule, true);
+  setSyntaxOptions(md, options);
 }
 const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, index, options, env, self) =>

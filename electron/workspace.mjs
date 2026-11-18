@@ -1,6 +1,7 @@
-import { readFile, realpath, stat, mkdir, copyFile, rename, open } from "node:fs/promises";
+import { readFile, realpath, stat, mkdir, copyFile, open } from "node:fs/promises";
 import path from "node:path";
 import { newNote } from "../shared/new-note.mjs";
+import { moveExclusive } from "./move-exclusive.mjs";
 import vm from "node:vm";
 import { atomicWrite, encodeText, decodeText } from "./store.mjs";
 import { t } from "./i18n.mjs";
@@ -21,7 +22,7 @@ export class Workspace {
   async authorize(file, store, directory = false) { const target = path.resolve(file), canonical = await realpath(target); if (canonical !== target || !(store.folder && under(store.folder, target) || !directory && [...store.records.values()].some(record => record.path === target))) throw new Error(t("请先打开目标文件夹，文件操作不支持符号链接。")); return target; }
   async execute(operation, store, trash) {
     const action = operation.action;
-    if (action === "undo") { if (!this.undo) throw new Error(t("没有可撤销的文件操作。")); const { from, to } = this.undo; await this.absent(to); await rename(from, to); this.undo = null; return { fromPath: from, toPath: to }; }
+    if (action === "undo") { if (!this.undo) throw new Error(t("没有可撤销的文件操作。")); const { from, to } = this.undo; await this.absent(to); await moveExclusive(from, to); this.undo = null; return { fromPath: from, toPath: to }; }
     const source = await this.authorize(operation.path || store.folder || "", store, ["new-file", "new-folder"].includes(action));
     if (source === store.folder && ["rename", "move", "trash"].includes(action)) throw new Error(t("不能移动或删除根文件夹。"));
     if (action === "trash") { if (!trash) throw new Error(t("当前宿主未提供废纸篓。")); await trash(source); this.undo = null; return { removedPath: source }; }
@@ -32,7 +33,7 @@ export class Workspace {
     if (action === "new-folder") await mkdir(destination);
     else if (action === "new-file") { if (!/\.(md|markdown|mdown)$/i.test(destination)) throw new Error(t("需要 Markdown 扩展名。")); const handle = await open(destination, "wx", 0o600); try { await handle.writeFile(newNote(path.basename(destination)), "utf8"); } finally { await handle.close(); } }
     else if (action === "duplicate") { const record = [...store.records.values()].find(item => item.path === source), bytes = record && encodeText(record.content, record.encoding, record.bom); await copyFile(source, destination, 1); if (bytes) await atomicWrite(destination, bytes); }
-    else if (["move", "rename"].includes(action)) { await rename(source, destination); this.undo = { from: destination, to: source }; return { fromPath: source, toPath: destination }; }
+    else if (["move", "rename"].includes(action)) { await moveExclusive(source, destination); this.undo = { from: destination, to: source }; return { fromPath: source, toPath: destination }; }
     else throw new Error(t("文件操作无效。"));
     return { newPath: destination };
   }

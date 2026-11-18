@@ -1,9 +1,9 @@
-import MarkdownIt from "markdown-it";
+import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
 import { decodeHTMLAttribute } from "entities";
-import { wikiSyntax, headingText, headingSlug as slug } from "./wiki-syntax.mjs";
+import { headingSlug as slug } from "./wiki-syntax.mjs";
 export { headingSlug as slug } from "./wiki-syntax.mjs";
-const md = new MarkdownIt({ html: true }).use(wikiSyntax);
+const md = createMarkdown();
 const key = value => value.normalize("NFC").toLowerCase();
 export function normalizePath(value) {
   if (/[\0]|^[a-z][a-z\d+.-]*:|^[/\\]{2}/i.test(value)) return null;
@@ -20,32 +20,43 @@ export function referenceParts(value, wiki = false) {
   try { return { target: decodeURIComponent(target), fragment: decodeURIComponent(fragment.join("#")) }; }
   catch { return null; }
 }
-export function references(text) {
+export function references(text, options = {}) {
+  setSyntaxOptions(md, options);
   const lines = text.split("\n"), offsets = [0], excluded = [];
   for (const line of lines) offsets.push(offsets.at(-1) + line.length + 1);
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
   const environment = {}, tokens = md.parse(text, environment);
-  for (const token of tokens) if (["fence", "code_block"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
+  for (const token of tokens) {
+    if (["fence", "code_block", "math_block"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
+    if (!["inline", "footnote_definition"].includes(token.type) || !token.map) continue;
+    const content = token.meta?.source ?? token.content, inlineLines = content.split("\n");
+    const children = token.children || md.parseInline(content, { ...environment, fragment: true })[0].children || [];
+    const offset = at => {
+      const before = content.slice(0, at).split("\n"), line = token.map[0] + before.length - 1;
+      return offsets[line] + Math.max(0, lines[line].indexOf(inlineLines[before.length - 1])) + before.at(-1).length;
+    };
+    for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) excluded.push([offset(child.meta.from), offset(child.meta.to), child.type === "html_embed"]);
+  }
   for (const match of text.matchAll(/^ {0,3}\[[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
-  const blocked = at => excluded.some(([from, to]) => at >= from && at < to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, at));
+  const blocked = (at, html = false) => excluded.some(([from, to, onlyHTML]) => at >= from && at < to && (!onlyHTML || !html)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, at));
   const result = [];
-  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|(!?)\[((?:\\.|[^\]\\])*)\]\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)|<(?:img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
+  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|(!?)\[((?:\\.|[^\]\\])*)\]\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
-    if (blocked(match.index)) continue;
-    const wiki = match[2] !== undefined, html = match[0].startsWith("<");
-    const attribute = html ? /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id.exec(match[0]) : null;
-    const srcRange = attribute?.indices[1] || attribute?.indices[2] || attribute?.indices[3];
-    const target = html ? srcRange && decodeHTMLAttribute(match[0].slice(...srcRange)) : wiki ? match[2].trim() : md.utils.unescapeAll(match[6].replace(/^<|>$/g, ""));
+    const wiki = match[2] !== undefined, html = match[0].startsWith("<"), anchor = html && /^<a\b/i.test(match[0]);
+    if (blocked(match.index, html)) continue;
+    const attribute = html ? (anchor ? /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id : /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id).exec(match[0]) : null;
+    const destinationRange = attribute?.indices[1] || attribute?.indices[2] || attribute?.indices[3];
+    const target = html ? destinationRange && decodeHTMLAttribute(match[0].slice(...destinationRange)) : wiki ? match[2].trim() : md.utils.unescapeAll(match[6].replace(/^<|>$/g, ""));
     if (!target) continue;
-    const image = html || !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3]?.trim() || undefined : match[5];
+    const image = html ? !anchor : !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3]?.trim() || undefined : match[5];
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
     let to = match.index + match[0].length, width = size?.[1] || "", height = size?.[2] || "";
     const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
     const dimensions = html ? match[0] : attributes?.[1] || "";
     for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
     if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, srcRange, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
+    result.push({ target, image, wiki, alias, destinationRange, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
   }
   for (const match of text.matchAll(/(!?)\[([^\]\n]+)\](?:[ \t]*\[([^\]\n]*)\])?/g)) {
     if (blocked(match.index) || text[match.index + match[0].length] === "(" || result.some(ref => match.index >= ref.from && match.index < ref.to)) continue;
@@ -58,21 +69,13 @@ export function references(text) {
     const at = match.index + match[1].length;
     if (!blocked(at) && !result.some(ref => at >= ref.from && at < ref.to)) tags.push({ tag: match[2], line: text.slice(0, at).split("\n").length });
   }
-  const headings = []; const used = new Map();
-  for (const [at, token] of tokens.entries()) {
-    if (token.type !== "heading_open") continue;
-    const line = token.map[0] + 1;
-    if (blocked(offsets[line - 1])) continue;
-    const title = headingText(tokens[at + 1]?.children || []);
-    const base = slug(title), count = used.get(base) || 0; used.set(base, count + 1);
-    headings.push({ title, id: base + (count ? `-${count}` : ""), line });
-  }
+  const headings = (environment.headings || []).filter(heading => !blocked(offsets[heading.line - 1])).map(({ text, id, line }) => ({ title: text, id, line }));
   return { references: result, tags, headings };
 }
-export function referenceIndex(snapshot) {
+export function referenceIndex(snapshot, options = {}) {
   const notes = snapshot.notes.map(note => {
     let metadata = {}; try { metadata = properties(note.content); } catch {}
-    const parsed = references(note.content);
+    const parsed = references(note.content, options);
     const tags = new Set([...parsed.tags.map(item => item.tag), ...(Array.isArray(metadata.tags) ? metadata.tags.filter(tag => typeof tag === "string") : [])]);
     return { ...note, ...parsed, tags: [...tags], aliases: [metadata.aliases, metadata.alias].flat().filter(alias => typeof alias === "string") };
   });
@@ -113,13 +116,14 @@ export function referenceIndex(snapshot) {
     unused: snapshot.assets.filter(asset => !referencedPaths.has(asset.relative)),
   };
 }
-export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10)) {
-  const index = referenceIndex(snapshot);
+export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10), options = {}) {
+  const index = referenceIndex(snapshot, options);
   if (snapshot.truncated) throw new Error("清点不完整，已拒绝导出。");
   const portable = relative => "notes/" + relative.replaceAll("\\", "/").replace(/(^|\/)(index|log)\.md$/i, "$1_$2.md").replace(/\.(markdown|mdown)$/i, ".md");
   const destinations = index.notes.map(note => portable(note.relative));
   if (new Set(destinations.map(key)).size !== destinations.length) throw new Error("压缩包目标路径重复。");
-  const encode = value => value.split("/").map(encodeURIComponent).join("/");
+  const encodePart = value => encodeURIComponent(value).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
+  const encode = value => value.split("/").map(encodePart).join("/");
   const notes = index.notes.map(note => {
     let content = note.content;
     for (const ref of [...note.references].reverse()) {
@@ -127,13 +131,13 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       if (resolved.state === "external") continue;
       if (resolved.state !== "resolved") throw new Error(`${note.relative}:${ref.line}: ${resolved.state}: ${ref.target}`);
       const target = resolved.candidates[0], destination = target.content !== undefined ? portable(target.relative) : "assets/" + target.relative.replaceAll("\\", "/");
-      const depth = portable(note.relative).split("/").length - 1, url = encode("../".repeat(depth) + destination) + (resolved.fragment ? "#" + encodeURIComponent(resolved.fragment) : "");
+      const depth = portable(note.relative).split("/").length - 1, fragment = resolved.fragment ? "#" + encodePart(resolved.fragment) : "", url = referenceParts(ref.target, ref.wiki)?.target === "" ? fragment : encode("../".repeat(depth) + destination) + fragment;
       let label = ref.alias || ref.target;
       if (ref.dimensionAlias) label = target.relative.split("/").at(-1);
       label = ref.wiki && !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
       const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
       const media = ref.wiki && ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
-      const replacement = ref.srcRange ? ref.source.slice(0, ref.srcRange[0]) + md.utils.escapeHtml(url) + ref.source.slice(ref.srcRange[1]) : media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
+      const replacement = ref.destinationRange ? ref.source.slice(0, ref.destinationRange[0]) + md.utils.escapeHtml(url) + ref.source.slice(ref.destinationRange[1]) : media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
       content = content.slice(0, ref.from) + replacement + content.slice(ref.to);
     }
     content = makeReady(content, note.relative);
