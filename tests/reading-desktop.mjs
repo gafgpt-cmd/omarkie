@@ -15,9 +15,11 @@ const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-reading-")), fil
 await sharp({ create: { width: 2000, height: 1000, channels: 3, background: "#7599a8" } }).jpeg().toFile(path.join(directory, "figure.jpg"));
 const original = '# Reading\n\n> [!abstract]- A **custom** title\n> first body line\n>\n> second paragraph\n\n> [!tip]+ Expanded title\n> body\n\n| A | B |\n| --- | --- |\n| one | two |\n\n![Markdown](figure.jpg "keep title"){width=240 height=120}\n\n<img src="figure.jpg" alt="HTML" width="240" height="120" />\n\n![[figure.jpg|240x120]]\n\n```text\nfirst line\nsecond line\n```\n\n## Lower heading\n\nSlash target\n';
 await writeFile(file, original, "utf8");
-await writeFile(path.join(directory, "figure(v2).jpg"), await readFile(path.join(directory, "figure.jpg")));
+for (const name of ["figure(v2).jpg", "spaced.jpg", "spaced-suffix.jpg"]) await writeFile(path.join(directory, name), await readFile(path.join(directory, "figure.jpg")));
 const mixedImages = [
   ['Caption', '![[figure.jpg|Caption]]{width=240 height=120}'],
+  ['spaced.jpg', '![[spaced.jpg| 100 X 50 ]]', '![[spaced.jpg|300x150]]', 100, 300],
+  ['spaced-suffix.jpg', '![[spaced-suffix.jpg| 100 x 50 ]]{width=100}', '![[spaced-suffix.jpg|300x150]]{width=300}', 100, 300],
   ['Balanced path', '![Balanced path](figure(v2).jpg "keep (title)"){width=240 height=120}'],
   ['Double before > src', '<img alt="Double before > src" src="figure.jpg" width="240" height="120" class="keep">'],
   ['Double after > src', '<img src="figure.jpg" alt="Double after > src" width="240" height="120" class="keep">'],
@@ -124,22 +126,22 @@ try {
   passed.push("Markdown/HTML/wiki drag sizing retains syntax and dimensions; one undo restores bytes");
   await page.locator('.sidebar').getByRole('button', { name: 'mixed-image.md', exact: true }).click();
   await expect(rich().getByRole('heading', { name: 'Mixed image', exact: true })).toBeVisible();
-  for (const [alt, markup] of mixedImages) for (const undoMode of ['source', 'rich']) {
+  for (const [alt, markup, expected = markup.replace('240', '320').replace('120', '160'), initialWidth = 240, targetWidth = 320] of mixedImages) for (const undoMode of ['source', 'rich']) {
     const mixedImage = rich().locator(`img[alt="${alt}"]`); await mixedImage.scrollIntoViewIfNeeded(); await mixedImage.hover();
     const mixedHandle = page.getByRole('button', { name: 'Resize image', exact: true }); await expect(mixedHandle).toBeVisible();
-    const mixedCorner = await mixedHandle.boundingBox(); await page.mouse.move(mixedCorner.x + 8, mixedCorner.y + 8); await page.mouse.down(); await page.mouse.move(mixedCorner.x + 88, mixedCorner.y + 8); await page.mouse.up();
-    await expect(mixedImage).toHaveAttribute('width', '320'); await rich().press('ControlOrMeta+s');
-    await expect.poll(() => readFile(mixedFile, 'utf8'), { timeout: 20000 }).toBe(mixedOriginal.replace(markup, markup.replace('240', '320').replace('120', '160')));
+    const mixedCorner = await mixedHandle.boundingBox(); await page.mouse.move(mixedCorner.x + 8, mixedCorner.y + 8); await page.mouse.down(); await page.mouse.move(mixedCorner.x + 8 + targetWidth - initialWidth, mixedCorner.y + 8); await page.mouse.up();
+    await expect(mixedImage).toHaveAttribute('width', String(targetWidth)); await expect(mixedImage).toHaveAttribute('height', String(targetWidth / 2)); await rich().press('ControlOrMeta+s');
+    await expect.poll(() => readFile(mixedFile, 'utf8'), { timeout: 20000 }).toBe(mixedOriginal.replace(markup, expected));
     await page.screenshot({ path: path.join(evidence, `mixed-image-resize-${alt.replace(/[^a-z0-9]+/gi, '-')}-${undoMode}.png`) });
     if (undoMode === 'source') await page.keyboard.press('ControlOrMeta+/');
     const editor = undoMode === 'source' ? page.locator('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content') : rich();
     await expect(editor).toBeVisible(); await editor.press('ControlOrMeta+z'); await editor.press('ControlOrMeta+s');
     await expect.poll(() => readFile(mixedFile, 'utf8'), { timeout: 20000 }).toBe(mixedOriginal);
     if (undoMode === 'source') await page.keyboard.press('ControlOrMeta+/');
-    await expect(rich()).toBeVisible(); await expect(mixedImage).toHaveAttribute('width', '240');
+    await expect(rich()).toBeVisible(); await expect(mixedImage).toHaveAttribute('width', String(initialWidth));
   }
   await page.locator('.sidebar').getByRole('button', { name: 'reading.md', exact: true }).click();
-  passed.push('wiki, balanced-path and quoted-HTML mixed-EOL resize saves only dimensions; source/rich undo restores exact original bytes');
+  passed.push('spaced wiki dimensions, balanced paths and quoted HTML resize proportionally; save/source/rich undo preserves mixed endings');
   await toggle("Read-Only Mode", true);
   await markdownImage.scrollIntoViewIfNeeded(); await markdownImage.hover(); await expect(page.getByRole("button", { name: "Resize image", exact: true })).toBeHidden();
   await markdownImage.click(); await expect(viewer).toBeVisible(); await page.keyboard.press("Escape");

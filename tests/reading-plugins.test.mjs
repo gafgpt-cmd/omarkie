@@ -11,6 +11,7 @@ const { PluginRuntime } = await import("../src/plugins/runtime.ts");
 const { MarkdownDocument } = await import("../src/editor/model.ts");
 const { renderNode } = await import("../src/editor/richRender.ts");
 const { resizedImage, imageRange } = await import("../src/plugins/reading/imageSyntax.ts");
+const { imageReferences } = await import("../src/editor/images.ts");
 const root = () => document.querySelector(".rich-document");
 async function start(id, source, options = {}) {
   root().replaceChildren(); const doc = new MarkdownDocument(source), leaves = new Map();
@@ -73,6 +74,34 @@ test("resizing retains syntax, paths, captions, titles and unrelated attributes"
   ]) assert.equal(resizedImage(source, 300, 150), expected);
   const source = "text ![[my image.png|Caption]]{width=100} tail";
   assert.equal(imageRange(source, 5).source, "![[my image.png|Caption]]{width=100}");
+});
+test("wiki resize shares dimension grammar and preserves captions, paths and mixed-ending undo", () => {
+  for (const [source, expected, expectedHeight] of [
+    ['![[folder/my figure.jpg|100 x 50]]', '![[folder/my figure.jpg|300x150]]', '150'],
+    ['![[folder/my figure.jpg| 100 X 50 ]]', '![[folder/my figure.jpg|300x150]]', '150'],
+    ['![[folder/my figure.jpg|\t100\tx\t50\t]]{width=100}', '![[folder/my figure.jpg|300x150]]{width=300}', '150'],
+    ['![[folder/my figure.jpg| 100 x 50 ]]{height=50 .keep}', '![[folder/my figure.jpg|300x150]]{height=150 .keep width=300}', '150'],
+    ['![[folder/my figure.jpg| 100 ]]', '![[folder/my figure.jpg|300]]', null],
+    ['![[folder/my figure.jpg| 100 ]]{width=100}', '![[folder/my figure.jpg|300]]{width=300}', null],
+    ['![[folder/my figure.jpg|\t100\t]]{width=100 height=50}', '![[folder/my figure.jpg|300]]{width=300 height=150}', '150'],
+    ['![[folder/my figure.jpg|  Figure caption  ]]', '![[folder/my figure.jpg|  Figure caption  ]]{width=300}', null],
+    ['![[folder/my figure.jpg|100 x fifty]]{width=100 height=50}', '![[folder/my figure.jpg|100 x fifty]]{width=300 height=150}', '150'],
+    ['![[folder/my figure.jpg|Caption|100]]', '![[folder/my figure.jpg|Caption|100]]{width=300}', null],
+    ['![[folder/my figure.jpg|Caption|100]]{width=100 height=50}', '![[folder/my figure.jpg|Caption|100]]{width=300 height=150}', '150'],
+  ]) {
+    const original = `# Mixed\r\n\n${source}\r\n\nTail.\r\n`, doc = new MarkdownDocument(original);
+    const range = imageRange(doc.text, doc.text.indexOf('![[')); assert.equal(range.source, source);
+    const replacement = resizedImage(range.source, 300, 150); assert.equal(replacement, expected);
+    doc.replace(range.from, range.to, replacement, 'document-command');
+    assert.equal(doc.toMarkdown(), original.replace(source, expected));
+    const rich = document.createElement('article');
+    for (const node of doc.nodes) rich.append(renderNode(node, 'fixture', new Map(), doc.environment));
+    const image = rich.querySelector('img'); assert.equal(image.getAttribute('width'), '300'); assert.equal(image.getAttribute('height'), expectedHeight);
+    const before = imageReferences(source)[0], after = imageReferences(replacement)[0];
+    assert.equal(after.url, 'folder/my figure.jpg'); assert.equal(after.url, before.url); assert.equal(after.alt, before.alt);
+    assert.equal(doc.undo(), true); assert.equal(doc.toMarkdown(), original);
+    assert.equal(doc.redo(), true); assert.equal(doc.toMarkdown(), original.replace(source, expected));
+  }
 });
 test("wiki captions retain a rendered dimension suffix without changing source", () => {
   const source = "![[my image.png|Caption]]{width=300 height=150}\n", doc = new MarkdownDocument(source), leaves = new Map();

@@ -15,7 +15,7 @@ function dimensions(attributes: string, width: number, height: number) {
 export function resizedImage(source: string, width: number, height: number) {
   width = Math.max(16, Math.min(10000, Math.round(width))); height = Math.max(1, Math.min(10000, Math.round(height)));
   if (source.startsWith("![[")) {
-    const end = source.indexOf("]]"), inner = source.slice(3, end), pipe = inner.lastIndexOf("|"), size = /^(\d+)(?:x(\d+))?$/i.exec(inner.slice(pipe + 1));
+    const end = source.indexOf("]]"), inner = source.slice(3, end), pipe = inner.indexOf("|"), size = /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(inner.slice(pipe + 1));
     const suffix = source.slice(end + 2);
     if (suffix) {
       const base = pipe >= 0 && size ? source.slice(0, 3 + pipe + 1) + width + (size[2] ? `x${height}` : "") + "]]" : source.slice(0, end + 2);
