@@ -62,13 +62,18 @@ try {
   assert.match(await text(), /\*\*粗.*测.*体\*\*|\*\*粗体测\*\*/);
   const edited = await text();
   await source.press("ControlOrMeta+z");
+  assert.equal(await text(), original);
+  await source.press("ControlOrMeta+Shift+z");
   assert.equal(await text(), edited);
   await mode(true);
   await rich.press("ControlOrMeta+z");
   assert.equal(await text(), original);
-  passed.push(
-    "source history is isolated, and rich undo survives a mode round trip",
-  );
+  await mode(true);
+  await rich.press("ControlOrMeta+Shift+z");
+  assert.equal(await text(), edited);
+  await source.press("ControlOrMeta+z");
+  assert.equal(await text(), original);
+  passed.push("rich and source share undo and redo across mode round trips");
   await mode(true);
   const fence = rich.locator(".md-fence").first();
   await fence.click();

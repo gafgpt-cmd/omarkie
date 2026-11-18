@@ -1,11 +1,12 @@
 import { build, Platform, Arch } from "electron-builder";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
 import { archPkgver, describeBuild } from "./arch-electron.mjs";
+import { pruneLinuxArtifacts } from "./linux-artifacts.mjs";
 
 if (process.platform !== "linux" || process.arch !== "x64") throw new Error("Build Linux x64 releases on a Linux x64 machine.");
 // rpm needs rpmbuild and bsdtar; OMARKIE_LINUX_TARGETS narrows the set on hosts without them. Arch: scripts/package-arch.mjs.
@@ -52,7 +53,5 @@ for (const name of names) {
   sums.push(`${createHash("sha256").update(bytes).digest("hex")}  ${name}`);
 }
 await writeFile("release/linux/SHA256SUMS-linux-x64.txt", sums.join("\n") + "\n");
-for (const name of await readdir("release/linux")) {
-  if (/^(?:Omarkie-\d[\w.-]*\.(?:deb|AppImage)|omarkie-\d[\w.-]*\.x86_64\.rpm)$/.test(name) && !names.includes(name)) await rm(path.join("release/linux", name));
-}
+await pruneLinuxArtifacts("release/linux", names);
 console.log(sums.join("\n"));
