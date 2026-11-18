@@ -1,4 +1,5 @@
 import { sourceLines } from "./source-lines.mjs";
+import { decodeHTMLAttribute } from "entities";
 
 export function upperBound(offsets, at) {
   let low = 0, high = offsets.length;
@@ -65,15 +66,18 @@ function configure(md) {
     }
     return accepted;
   }, { alt: table.alt });
-  for (const name of ["backticks", "comment", "image", "image_spaced"]) {
+  for (const name of ["backticks", "comment", "link", "image", "image_spaced"]) {
     const rule = { ...md.inline.ruler.__rules__.find(rule => rule.name === name) };
     md.inline.ruler.at(name, (state, silent) => {
       const from = state.pos, before = state.tokens.length, accepted = rule.fn(state, silent);
       if (accepted && !silent && state.env.sourceContext) {
         for (let index = before; index < state.tokens.length; index++) {
           const token = state.tokens[index];
-          if (["code_inline", "comment"].includes(token.type)) token.meta = { ...token.meta, sourceFrom: from, sourceTo: state.pos };
-          if (token.type === "image") token.meta = { ...token.meta, labelFrom: from + 2, labelTo: md.helpers.parseLinkLabel(state, from + 1, false) };
+          if (["backticks", "comment"].includes(name) && ["code_inline", "comment"].includes(token.type)) token.meta = { ...token.meta, sourceFrom: from, sourceTo: state.pos };
+          if (name === "link" && token.type === "link_open" || name !== "link" && token.type === "image") {
+            const image = token.type === "image", labelTo = md.helpers.parseLinkLabel(state, from + (image ? 1 : 0), !image);
+            token.meta = { ...token.meta, sourceFrom: from, sourceTo: state.pos, labelFrom: from + 2, labelTo };
+          }
         }
       }
       return accepted;
@@ -92,7 +96,7 @@ export function parserContext(md, source, initial = {}) {
   const view = at => at - upperBound(removed, at - 1), chunks = []; let from = 0;
   for (const at of removed) { chunks.push(normalized.slice(from, at)); from = at + 1; }
   chunks.push(normalized.slice(from));
-  const text = chunks.join(""), excluded = environment.sourceHidden.map(([from, to]) => [view(from), view(to)]), htmlRanges = [];
+  const text = chunks.join(""), excluded = environment.sourceHidden.map(([from, to]) => [view(from), view(to)]), htmlRanges = [], imageUses = [], htmlTags = [];
   for (const [from, to] of environment.sourceDefinitions || []) excluded.push([view(offsets[from]), view(Math.min(normalized.length, offsets[to]))]);
   for (const token of tokens) {
     if (["fence", "code_block", "frontmatter", "math_block"].includes(token.type) && token.map) excluded.push([view(offsets[token.map[0]]), view(Math.min(normalized.length, offsets[token.map[1]]))]);
@@ -114,7 +118,13 @@ export function parserContext(md, source, initial = {}) {
     } else continue;
     const children = token.children || md.parseInline(content, { ...environment, fragment: true })[0].children || [];
     for (const child of children) {
-      if (child.type === "image" && child.meta?.labelTo >= 0) excluded.push([position(child.meta.labelFrom), position(child.meta.labelTo)]);
+      if (["image", "link_open"].includes(child.type) && child.meta?.labelTo >= 0) {
+        excluded.push([position(child.meta.labelTo + 1), position(child.meta.sourceTo)]);
+        if (child.type === "image") {
+          excluded.push([position(child.meta.labelFrom), position(child.meta.labelTo)]);
+          imageUses.push({ from: position(child.meta.sourceFrom), to: position(child.meta.sourceTo), labelTo: position(child.meta.labelTo), url: child.attrGet("src") });
+        }
+      }
       if (!["math_inline", "html_embed", "code_inline", "comment"].includes(child.type)) continue;
       const from = child.meta?.sourceFrom ?? child.meta?.from, to = child.meta?.sourceTo ?? child.meta?.to;
       const range = [position(from), position(to)];
@@ -123,10 +133,18 @@ export function parserContext(md, source, initial = {}) {
     }
   }
   const commonHTML = rangeCursor(excluded.filter(range => !range[2])); let opaqueEnd = 0;
-  for (const [from, to] of htmlRanges.sort((a, b) => a[0] - b[0])) for (const match of text.slice(from, to).matchAll(/<!--[\s\S]*?(?:-->|$)|<([a-z][\w:-]*)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)) {
+  for (const [from, to] of htmlRanges.sort((a, b) => a[0] - b[0])) for (const match of text.slice(from, to).matchAll(/<!--[\s\S]*?(?:-->|$)|<\/?([a-z][\w:-]*)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)) {
     const at = from + match.index;
     if (!match[1]) { excluded.push([at, at + match[0].length]); continue; }
-    if (at < opaqueEnd || commonHTML(at) || !/^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/i.test(match[1])) continue;
+    if (at < opaqueEnd || commonHTML(at)) continue;
+    if (!/^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/i.test(match[1])) {
+      const attributes = new Map();
+      for (const attribute of match[0].matchAll(/\s+([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/gd)) {
+        const name = attribute[1].toLowerCase(), range = attribute.indices[2] || attribute.indices[3] || attribute.indices[4];
+        if (!attributes.has(name)) attributes.set(name, { value: range ? decodeHTMLAttribute(match[0].slice(...range)) : "", range });
+      }
+      htmlTags.push({ from: at, to: at + match[0].length, source: match[0], attributes }); continue;
+    }
     const close = new RegExp(`</${match[1]}\\s*>`, "gi"); close.lastIndex = at + match[0].length;
     const ending = match[1].toLowerCase() === "plaintext" ? null : close.exec(text);
     opaqueEnd = ending ? ending.index + ending[0].length : text.length; excluded.push([at, opaqueEnd]);
@@ -143,5 +161,5 @@ export function parserContext(md, source, initial = {}) {
   };
   const lineNumber = at => upperBound(offsets, at + upperBound(removedView, at - 1));
   for (const token of tokens) if (token.meta?.sourceCell) token.meta.sourceCell = token.meta.sourceCell.map(originalOffset);
-  return { text, environment, tokens, excluded, sourceOffset, lineNumber, blockCursor, viewOffset: at => view(offsets[at]), tableCursor: () => rangeCursor(environment.sourceTables.map(([from, to]) => [view(from), view(to)])) };
+  return { text, environment, tokens, excluded, imageUses, htmlTags, sourceOffset, lineNumber, blockCursor, viewOffset: at => view(offsets[at]), tableCursor: () => rangeCursor(environment.sourceTables.map(([from, to]) => [view(from), view(to)])) };
 }

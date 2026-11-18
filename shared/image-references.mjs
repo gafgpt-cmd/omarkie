@@ -1,35 +1,27 @@
 import { inlineDestination } from "./link-destination.mjs";
 import { parserContext } from "./parser-context.mjs";
-import { decodeHTMLAttribute } from "entities";
 
 export function collectImages(md, source) {
   const context = parserContext(md, source), { text, sourceOffset } = context, result = [];
-  const state = new md.inline.State(text, md, context.environment, []);
   let blocked = context.blockCursor();
-  for (const match of text.matchAll(/!\[|<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)) {
-    const html = match[0].startsWith("<");
-    if (blocked(match.index, html)) continue;
-    let url = "", alt = "", width = "", height = "", end = match.index + match[0].length;
+  const uses = [...context.imageUses, ...context.htmlTags.filter(tag => /^<img\b/i.test(tag.source))].sort((a, b) => a.from - b.from);
+  for (const use of uses) {
+    const html = use.source !== undefined;
+    if (blocked(use.from, html)) continue;
+    let url = "", alt = "", width = "", height = "", end = use.to;
     if (html) {
-      const attribute = name => {
-        const value = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\x60]+))`, "i").exec(match[0]);
-        return decodeHTMLAttribute(value?.[1] ?? value?.[2] ?? value?.[3] ?? "");
-      };
+      const attribute = name => use.attributes.get(name)?.value || "";
       url = attribute("src"); alt = attribute("alt"); width = attribute("width"); height = attribute("height");
     } else {
-      if (text[match.index + 2] === "[") continue;
-      const labelEnd = md.helpers.parseLinkLabel(state, match.index + 1, false);
-      if (labelEnd < 0) continue;
-      const destination = inlineDestination(md, text, labelEnd + 1);
-      if (!destination) continue;
-      url = destination.target; alt = text.slice(match.index + 2, labelEnd).replace(/\\([\[\]])/g, "$1"); end = destination.end;
+      const destination = inlineDestination(md, text, use.labelTo + 1);
+      url = destination?.target ?? use.url; alt = text.slice(use.from + 2, use.labelTo).replace(/\\([\[\]])/g, "$1");
     }
     const attributes = !html && /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(end));
     if (attributes) {
       for (const [, key, value] of attributes[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (key === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
       end += attributes[0].length;
     }
-    if (url) result.push({ from: match.index, to: end, url, alt, width, height });
+    if (url) result.push({ from: use.from, to: end, url, alt, width, height });
   }
   blocked = context.blockCursor();
   for (const match of text.matchAll(/!\[\[([^\[\]\n|#]+)(?:\|([^\[\]\n]*))?\]\]/g)) {

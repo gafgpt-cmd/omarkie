@@ -34,7 +34,7 @@ for (const endings of [["\n"], ["\r\n"], ["\r"], ["\r", "\r\n", "\n"]]) {
     assert.equal(table.lines[10], '![[body.png]]'); assert.equal(source.slice(table.offsets[10], table.offsets[11]).replace(/[\r\n]+$/, ''), '![[body.png]]');
     const metadata = parseBlocks(source).find(block => block.kind === 'frontmatter'); assert.equal(metadata.fromLine, 1); assert.equal(metadata.toLine, 4);
     assert.ok(metadata.source.startsWith('\uFEFF---')); assert.ok(metadata.source.endsWith('---'));
-    assert.deepEqual(imageReferences(source).map(image => image.url), ['body.png']);
+    assert.deepEqual(imageReferences(source).map(image => image.url), ['body.png', 'body.png']);
     assert.deepEqual(localImageSources(source), ['body.png']);
     const rendered = document.createElement('article'); rendered.innerHTML = renderMarkdown(source, 'fixture');
     assert.equal(rendered.querySelectorAll('img').length, 2);

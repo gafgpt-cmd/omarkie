@@ -2,7 +2,6 @@ import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
 import { inlineDestination } from "./link-destination.mjs";
 import { parserContext, rangeCursor } from "./parser-context.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
-import { decodeHTMLAttribute } from "entities";
 import { headingSlug as slug } from "./wiki-syntax.mjs";
 export { headingSlug as slug } from "./wiki-syntax.mjs";
 const md = createMarkdown();
@@ -24,29 +23,29 @@ export function referenceParts(value, wiki = false) {
 }
 export function references(source, options = {}) {
   setSyntaxOptions(md, options);
-  const { text, environment, excluded, sourceOffset, lineNumber, blockCursor, viewOffset, tableCursor } = parserContext(md, source);
+  const { text, environment, excluded, htmlTags, sourceOffset, lineNumber, blockCursor, viewOffset, tableCursor } = parserContext(md, source);
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
   let blocked = blockCursor();
   const result = [];
-  const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, title, from, to, html = false }) => {
+  const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, title, from, to, html = false, width = "", height = "" }) => {
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
-    let width = size?.[1] || "", height = size?.[2] || "";
+    if (size) { width = size[1]; height = size[2] || ""; }
     const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
-    const dimensions = html ? text.slice(from, to) : attributes?.[1] || "";
+    const dimensions = attributes?.[1] || "";
     for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
     if (attributes) to += attributes[0].length;
     result.push({ target, image, wiki, alias, destinationRange, referenceStyle, title, dimensionAlias: !!size, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
   };
-  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
-  for (const match of text.matchAll(expression)) {
+  const matches = [...text.matchAll(/(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]/g), ...htmlTags.filter(tag => /^<(?:a|img|video|audio|source)\b/i.test(tag.source)).map(tag => Object.assign([tag.source], { index: tag.from, attributes: tag.attributes }))].sort((a, b) => a.index - b.index);
+  for (const match of matches) {
     const wiki = match[2] !== undefined, html = !wiki, anchor = html && /^<a\b/i.test(match[0]);
     if (blocked(match.index, html)) continue;
-    const attribute = html ? (anchor ? /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id : /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id).exec(match[0]) : null;
-    const destinationRange = attribute?.indices[1] || attribute?.indices[2] || attribute?.indices[3];
-    const target = html ? destinationRange && decodeHTMLAttribute(match[0].slice(...destinationRange)) : match[2].trim();
+    const attribute = match.attributes?.get(anchor ? "href" : "src"), destinationRange = attribute?.range;
+    const target = html ? destinationRange && attribute.value : match[2].trim();
     if (!target) continue;
-    const image = html ? !anchor : !!match[1], alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : match[3]?.trim() || undefined;
-    add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html });
+    const image = html ? !anchor : !!match[1], alias = html ? match.attributes.get("alt")?.value : match[3]?.trim() || undefined;
+    const dimension = name => { const value = match.attributes?.get(name)?.value || ""; return /^\d+(?:\.\d+)?(?:px|%)?$/.test(value) ? value.replace(/px$/, "") : ""; };
+    add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html, width: dimension("width"), height: dimension("height") });
   }
   const literal = rangeCursor(result.map(ref => [ref.from, ref.to])), suffixRanges = [], markdownSuffixes = [], state = new md.inline.State(text, md, environment, []);
   blocked = blockCursor();

@@ -108,6 +108,47 @@ test('hidden image syntax cannot trigger conversion reads; actual HTML resources
   const output = await converted(source, ['html.png', 'figure.png']); assert.equal(article(output).querySelectorAll('img').length, 3);
 });
 
+test('literal link metadata and quoted HTML attributes never become resources', async () => {
+  const title = '![Example](fake.png) ![[fake.png]] <img src="fake.png"> [[Ghost]] #literal';
+  const span = `<span title='<img src="fake.png"> ![[fake.png]] [[Ghost]] #literal'>text</span>`;
+  const source = [`[Home](Target.md '${title}')`, span, '<a title=\'href="Ghost.md" src="ghost.png"\' href="Target.md">Target</a>', '<img alt=\' src="ghost.png" ![alt](fake.png)\' src="real.png">', '![Visible](fake.png)'].join('\r\n\r\n');
+  const parsed = references(source), before = article(source);
+  assert.deepEqual(parsed.references.map(ref => ref.target), ['Target.md', 'Target.md', 'real.png', 'fake.png']);
+  assert.deepEqual(parsed.tags, []);
+  assert.equal(before.querySelectorAll('img').length, 2);
+  assert.deepEqual(imageReferences(source).map(image => image.url), ['real.png', 'fake.png']);
+  assert.deepEqual(localImageSources(source), ['real.png', 'fake.png']);
+  const plan = bundlePlan({ notes: [note('start.md', source), note('Target.md', '# Target')], assets: [{ relative: 'real.png' }, { relative: 'fake.png' }], truncated: false });
+  const conversion = await converted(source, ['real.png', 'fake.png']);
+  for (const copy of [plan.notes[0].content, conversion]) {
+    assert.ok(copy.includes(title)); assert.ok(copy.includes(span));
+    assert.equal(article(copy).querySelectorAll('img').length, 2);
+    assert.equal(article(copy).querySelector('a').getAttribute('title'), before.querySelector('a').getAttribute('title'));
+  }
+});
+
+for (const ending of ['\n', '\r\n', '\r']) test(`reference image conversion uses actual images, not literal uses: ${JSON.stringify(ending)}`, async () => {
+  const literal = '`![alt][ref]`', definition = '[ref]: missing.png', hidden = literal + ending + ending + definition;
+  assert.deepEqual(imageReferences(hidden), []);
+  assert.equal(await converted(hidden, []), hidden);
+  const source = [literal, '![Full][image]', '![image][]', '![image]', '![Multiline][multi' + ending + 'line]', '[Normal][image]', definition, '[image]: real.png', '[multi' + ending + 'line]: real.png'].join(ending + ending);
+  const images = imageReferences(source);
+  assert.deepEqual(images.map(image => image.url), ['real.png', 'real.png', 'real.png', 'real.png']);
+  for (const image of images) assert.equal(source.slice(image.from, image.to), image.source);
+  const copy = await converted(source, ['real.png']);
+  assert.ok(copy.includes(literal)); assert.ok(copy.includes(definition)); assert.ok(copy.includes('[image]: real.png'));
+  assert.equal(article(copy).querySelectorAll('img').length, 4);
+  assert.equal(article(copy).querySelector('a').getAttribute('href'), 'real.png');
+});
+
+test('images and code inside link labels retain their own source boundaries', async () => {
+  const source = '[![Visible](real.png) `![[hidden.png]]`](Target.md "![[title.png]]")';
+  assert.deepEqual(imageReferences(source).map(image => image.url), ['real.png']);
+  assert.deepEqual(references(source).references.map(ref => ref.target), ['Target.md', 'real.png']);
+  const copy = await converted(source, ['real.png']);
+  assert.ok(copy.includes('`![[hidden.png]]`')); assert.ok(copy.includes('"![[title.png]]"'));
+});
+
 test('image context follows the current inline-math preference', () => {
   try {
     setMarkdownOptions({ ...defaults, inlineMath: false });

@@ -105,14 +105,6 @@ export async function conversionMarkdown(source: string, rendered: HTMLElement) 
     changes.push({ from: image.from, to: image.to, text: replacement });
   }
   const { offsets } = sourceLines(source);
-  const blocked = parseBlocks(source).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind));
-  for (const match of source.matchAll(/^ {0,3}\[([^\]^\r\n]+)\]:[ \t]*(<[^>\r\n]+>|[^ \t\r\n]+)([^\r\n]*)$/gm)) {
-    const label = match[1].toLowerCase();
-    if (![...source.matchAll(/!\[([^\]]*)\](?:\[([^\]]*)\])?/g)].some(use => (use[2] || use[1]).toLowerCase() === label && source[use.index + use[0].length] !== "(")) continue;
-    if (blocked.some(block => match.index >= offsets[block.fromLine - 1] && match.index < offsets[block.toLine])) continue;
-    const url = match[2].replace(/^<|>$/g, "");
-    changes.push({ from: match.index, to: match.index + match[0].length, text: `[${match[1]}]: ${await embed(url)}${match[3]}` });
-  }
   const diagrams = [...rendered.querySelectorAll<HTMLElement>(".mermaid-block")]; let index = 0;
   for (const block of parseBlocks(source).filter(block => block.kind === "fence" && /^ {0,3}(?:`{3,}|~{3,})(mermaid|sequence|flow)\s*(?:\r\n|\r|\n|$)/.test(block.source))) {
     const diagram = diagrams[index++], svg = diagram?.querySelector<SVGSVGElement>("svg");
