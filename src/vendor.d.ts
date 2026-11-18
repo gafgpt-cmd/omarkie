@@ -19,6 +19,9 @@ declare module "*shared/markdown.mjs" {
   export function createMarkdown(options?: import("markdown-it").MarkdownItOptions): import("markdown-it").MarkdownIt;
   export function setSyntaxOptions(md: import("markdown-it").MarkdownIt, options?: Partial<import("./preferences").Preferences>): void;
 }
+declare module "*shared/link-destination.mjs" {
+  export function inlineDestination(md: import("markdown-it").MarkdownIt, text: string, open: number, max?: number): { target: string; from: number; to: number; end: number; title?: string; spaced: boolean } | null;
+}
 declare module "*shared/references.mjs" {
   export function referenceIndex(snapshot: import("./types").VaultSnapshot, options?: Partial<import("./preferences").Preferences>): any;
   export function bundlePlan(snapshot: import("./types").VaultSnapshot, date?: string, options?: Partial<import("./preferences").Preferences>): import("./types").BundlePayload;

@@ -1,4 +1,5 @@
 import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
+import { inlineDestination } from "./link-destination.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
 import { decodeHTMLAttribute } from "entities";
 import { headingSlug as slug } from "./wiki-syntax.mjs";
@@ -68,15 +69,12 @@ export function references(text, options = {}) {
     const end = md.helpers.parseLinkLabel(state, open, !image);
     if (end < 0) continue;
     const alias = text.slice(open + 1, end), tail = text.slice(end + 1);
-    const inline = /^\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)/id.exec(tail);
+    const inline = inlineDestination(md, text, end + 1);
     if (inline) {
-      const angled = inline[1].startsWith("<"), range = inline.indices[1];
-      const destinationRange = [end + 1 - from + range[0] + (angled ? 1 : 0), end + 1 - from + range[1] - (angled ? 1 : 0)];
-      const target = md.utils.unescapeAll(text.slice(from + destinationRange[0], from + destinationRange[1]));
-      if (target) {
-        const to = end + 1 + inline[0].length;
-        add({ target, image, alias, destinationRange, from, to });
-        suffixRanges.push([end + 1, to]);
+      if (inline.target) {
+        const destinationRange = [inline.from - from, inline.to - from];
+        add({ target: inline.target, image, alias, destinationRange, from, to: inline.end });
+        suffixRanges.push([end + 1, inline.end]);
       }
     } else if (!tail.startsWith("(")) {
       const reference = /^[ \t]*\[([^\]\n]*)\]/.exec(tail), id = md.utils.normalizeReference(reference?.[1] || alias), definition = environment.references?.[id];

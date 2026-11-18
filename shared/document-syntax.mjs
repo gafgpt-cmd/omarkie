@@ -1,4 +1,5 @@
 import { wikiSyntax, headingText, headingSlug } from "./wiki-syntax.mjs";
+import { inlineDestination } from "./link-destination.mjs";
 export function configureDocumentSyntax(md) {
   md.use(wikiSyntax);
   md.inline.ruler.before("image", "wiki_embed", (state, silent) => {
@@ -16,27 +17,18 @@ export function configureDocumentSyntax(md) {
     if (!state.src.startsWith("![", state.pos)) return false;
     const labelEnd = state.md.helpers.parseLinkLabel(state, state.pos + 1, false);
     if (labelEnd < 0 || state.src[labelEnd + 1] !== "(") return false;
-    let end = labelEnd + 2, depth = 1;
-    for (; end < state.posMax; end++) {
-      const character = state.src[end];
-      if (character === "\\") end++;
-      else if (character === "\n") return false;
-      else if (character === "(") depth++;
-      else if (character === ")" && !--depth) break;
-    }
-    if (depth) return false;
-    const destination = /^(.*?\S)(?:\s+(["'])(.*)\2)?$/.exec(state.src.slice(labelEnd + 2, end).trim());
-    if (!destination || !/\s/.test(destination[1]) || !/\.[a-z0-9]{1,5}$/i.test(destination[1])) return false;
-    const href = state.md.normalizeLink(destination[1]);
+    const destination = inlineDestination(state.md, state.src, labelEnd + 1, state.posMax);
+    if (!destination?.spaced) return false;
+    const href = state.md.normalizeLink(destination.target);
     if (!state.md.validateLink(href)) return false;
     if (!silent) {
       const content = state.src.slice(state.pos + 2, labelEnd), children = [];
       state.md.inline.parse(content, state.md, state.env, children);
       const token = state.push("image", "img", 0);
-      token.attrs = [["src", href], ["alt", ""], ...(destination[3] ? [["title", destination[3]]] : [])];
+      token.attrs = [["src", href], ["alt", ""], ...(destination.title !== undefined ? [["title", destination.title]] : [])];
       token.children = children; token.content = content;
     }
-    state.pos = end + 1; return true;
+    state.pos = destination.end; return true;
   });
   md.core.ruler.after("inline", "image_attributes", state => {
     for (const block of state.tokens) for (const [index, image] of (block.children || []).entries()) {

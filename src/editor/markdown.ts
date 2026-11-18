@@ -1,4 +1,5 @@
 import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
+import { inlineDestination } from "../../shared/link-destination.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
@@ -60,10 +61,16 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
 // Local image sources a document references (Markdown images and <img> tags); a light scan for
 // the size prefetch, so a source inside a code fence costs the host one failed lookup at most.
 export function localImageSources(text: string) {
-  const sources = new Set<string>();
-  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|!\[(?:\\.|[^\]\\])*\]\((<[^>\n]*>|(?:\\.|[^)\\\n])*)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
-    const raw = match[1] ?? (match[2] !== undefined ? match[2].trim().replace(/\s+(["']).*\1$/, "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1") : match[3]);
-    const source = match[1] !== undefined ? raw.trim().replaceAll("%", "%25") : match[2] !== undefined ? md.utils.unescapeAll(raw.trim()) : decodeHTMLAttribute(raw.trim()), scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
+  const sources = new Set<string>(), state = new md.inline.State(text, md, {}, []);
+  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|(!\[)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
+    let source: string;
+    if (match[2]) {
+      const labelEnd = md.helpers.parseLinkLabel(state, match.index + 1, false);
+      const destination = labelEnd < 0 ? null : inlineDestination(md, text, labelEnd + 1);
+      if (!destination) continue;
+      source = destination.target;
+    } else source = match[1] !== undefined ? match[1].trim().replaceAll("%", "%25") : decodeHTMLAttribute(match[3].trim());
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
     if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
   }
   return [...sources];
