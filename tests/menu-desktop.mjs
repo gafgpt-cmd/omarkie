@@ -781,6 +781,7 @@ try {
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
     const toggle = card.getByRole("checkbox"); await toggle.check();
+    await expect(card.getByRole("button", { name: t("插件命令…"), exact: true })).toBeEnabled();
     await expect(card.locator(".plugin-toggle")).toContainText(t("已启用"));
     await expect(card.getByRole("alert")).toHaveCount(0);
     if (name === t("只读模式")) await expect(rich()).toHaveAttribute("contenteditable", "false");
