@@ -640,7 +640,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let path = record.path, !relative.contains(":"), !relative.contains("\\") else { throw NativeFailure("请先保存文档，并使用本地 Markdown 文件路径。") }
       let base = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath()
       let target = (relative.hasPrefix("/") ? URL(fileURLWithPath: relative) : base.appendingPathComponent(relative)).standardizedFileURL
-      let root = store.folder ?? base
+      let root = store.folder.flatMap { $0 == base || contained($0, base) ? $0 : nil } ?? base
       guard target.path == target.resolvingSymlinksInPath().path,
         contained(root, target) || store.records.values.contains(where: { $0.path == target.path }) else { throw NativeFailure("链接位于已打开文件夹之外，请先打开该文件夹或目标文件。") }
       if !FileManager.default.fileExists(atPath: target.path) {

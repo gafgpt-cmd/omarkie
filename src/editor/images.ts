@@ -30,7 +30,7 @@ export function imageReferences(text: string): ImageReference[] {
       for (const [, key, value] of attributes[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { const dimension = value.replace(/px$/, ""); if (key === "width") width = dimension; else height = dimension; }
       end += attributes[0].length;
     }
-    result.push({ from: match.index, to: end, source: text.slice(match.index, end), url: match[1].trim(), alt: size ? match[1].trim() : match[2]?.trim() || match[1].trim(), width, height });
+    result.push({ from: match.index, to: end, source: text.slice(match.index, end), url: match[1].trim().replaceAll("%", "%25"), alt: size ? match[1].trim() : match[2]?.trim() || match[1].trim(), width, height });
   }
   return result.sort((a, b) => a.from - b.from);
 }

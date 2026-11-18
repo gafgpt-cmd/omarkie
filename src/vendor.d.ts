@@ -3,7 +3,11 @@ declare module "markdown-it-task-lists" {
   export default plugin;
 }
 declare module "*.css";
-declare module "*shared/wiki-syntax.mjs" { export const wikiSyntax: import("markdown-it").PluginSimple; }
+declare module "*shared/wiki-syntax.mjs" {
+  export const wikiSyntax: import("markdown-it").PluginSimple;
+  export function headingText(tokens: import("markdown-it").Token[]): string;
+  export function headingSlug(text: string): string;
+}
 declare module "*shared/new-note.mjs" { export function newNote(name: string, now?: string): string; }
 declare module "*shared/frontmatter.mjs" {
   export function properties(text: string): Record<string, unknown>;

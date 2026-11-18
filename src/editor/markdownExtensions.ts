@@ -1,5 +1,6 @@
 import { safeDocumentHtml } from "./htmlResources.ts";
-import { wikiSyntax } from "../../shared/wiki-syntax.mjs";
+import { wikiSyntax, headingText, headingSlug } from "../../shared/wiki-syntax.mjs";
+export { headingSlug } from "../../shared/wiki-syntax.mjs";
 import type { MarkdownIt } from "markdown-it";
 import { t } from "../i18n.ts";
 export interface DocumentHeading { line: number; level: number; text: string; id: string }
@@ -7,9 +8,6 @@ export interface FootnoteDefinition { id: string; text: string; line: number }
 interface SyntaxEnvironment {
   fragment?: boolean; lineOffset?: number; headings?: DocumentHeading[];
   footnoteDefinitions?: Record<string, FootnoteDefinition>; footnoteNumbers?: Record<string, number>;
-}
-export function headingSlug(text: string) {
-  return text.normalize("NFC").toLowerCase().trim().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, "").replace(/\s+/g, "-") || "section";
 }
 export function alertTitle(kind: string, custom = false) {
   const label = custom ? "" : kind[0].toUpperCase() + kind.slice(1).toLowerCase();
@@ -167,7 +165,7 @@ export function configureDocumentSyntax(md: MarkdownIt) {
     for (let i = 0; i < state.tokens.length; i++) {
       const token = state.tokens[i];
       if (token.type !== "heading_open" || !token.map) continue;
-      const text = (state.tokens[i + 1]?.children || []).map(child => ["text", "code_inline", "emoji", "sub", "sup"].includes(child.type) ? child.content : child.type.endsWith("break") ? " " : "").join("");
+      const text = headingText(state.tokens[i + 1]?.children || []);
       const line = token.map[0] + 1 + (env.lineOffset || 0), base = headingSlug(text), count = used.get(base) || 0;
       used.set(base, count + 1);
       const existing = env.fragment ? env.headings?.find(item => item.line === line) : undefined;
@@ -177,7 +175,7 @@ export function configureDocumentSyntax(md: MarkdownIt) {
     if (!state.env.fragment) state.env.headings = headings;
   });
   md.inline.ruler.before("emphasis", "html_embed", (state, silent) => {
-    const raw = state.src.slice(state.pos), match = /^(?:<img\b[^>]*>|<(span|a|ruby|abbr|small|b|i|strong|em|code|samp|time|label)\b[^>]*>[\s\S]*?<\/\1>)/i.exec(raw);
+    const raw = state.src.slice(state.pos), match = /^(?:<img\b[^>]*>|<(span|a|ruby|abbr|small|b|i|strong|em|code|samp|time|label|video|audio)\b[^>]*>[\s\S]*?<\/\1>)/i.exec(raw);
     if (!match) return false;
     if (!silent) { const token = state.push("html_embed", "span", 0); token.content = match[0]; token.markup = match[0]; }
     state.pos += match[0].length; return true;

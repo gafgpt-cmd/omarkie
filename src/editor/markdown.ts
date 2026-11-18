@@ -5,6 +5,7 @@ let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
 import DOMPurify from "dompurify";
+import { decodeHTMLAttribute } from "entities";
 import mark from "markdown-it-mark";
 import sub from "markdown-it-sub";
 import sup from "markdown-it-sup";
@@ -79,7 +80,7 @@ export function localImageSources(text: string) {
   const sources = new Set<string>();
   for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|!\[(?:\\.|[^\]\\])*\]\((<[^>\n]*>|(?:\\.|[^)\\\n])*)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
     const raw = match[1] ?? (match[2] !== undefined ? match[2].trim().replace(/\s+(["']).*\1$/, "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1") : match[3]);
-    const source = raw.trim(), scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
+    const source = match[1] !== undefined ? raw.trim().replaceAll("%", "%25") : match[2] !== undefined ? md.utils.unescapeAll(raw.trim()) : decodeHTMLAttribute(raw.trim()), scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
     if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
   }
   return [...sources];
@@ -109,7 +110,7 @@ md.renderer.rules.image = (tokens, index, _options, env) => {
 // Obsidian embeds resolve like Obsidian: next to the note first, then anywhere in the vault (host side).
 md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
   const token = tokens[index], meta = (token.meta || {}) as { target?: string; width?: string; height?: string }, target = (meta.target || "").split("#")[0], documentId = typeof env?.documentId === "string" ? env.documentId : undefined;
-  const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target);
+  const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target.replaceAll("%", "%25"));
   if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height);
   const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
   return media && documentId
@@ -252,9 +253,11 @@ export function editableHtml(
     })
     .join("");
   return DOMPurify.sanitize(html, {
+    ADD_TAGS: ["video", "audio", "source"],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
     ADD_URI_SAFE_ATTR: ["src", "srcset"],
     ADD_ATTR: [
+      "controls",
       "contenteditable",
       "data-leaf",
       "data-task",

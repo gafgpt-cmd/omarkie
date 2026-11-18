@@ -43,7 +43,8 @@ export function DocumentTools({ record, documents, files, initial, request, clos
   const target = request?.startsWith("omarkie-wiki:") ? decoded(request.slice(13)) : request && !request.startsWith("omarkie-tag:") ? request : "";
   const resolution = index && current && target ? index.resolve(current, target, request?.startsWith("omarkie-wiki:")) : null;
   useEffect(() => {
-    if (resolution?.state === "resolved" && resolution.candidates[0]?.token) void run(async () => { await open(resolution.candidates[0].token, resolution.line); close(); });
+    if (snapshot && target && !current && !request?.startsWith("omarkie-wiki:")) void run(async () => { await host.openDocumentLink(record.id, target); close(); });
+    else if (resolution?.state === "resolved" && resolution.candidates[0]?.token) void run(async () => { await open(resolution.candidates[0].token, resolution.line); close(); });
   }, [snapshot]);
   async function ready(folder: boolean) {
     const notes = folder ? (await scan()).notes : [{ token: undefined, relative: record.name, content: record.content }];

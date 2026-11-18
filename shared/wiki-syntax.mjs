@@ -1,3 +1,9 @@
+export function headingSlug(text) {
+  return text.normalize("NFC").toLowerCase().trim().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, "").replace(/\s+/g, "-") || "section";
+}
+export function headingText(tokens) {
+  return tokens.map(token => token.type === "vault_tag" ? "#" + token.content : ["text", "text_special", "code_inline", "emoji", "sub", "sup", "wiki_link"].includes(token.type) ? token.content : token.type.endsWith("break") ? " " : "").join("");
+}
 export function wikiSyntax(md) {
   md.inline.ruler.before("link", "wiki_link", (state, silent) => {
     if (state.linkLevel || state.src[state.pos - 1] === "!") return false;

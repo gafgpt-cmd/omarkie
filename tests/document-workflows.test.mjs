@@ -73,12 +73,12 @@ test("encoded hashes resolve as filenames across navigation, reports and copied 
   const original = '[Open](other%23draft.md#Heading%20name)\n![photo](photo%231.png)\n![ref][image]\n\n[image]: photo%231.png\n';
   const snapshot = { notes: [note("start.md", original), note("other#draft.md", "# Heading name\n")], assets: [{ relative: "photo#1.png" }, { relative: "unused.png" }], truncated: false };
   const index = referenceIndex(snapshot), from = index.notes[0];
-  assert.equal(index.resolve(from, "other%23draft.md").candidates[0].relative, "other#draft.md");
-  assert.equal(index.resolve(from, "other%23draft.md#Heading%20name").line, 1);
+  assert.equal(index.resolve(from, "other%23draft.md", false).candidates[0].relative, "other#draft.md");
+  assert.equal(index.resolve(from, "other%23draft.md#Heading%20name", false).line, 1);
   assert.equal(index.resolve(from, "photo%231.png", false).candidates[0].relative, "photo#1.png");
-  assert.equal(index.resolve(from, "other%23draft.md#Absent").state, "missing-heading");
-  assert.equal(index.resolve(from, "photo%ZZ.png").state, "invalid");
-  assert.equal(index.resolve(from, "other%23draft.md#%ZZ").state, "invalid");
+  assert.equal(index.resolve(from, "other%23draft.md#Absent", false).state, "missing-heading");
+  assert.equal(index.resolve(from, "photo%ZZ.png", false).state, "invalid");
+  assert.equal(index.resolve(from, "other%23draft.md#%ZZ", false).state, "invalid");
   assert.deepEqual(index.broken, []);
   assert.deepEqual(index.unused.map(asset => asset.relative), ["unused.png"]);
   const plan = bundlePlan(snapshot);
@@ -103,7 +103,7 @@ test("resolution is relative, alias-aware, fragment-aware and visibly ambiguous 
   assert.equal(index.resolve(index.notes[3], "#Heading").line, 6);
   assert.equal(index.resolve(index.notes[3], "#Absent").state, "missing-heading");
   assert.equal(index.resolve(from, "../../outside").state, "escape");
-  assert.equal(index.resolve(from, "%2e%2e/%2e%2e/outside").state, "escape");
+  assert.equal(index.resolve(from, "%2e%2e/%2e%2e/outside", false).state, "escape");
   assert.equal(index.resolve(from, "file:///outside").state, "escape");
   assert.equal(index.resolve(from, "../Target#Absent").state, "missing-heading");
   assert.equal(index.tags("focus").length, 2);

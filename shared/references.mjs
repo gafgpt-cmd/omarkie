@@ -1,7 +1,9 @@
 import MarkdownIt from "markdown-it";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
-const md = new MarkdownIt({ html: true });
-export const slug = value => value.normalize("NFC").toLowerCase().trim().replace(/[^\p{L}\p{M}\p{N}_\-\s]/gu, "").replace(/\s+/g, "-") || "section";
+import { decodeHTMLAttribute } from "entities";
+import { wikiSyntax, headingText, headingSlug as slug } from "./wiki-syntax.mjs";
+export { headingSlug as slug } from "./wiki-syntax.mjs";
+const md = new MarkdownIt({ html: true }).use(wikiSyntax);
 const key = value => value.normalize("NFC").toLowerCase();
 export function normalizePath(value) {
   if (/[\0]|^[a-z][a-z\d+.-]*:|^[/\\]{2}/i.test(value)) return null;
@@ -12,8 +14,9 @@ export function normalizePath(value) {
   }
   return parts.join("/");
 }
-export function referenceParts(value) {
+export function referenceParts(value, wiki = false) {
   const [target, ...fragment] = value.split("#");
+  if (wiki) return { target, fragment: fragment.join("#") };
   try { return { target: decodeURIComponent(target), fragment: decodeURIComponent(fragment.join("#")) }; }
   catch { return null; }
 }
@@ -27,20 +30,22 @@ export function references(text) {
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
   const blocked = at => excluded.some(([from, to]) => at >= from && at < to) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, at));
   const result = [];
-  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|(!?)\[((?:\\.|[^\]\\])*)\]\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)|<img\b[^>]*>/gi;
+  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|(!?)\[((?:\\.|[^\]\\])*)\]\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)|<(?:img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
     if (blocked(match.index)) continue;
     const wiki = match[2] !== undefined, html = match[0].startsWith("<");
-    const target = html ? /\bsrc\s*=\s*["']([^"']+)["']/i.exec(match[0])?.[1] : wiki ? match[2].trim() : match[6].replace(/^<|>$/g, "").replace(/\\([()])/g, "$1");
+    const attribute = html ? /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id.exec(match[0]) : null;
+    const srcRange = attribute?.indices[1] || attribute?.indices[2] || attribute?.indices[3];
+    const target = html ? srcRange && decodeHTMLAttribute(match[0].slice(...srcRange)) : wiki ? match[2].trim() : md.utils.unescapeAll(match[6].replace(/^<|>$/g, ""));
     if (!target) continue;
-    const image = html || !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3] : match[5];
+    const image = html || !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3]?.trim() || undefined : match[5];
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
     let to = match.index + match[0].length, width = size?.[1] || "", height = size?.[2] || "";
     const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
     const dimensions = html ? match[0] : attributes?.[1] || "";
     for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
     if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
+    result.push({ target, image, wiki, alias, srcRange, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
   }
   for (const match of text.matchAll(/(!?)\[([^\]\n]+)\](?:[ \t]*\[([^\]\n]*)\])?/g)) {
     if (blocked(match.index) || text[match.index + match[0].length] === "(" || result.some(ref => match.index >= ref.from && match.index < ref.to)) continue;
@@ -58,7 +63,7 @@ export function references(text) {
     if (token.type !== "heading_open") continue;
     const line = token.map[0] + 1;
     if (blocked(offsets[line - 1])) continue;
-    const title = (tokens[at + 1]?.children || []).map(child => ["text", "code_inline"].includes(child.type) ? child.content : child.type.endsWith("break") ? " " : "").join("");
+    const title = headingText(tokens[at + 1]?.children || []);
     const base = slug(title), count = used.get(base) || 0; used.set(base, count + 1);
     headings.push({ title, id: base + (count ? `-${count}` : ""), line });
   }
@@ -79,7 +84,7 @@ export function referenceIndex(snapshot) {
   }
   function resolve(from, raw, wiki = true) {
     if (/^(?:https?:|mailto:|data:)/i.test(raw)) return { state: "external", candidates: [] };
-    const parts = referenceParts(raw);
+    const parts = referenceParts(raw, wiki);
     if (!parts) return { state: "invalid", candidates: [] };
     if (!parts.target) {
       const heading = parts.fragment ? from.headings?.find(heading => heading.id === parts.fragment || key(heading.title) === key(parts.fragment) || heading.id === slug(parts.fragment)) : undefined;
@@ -99,11 +104,13 @@ export function referenceIndex(snapshot) {
     return { state: state === "resolved" && parts.fragment && !heading ? "missing-heading" : state, candidates, fragment: heading?.id || parts.fragment, line: heading?.line };
   }
   const edges = notes.flatMap(note => note.references.map(ref => ({ source: note, ref, ...resolve(note, ref.target, ref.wiki) })));
-  return { notes, assets: snapshot.assets, truncated: snapshot.truncated, resolve, edges,
+  const referencedPaths = new Set();
+  for (const edge of edges) for (const file of edge.candidates) referencedPaths.add(file.relative);
+  return { notes, assets: snapshot.assets, truncated: snapshot.truncated, resolve, edges, referencedPaths,
     backlinks: target => edges.filter(edge => !edge.ref.image && edge.candidates.length === 1 && edge.candidates[0].relative === target.relative),
     tags: query => notes.filter(note => note.tags.some(tag => key(tag) === key(query))),
     broken: edges.filter(edge => !["resolved", "external"].includes(edge.state)),
-    unused: snapshot.assets.filter(asset => !edges.some(edge => edge.candidates.some(file => file.relative === asset.relative))),
+    unused: snapshot.assets.filter(asset => !referencedPaths.has(asset.relative)),
   };
 }
 export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10)) {
@@ -123,13 +130,15 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       const depth = portable(note.relative).split("/").length - 1, url = encode("../".repeat(depth) + destination) + (resolved.fragment ? "#" + encodeURIComponent(resolved.fragment) : "");
       let label = ref.alias || ref.target;
       if (ref.dimensionAlias) label = target.relative.split("/").at(-1);
+      label = ref.wiki && !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
       const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
-      const replacement = `${ref.image ? "!" : ""}[${label.replace(/[\[\]\\]/g, "\\$&")}](${url})${dimensions}`;
+      const media = ref.wiki && ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
+      const replacement = ref.srcRange ? ref.source.slice(0, ref.srcRange[0]) + md.utils.escapeHtml(url) + ref.source.slice(ref.srcRange[1]) : media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
       content = content.slice(0, ref.from) + replacement + content.slice(ref.to);
     }
     content = makeReady(content, note.relative);
     return { token: note.token, relative: portable(note.relative), content };
   });
-  const assets = index.assets.filter(asset => index.edges.some(edge => edge.candidates.length === 1 && edge.candidates[0] === asset)).map(asset => ({ source: asset.relative, relative: "assets/" + asset.relative.replaceAll("\\", "/") }));
+  const assets = index.assets.filter(asset => index.referencedPaths.has(asset.relative)).map(asset => ({ source: asset.relative, relative: "assets/" + asset.relative.replaceAll("\\", "/") }));
   return { notes, assets, index: `---\nokf_version: "0.2"\n---\n\n# Knowledge bundle\n\n${notes.map(note => `* [${note.relative.replace(/[\[\]\\]/g, "\\$&")}](${encode(note.relative)})`).join("\n")}\n`, log: `# Directory Update Log\n\n## ${date}\n* **Creation**: Copied ${notes.length} concepts and ${assets.length} referenced assets.\n` };
 }
