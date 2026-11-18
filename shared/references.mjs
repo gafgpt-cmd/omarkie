@@ -37,31 +37,55 @@ export function references(text, options = {}) {
     };
     for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) excluded.push([offset(child.meta.from), offset(child.meta.to), child.type === "html_embed"]);
   }
-  for (const match of text.matchAll(/^ {0,3}\[[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
+  for (const match of text.matchAll(/^ {0,3}\[(?!\^)[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
   const blocked = (at, html = false) => excluded.some(([from, to, onlyHTML]) => at >= from && at < to && (!onlyHTML || !html)) || /(?:^|[^\\])(?:\\\\)*\\$/.test(text.slice(0, at));
   const result = [];
-  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|(!?)\[((?:\\.|[^\]\\])*)\]\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
+  const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, from, to, html = false }) => {
+    const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
+    let width = size?.[1] || "", height = size?.[2] || "";
+    const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
+    const dimensions = html ? text.slice(from, to) : attributes?.[1] || "";
+    for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
+    if (attributes) to += attributes[0].length;
+    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, dimensionAlias: !!size, width, height, from, to, line: text.slice(0, from).split("\n").length, source: text.slice(from, to) });
+  };
+  const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
-    const wiki = match[2] !== undefined, html = match[0].startsWith("<"), anchor = html && /^<a\b/i.test(match[0]);
+    const wiki = match[2] !== undefined, html = !wiki, anchor = html && /^<a\b/i.test(match[0]);
     if (blocked(match.index, html)) continue;
     const attribute = html ? (anchor ? /\shref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id : /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/id).exec(match[0]) : null;
     const destinationRange = attribute?.indices[1] || attribute?.indices[2] || attribute?.indices[3];
-    const target = html ? destinationRange && decodeHTMLAttribute(match[0].slice(...destinationRange)) : wiki ? match[2].trim() : md.utils.unescapeAll(match[6].replace(/^<|>$/g, ""));
+    const target = html ? destinationRange && decodeHTMLAttribute(match[0].slice(...destinationRange)) : match[2].trim();
     if (!target) continue;
-    const image = html ? !anchor : !!(wiki ? match[1] : match[4]), alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : wiki ? match[3]?.trim() || undefined : match[5];
-    const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
-    let to = match.index + match[0].length, width = size?.[1] || "", height = size?.[2] || "";
-    const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
-    const dimensions = html ? match[0] : attributes?.[1] || "";
-    for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
-    if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, destinationRange, dimensionAlias: !!size, width, height, from: match.index, to, line: text.slice(0, match.index).split("\n").length, source: text.slice(match.index, to) });
+    const image = html ? !anchor : !!match[1], alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : match[3]?.trim() || undefined;
+    add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html });
   }
-  for (const match of text.matchAll(/(!?)\[([^\]\n]+)\](?:[ \t]*\[([^\]\n]*)\])?/g)) {
-    if (blocked(match.index) || text[match.index + match[0].length] === "(" || result.some(ref => match.index >= ref.from && match.index < ref.to)) continue;
-    const id = md.utils.normalizeReference(match[3] || match[2]), definition = environment.references?.[id];
-    if (definition) result.push({ target: definition.href, image: !!match[1], wiki: false, alias: match[2], from: match.index, to: match.index + match[0].length, line: text.slice(0, match.index).split("\n").length, source: match[0] });
+  const literalRanges = result.map(ref => [ref.from, ref.to]), suffixRanges = [], state = new md.inline.State(text, md, environment, []);
+  for (const match of text.matchAll(/!?\[/g)) {
+    const from = match.index, image = match[0] === "![", open = from + (image ? 1 : 0);
+    if (blocked(from) || [...literalRanges, ...suffixRanges].some(([start, end]) => from >= start && from < end)) continue;
+    const end = md.helpers.parseLinkLabel(state, open, !image);
+    if (end < 0) continue;
+    const alias = text.slice(open + 1, end), tail = text.slice(end + 1);
+    const inline = /^\((<[^>\n]*>|(?:\\.|[^\s)])*(?:\([^)]*\)[^\s)]*)*|[^\n()<>"']*?\.[a-z0-9]{1,8})(?:\s+["'][^"']*["'])?\)/id.exec(tail);
+    if (inline) {
+      const angled = inline[1].startsWith("<"), range = inline.indices[1];
+      const destinationRange = [end + 1 - from + range[0] + (angled ? 1 : 0), end + 1 - from + range[1] - (angled ? 1 : 0)];
+      const target = md.utils.unescapeAll(text.slice(from + destinationRange[0], from + destinationRange[1]));
+      if (target) {
+        const to = end + 1 + inline[0].length;
+        add({ target, image, alias, destinationRange, from, to });
+        suffixRanges.push([end + 1, to]);
+      }
+    } else if (!tail.startsWith("(")) {
+      const reference = /^[ \t]*\[([^\]\n]*)\]/.exec(tail), id = md.utils.normalizeReference(reference?.[1] || alias), definition = environment.references?.[id];
+      if (definition) {
+        const to = end + 1 + (reference?.[0].length || 0);
+        add({ target: definition.href, image, alias, destinationRange: [end + 1 - from, to - from], referenceStyle: true, from, to });
+        suffixRanges.push([end + 1, to]);
+      }
+    }
   }
   result.sort((a, b) => a.from - b.from);
   const tags = [];
@@ -97,7 +121,7 @@ export function referenceIndex(snapshot, options = {}) {
     const parent = from.relative.replaceAll("\\", "/").split("/").slice(0, -1).join("/");
     const rooted = parts.target.startsWith("/"), local = normalizePath((rooted ? "" : parent ? parent + "/" : "") + parts.target), root = normalizePath(parts.target);
     if (local === null || root === null && rooted) return { state: "escape", candidates: [] };
-    const find = path => [...(byPath.get(key(path)) || []), ...(!/\.[^/]+$/.test(path) ? [".md", ".markdown", ".mdown"].flatMap(ext => byPath.get(key(path + ext)) || []) : [])];
+    const find = path => byPath.get(key(path)) || (wiki || !/\.[^/]+$/.test(path) ? [".md", ".markdown", ".mdown"].flatMap(ext => byPath.get(key(path + ext)) || []) : []);
     let candidates = find(local);
     if (!candidates.length && wiki && root !== null) candidates = find(root);
     if (!candidates.length && wiki && !parts.target.includes("/") && !parts.target.includes("\\")) candidates = byName.get(key(parts.target)) || [];
@@ -126,20 +150,26 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
   const encode = value => value.split("/").map(encodePart).join("/");
   const notes = index.notes.map(note => {
     let content = note.content;
-    for (const ref of [...note.references].reverse()) {
+    const edits = [];
+    for (const ref of note.references) {
       const resolved = index.resolve(note, ref.target, ref.wiki);
       if (resolved.state === "external") continue;
       if (resolved.state !== "resolved") throw new Error(`${note.relative}:${ref.line}: ${resolved.state}: ${ref.target}`);
       const target = resolved.candidates[0], destination = target.content !== undefined ? portable(target.relative) : "assets/" + target.relative.replaceAll("\\", "/");
       const depth = portable(note.relative).split("/").length - 1, fragment = resolved.fragment ? "#" + encodePart(resolved.fragment) : "", url = referenceParts(ref.target, ref.wiki)?.target === "" ? fragment : encode("../".repeat(depth) + destination) + fragment;
-      let label = ref.alias || ref.target;
-      if (ref.dimensionAlias) label = target.relative.split("/").at(-1);
-      label = ref.wiki && !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
+      if (ref.destinationRange) {
+        const [from, to] = ref.destinationRange;
+        edits.push({ from: ref.from + from, to: ref.from + to, replacement: ref.referenceStyle ? `(${url})` : md.utils.escapeHtml(url) });
+        continue;
+      }
+      let label = ref.dimensionAlias ? target.relative.split("/").at(-1) : ref.alias || ref.target;
+      label = !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
       const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
-      const media = ref.wiki && ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
-      const replacement = ref.destinationRange ? ref.source.slice(0, ref.destinationRange[0]) + md.utils.escapeHtml(url) + ref.source.slice(ref.destinationRange[1]) : media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
-      content = content.slice(0, ref.from) + replacement + content.slice(ref.to);
+      const media = ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
+      const replacement = media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
+      edits.push({ from: ref.from, to: ref.to, replacement });
     }
+    for (const edit of edits.sort((a, b) => b.from - a.from)) content = content.slice(0, edit.from) + edit.replacement + content.slice(edit.to);
     content = makeReady(content, note.relative);
     return { token: note.token, relative: portable(note.relative), content };
   });

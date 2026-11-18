@@ -168,3 +168,66 @@ test("encoded hash note and image references survive real copied output", async 
   assert.equal(await readFile(path.join(destination, "assets/figure#1.png"), "utf8"), "synthetic image");
   assert.equal(await readFile(path.join(vault, "start.md"), "utf8"), source);
 });
+
+test("linked images keep both destinations across inline and reference-style copies", () => {
+  for (const markup of ["[![thumb](photo.png)](index.md)", "[![thumb][picture]][home]", "[![picture][]][home]", "[![picture]][home]"]) {
+    const source = markup + '\n\n[picture]: photo.png\n[home]: index.md\n';
+    const value = snapshot(source, ["photo.png"], [note("index.md", "# Home\n")]), index = referenceIndex(value);
+    assert.deepEqual(index.edges.map(edge => edge.candidates[0]?.relative), ["index.md", "photo.png"]);
+    assert.deepEqual(index.broken, []); assert.deepEqual(index.unused, []);
+    assert.equal(index.backlinks(index.notes[1]).length, 1);
+    for (const ref of index.notes[0].references) assert.equal(source.slice(ref.from, ref.to), ref.source);
+    const plan = bundlePlan(value), article = document.createElement("article"); article.innerHTML = renderMarkdown(plan.notes[0].content, "copy");
+    assert.equal(article.querySelectorAll("a").length, 1);
+    assert.equal(article.querySelector("a").getAttribute("href"), "../notes/_index.md");
+    assert.equal(article.querySelectorAll("a img").length, 1);
+    const image = article.querySelector("img"), uri = new URL(image.getAttribute("src"));
+    assert.equal(decodeURIComponent(uri.pathname.split("/").slice(2).join("/")), "../assets/photo.png");
+    assert.equal(image.getAttribute("alt"), markup.includes("thumb") ? "thumb" : "picture");
+    assert.deepEqual(plan.assets.map(asset => asset.source), ["photo.png"]);
+    assert.equal(value.notes[0].content, source);
+  }
+});
+
+test("footnote bodies retain links and images in inventories and copied output", () => {
+  const source = 'Body[^n].\n\n[^n]: [Home](index.md)\n    ![foot][picture]\n\n[picture]: foot.png\n';
+  const value = snapshot(source, ["foot.png", "unused.png"], [note("index.md", "# Home\n")]), index = referenceIndex(value);
+  assert.deepEqual(index.edges.map(edge => edge.candidates[0]?.relative), ["index.md", "foot.png"]);
+  assert.deepEqual(index.edges.map(edge => edge.ref.line), [3, 4]);
+  assert.deepEqual(index.broken, []); assert.deepEqual(index.unused.map(asset => asset.relative), ["unused.png"]);
+  const plan = bundlePlan(value), article = document.createElement("article"); article.innerHTML = renderMarkdown(plan.notes[0].content, "copy");
+  assert.equal(article.querySelector('aside a[href="../notes/_index.md"]').textContent, "Home");
+  assert.equal(article.querySelector("aside img").getAttribute("alt"), "foot");
+  assert.deepEqual(plan.assets.map(asset => asset.source), ["foot.png"]);
+  assert.equal(value.notes[0].content, source);
+});
+
+test("copied Markdown labels keep escapes, empty text, titles and heading anchors", () => {
+  const source = '# [\\_A\\_](Project.md "Title")\n\n# [\\_B\\_][project]\n\n[](<Project.md>)\n\n[][project]\n\n![](photo.png){width=120}\n\n![\\_C\\_][picture]\n\n[Self](#_a_) [Other](#_b_)\n\n[project]: Project.md\n[picture]: photo.png\n';
+  const value = snapshot(source, ["photo.png"], [note("Project.md", "# Project\n")]);
+  const plan = bundlePlan(value), article = document.createElement("article"); article.innerHTML = renderMarkdown(plan.notes[0].content, "copy");
+  assert.deepEqual(extractHeadings(plan.notes[0].content).map(({ text, id }) => ({ text, id })), [{ text: "_A_", id: "_a_" }, { text: "_B_", id: "_b_" }]);
+  const links = [...article.querySelectorAll('a[href="../notes/Project.md"]')];
+  assert.deepEqual(links.map(link => link.textContent), ["_A_", "_B_", "", ""]);
+  assert.equal(links[0].getAttribute("title"), "Title");
+  assert.ok(plan.notes[0].content.includes('![](../assets/photo.png){width=120}'));
+  assert.ok(plan.notes[0].content.includes('![\\_C\\_](../assets/photo.png)'));
+  assert.equal(article.querySelector("img").getAttribute("width"), "120");
+  for (const link of article.querySelectorAll('a[href^="#"]')) assert.ok(article.querySelector(`[id="${link.getAttribute("href").slice(1)}"]`));
+  assert.equal(value.notes[0].content, source);
+});
+
+test("dotted wiki basenames resolve locally and from root without shadowing exact assets", () => {
+  for (const extension of ["md", "markdown", "mdown"]) {
+    const value = { notes: [note("folder/start.md", '[[Project.v2#Heading]] [[/folder/Project.v2]] [[folder/Project.v2]] [[Project.v2]] ![[plot.v2.png]]'), note(`folder/Project.v2.${extension}`, "# Heading\n"), note("folder/plot.v2.png.md", "# Separate note\n")], assets: [{ relative: "folder/plot.v2.png" }], truncated: false };
+    const index = referenceIndex(value), from = index.notes[0];
+    assert.deepEqual(index.broken, []); assert.deepEqual(index.unused, []);
+    assert.deepEqual(index.edges.slice(0, 4).map(edge => edge.candidates[0].relative), Array(4).fill(`folder/Project.v2.${extension}`));
+    assert.equal(index.resolve(from, "Project.v2#Heading").fragment, "heading");
+    assert.equal(index.resolve(from, "Project.v2", false).state, "missing");
+    assert.equal(index.edges.at(-1).candidates[0].relative, "folder/plot.v2.png");
+    const plan = bundlePlan(value), article = document.createElement("article"); article.innerHTML = renderMarkdown(plan.notes[0].content, "copy");
+    assert.deepEqual([...article.querySelectorAll("a")].map(link => link.getAttribute("href")), ["../../notes/folder/Project.v2.md#heading", ...Array(3).fill("../../notes/folder/Project.v2.md")]);
+    assert.deepEqual(plan.assets.map(asset => asset.source), ["folder/plot.v2.png"]);
+  }
+});

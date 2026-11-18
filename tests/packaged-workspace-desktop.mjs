@@ -10,6 +10,7 @@ import { prepareElectronApplication } from "../scripts/prepare-electron.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const exec = promisify(execFile);
 const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-packaged-workspace-")), staged = path.join(root, "application");
+await exec(process.execPath, ["scripts/icon.mjs"]);
 const prepared = await prepareElectronApplication(process.platform === "win32" ? "windows" : process.platform);
 await cp(prepared, staged, { recursive: true });
 const manifest = JSON.parse(await readFile(path.join(staged, "package.json"), "utf8"));
