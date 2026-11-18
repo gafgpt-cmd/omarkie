@@ -97,8 +97,8 @@ final class Interchange {
       try Data(lua.utf8).write(to: filter)
       let arguments = try exportOptions(options, directory: conversion)
       var prepared = source
-      if !options.isEmpty, prepared.hasPrefix("---\n") || prepared.hasPrefix("---\r\n") {
-        let expression = try NSRegularExpression(pattern: "\\A---[^\\S\\r\\n]*\\r?\\n[\\s\\S]*?^(?:---|\\.\\.\\.)[^\\S\\r\\n]*(?:\\r?\\n|$)", options: [.anchorsMatchLines])
+      if !options.isEmpty {
+        let expression = try NSRegularExpression(pattern: "\\A\\uFEFF?---[ \\t]*(?:\\r\\n|\\r|\\n)[\\s\\S]*?^(?:---|\\.\\.\\.)[ \\t]*(?:\\r\\n|\\r|\\n|$)", options: [.anchorsMatchLines])
         if let range = expression.firstMatch(in: prepared, range: NSRange(prepared.startIndex..., in: prepared))?.range { prepared = (prepared as NSString).replacingCharacters(in: range, with: "") }
       }
       if let header = options["letterhead"] as? [String: String] {
@@ -108,13 +108,13 @@ final class Interchange {
       // Text formats refer to a sibling asset folder so exported documents survive moving together.
       if ["latex", "rst", "mediawiki", "textile"].contains(format) {
         let expression = try NSRegularExpression(pattern: "data:image/(png|jpeg|gif|webp|svg\\+xml);base64,([A-Za-z0-9+/=]+)")
-        let matches = expression.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        let matches = expression.matches(in: prepared, range: NSRange(prepared.startIndex..., in: prepared))
         if !matches.isEmpty {
           let assets = canonicalFileURL(destination.deletingLastPathComponent()).appendingPathComponent(destination.deletingPathExtension().lastPathComponent + ".assets")
           try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
           guard try assets.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw NativeFailure("导出资源目录不能是符号链接。") }
           for match in matches.reversed() {
-            let mime = (source as NSString).substring(with: match.range(at: 1)), encoded = (source as NSString).substring(with: match.range(at: 2))
+            let mime = (prepared as NSString).substring(with: match.range(at: 1)), encoded = (prepared as NSString).substring(with: match.range(at: 2))
             guard let bytes = Data(base64Encoded: encoded), bytes.count <= DocumentStore.maxBytes else { throw NativeFailure("导出图片数据无效。") }
             let image = assets.appendingPathComponent(String(hashData(bytes).prefix(20)) + "." + (mime == "svg+xml" ? "svg" : mime))
             try atomicWrite(image, bytes)

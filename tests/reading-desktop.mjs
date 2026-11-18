@@ -28,9 +28,10 @@ const mixedImages = [
 ];
 const mixedFile = path.join(directory, "mixed-image.md"), mixedOriginal = '---\r\ncustom: retained # keep\r\n---\r\n# Mixed image\n\nBefore image.\r\n\r\n' + mixedImages.map(([, markup]) => markup).join('\r\n\n') + '\r\n\nAfter image.\r\n';
 await writeFile(mixedFile, mixedOriginal, "utf8");
+const slashFile = path.join(directory, "raw-slash.md"), slashOriginal = '# CR slash\r\r/ta'; await writeFile(slashFile, slashOriginal, 'utf8');
 const virtual = '# Virtual\n\n> [!tip]- Windowed title\n> body\n\n| A | B |\n| --- | --- |\n| one | two |\n\n' + Array.from({ length: 1200 }, (_, index) => `Paragraph ${index}.\n\n`).join('') + '## Final heading\n\nEnd.\n';
 const virtualFile = path.join(directory, "virtual.md"); await writeFile(virtualFile, virtual, "utf8");
-await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "reading.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), bom: false, lineEnding: "\n" }, { id: "virtual", path: virtualFile, name: "virtual.md", content: virtual, savedContent: virtual, diskHash: createHash("sha256").update(virtual).digest("hex"), bom: false, lineEnding: "\n" }, { id: "mixed-image", path: mixedFile, name: "mixed-image.md", content: mixedOriginal, savedContent: mixedOriginal, diskHash: createHash("sha256").update(mixedOriginal).digest("hex"), bom: false, lineEnding: "\r\n" }] }), "utf8");
+await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "reading.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), bom: false, lineEnding: "\n" }, { id: "virtual", path: virtualFile, name: "virtual.md", content: virtual, savedContent: virtual, diskHash: createHash("sha256").update(virtual).digest("hex"), bom: false, lineEnding: "\n" }, { id: "mixed-image", path: mixedFile, name: "mixed-image.md", content: mixedOriginal, savedContent: mixedOriginal, diskHash: createHash("sha256").update(mixedOriginal).digest("hex"), bom: false, lineEnding: "\r\n" }, { id: "raw-slash", path: slashFile, name: "raw-slash.md", content: slashOriginal, savedContent: slashOriginal, diskHash: createHash("sha256").update(slashOriginal).digest("hex"), bom: false, lineEnding: "\r" }] }), "utf8");
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "en" }); delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 let application, page;
 const errors = [], external = [], resources = [], passed = [];
@@ -185,6 +186,14 @@ try {
   }
   assert.equal(await sourceText(), original);
   passed.push('enabled reading plugins preserve full-table/body portable HTML and real PDF export without source edits');
+  await page.locator('.sidebar').getByRole('button', { name: 'raw-slash.md', exact: true }).click();
+  const rawSlash = rich().locator('p').filter({ hasText: '/ta' }); await rawSlash.click(); await page.keyboard.press('End');
+  await expect(page.getByRole('listbox', { name: 'Slash commands', exact: true })).toBeVisible(); await page.keyboard.press('Enter');
+  await expect(rich().locator('table')).toHaveCount(1); await rich().press('ControlOrMeta+s');
+  await expect.poll(async () => (await readFile(slashFile, 'utf8')).startsWith('# CR slash\r\r| A | B |')).toBe(true);
+  await rich().press('ControlOrMeta+z'); await rich().press('ControlOrMeta+s'); await expect.poll(() => readFile(slashFile, 'utf8')).toBe(slashOriginal);
+  await page.locator('.sidebar').getByRole('button', { name: 'reading.md', exact: true }).click();
+  passed.push('CR-only slash menu inserts a table; save and undo preserve original raw line endings');
   const paragraph = rich().locator("p").filter({ hasText: "Slash target" }); await paragraph.click(); await page.keyboard.press("Home"); await page.keyboard.press("Shift+End"); await page.keyboard.type("/ta");
   const slash = page.getByRole("listbox", { name: "Slash commands", exact: true }); await expect(slash).toBeVisible(); await page.keyboard.press("Enter"); await expect(rich().locator("table")).toHaveCount(2);
   const dirty = await sourceText(); assert.match(dirty, /\| A \| B \|/); assert.doesNotMatch(dirty, /\/ta/);

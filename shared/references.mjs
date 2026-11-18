@@ -1,10 +1,12 @@
 import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
 import { inlineDestination } from "./link-destination.mjs";
+import { sourceLines } from "./source-lines.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
 import { decodeHTMLAttribute } from "entities";
 import { headingSlug as slug } from "./wiki-syntax.mjs";
 export { headingSlug as slug } from "./wiki-syntax.mjs";
 const md = createMarkdown();
+md.core.ruler.disable("strip_references");
 const key = value => value.normalize("NFC").toLowerCase();
 function upperBound(offsets, at) {
   let low = 0, high = offsets.length;
@@ -44,14 +46,13 @@ export function referenceParts(value, wiki = false) {
 }
 export function references(source, options = {}) {
   setSyntaxOptions(md, options);
-  const text = source.replace(/\r\n?/g, "\n"), lines = text.split("\n"), offsets = [0], sourceOffsets = [0], excluded = [], htmlRanges = [];
+  const { lines, offsets: sourceOffsets } = sourceLines(source), text = lines.join("\n"), offsets = [0], excluded = [], htmlRanges = [];
   for (const line of lines) offsets.push(offsets.at(-1) + line.length + 1);
-  for (const ending of source.matchAll(/\r\n|\r|\n/g)) sourceOffsets.push(ending.index + ending[0].length);
   const sourceOffset = at => { const line = upperBound(offsets, at) - 1; return sourceOffsets[line] + at - offsets[line]; };
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
   const environment = {}, tokens = md.parse(text, environment);
   for (const token of tokens) {
-    if (["fence", "code_block", "math_block"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
+    if (["fence", "code_block", "math_block", "reference_definition"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
     if (token.type === "html_block" && token.map) {
       const range = [offsets[token.map[0]], Math.min(text.length, offsets[token.map[1]])];
       excluded.push([...range, true]); htmlRanges.push(range);
@@ -74,7 +75,6 @@ export function references(source, options = {}) {
       if (child.type === "html_embed") htmlRanges.push(range);
     }
   }
-  for (const match of text.matchAll(/^ {0,3}\[(?!\^)[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
   const commonHTML = rangeCursor(excluded.filter(range => !range[2]));
   let opaqueEnd = 0;
@@ -100,14 +100,14 @@ export function references(source, options = {}) {
   let blocked = blockCursor();
   const lineNumber = at => upperBound(offsets, at);
   const result = [];
-  const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, from, to, html = false }) => {
+  const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, title, from, to, html = false }) => {
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
     let width = size?.[1] || "", height = size?.[2] || "";
     const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
     const dimensions = html ? text.slice(from, to) : attributes?.[1] || "";
     for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
     if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, dimensionAlias: !!size, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
+    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, title, dimensionAlias: !!size, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
   };
   const expression = /(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]|<(?:a|img|video|audio|source)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi;
   for (const match of text.matchAll(expression)) {
@@ -120,7 +120,7 @@ export function references(source, options = {}) {
     const image = html ? !anchor : !!match[1], alias = html ? /\balt\s*=\s*["']([^"']*)["']/i.exec(match[0])?.[1] : match[3]?.trim() || undefined;
     add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html });
   }
-  const literal = rangeCursor(result.map(ref => [ref.from, ref.to])), suffixRanges = [], state = new md.inline.State(text, md, environment, []);
+  const literal = rangeCursor(result.map(ref => [ref.from, ref.to])), suffixRanges = [], markdownSuffixes = [], state = new md.inline.State(text, md, environment, []);
   blocked = blockCursor();
   for (const match of text.matchAll(/!?\[/g)) {
     const from = match.index, image = match[0] === "![", open = from + (image ? 1 : 0);
@@ -134,19 +134,22 @@ export function references(source, options = {}) {
       if (inline.target) {
         const destinationRange = [inline.from - from, inline.to - from];
         add({ target: inline.target, image, alias, destinationRange, from, to: inline.end });
-        suffixRanges.push([end + 1, inline.end]);
+        const range = [end + 1, inline.end]; suffixRanges.push(range); markdownSuffixes.push(range);
       }
     } else if (!tail.startsWith("(")) {
-      const reference = /^[ \t]*\[([^\]\n]*)\]/.exec(tail), id = md.utils.normalizeReference(reference?.[1] || alias), definition = environment.references?.[id];
+      const labelEnd = text[end + 1] === "[" ? md.helpers.parseLinkLabel(state, end + 1) : -1;
+      const label = labelEnd >= 0 ? text.slice(end + 2, labelEnd) : "", id = md.utils.normalizeReference(label || alias), definition = environment.references?.[id];
       if (definition) {
-        const to = end + 1 + (reference?.[0].length || 0);
-        add({ target: definition.href, image, alias, destinationRange: [end + 1 - from, to - from], referenceStyle: true, from, to });
-        suffixRanges.push([end + 1, to]);
+        const to = labelEnd >= 0 ? labelEnd + 1 : end + 1;
+        add({ target: definition.href, image, alias, destinationRange: [end + 1 - from, to - from], referenceStyle: true, title: definition.title, from, to });
+        const range = [end + 1, to]; suffixRanges.push(range); markdownSuffixes.push(range);
       }
     }
   }
   result.sort((a, b) => a.from - b.from);
-  const tags = [], referenced = rangeCursor(result.map(ref => [ref.from, ref.to]));
+  const inSuffix = rangeCursor(markdownSuffixes);
+  const visible = result.filter(ref => !inSuffix(ref.from));
+  const tags = [], referenced = rangeCursor(visible.map(ref => [ref.from, ref.to]));
   blocked = blockCursor();
   for (const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gu)) {
     const at = match.index + match[1].length;
@@ -154,7 +157,7 @@ export function references(source, options = {}) {
   }
   blocked = blockCursor();
   const headings = (environment.headings || []).filter(heading => !blocked(offsets[heading.line - 1])).map(({ text, id, line }) => ({ title: text, id, line }));
-  const mapped = result.map(ref => {
+  const mapped = visible.map(ref => {
     const from = sourceOffset(ref.from), to = sourceOffset(ref.to);
     const destinationRange = ref.destinationRange?.map(at => sourceOffset(ref.from + at) - from);
     return { ...ref, from, to, destinationRange, source: source.slice(from, to) };
@@ -214,7 +217,7 @@ export function referenceIndex(snapshot, options = {}) {
 export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10), options = {}) {
   const index = referenceIndex(snapshot, options);
   if (snapshot.truncated) throw new Error("清点不完整，已拒绝导出。");
-  const portable = relative => "notes/" + relative.replaceAll("\\", "/").replace(/(^|\/)(index|log)\.md$/i, "$1_$2.md").replace(/\.(markdown|mdown)$/i, ".md");
+  const portable = relative => "notes/" + relative.replaceAll("\\", "/").replace(/\.(md|markdown|mdown)$/i, ".md").replace(/(^|\/)(index|log)\.md$/i, "$1_$2.md");
   const destinations = index.notes.map(note => portable(note.relative));
   if (new Set(destinations.map(key)).size !== destinations.length) throw new Error("压缩包目标路径重复。");
   const encodePart = value => encodeURIComponent(value).replace(/[!'()*]/g, character => "%" + character.charCodeAt(0).toString(16).toUpperCase());
@@ -230,7 +233,7 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       const depth = portable(note.relative).split("/").length - 1, fragment = resolved.fragment ? "#" + encodePart(resolved.fragment) : "", url = referenceParts(ref.target, ref.wiki)?.target === "" ? fragment : encode("../".repeat(depth) + destination) + fragment;
       if (ref.destinationRange) {
         const [from, to] = ref.destinationRange;
-        edits.push({ from: ref.from + from, to: ref.from + to, replacement: ref.referenceStyle ? `(${url})` : md.utils.escapeHtml(url) });
+        edits.push({ from: ref.from + from, to: ref.from + to, replacement: ref.referenceStyle ? `(${url}${ref.title ? ` "${ref.title.replace(/["\\]/g, "\\$&").replace(/&/g, "&amp;")}"` : ""})` : md.utils.escapeHtml(url) });
         continue;
       }
       let label = ref.dimensionAlias ? target.relative.split("/").at(-1) : ref.alias || ref.target;

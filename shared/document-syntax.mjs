@@ -60,9 +60,9 @@ export function configureDocumentSyntax(md) {
     }
   });
   md.block.ruler.before("hr", "frontmatter", (state, startLine, endLine, silent) => {
-    if (startLine !== 0 || state.src.slice(state.bMarks[0], state.eMarks[0]) !== "---") return false;
+    if (startLine !== 0 || !/^(?:\uFEFF)?---[ \t]*$/.test(state.src.slice(state.bMarks[0], state.eMarks[0]))) return false;
     let end = 1;
-    for (; end < endLine; end++) if (/^(?:---|\.\.\.)$/.test(state.src.slice(state.bMarks[end], state.eMarks[end]))) break;
+    for (; end < endLine; end++) if (/^(?:---|\.\.\.)[ \t]*$/.test(state.src.slice(state.bMarks[end], state.eMarks[end]))) break;
     if (end === endLine) return false;
     if (silent) return true;
     const token = state.push("frontmatter", "pre", 0); token.block = true; token.map = [0, end + 1]; token.content = state.src.slice(state.bMarks[1], state.bMarks[end]);

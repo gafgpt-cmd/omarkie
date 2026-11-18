@@ -126,6 +126,24 @@ test("a disposed reading instance cannot attach paint callbacks or change width"
   await run.setEnabled(definition, true); await run.setEnabled(definition, false);
   api.onPaint(() => calls++); api.setWidth(90); assert.equal(calls, 0); await run.destroy();
 });
+test("slash commands find raw line starts and preserve mixed-ending undo", async () => {
+  for (const ending of ['\n\n', '\r\n\r\n', '\r\r', '\r\n\r']) {
+    const source = '# Heading' + ending + '/ta'; let changed, replacement;
+    const state = await start('slashCommands', source, {
+      selectionRange: () => ({ from: source.length, to: source.length, context: 'paragraph_open' }),
+      replaceRange: (from, to, text, expected) => { replacement = { from, to, expected }; changed = source.slice(0, from) + text + source.slice(to); return true; },
+    });
+    try {
+      document.dispatchEvent(new Event('selectionchange'));
+      const menu = document.querySelector('.reading-slash-menu'); assert.equal(menu.hidden, false);
+      const option = menu.querySelector('[role="option"]'); assert.ok(option.textContent.startsWith('/table'));
+      option.click(); assert.deepEqual(replacement, { from: source.length - 3, to: source.length, expected: '/ta' });
+      assert.equal(changed.slice(0, source.length - 3), source.slice(0, -3)); assert.ok(changed.endsWith('|  |  |'));
+      state.doc.replaceSource(changed, 'document-command'); assert.equal(state.doc.toMarkdown(), changed);
+      assert.equal(state.doc.undo(), true); assert.equal(state.doc.toMarkdown(), source);
+    } finally { await state.run.destroy(); }
+  }
+});
 test("width control uses the shared persisted preference callback and releases its DOM", async () => {
   let width = 80; const state = await start("widthSlider", "text\n", { getWidth: () => width, setWidth: value => width = value });
   const input = document.querySelector(".reading-width-slider input"); input.value = "96"; input.dispatchEvent(new Event("input")); assert.equal(width, 96);

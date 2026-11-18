@@ -38,6 +38,10 @@ for (const scope of ["outside", "omitted", "indexed"]) {
       await rich.getByRole("link", { name: "Wiki target", exact: true }).click({ modifiers: ["ControlOrMeta"] });
       await expect(rich.getByRole("heading", { name: "Target", exact: true })).toBeVisible();
       await expect(page.locator("#footer-word-count-label")).toHaveAttribute("title", /Line 3, Column/);
+      await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send("app:command", { action: "backlinks" }));
+      const mentions = page.getByRole("dialog", { name: "Document tools", exact: true });
+      await expect(mentions.locator("blockquote").filter({ hasText: "[[sibling#Target|Wiki target]]" })).toBeVisible();
+      await page.keyboard.press("Escape"); await expect(mentions).toBeHidden();
       await source();
       for (const [name, heading] of [["Literal percent", "Literal percent target"], ["Encoded-looking percent", "Encoded-looking target"], ["Alias heading", "Target alias"]]) {
         await rich.getByRole("link", { name, exact: true }).click({ modifiers: ["ControlOrMeta"] });

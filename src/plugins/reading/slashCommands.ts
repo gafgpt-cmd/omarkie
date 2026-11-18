@@ -23,7 +23,7 @@ export default ({ BasePlugin, utils }: any) => class extends BasePlugin {
     };
     const refresh = () => {
       const selected = api.selection(); if (!api.editable() || !selected || selected.from !== selected.to || selected.context !== "paragraph_open") { hide(); return; }
-      const text = utils.getCurrentFileContent(), from = text.lastIndexOf("\n", selected.from - 1) + 1, input = text.slice(from, selected.from), match = /^\/([a-z]*)$/i.exec(input);
+      const text = utils.getCurrentFileContent(), from = Math.max(text.lastIndexOf("\n", selected.from - 1), text.lastIndexOf("\r", selected.from - 1)) + 1, input = text.slice(from, selected.from), match = /^\/([a-z]*)$/i.exec(input);
       if (!match || dismissed === `${api.documentId()}:${from}:${input}`) { hide(); return; }
       matched = commands.filter(command => command.keyword.startsWith(match[1].toLowerCase()));
       if (!matched.length) { hide(); return; }

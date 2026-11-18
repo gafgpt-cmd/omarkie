@@ -7,6 +7,7 @@ import type { ConversionOptions, DocumentRecord, VaultSnapshot, FileEntry } from
 import type { Preferences } from "../preferences";
 import { makeReady, properties, setProperties, validateOKF } from "../../shared/frontmatter.mjs";
 import { referenceIndex, bundlePlan } from "../../shared/references.mjs";
+import { sourceLines } from "../../shared/source-lines.mjs";
 const VaultGraph = lazy(() => import("./VaultGraph"));
 export type ToolTab = "properties" | "references" | "backlinks" | "graph" | "okf" | "writing" | "checks";
 interface Change { token?: string; relative: string; before: string; after: string }
@@ -75,7 +76,7 @@ export function DocumentTools({ record, documents, files, preferences, initial, 
         <div>{[...new Set<string>(index?.notes.flatMap((note: any) => note.tags) || [])].sort().map(value => <button key={value} onClick={() => setTag(value)}>#{value}</button>)}</div>
         <ul>{(tag ? index?.tags(tag) || [] : target ? [] : index?.notes || []).map((note: any) => <li key={note.token}><button onClick={() => void run(async () => { await open(note.token); close(); })}>{note.relative}</button></li>)}</ul>
       </>}
-      {tab === "backlinks" && <><h3>{t("反向链接")}</h3><ul>{(current ? index.backlinks(current) : []).map((edge: any, at: number) => <li key={at}><button onClick={() => void run(async () => { await open(edge.source.token, edge.ref.line); close(); })}>{edge.source.relative}:{edge.ref.line}</button><blockquote>{edge.source.content.split("\n")[edge.ref.line - 1]}</blockquote></li>)}</ul></>}
+      {tab === "backlinks" && <><h3>{t("反向链接")}</h3><ul>{(current ? index.backlinks(current) : []).map((edge: any, at: number) => <li key={at}><button onClick={() => void run(async () => { await open(edge.source.token, edge.ref.line); close(); })}>{edge.source.relative}:{edge.ref.line}</button><blockquote>{sourceLines(edge.source.content).lines[edge.ref.line - 1]}</blockquote></li>)}</ul></>}
       {tab === "graph" && index && <Suspense fallback={null}><VaultGraph index={index} open={token => void run(async () => { await open(token); close(); })} /></Suspense>}
     </section>}
     {tab === "okf" && <section>

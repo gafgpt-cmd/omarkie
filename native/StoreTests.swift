@@ -214,7 +214,28 @@ func runStoreTests() throws {
   catch let error as NativeFailure { try expect(error.code == "EXTERNAL_CHANGE", "conversion still refuses external disk edits") }
   let redecoded = try encodingStore.open(lossFile, id: utf16.id, encoding: "gbk")
   try expect(redecoded.content == "外部 GBK" && redecoded.encoding == "gbk", "explicit reopen decodes the actual file without rewriting it")
-  if Interchange.pandoc() != nil {
+  if let converter = Interchange.pandoc() {
+    for eol in ["\n", "\r\n", "\r"] {
+      for bom in ["", "\u{FEFF}"] {
+        for closing in ["---", "..."] {
+          let source = bom + "--- \t" + eol + "type: Reference" + eol + "title: Metadata sentinel" + eol + closing + " \t" + eol + "# Body sentinel\r\n\nRetained body.\r"
+          let file = directory.appendingPathComponent("letterhead-" + UUID().uuidString + ".md"), output = file.deletingPathExtension().appendingPathExtension("docx")
+          let bytes = Data(source.utf8), options: [String: Any] = ["letterhead": ["name": "Example Organization", "detail": "Document service"]]
+          try atomicWrite(file, bytes)
+          try Interchange.export("docx", source: source, html: "", destination: output, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: options)
+          let plain = String(data: try Interchange.run(converter, arguments: [output.path, "--to=plain"], input: nil, directory: directory), encoding: .utf8) ?? ""
+          try expect(plain.contains("Example Organization") && plain.contains("Body sentinel") && !plain.contains("Metadata sentinel") && !plain.contains("type: Reference"), "native DOCX letterhead excludes complete frontmatter")
+          let rendered = try Interchange.renderedExport(source: source, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: options)
+          try expect(rendered.contains("Body sentinel") && !rendered.contains("Metadata sentinel") && !rendered.contains("type: Reference"), "native PDF input excludes complete frontmatter")
+          try expect(try Data(contentsOf: file) == bytes, "native letterhead retains original BOM, metadata and endings")
+        }
+      }
+    }
+    let letterImage = directory.appendingPathComponent("letter-image.tex")
+    let imageSource = "---\rtitle: Metadata sentinel\r---\r![Figure](data:image/png;base64," + png.base64EncodedString() + ")"
+    try Interchange.export("latex", source: imageSource, html: "", destination: letterImage, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: ["letterhead": ["name": "Example Organization", "detail": "Document service"]])
+    let letterLatex = try String(contentsOf: letterImage, encoding: .utf8)
+    try expect(letterLatex.contains("letter-image.assets/") && !letterLatex.contains("data:image") && !letterLatex.contains("Metadata sentinel"), "native resource ranges follow letterhead preparation")
     let formula = directory.appendingPathComponent("formula.docx")
     try Interchange.export("docx", source: "# Formula\n\n$E=mc^2$\n", html: "<p>Formula</p>", destination: formula, workingDirectory: directory, temporaryDirectory: store.dataDirectory)
     let formulaMarkdown = try Interchange.importFile(formula, directory: store.dataDirectory)["markdown"] ?? ""

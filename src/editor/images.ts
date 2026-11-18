@@ -1,11 +1,12 @@
 import { parseBlocks } from "./markdown.ts";
 import { createMarkdown } from "../../shared/markdown.mjs";
 import { inlineDestination } from "../../shared/link-destination.mjs";
+import { sourceLines } from "../../shared/source-lines.mjs";
 const md = createMarkdown();
 export interface ImageReference { from: number; to: number; source: string; url: string; alt: string; width: string; height: string }
 export function imageReferences(text: string): ImageReference[] {
   const result: ImageReference[] = [];
-  const lines = text.split("\n"), offsets = [0]; for (const line of lines) offsets.push(offsets.at(-1)! + line.length + 1);
+  const { offsets } = sourceLines(text);
   const blocked = parseBlocks(text).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind)).map(block => ({ from: offsets[block.fromLine - 1], to: offsets[block.toLine] }));
   for (const code of text.matchAll(/(`+)([^`]|(?!\1)`)*?\1/g)) blocked.push({ from: code.index, to: code.index + code[0].length });
   const state = new md.inline.State(text, md, {}, []);

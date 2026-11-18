@@ -19,6 +19,9 @@ declare module "*shared/markdown.mjs" {
   export function createMarkdown(options?: import("markdown-it").MarkdownItOptions): import("markdown-it").MarkdownIt;
   export function setSyntaxOptions(md: import("markdown-it").MarkdownIt, options?: Partial<import("./preferences").Preferences>): void;
 }
+declare module "*shared/source-lines.mjs" {
+  export function sourceLines(source: string): { lines: string[]; offsets: number[] };
+}
 declare module "*shared/link-destination.mjs" {
   export function inlineDestination(md: import("markdown-it").MarkdownIt, text: string, open: number, max?: number): { target: string; from: number; to: number; end: number; title?: string; spaced: boolean } | null;
 }

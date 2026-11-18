@@ -1,5 +1,6 @@
 import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
 import { inlineDestination } from "../../shared/link-destination.mjs";
+import { sourceLines } from "../../shared/source-lines.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
@@ -58,11 +59,11 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
       imageSizes.set(`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(key)}`, [size[0], size[1]]);
   }
 }
-// Local image sources a document references (Markdown images and <img> tags); a light scan for
-// the size prefetch, so a source inside a code fence costs the host one failed lookup at most.
 export function localImageSources(text: string) {
-  const sources = new Set<string>(), state = new md.inline.State(text, md, {}, []);
+  const sources = new Set<string>(), state = new md.inline.State(text, md, {}, []), { offsets } = sourceLines(text);
+  const excluded = parseBlocks(text).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind));
   for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|(!\[)|(<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)/gi)) {
+    if (excluded.some(block => match.index >= offsets[block.fromLine - 1] && match.index < offsets[block.toLine])) continue;
     let source: string;
     if (match[2]) {
       const labelEnd = md.helpers.parseLinkLabel(state, match.index + 1, false);
@@ -161,19 +162,19 @@ export function parseBlocks(
   source: string,
   environment: Record<string, unknown> = {},
 ): Block[] {
-  const lines = source.split("\n");
+  const { lines, offsets } = sourceLines(source), span = (from: number, to: number) => source.slice(offsets[from], offsets[to - 1] + lines[to - 1].length);
   const blocks: Block[] = [];
   let covered = 0;
-  if (lines[0] === "---") {
+  if (/^(?:\uFEFF)?---[ \t]*$/.test(lines[0])) {
     const end = lines
       .slice(1)
-      .findIndex((line) => line === "---" || line === "...");
+      .findIndex((line) => /^(?:---|\.\.\.)[ \t]*$/.test(line));
     if (end >= 0) {
       covered = end + 2;
       blocks.push({
         fromLine: 1,
         toLine: covered,
-        source: lines.slice(0, covered).join("\n"),
+        source: span(0, covered),
         kind: "frontmatter",
       });
     }
@@ -191,7 +192,7 @@ export function parseBlocks(
     blocks.push({
       fromLine: from + 1,
       toLine: to,
-      source: lines.slice(from, to).join("\n"),
+      source: span(from, to),
       kind: token.type,
     });
   }
