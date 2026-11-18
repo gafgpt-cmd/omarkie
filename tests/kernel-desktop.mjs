@@ -31,7 +31,7 @@ await writeFile(
     ],
   }),
 );
-const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory });
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh" });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
 const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });

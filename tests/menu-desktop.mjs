@@ -780,11 +780,11 @@ try {
   await expect(page.getByRole("dialog", { name: t("插件管理"), exact: true })).toBeVisible();
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
-    const toggle = card.getByRole("checkbox"); await toggle.check({ force: true });
+    const toggle = card.getByRole("checkbox"); await toggle.check();
     await expect(card.locator(".plugin-toggle")).toContainText(t("已启用"));
     await expect(card.getByRole("alert")).toHaveCount(0);
     if (name === t("只读模式")) await expect(rich()).toHaveAttribute("contenteditable", "false");
-    await toggle.uncheck({ force: true });
+    await toggle.uncheck();
     await expect(card.locator(".plugin-toggle")).toContainText(t("未启用"));
     pass(`Plugin: ${name}`, "Bundled plugin starts and unloads without error");
   }
@@ -797,11 +797,11 @@ try {
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async (_window, options) => { globalThis.auditPluginDialogOptions = options; return { canceled: false, filePaths: [file] }; }; }, plugin);
   await install.click({ force: true });
   assert.deepEqual(await application.evaluate(() => globalThis.auditPluginDialogOptions.properties), ["openFile"]);
-  await expect(page.locator(".plugin-card")).toHaveCount(9);
+  await expect(page.locator(".plugin-card")).toHaveCount(16);
   const installed = page.locator(".plugin-card").last();
-  await installed.getByRole("checkbox").check({ force: true });
+  await installed.getByRole("checkbox").check();
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
-  await installed.getByRole("checkbox").uncheck({ force: true });
+  await installed.getByRole("checkbox").uncheck();
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
   await expect(page.locator(".plugin-card")).toHaveCount(15);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
@@ -845,7 +845,7 @@ try {
   await command("preferences");
   await preferences().getByLabel(t("PicGo Server 地址"), { exact: true }).fill(`http://127.0.0.1:${uploader.address().port}/upload`);
   await preferences().getByRole("button", { name: t("完成"), exact: true }).click({ force: true });
-  const uploadedFile = path.join(data, (await page.locator(".document-title").textContent()).trim());
+  const uploadedFile = path.join(data, await page.locator(".document-title").getAttribute("title"));
   await command("upload-all-images");
   await expect.poll(() => uploads).toBe(1);
   await expect.poll(() => readFile(uploadedFile, "utf8")).toContain("https://example.invalid/audit-image.png");
