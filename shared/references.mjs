@@ -13,9 +13,9 @@ export function normalizePath(value) {
   return parts.join("/");
 }
 export function referenceParts(value) {
-  try { value = decodeURIComponent(value); } catch { return null; }
   const [target, ...fragment] = value.split("#");
-  return { target, fragment: fragment.join("#") };
+  try { return { target: decodeURIComponent(target), fragment: decodeURIComponent(fragment.join("#")) }; }
+  catch { return null; }
 }
 export function references(text) {
   const lines = text.split("\n"), offsets = [0], excluded = [];

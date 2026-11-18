@@ -48,6 +48,13 @@ export default function App() {
   const [paintedDocument, setPaintedDocument] = useState<string | null>(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const editors = useRef(new Map<string, EditorHandle>());
+  const pendingJump = useRef<{ id: string; line: number } | null>(null);
+  function jumpTo(id: string, line: number) {
+    pendingJump.current = null;
+    const target = editors.current.get(id);
+    if (target) target.jump(line);
+    else pendingJump.current = { id, line };
+  }
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
@@ -247,7 +254,7 @@ export default function App() {
     if (action === "notice") { if (message) session.setMessage(message); }
     else if (action === "omarchy-theme") void refreshOmarchy();
     else if (action === "opened") {
-      if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) requestAnimationFrame(() => { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; editors.current.get(record.id)?.jump(line || heading?.line || 1); }); });
+      if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; jumpTo(record.id, line || heading?.line || 1); } });
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();
     else if (action === "open") void session.open();
     else if (action === "folder") void session.openFolder();
@@ -451,8 +458,10 @@ export default function App() {
                 <MarkdownEditor
                   key={`${record.id}-${record.lineEnding}`}
                   ref={(handle) => {
-                    if (handle) editors.current.set(record.id, handle);
-                    else editors.current.delete(record.id);
+                    if (handle) {
+                      editors.current.set(record.id, handle);
+                      if (pendingJump.current?.id === record.id) jumpTo(record.id, pendingJump.current.line);
+                    } else editors.current.delete(record.id);
                   }}
                   document={record}
                   rendered={rendered}
@@ -516,7 +525,7 @@ export default function App() {
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
         key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
-        open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) requestAnimationFrame(() => editors.current.get(opened.id)?.jump(line)); }}
+        open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
         change={async item => {
           if (readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
           const record = item.token ? await session.openToken(item.token) : session.documents.find(record => record.id === tools.id);
@@ -533,7 +542,7 @@ export default function App() {
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
-      {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) requestAnimationFrame(() => editors.current.get(record.id)?.jump(match.line)); }} />}
+      {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

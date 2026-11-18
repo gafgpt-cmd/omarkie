@@ -14,7 +14,9 @@ try {
   await page.keyboard.press("ControlOrMeta+,");
   const preferences = page.getByRole("dialog", { name: "偏好设置", exact: true });
   await expect(preferences).toBeVisible();
-  console.log("Available Omarchy themes:", await preferences.getByLabel("主题", { exact: true }).locator('option[value*="omarchy"]').allTextContents());
+  for (const [id, name] of [["omarchy", "Omarchy（自动）"], ["toypora-omarchy", "白纸 · Omarchy 标题"], ["omarchy-toypora", "Omarchy 配色 · 阅读字体"]]) {
+    await expect(preferences.getByLabel("主题", { exact: true }).locator(`option[value="${id}"]`)).toHaveText(name);
+  }
   const available = await application.evaluate(({ session }) => session.defaultSession.availableSpellCheckerLanguages);
   const chosen = ["en-US", "es-ES", "ca"].filter(code => available.includes(code)).sort();
   await preferences.getByLabel("拼写检查语言").selectOption(chosen);

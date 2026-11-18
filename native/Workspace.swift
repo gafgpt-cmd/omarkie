@@ -134,11 +134,11 @@ final class Workspace {
     }
     let media = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"]
     func walk(_ directory: URL, depth: Int) throws {
-      for file in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) {
+      for file in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey]) {
         count += 1
         if count > 50000 || Date() > deadline { truncated = true; return }
-        let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey])
-        if values.isSymbolicLink == true || file.lastPathComponent == "node_modules" { continue }
+        let values = try file.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey])
+        if (file.lastPathComponent.hasPrefix(".") || values.isHidden == true) && !(file.lastPathComponent == ".assets" && values.isDirectory == true) || values.isSymbolicLink == true || file.lastPathComponent == "node_modules" { continue }
         if values.isDirectory == true { if depth < 12 { try walk(file, depth: depth + 1) } else { truncated = true } }
         else if values.isRegularFile == true && media.contains(file.pathExtension.lowercased()) { assets.append(["relative": String(file.path.dropFirst(root.path.count + 1))]) }
       }
@@ -147,7 +147,7 @@ final class Workspace {
     return ["notes": notes, "assets": assets, "truncated": truncated]
   }
   func workflowFile(_ root: URL, relative: String) throws -> URL {
-    guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains(":"), !relative.contains("\\"), !relative.contains("\0"), !relative.split(separator: "/").contains(where: { $0.hasPrefix(".") }) else { throw NativeFailure("知识库路径无效") }
+    guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains(":"), !relative.contains("\\"), !relative.contains("\0"), !relative.split(separator: "/").contains(where: { $0.hasPrefix(".") && $0 != ".assets" }) else { throw NativeFailure("知识库路径无效") }
     let file = root.appendingPathComponent(relative).standardizedFileURL
     guard contained(root, file), file.path == canonicalFileURL(file).path else { throw NativeFailure("知识库路径无效") }
     return file

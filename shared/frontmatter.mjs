@@ -66,7 +66,8 @@ export function validateOKF(text, name = "note.md", root = false) {
 }
 
 export function makeReady(text, name) {
-  const values = properties(text);
+  const fm = frontmatter(text), values = fm.document.toJS({ maxAliasCount: 50 }) || {};
+  if (fm.close === "...") text = text.slice(0, fm.end) + "---" + text.slice(fm.end + 3);
   const updates = {};
   if (typeof values.type !== "string" || !values.type.trim()) updates.type = "Reference";
   if (values.title === undefined) updates.title = name.split(/[\\/]/).at(-1).replace(/\.(md|markdown|mdown)$/i, "");

@@ -107,6 +107,42 @@ func runStoreTests() throws {
   do { _ = try store.reopen("unknown"); throw NativeFailure("unowned reopen") }
   catch let error as NativeFailure { try expect(error.message.contains("不可用"), "reopen refuses an unknown document id") }
   let workspace = Workspace(store.dataDirectory)
+  let workflowRoot = directory.appendingPathComponent("workflow-vault"), workflowOutput = directory.appendingPathComponent("workflow-output")
+  try fm.createDirectory(at: workflowRoot.appendingPathComponent("nested"), withIntermediateDirectories: true)
+  try fm.createDirectory(at: workflowOutput, withIntermediateDirectories: true)
+  let workflowStore = DocumentStore(directory.appendingPathComponent("workflow-data"))
+  var workflowAssets = [[String: String]]()
+  for relative in ["note.md", "nested/note.md"] {
+    let file = workflowRoot.appendingPathComponent(relative)
+    try atomicWrite(file, Data("# Note\n".utf8))
+    let opened = try workflowStore.open(file), image = try workflowStore.importImage(opened.id, bytes: png, name: "photo.png")
+    try expect(image.hasPrefix(".assets/"), "pasted attachment uses the default directory")
+    let source = (relative as NSString).deletingLastPathComponent
+    workflowAssets.append(["source": source.isEmpty ? image : source + "/" + image, "relative": "assets/" + (source.isEmpty ? image : source + "/" + image)])
+    try atomicWrite(file, Data("![photo](\(image))\n".utf8))
+  }
+  try fm.createDirectory(at: workflowRoot.appendingPathComponent(".private"), withIntermediateDirectories: true)
+  try atomicWrite(workflowRoot.appendingPathComponent(".private/secret.png"), png)
+  try atomicWrite(workflowRoot.appendingPathComponent(".assets/.hidden.png"), png)
+  try fm.createSymbolicLink(at: workflowRoot.appendingPathComponent(".assets/escape.png"), withDestinationURL: outside)
+  _ = try workflowStore.scan(workflowRoot)
+  let workflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  let workflowInventory = workflowSnapshot["assets"] as! [[String: String]], workflowNotes = workflowSnapshot["notes"] as! [[String: String]]
+  try expect(Set(workflowInventory.compactMap { $0["relative"] }) == Set(workflowAssets.compactMap { $0["source"] }), "snapshot includes root and nested default attachments only")
+  let workflowPayload: [String: Any] = ["notes": workflowNotes, "assets": workflowAssets, "index": "# Bundle\n", "log": "# Log\n"]
+  let workflowBundle = try workspace.exportBundle(workflowPayload, store: workflowStore, parent: workflowOutput)
+  for asset in workflowAssets {
+    try expect(try Data(contentsOf: URL(fileURLWithPath: workflowBundle).appendingPathComponent(asset["relative"]!)) == png, "bundle copies default attachment bytes")
+  }
+  for note in workflowNotes {
+    try expect(try String(contentsOf: workflowRoot.appendingPathComponent(note["relative"]!), encoding: .utf8) == note["content"], "bundle preserves source note bytes")
+  }
+  for (source, destination) in [(".assets/escape.png", "assets/copy.png"), (".private/secret.png", "assets/copy.png"), (".assets/../outside.png", "assets/copy.png"), (workflowAssets[0]["source"]!, "assets/.private/copy.png"), (workflowAssets[0]["source"]!, "assets/.assets/../escape.png")] {
+    var payload = workflowPayload, rejected = false
+    payload["assets"] = [["source": source, "relative": destination]]
+    do { _ = try workspace.exportBundle(payload, store: workflowStore, parent: workflowOutput) } catch { rejected = true }
+    try expect(rejected, "bundle refuses hidden, traversal and symlink paths")
+  }
   _ = try store.scan(directory)
   var latest = try store.require(record.id); latest.content = "未保存内容\r\n"; store.records[record.id] = latest
   let renamed = try workspace.execute(["action": "rename", "path": file.path, "name": "renamed.md"], store: store)

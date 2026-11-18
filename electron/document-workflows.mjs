@@ -6,7 +6,7 @@ import { t } from "./i18n.mjs";
 const asset = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|ogg|mp3|wav|m4a)$/i;
 const inside = (root, file) => { const relative = path.relative(root, file); return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative); };
 async function owned(root, relative) {
-  if (typeof relative !== "string" || !relative || path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => part === ".." || part.startsWith(".")) || /[:\0]/.test(relative)) throw new Error(t("知识库路径无效"));
+  if (typeof relative !== "string" || !relative || path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => part.startsWith(".") && part !== ".assets") || /[:\0]/.test(relative)) throw new Error(t("知识库路径无效"));
   const file = path.resolve(root, relative);
   if (!inside(root, file) || await realpath(file) !== file) throw new Error(t("知识库路径无效"));
   return file;
@@ -27,7 +27,7 @@ export async function vaultSnapshot(store) {
   async function walk(directory, depth) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (++entries > 50000 || Date.now() > deadline) { truncated = true; return; }
-      if (entry.name.startsWith(".") || entry.name === "node_modules" || entry.isSymbolicLink()) continue;
+      if (entry.name.startsWith(".") && !(entry.name === ".assets" && entry.isDirectory()) || entry.name === "node_modules" || entry.isSymbolicLink()) continue;
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) { if (depth < 12) await walk(file, depth + 1); else truncated = true; }
       else if (entry.isFile() && asset.test(entry.name)) assets.push({ relative: path.relative(root, file).split(path.sep).join("/") });
@@ -42,7 +42,7 @@ export async function exportBundle(store, payload, parent) {
   if (inside(source, target)) throw new Error(t("请选择知识库之外的目标位置"));
   const names = new Set(["index.md", "log.md"]); let total = 0;
   function destination(relative) {
-    if (typeof relative !== "string" || !relative || /^[\\/]|[:\0]/.test(relative) || relative.split(/[\\/]/).some(part => !part || part === ".." || part.startsWith(".")) || names.has(relative.toLowerCase())) throw new Error(t("压缩包路径无效"));
+    if (typeof relative !== "string" || !relative || /^[\\/]|[:\0]/.test(relative) || relative.split(/[\\/]/).some(part => !part || part.startsWith(".") && part !== ".assets") || names.has(relative.toLowerCase())) throw new Error(t("压缩包路径无效"));
     names.add(relative.toLowerCase()); return relative;
   }
   const notes = payload.notes.map(note => {

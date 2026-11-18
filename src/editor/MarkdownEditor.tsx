@@ -83,6 +83,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       rendered && record.content.length <= richTextLimit,
     );
     const [readyMode, setReadyMode] = useState<"rich" | "source" | null>(null);
+    const [jumpLine, setJumpLine] = useState<number | null>(null);
     const oversizedNotice = useRef(false);
     const [editingImage, setEditingImage] = useState<ImageReference | null>(null);
     const imageQueue = useRef(Promise.resolve());
@@ -399,7 +400,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       const doc = model.current;
       if (!doc) return;
       if (value && !richAllowed(doc)) { value = false; callbacks.current.onSourceFallback?.(); }
-      if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
+      if (!value && !codeMirror) { setReadyMode(null); void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
       if (value === activeMode.current && (value ? rich.current : source.current)) { setReadyMode(value ? "rich" : "source"); return; }
       doc.closeGroup();
@@ -464,22 +465,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
             searchField.current?.select();
           });
         },
-        jump: (line) => {
-          if (activeMode.current) rich.current?.jump(line);
-          else if (source.current) {
-            const target = source.current.state.doc.line(
-              Math.min(line, source.current.state.doc.lines),
-            );
-            source.current.dispatch({
-              selection: { anchor: target.from },
-              effects: codeMirror!.EditorView.scrollIntoView(target.from, {
-                y: "start",
-                yMargin: 30,
-              }),
-            });
-            source.current.focus();
-          }
-        },
+        jump: setJumpLine,
         wrap: (before, after = "") => {
           if (editingBlocked()) return;
           if (activeMode.current) rich.current?.wrap(before, after);
@@ -599,6 +585,22 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       if (!root.current?.closest(".document-editor")?.hasAttribute("hidden"))
         focusEditor();
     }, [visibleMode]);
+    useLayoutEffect(() => {
+      if (jumpLine === null || !readyMode || (readyMode === "rich") !== visibleMode || activeMode.current !== visibleMode) return;
+      if (visibleMode) {
+        if (!rich.current) return;
+        rich.current.jump(jumpLine);
+      } else {
+        if (!source.current) return;
+        const target = source.current.state.doc.line(Math.max(1, Math.min(jumpLine, source.current.state.doc.lines)));
+        source.current.dispatch({
+          selection: { anchor: target.from },
+          effects: codeMirror!.EditorView.scrollIntoView(target.from, { y: "start", yMargin: 30 }),
+        });
+        source.current.focus();
+      }
+      setJumpLine(null);
+    }, [jumpLine, readyMode, visibleMode]);
     return (
       <div
         className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"} ${preferences?.codeLineNumbers ? "code-line-numbers" : ""}`}

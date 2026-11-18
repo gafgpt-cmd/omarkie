@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, symlink, readdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, symlink, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -12,7 +12,7 @@ import { DocumentStore } from "../electron/store.mjs";
 import { vaultSnapshot, exportBundle } from "../electron/document-workflows.mjs";
 import { conversionOptions, convertExport, pandocPath } from "../electron/interchange.mjs";
 const exec = promisify(execFile);
-async function fixture(t) { const root = await mkdtemp(path.join(os.tmpdir(), "document-workflows-")); t.after(() => rm(root, { recursive: true, force: true })); return root; }
+async function fixture(t) { const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "document-workflows-"))); t.after(() => rm(root, { recursive: true, force: true })); return root; }
 const note = (relative, content) => ({ relative, content, token: relative });
 
 test("property patches preserve BOM, CRLF, YAML comments, unknown fields and exact body", () => {
@@ -50,6 +50,42 @@ test("new-note metadata and permissive OKF v0.2 validation do not invent domain 
   const ready = makeReady('---\ncustom: retained # keep\n---\nExact body', "note.md");
   assert.deepEqual(validateOKF(makeReady('---\ntype: null\n---\nBody', 'note.md')), []);
   assert.equal(makeReady(ready, "note.md"), ready); assert.ok(ready.endsWith('---\nExact body')); assert.ok(ready.includes('custom: retained # keep'));
+});
+test("explicit make-ready normalizes only YAML closing delimiters, including in bundle copies", () => {
+  for (const eol of ["\n", "\r\n"]) for (const closing of ["...", "... \t"]) for (const body of ["", eol + "Body  " + eol + "last\nline"]) {
+    const source = '\uFEFF---' + eol + '# Keep comment' + eol + 'type: Reference' + eol + 'title: Example' + eol + 'tags: []' + eol + 'custom: {nested: retained} # keep' + eol + closing + body;
+    const expected = source.replace(eol + closing, eol + closing.replace("...", "---"));
+    assert.equal(setProperties(source, { type: "Reference" }), source);
+    assert.equal(makeReady(source, "note.md"), expected);
+    assert.equal(makeReady(expected, "note.md"), expected);
+    assert.deepEqual(validateOKF(expected), []);
+    assert.equal(frontmatter(expected).body, frontmatter(source).body);
+    const plan = bundlePlan({ notes: [note("note.md", source)], assets: [], truncated: false });
+    assert.equal(plan.notes[0].content, expected);
+  }
+  const incomplete = '---\ncustom: value # keep\n...\nBody';
+  const ready = makeReady(incomplete, "note.md");
+  assert.deepEqual(validateOKF(ready), []);
+  assert.equal(properties(ready).custom, "value");
+  assert.equal(frontmatter(ready).body, "Body");
+});
+test("encoded hashes resolve as filenames across navigation, reports and copied links", () => {
+  const original = '[Open](other%23draft.md#Heading%20name)\n![photo](photo%231.png)\n![ref][image]\n\n[image]: photo%231.png\n';
+  const snapshot = { notes: [note("start.md", original), note("other#draft.md", "# Heading name\n")], assets: [{ relative: "photo#1.png" }, { relative: "unused.png" }], truncated: false };
+  const index = referenceIndex(snapshot), from = index.notes[0];
+  assert.equal(index.resolve(from, "other%23draft.md").candidates[0].relative, "other#draft.md");
+  assert.equal(index.resolve(from, "other%23draft.md#Heading%20name").line, 1);
+  assert.equal(index.resolve(from, "photo%231.png", false).candidates[0].relative, "photo#1.png");
+  assert.equal(index.resolve(from, "other%23draft.md#Absent").state, "missing-heading");
+  assert.equal(index.resolve(from, "photo%ZZ.png").state, "invalid");
+  assert.equal(index.resolve(from, "other%23draft.md#%ZZ").state, "invalid");
+  assert.deepEqual(index.broken, []);
+  assert.deepEqual(index.unused.map(asset => asset.relative), ["unused.png"]);
+  const plan = bundlePlan(snapshot);
+  assert.ok(plan.notes[0].content.includes('[Open](../notes/other%23draft.md#heading-name)'));
+  assert.ok(plan.notes[0].content.includes('![photo](../assets/photo%231.png)'));
+  assert.ok(plan.notes[0].content.includes('![ref](../assets/photo%231.png)'));
+  assert.equal(snapshot.notes[0].content, original);
 });
 test("reference inventory shares wiki, Markdown and reference-style images; excludes code/frontmatter/comments", () => {
   const source = '---\ntype: Reference\ncover: "![[ignored.png]]"\n---\n[[Target#Heading|Visible]] #nested/tag\n![[photo space.png|300x200]]\n![raw](folder/my photo.png)\n![ref][image]\n\n[image]: other.png\n\n`[[inline]] #ignored`\n<!-- ![[comment.png]] -->\n\n```md\n[[fenced]]\n```\n';
@@ -118,6 +154,38 @@ test("host snapshot/export uses selected-folder scope, bounded copied output and
   await assert.rejects(exportBundle(store, { ...plan, assets: [{ source: "../outside.md", relative: "assets/escape.md" }] }, output));
   await assert.rejects(exportBundle(store, { ...plan, notes: [{ ...plan.notes[0], relative: "../escape.md" }] }, output));
   await assert.rejects(exportBundle(store, { ...plan, notes: [{ ...plan.notes[0], token: "unowned" }] }, output));
+});
+test("default pasted attachments are inventoried and copied without admitting hidden files or symlinks", async t => {
+  const root = await fixture(t), vault = path.join(root, "vault"), output = path.join(root, "output");
+  await mkdir(vault); await mkdir(output); await mkdir(path.join(vault, "nested"));
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64");
+  const store = new DocumentStore(path.join(root, "session"));
+  for (const relative of ["note.md", "nested/note.md"]) {
+    const file = path.join(vault, relative); await writeFile(file, "# Note\n");
+    const record = await store.open(file), image = await store.importImage(record.id, png, "photo.png");
+    assert.ok(image.startsWith(".assets/"));
+    await writeFile(file, `![photo](${image})\n`);
+  }
+  await mkdir(path.join(vault, ".private")); await writeFile(path.join(vault, ".private/secret.png"), png);
+  await writeFile(path.join(vault, ".assets/.hidden.png"), png);
+  await writeFile(path.join(root, "outside.png"), png);
+  if (process.platform !== "win32") {
+    await symlink(path.join(root, "outside.png"), path.join(vault, ".assets/escape.png"));
+    await symlink(path.join(vault, "nested/.assets"), path.join(vault, "linked"));
+  }
+  await store.scan(vault);
+  const snapshot = await vaultSnapshot(store), index = referenceIndex(snapshot);
+  assert.equal(snapshot.assets.length, 2);
+  assert.deepEqual(index.broken, []); assert.deepEqual(index.unused, []);
+  const plan = bundlePlan(snapshot), destination = await exportBundle(store, plan, output);
+  for (const item of plan.assets) assert.deepEqual(await readFile(path.join(destination, item.relative)), png);
+  for (const item of snapshot.notes) assert.equal(await readFile(path.join(vault, item.relative), "utf8"), item.content);
+  for (const source of [".private/secret.png", ".assets/../outside.png", ...(process.platform !== "win32" ? [".assets/escape.png", "linked/" + path.basename(plan.assets.find(item => item.source.startsWith("nested/")).source)] : [])]) {
+    await assert.rejects(exportBundle(store, { ...plan, assets: [{ source, relative: "assets/copy.png" }] }, output));
+  }
+  for (const relative of ["assets/.private/copy.png", "assets/.assets/../escape.png"]) {
+    await assert.rejects(exportBundle(store, { ...plan, assets: [{ ...plan.assets[0], relative }] }, output));
+  }
 });
 test("converter options reject arbitrary CLI arguments, CSL paths and malformed bibliography before execution", () => {
   assert.throws(() => conversionOptions({ args: ["--lua-filter=unsafe.lua"] }));
