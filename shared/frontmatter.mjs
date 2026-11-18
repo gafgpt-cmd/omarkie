@@ -1,14 +1,14 @@
 import { isMap, parseDocument } from "yaml";
 
 export function frontmatter(text) {
-  const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "", eol = text.includes("\r\n") ? "\r\n" : "\n";
-  const open = /^(?:\uFEFF)?---[ \t]*\r?\n/.exec(text);
+  const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "", eol = text.includes("\r\n") ? "\r\n" : text.includes("\r") ? "\r" : "\n";
+  const open = /^(?:\uFEFF)?---[ \t]*(?:\r\n|\r|\n)/.exec(text);
   if (!open) return { bom, eol, start: bom.length, end: bom.length, yaml: "", close: "---", body: text.slice(bom.length), document: parseDocument("") };
-  const ending = /^(---|\.\.\.)[ \t]*(?:\r?\n|$)/gm;
+  const ending = /^(---|\.\.\.)[ \t]*(?:\r\n|\r|\n|$)/gm;
   ending.lastIndex = open[0].length;
   const match = ending.exec(text);
   if (!match) throw new Error("前置元数据未闭合。");
-  const yaml = text.slice(open[0].length, match.index), document = parseDocument(yaml, { keepSourceTokens: true, uniqueKeys: true });
+  const yaml = text.slice(open[0].length, match.index), document = parseDocument(yaml.replace(/\r(?!\n)/g, "\n"), { keepSourceTokens: true, uniqueKeys: true });
   if (document.errors.length) throw new Error(document.errors.map(error => error.message).join("\n"));
   if (document.contents && !isMap(document.contents)) throw new Error("前置元数据必须是 YAML 映射。");
   return { bom, eol, start: open[0].length, end: match.index, yaml, close: match[1], body: text.slice(match.index + match[0].length), document };
@@ -28,7 +28,7 @@ export function setProperties(text, updates) {
     if (encoded === undefined) throw new Error("属性值无效。");
     if (pair?.value?.range) {
       const [from, to] = pair.value.range;
-      edits.push({ from: fm.start + from, to: fm.start + to, value: encoded + (/\r?\n$/.test(fm.yaml.slice(from, to)) ? fm.eol : "") });
+      edits.push({ from: fm.start + from, to: fm.start + to, value: encoded + (/[\r\n]$/.test(fm.yaml.slice(from, to)) ? fm.eol : "") });
     } else if (pair) throw new Error("请在源码模式下编辑这个空属性。");
     else added.push(`${JSON.stringify(key)}: ${encoded}`);
   }
@@ -40,7 +40,7 @@ export function setProperties(text, updates) {
     if (fm.document.contents?.flow) {
       const at = fm.start + fm.document.contents.range[1] - 1;
       edits.push({ from: at, to: at, value: (fm.document.contents.items.length ? ", " : "") + added.join(", ") });
-    } else edits.push({ from: fm.end, to: fm.end, value: (fm.yaml && !fm.yaml.endsWith("\n") ? fm.eol : "") + added.join(fm.eol) + fm.eol });
+    } else edits.push({ from: fm.end, to: fm.end, value: (fm.yaml && !/[\r\n]$/.test(fm.yaml) ? fm.eol : "") + added.join(fm.eol) + fm.eol });
   }
   for (const edit of edits.sort((a, b) => b.from - a.from)) text = text.slice(0, edit.from) + edit.value + text.slice(edit.to);
   return text;

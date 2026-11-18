@@ -12,8 +12,8 @@ for (const scope of ["outside", "omitted", "indexed"]) {
   const directory = scope === "outside" ? path.join(root, "outside") : scope === "omitted" ? path.join(vault, ...Array.from({ length: 10 }, (_, index) => `level-${index}`)) : vault;
   for (const folder of [vault, profile, directory]) await mkdir(folder, { recursive: true });
   const file = path.join(directory, "source.md"), sibling = path.join(directory, "sibling.md"), escape = path.resolve(directory, "../escape.md");
-  const content = "# Source\n\n[Sibling link](sibling.md)\n\n[[sibling#Target|Wiki target]]\n\n[Escape](../escape.md)\n\n[[100% sure|Literal percent]]\n\n[[name%20literal|Encoded-looking percent]]\n\n[[sibling#Target alias|Alias heading]]\n";
-  const record = { id: "source", path: file, name: "source.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, encoding: "utf-8", lineEnding: "\n" };
+  const content = "# Source\n\n[Sibling link](sibling.md)\n\n[[sibling#Target|Wiki target]]\n\n[Escape](../escape.md)\n\n[[100% sure|Literal percent]]\n\n[[name%20literal|Encoded-looking percent]]\n\n[[sibling#Target alias|Alias heading]]\n".replace(/\n/g, scope === "indexed" ? "\r" : "\n");
+  const record = { id: "source", path: file, name: "source.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, encoding: "utf-8", lineEnding: scope === "indexed" ? "\r" : "\n" };
   await writeFile(file, content); await writeFile(sibling, "# Sibling\n\n## Target\n\n## [[100% sure|Target alias]]\n"); await writeFile(escape, "# Escape target\n");
   for (const [name, title] of [["100% sure.md", "Literal percent target"], ["name%20literal.md", "Encoded-looking target"], ["name literal.md", "Wrong decoding"]]) await writeFile(path.join(directory, name), `# ${title}\n`);
   await writeFile(path.join(profile, "session.json"), JSON.stringify({ version: 1, folder: vault, activeId: record.id, documents: [record] }));

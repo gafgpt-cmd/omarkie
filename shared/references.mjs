@@ -42,14 +42,20 @@ export function referenceParts(value, wiki = false) {
   try { return { target: decodeURIComponent(target), fragment: decodeURIComponent(fragment.join("#")) }; }
   catch { return null; }
 }
-export function references(text, options = {}) {
+export function references(source, options = {}) {
   setSyntaxOptions(md, options);
-  const lines = text.split("\n"), offsets = [0], excluded = [];
+  const text = source.replace(/\r\n?/g, "\n"), lines = text.split("\n"), offsets = [0], sourceOffsets = [0], excluded = [], htmlRanges = [];
   for (const line of lines) offsets.push(offsets.at(-1) + line.length + 1);
+  for (const ending of source.matchAll(/\r\n|\r|\n/g)) sourceOffsets.push(ending.index + ending[0].length);
+  const sourceOffset = at => { const line = upperBound(offsets, at) - 1; return sourceOffsets[line] + at - offsets[line]; };
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
   const environment = {}, tokens = md.parse(text, environment);
   for (const token of tokens) {
     if (["fence", "code_block", "math_block"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
+    if (token.type === "html_block" && token.map) {
+      const range = [offsets[token.map[0]], Math.min(text.length, offsets[token.map[1]])];
+      excluded.push([...range, true]); htmlRanges.push(range);
+    }
     if (!["inline", "footnote_definition"].includes(token.type) || !token.map) continue;
     const content = token.meta?.source ?? token.content, inlineLines = content.split("\n");
     const children = token.children || md.parseInline(content, { ...environment, fragment: true })[0].children || [];
@@ -62,10 +68,26 @@ export function references(text, options = {}) {
       const line = upperBound(inlineOffsets, at) - 1;
       return sourceStarts[line] + at - inlineOffsets[line];
     };
-    for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) excluded.push([offset(child.meta.from), offset(child.meta.to), child.type === "html_embed"]);
+    for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) {
+      const range = [offset(child.meta.from), offset(child.meta.to)];
+      excluded.push([...range, child.type === "html_embed"]);
+      if (child.type === "html_embed") htmlRanges.push(range);
+    }
   }
   for (const match of text.matchAll(/^ {0,3}\[(?!\^)[^\]\n]+\]:[^\n]*/gm)) excluded.push([match.index, match.index + match[0].length]);
   for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
+  const commonHTML = rangeCursor(excluded.filter(range => !range[2]));
+  let opaqueEnd = 0;
+  for (const [from, to] of htmlRanges.sort((a, b) => a[0] - b[0])) {
+    for (const match of text.slice(from, to).matchAll(/<!--[\s\S]*?(?:-->|$)|<([a-z][\w:-]*)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)) {
+      const at = from + match.index;
+      if (!match[1] || at < opaqueEnd || commonHTML(at) || !/^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/i.test(match[1])) continue;
+      const close = new RegExp(`</${match[1]}\\s*>`, "gi"); close.lastIndex = at + match[0].length;
+      const ending = match[1].toLowerCase() === "plaintext" ? null : close.exec(text);
+      opaqueEnd = ending ? ending.index + ending[0].length : text.length;
+      excluded.push([at, opaqueEnd]);
+    }
+  }
   const blockCursor = () => {
     const common = rangeCursor(excluded.filter(range => !range[2])), markdown = rangeCursor(excluded.filter(range => range[2]));
     return (at, html = false) => {
@@ -132,7 +154,12 @@ export function references(text, options = {}) {
   }
   blocked = blockCursor();
   const headings = (environment.headings || []).filter(heading => !blocked(offsets[heading.line - 1])).map(({ text, id, line }) => ({ title: text, id, line }));
-  return { references: result, tags, headings };
+  const mapped = result.map(ref => {
+    const from = sourceOffset(ref.from), to = sourceOffset(ref.to);
+    const destinationRange = ref.destinationRange?.map(at => sourceOffset(ref.from + at) - from);
+    return { ...ref, from, to, destinationRange, source: source.slice(from, to) };
+  });
+  return { references: mapped, tags, headings };
 }
 export function referenceIndex(snapshot, options = {}) {
   const notes = snapshot.notes.map(note => {
@@ -144,8 +171,14 @@ export function referenceIndex(snapshot, options = {}) {
   const files = [...notes, ...snapshot.assets], byPath = new Map(), byName = new Map();
   for (const file of files) {
     const relative = file.relative.replaceAll("\\", "/");
-    byPath.set(key(relative), [...(byPath.get(key(relative)) || []), file]);
-    for (const name of new Set([relative.split("/").at(-1), relative.split("/").at(-1).replace(/\.(md|markdown|mdown)$/i, ""), ...(file.aliases || [])])) byName.set(key(name), [...(byName.get(key(name)) || []), file]);
+    const pathKey = key(relative);
+    if (!byPath.has(pathKey)) byPath.set(pathKey, []);
+    byPath.get(pathKey).push(file);
+    for (const name of new Set([relative.split("/").at(-1), relative.split("/").at(-1).replace(/\.(md|markdown|mdown)$/i, ""), ...(file.aliases || [])])) {
+      const nameKey = key(name);
+      if (!byName.has(nameKey)) byName.set(nameKey, []);
+      byName.get(nameKey).push(file);
+    }
   }
   function resolve(from, raw, wiki = true) {
     if (/^(?:https?:|mailto:|data:)/i.test(raw)) return { state: "external", candidates: [] };
