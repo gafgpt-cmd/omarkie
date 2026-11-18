@@ -439,7 +439,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       () => ({
         view: () => source.current,
         imageOffset: image => { const from = logicalImageOffset(image), doc = model.current; return from === undefined || !doc ? undefined : sourceOffset(doc.toMarkdown(), from); },
-        selectionRange: () => { const doc = model.current; if (!doc) return; const source = doc.toMarkdown(); return { from: sourceOffset(source, Math.min(doc.selection.anchor, doc.selection.head)), to: sourceOffset(source, Math.max(doc.selection.anchor, doc.selection.head)), context: activeMode.current ? doc.nodeAt(doc.selection.head)?.kind || "" : "source" }; },
+        selectionRange: () => { const doc = model.current; if (!doc) return; const selection = activeMode.current && !isComposing() ? rich.current?.bookmark() || doc.selection : doc.selection, source = doc.toMarkdown(); return { from: sourceOffset(source, Math.min(selection.anchor, selection.head)), to: sourceOffset(source, Math.max(selection.anchor, selection.head)), context: activeMode.current ? doc.nodeAt(selection.head)?.kind || "" : "source" }; },
         replaceRange: (from, to, text, expected) => {
           const doc = model.current;
           if (!doc || editingBlocked()) return false;

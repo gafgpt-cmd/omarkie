@@ -71,7 +71,7 @@ test("raw-space paths, Obsidian embeds, size attributes and file URLs render as 
   for (const key of ["window", "document", "Node", "HTMLElement", "Element", "DOMParser", "NodeFilter"]) globalThis[key] = dom.window[key];
   const { renderMarkdown, localImageSources } = await import("../src/editor/markdown.ts");
   const text = "![page](../_ATTACHMENTS/Book Name/Book Name_page1.png)\n\n![[plate.png]] ![[dir/plate two.jpg|300]] ![[plate.png|300x200]] ![[plate.png|A caption]]\n\n![w](a.png){width=300} ![p](a.png){width=50%}\n\n![f](file:///tmp/x.png)\n\n![[Some note]] ![[talk.mp3]]\n\n![not a path](just some words)\n";
-  assert.deepEqual(localImageSources(text), ["../_ATTACHMENTS/Book Name/Book Name_page1.png", "plate.png", "dir/plate two.jpg", "a.png", "file:///tmp/x.png", "Some note", "talk.mp3"]);
+  assert.deepEqual(localImageSources(text), ["../_ATTACHMENTS/Book Name/Book Name_page1.png", "plate.png", "dir/plate two.jpg", "a.png", "file:///tmp/x.png"]);
   const html = renderMarkdown(text, "doc-3"), images = [...new dom.window.DOMParser().parseFromString(html, "text/html").querySelectorAll("img")].map(image => [decodeURIComponent(decodeURIComponent(image.getAttribute("src").split("/").slice(4).join("/"))), image.getAttribute("width"), image.getAttribute("height"), image.getAttribute("alt")]);
   assert.deepEqual(images, [
     ["../_ATTACHMENTS/Book Name/Book Name_page1.png", null, null, "page"],

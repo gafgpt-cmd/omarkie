@@ -1,11 +1,11 @@
 import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
-import { inlineDestination } from "../../shared/link-destination.mjs";
+import { collectImages } from "../../shared/image-references.mjs";
+import { parserContext } from "../../shared/parser-context.mjs";
 import { sourceLines } from "../../shared/source-lines.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
 import DOMPurify from "dompurify";
-import { decodeHTMLAttribute } from "entities";
 import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
@@ -59,26 +59,12 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
       imageSizes.set(`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(key)}`, [size[0], size[1]]);
   }
 }
+export function markdownImageReferences(text: string) { return collectImages(md, text); }
 export function localImageSources(text: string) {
-  const sources = new Set<string>(), state = new md.inline.State(text, md, {}, []), { offsets } = sourceLines(text);
-  const excluded = parseBlocks(text).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind));
-  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|(!\[)|(<img\b(?:[^"'<>]|"[^"]*"|'[^']*')*>)/gi)) {
-    if (excluded.some(block => match.index >= offsets[block.fromLine - 1] && match.index < offsets[block.toLine])) continue;
-    let source: string;
-    if (match[2]) {
-      const labelEnd = md.helpers.parseLinkLabel(state, match.index + 1, false);
-      const destination = labelEnd < 0 ? null : inlineDestination(md, text, labelEnd + 1);
-      if (!destination) continue;
-      source = destination.target;
-    } else if (match[1] !== undefined) source = match[1].trim().replaceAll("%", "%25");
-    else {
-      const attribute = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i.exec(match[3]);
-      source = decodeHTMLAttribute(attribute?.[1] ?? attribute?.[2] ?? attribute?.[3] ?? "");
-    }
+  return [...new Set(markdownImageReferences(text).map(image => image.url).filter(source => {
     const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
-    if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
-  }
-  return [...sources];
+    return !scheme || scheme.length === 1 || scheme === "file";
+  }))];
 }
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
@@ -224,8 +210,10 @@ export function editableHtml(
     ...md.renderer.rules,
     fence: (tokens, index) => fence(tokens[index]),
   };
-  const env = { ...environment, documentId, fragment: true },
-    tokens = md.parse(source, env);
+  const env = { ...environment, documentId, fragment: true };
+  const context = source.includes("|") ? parserContext(md, source, env) : null;
+  const tokens = context?.tokens || md.parse(source, env);
+  if (context) Object.assign(env, context.environment);
   const html = tokens
     .map((token, index) => {
       if (token.type === "inline") return inline(token);

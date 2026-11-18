@@ -1,7 +1,5 @@
 import { imageReferences } from "../../editor/images.ts";
 export function imageRange(text: string, from: number) {
-  const wiki = /^!\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\](?:\{[^{}\n]*\b(?:width|height)\s*=[^{}\n]*\})?/.exec(text.slice(from));
-  if (wiki) return { from, to: from + wiki[0].length, source: wiki[0] };
   return imageReferences(text).find(image => image.from === from);
 }
 function dimensions(attributes: string, width: number, height: number) {

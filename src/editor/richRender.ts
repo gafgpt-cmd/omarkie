@@ -121,7 +121,6 @@ export function renderNode(
   if (alert) environment = { ...environment, alertType: alert[1].toUpperCase() };
   let pointer = 0,
     index = 0;
-  const cells = node.kind === "table_open" ? tableCells(node.source) : [];
   const leaf = (raw: string, map?: [number, number] | null, kind?: string) => {
     let start = pointer;
     if (map)
@@ -213,7 +212,8 @@ export function renderNode(
       node.source,
       documentId,
       (token) => {
-        const cell = cells.shift(),
+        const span = token.meta?.sourceCell as [number, number] | undefined;
+        const cell = span ? { start: span[0], end: span[1], raw: node.source.slice(...span) } : null,
           raw = cell ? cell.raw : token.content;
         if (cell) pointer = cell.start;
         const id = leaf(raw, cell ? null : token.map);
@@ -244,7 +244,7 @@ export function renderNode(
         const checkbox = task
           ? `<input class="task-checkbox" data-task="${taskFrom}" type="checkbox" contenteditable="false" ${task[1].toLowerCase() === "x" ? "checked" : ""} />`
           : "";
-        return `${checkbox}<span class="md-line" data-leaf="${id}">${tokenInlineHtml(raw, documentId, environment) || "<br />"}${space && `<span class="md-space">${space}</span>`}</span>`;
+        return `${checkbox}<span class="md-line" data-leaf="${id}">${tokenInlineHtml(raw, documentId, environment, !!cell) || "<br />"}${space && `<span class="md-space">${space}</span>`}</span>`;
       },
       (token) => {
         const openingLine = node.source.split("\n")[token.map?.[0] || 0];
@@ -293,29 +293,12 @@ export function tableRowCells(line: string) {
   }
   return cells;
 }
-function tableCells(source: string) {
-  const cells: { raw: string; start: number; end: number }[] = [];
-  let offset = 0;
-  for (const [index, line] of source.split("\n").entries()) {
-    if (index === 1) {
-      offset += line.length + 1;
-      continue;
-    }
-    for (const cell of tableRowCells(line))
-      cells.push({
-        raw: cell.raw,
-        start: offset + cell.start,
-        end: offset + cell.end,
-      });
-    offset += line.length + 1;
-  }
-  return cells;
-}
 // Markdown-it owns recognition; DOM text retains the original spelling and delimiters.
 function tokenInlineHtml(
   raw: string,
   documentId: string,
   environment: Record<string, unknown>,
+  table = false,
 ) {
   type Frame = {
     from: number;
@@ -333,6 +316,12 @@ function tokenInlineHtml(
   };
   const object = (source: string, view: string, mark: string, from: number) =>
     `<span class="md-inline" data-mark="${mark}" data-inline-from="${from}" data-inline-to="${from + source.length}"><span class="md-object-source">${escapeHtml(source)}</span><span class="md-view" contenteditable="false">${view}</span></span>`;
+  const spelling = (decoded: string, from: number) => {
+    if (!table) return decoded;
+    let to = from;
+    for (let index = 0; index < decoded.length; index++, to++) if (raw[to] === "\\" && raw[to + 1] === "|") to++;
+    return raw.slice(from, to);
+  };
   const text = (value: string) => {
     let decoded = "",
       html = "",
@@ -342,8 +331,14 @@ function tokenInlineHtml(
       cursor < raw.length &&
       attempts++ < raw.length + 1
     ) {
-      const rest = raw.slice(cursor),
-        entity = /^&(?:#x[\da-f]+|#\d+|[a-z][\da-z]+);/i.exec(rest),
+      const rest = raw.slice(cursor), pipe = table ? /^(\\+)\|/.exec(rest) : null;
+      if (pipe) {
+        const visible = decodeMarkdownText(pipe[1].slice(1) + "|");
+        if (!value.startsWith(decoded + visible)) break;
+        html += meta("\\".repeat(pipe[1].length - visible.length + 1)) + escapeHtml(visible);
+        cursor += pipe[0].length; decoded += visible; continue;
+      }
+      const entity = /^&(?:#x[\da-f]+|#\d+|[a-z][\da-z]+);/i.exec(rest),
         escaped = /^\\[\\`*_{}\[\]()#+.!~<>|-]/.exec(rest);
       const unit =
         entity?.[0] ||
@@ -395,7 +390,7 @@ function tokenInlineHtml(
     }
     return raw.slice(at, end);
   };
-  for (const token of inlineTokens(raw, environment)) {
+  for (const token of inlineTokens(table ? raw.replaceAll("\\|", "|") : raw, environment)) {
     if (cursor === 0 && token.type === "text" && environment.alertType) {
       const marker = /^\[!([\w-]+)\]([+-]?)/.exec(token.content);
       if (marker) { append(object(marker[0], alertTitle(marker[1], !!raw.slice(marker[0].length).split("\n")[0].trim()), "alert", 0)); cursor += marker[0].length; token.content = token.content.slice(marker[0].length); if (!token.content) continue; }
@@ -405,14 +400,14 @@ function tokenInlineHtml(
       append(`<span class="md-meta md-cell-break">${escapeHtml(token.markup)}</span><br>${cursor === raw.length ? '<br class="md-ui" data-break-placeholder>' : ''}`);
       continue;
     }
-    if (token.type === "html_embed") { append(object(token.content, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += token.content.length; continue; }
-    if (token.type === "wiki_embed") { const source = token.markup + (token.meta?.attributes || ""); append(object(source, renderMarkdown(source, documentId, { ...environment, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
+    if (token.type === "html_embed") { const source = spelling(token.content, cursor); append(object(source, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
+    if (token.type === "wiki_embed") { const decoded = token.markup + (token.meta?.attributes || ""), source = spelling(decoded, cursor); append(object(source, renderMarkdown(decoded, documentId, { ...environment, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_link" || token.type === "vault_tag") {
       const view = renderMarkdown(token.markup, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");
-      append(object(token.markup, view, "reference", cursor)); cursor += token.markup.length; continue;
+      const source = spelling(token.markup, cursor); append(object(source, view, "reference", cursor)); cursor += source.length; continue;
     }
     if (token.type === "comment") {
-      append(object(token.markup, `<span class="md-comment-view">${escapeHtml(token.content.trim()) || t("注释")}</span>`, "comment", cursor)); cursor += token.markup.length; continue;
+      const source = spelling(token.markup, cursor); append(object(source, `<span class="md-comment-view">${escapeHtml(token.content.trim()) || t("注释")}</span>`, "comment", cursor)); cursor += source.length; continue;
     }
     if (["sup", "sub", "emoji", "footnote_ref"].includes(token.type)) {
       const from = cursor;
@@ -445,7 +440,7 @@ function tokenInlineHtml(
       }
       const body = raw.slice(cursor, end);
       append(
-        `<span class="md-inline" data-mark="code" data-inline-from="${from}" data-inline-to="${end + marker.length}">${meta(marker)}<code>${escapeHtml(body)}</code>${meta(marker)}</span>`,
+        `<span class="md-inline" data-mark="code" data-inline-from="${from}" data-inline-to="${end + marker.length}">${meta(marker)}<code>${table ? body.split("\\|").map(escapeHtml).join(meta("\\") + "|") : escapeHtml(body)}</code>${meta(marker)}</span>`,
       );
       cursor = end + marker.length;
       continue;
@@ -462,7 +457,7 @@ function tokenInlineHtml(
       append(
         object(
           source,
-          renderMarkdown(source, documentId, { ...environment, standalone: raw.trim() === source }).replace(
+          renderMarkdown(table ? source.replaceAll("\\|", "|") : source, documentId, { ...environment, standalone: raw.trim() === source }).replace(
             /^<p>|<\/p>\n?$/g,
             "",
           ),

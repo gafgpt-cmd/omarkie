@@ -95,12 +95,12 @@ export async function conversionMarkdown(source: string, rendered: HTMLElement) 
     return pending;
   }
   for (const image of imageReferences(source)) {
-    const data = await embed(image.url), alt = image.alt.replace(/[\\[\]]/g, c => "\\" + c);
+    const data = await embed(image.url), alt = image.alt.replace(/[\\[\]]/g, c => "\\" + c).replace(/\|/g, value => image.table ? "\\|" : value);
     const dimensions = image.width || image.height ? `{${image.width ? `width=${image.width}` : ""} ${image.height ? `height=${image.height}` : ""}}` : "";
     let replacement = `![${alt}](${data})${dimensions}`;
     if (image.source.startsWith("<")) {
-      const node = new DOMParser().parseFromString(DOMPurify.sanitize(image.source), "text/html").querySelector("img");
-      if (!node) throw new Error(t("HTML 图片无法转换。")); node.setAttribute("src", data); replacement = node.outerHTML;
+      const node = new DOMParser().parseFromString(DOMPurify.sanitize(image.table ? image.source.replaceAll("\\|", "|") : image.source), "text/html").querySelector("img");
+      if (!node) throw new Error(t("HTML 图片无法转换。")); node.setAttribute("src", data); replacement = image.table ? node.outerHTML.replaceAll("|", "\\|") : node.outerHTML;
     }
     changes.push({ from: image.from, to: image.to, text: replacement });
   }

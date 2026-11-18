@@ -19,6 +19,12 @@ declare module "*shared/markdown.mjs" {
   export function createMarkdown(options?: import("markdown-it").MarkdownItOptions): import("markdown-it").MarkdownIt;
   export function setSyntaxOptions(md: import("markdown-it").MarkdownIt, options?: Partial<import("./preferences").Preferences>): void;
 }
+declare module "*shared/parser-context.mjs" {
+  export function parserContext(md: import("markdown-it").MarkdownIt, source: string, environment?: Record<string, unknown>): { tokens: import("markdown-it").Token[]; environment: Record<string, unknown> };
+}
+declare module "*shared/image-references.mjs" {
+  export function collectImages(md: import("markdown-it").MarkdownIt, source: string): import("./editor/images").ImageReference[];
+}
 declare module "*shared/source-lines.mjs" {
   export function sourceLines(source: string): { lines: string[]; offsets: number[] };
 }

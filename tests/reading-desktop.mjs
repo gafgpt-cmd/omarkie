@@ -18,6 +18,7 @@ await writeFile(file, original, "utf8");
 for (const name of ["figure(v2).jpg", "spaced.jpg", "spaced-suffix.jpg"]) await writeFile(path.join(directory, name), await readFile(path.join(directory, "figure.jpg")));
 const mixedImages = [
   ['Caption', '![[figure.jpg|Caption]]{width=240 height=120}'],
+  ['figure.jpg', '| Figure | Example |\n| --- | --- |\n| ![[figure.jpg\\| 100 x 50 ]] | <span>![[hidden.png]] #hidden</span> |', '| Figure | Example |\n| --- | --- |\n| ![[figure.jpg\\|300x150]] | <span>![[hidden.png]] #hidden</span> |', 100, 300],
   ['spaced.jpg', '![[spaced.jpg| 100 X 50 ]]', '![[spaced.jpg|300x150]]', 100, 300],
   ['spaced-suffix.jpg', '![[spaced-suffix.jpg| 100 x 50 ]]{width=100}', '![[spaced-suffix.jpg|300x150]]{width=300}', 100, 300],
   ['Balanced path', '![Balanced path](figure(v2).jpg "keep (title)"){width=240 height=120}'],
@@ -141,8 +142,14 @@ try {
     if (undoMode === 'source') await page.keyboard.press('ControlOrMeta+/');
     await expect(rich()).toBeVisible(); await expect(mixedImage).toHaveAttribute('width', String(initialWidth));
   }
+  const contextWord = path.join(exportDirectory, 'parser-context.docx');
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, contextWord);
+  await page.getByRole('button', { name: 'More actions', exact: true }).click(); await page.getByRole('menuitem', { name: 'Export Word…', exact: true }).click();
+  await expect.poll(async () => readFile(contextWord).then(bytes => bytes.subarray(0, 2).toString(), () => ''), { timeout: 30000 }).toBe('PK');
+  assert.equal(await readFile(mixedFile, 'utf8'), mixedOriginal);
   await page.locator('.sidebar').getByRole('button', { name: 'reading.md', exact: true }).click();
-  passed.push('spaced wiki dimensions, balanced paths and quoted HTML resize proportionally; save/source/rich undo preserves mixed endings');
+  passed.push('real Word export converts table images without reading hidden examples');
+  passed.push('table/spaced wiki dimensions, balanced paths and quoted HTML resize proportionally; save/source/rich undo preserves mixed endings');
   await toggle("Read-Only Mode", true);
   await markdownImage.scrollIntoViewIfNeeded(); await markdownImage.hover(); await expect(page.getByRole("button", { name: "Resize image", exact: true })).toBeHidden();
   await markdownImage.click(); await expect(viewer).toBeVisible(); await page.keyboard.press("Escape");
@@ -187,7 +194,7 @@ try {
   assert.equal(await sourceText(), original);
   passed.push('enabled reading plugins preserve full-table/body portable HTML and real PDF export without source edits');
   await page.locator('.sidebar').getByRole('button', { name: 'raw-slash.md', exact: true }).click();
-  const rawSlash = rich().locator('p').filter({ hasText: '/ta' }); await rawSlash.click(); await page.keyboard.press('End');
+  const rawSlash = rich().locator('p').filter({ hasText: '/ta' }); await rawSlash.click(); await page.keyboard.press('Home'); await page.keyboard.press('End');
   await expect(page.getByRole('listbox', { name: 'Slash commands', exact: true })).toBeVisible(); await page.keyboard.press('Enter');
   await expect(rich().locator('table')).toHaveCount(1); await rich().press('ControlOrMeta+s');
   await expect.poll(async () => (await readFile(slashFile, 'utf8')).startsWith('# CR slash\r\r| A | B |')).toBe(true);

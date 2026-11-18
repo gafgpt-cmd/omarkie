@@ -1,34 +1,12 @@
 import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
 import { inlineDestination } from "./link-destination.mjs";
-import { sourceLines } from "./source-lines.mjs";
+import { parserContext, rangeCursor } from "./parser-context.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
 import { decodeHTMLAttribute } from "entities";
 import { headingSlug as slug } from "./wiki-syntax.mjs";
 export { headingSlug as slug } from "./wiki-syntax.mjs";
 const md = createMarkdown();
-md.core.ruler.disable("strip_references");
 const key = value => value.normalize("NFC").toLowerCase();
-function upperBound(offsets, at) {
-  let low = 0, high = offsets.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if (offsets[middle] <= at) low = middle + 1; else high = middle;
-  }
-  return low;
-}
-function rangeCursor(ranges) {
-  const merged = [];
-  for (const [from, to] of [...ranges].sort((a, b) => a[0] - b[0])) {
-    if (to <= from) continue;
-    const last = merged.at(-1);
-    if (last && from <= last[1]) last[1] = Math.max(last[1], to); else merged.push([from, to]);
-  }
-  let cursor = 0;
-  return at => {
-    while (cursor < merged.length && merged[cursor][1] <= at) cursor++;
-    return cursor < merged.length && merged[cursor][0] <= at;
-  };
-}
 export function normalizePath(value) {
   if (/[\0]|^[a-z][a-z\d+.-]*:|^[/\\]{2}/i.test(value)) return null;
   const parts = [];
@@ -46,59 +24,9 @@ export function referenceParts(value, wiki = false) {
 }
 export function references(source, options = {}) {
   setSyntaxOptions(md, options);
-  const { lines, offsets: sourceOffsets } = sourceLines(source), text = lines.join("\n"), offsets = [0], excluded = [], htmlRanges = [];
-  for (const line of lines) offsets.push(offsets.at(-1) + line.length + 1);
-  const sourceOffset = at => { const line = upperBound(offsets, at) - 1; return sourceOffsets[line] + at - offsets[line]; };
+  const { text, environment, excluded, sourceOffset, lineNumber, blockCursor, viewOffset, tableCursor } = parserContext(md, source);
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
-  const environment = {}, tokens = md.parse(text, environment);
-  for (const token of tokens) {
-    if (["fence", "code_block", "math_block", "reference_definition"].includes(token.type) && token.map) excluded.push([offsets[token.map[0]], offsets[token.map[1]]]);
-    if (token.type === "html_block" && token.map) {
-      const range = [offsets[token.map[0]], Math.min(text.length, offsets[token.map[1]])];
-      excluded.push([...range, true]); htmlRanges.push(range);
-    }
-    if (!["inline", "footnote_definition"].includes(token.type) || !token.map) continue;
-    const content = token.meta?.source ?? token.content, inlineLines = content.split("\n");
-    const children = token.children || md.parseInline(content, { ...environment, fragment: true })[0].children || [];
-    const inlineOffsets = [0], sourceStarts = inlineLines.map((line, index) => {
-      inlineOffsets.push(inlineOffsets.at(-1) + line.length + 1);
-      const sourceLine = token.map[0] + index;
-      return offsets[sourceLine] + Math.max(0, lines[sourceLine].indexOf(line));
-    });
-    const offset = at => {
-      const line = upperBound(inlineOffsets, at) - 1;
-      return sourceStarts[line] + at - inlineOffsets[line];
-    };
-    for (const child of children) if (["math_inline", "html_embed"].includes(child.type)) {
-      const range = [offset(child.meta.from), offset(child.meta.to)];
-      excluded.push([...range, child.type === "html_embed"]);
-      if (child.type === "html_embed") htmlRanges.push(range);
-    }
-  }
-  for (const match of text.matchAll(/<!--[^]*?(?:-->|$)|(`+)(?!`)([^]*?[^`])\1(?!`)/g)) excluded.push([match.index, match.index + match[0].length]);
-  const commonHTML = rangeCursor(excluded.filter(range => !range[2]));
-  let opaqueEnd = 0;
-  for (const [from, to] of htmlRanges.sort((a, b) => a[0] - b[0])) {
-    for (const match of text.slice(from, to).matchAll(/<!--[\s\S]*?(?:-->|$)|<([a-z][\w:-]*)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)) {
-      const at = from + match.index;
-      if (!match[1] || at < opaqueEnd || commonHTML(at) || !/^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/i.test(match[1])) continue;
-      const close = new RegExp(`</${match[1]}\\s*>`, "gi"); close.lastIndex = at + match[0].length;
-      const ending = match[1].toLowerCase() === "plaintext" ? null : close.exec(text);
-      opaqueEnd = ending ? ending.index + ending[0].length : text.length;
-      excluded.push([at, opaqueEnd]);
-    }
-  }
-  const blockCursor = () => {
-    const common = rangeCursor(excluded.filter(range => !range[2])), markdown = rangeCursor(excluded.filter(range => range[2]));
-    return (at, html = false) => {
-      if (common(at) || !html && markdown(at)) return true;
-      let before = at;
-      while (text[before - 1] === "\\") before--;
-      return (at - before) % 2 !== 0;
-    };
-  };
   let blocked = blockCursor();
-  const lineNumber = at => upperBound(offsets, at);
   const result = [];
   const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, title, from, to, html = false }) => {
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
@@ -156,11 +84,12 @@ export function references(source, options = {}) {
     if (!blocked(at) && !referenced(at)) tags.push({ tag: match[2], line: lineNumber(at) });
   }
   blocked = blockCursor();
-  const headings = (environment.headings || []).filter(heading => !blocked(offsets[heading.line - 1])).map(({ text, id, line }) => ({ title: text, id, line }));
+  const headings = (environment.headings || []).filter(heading => !blocked(viewOffset(heading.line - 1))).map(({ text, id, line }) => ({ title: text, id, line }));
+  const table = tableCursor();
   const mapped = visible.map(ref => {
     const from = sourceOffset(ref.from), to = sourceOffset(ref.to);
     const destinationRange = ref.destinationRange?.map(at => sourceOffset(ref.from + at) - from);
-    return { ...ref, from, to, destinationRange, source: source.slice(from, to) };
+    return { ...ref, from, to, destinationRange, source: source.slice(from, to), table: table(ref.from) };
   });
   return { references: mapped, tags, headings };
 }
@@ -233,11 +162,12 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       const depth = portable(note.relative).split("/").length - 1, fragment = resolved.fragment ? "#" + encodePart(resolved.fragment) : "", url = referenceParts(ref.target, ref.wiki)?.target === "" ? fragment : encode("../".repeat(depth) + destination) + fragment;
       if (ref.destinationRange) {
         const [from, to] = ref.destinationRange;
-        edits.push({ from: ref.from + from, to: ref.from + to, replacement: ref.referenceStyle ? `(${url}${ref.title ? ` "${ref.title.replace(/["\\]/g, "\\$&").replace(/&/g, "&amp;")}"` : ""})` : md.utils.escapeHtml(url) });
+        edits.push({ from: ref.from + from, to: ref.from + to, replacement: ref.referenceStyle ? `(${url}${ref.title ? ` "${ref.title.replace(/["\\]/g, "\\$&").replace(/&/g, "&amp;").replace(/\|/g, value => ref.table ? "\\|" : value)}"` : ""})` : md.utils.escapeHtml(url) });
         continue;
       }
       let label = ref.dimensionAlias ? target.relative.split("/").at(-1) : ref.alias || ref.target;
       label = !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
+      if (ref.table && ref.image) label = label.replaceAll("|", "\\|");
       const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
       const media = ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
       const replacement = media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
