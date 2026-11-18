@@ -29,6 +29,6 @@ jobs:
         run: bash scripts/install-pandoc.sh
         env:
           GH_TOKEN: ${{ github.token }}
-      - run: flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" npm run verify'
+      - run: flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run verify'
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"

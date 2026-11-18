@@ -62,10 +62,11 @@ interface Props {
   onCompositionEnd?(): void;
   onReference?(url: string): Promise<void>;
   onReady?(mode: "rich" | "source" | null): void;
+  onSourceFallback?(): void;
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady },
+    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -73,8 +74,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const model = useRef<MarkdownDocument | null>(null),
       rich = useRef<RichEditor | null>(null),
       source = useRef<EditorView | null>(null);
-    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady });
-    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady };
+    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback });
+    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback };
     const initial = useRef(record),
       requested = useRef(rendered),
       activeMode = useRef(rendered);
@@ -103,13 +104,20 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
     }
+    const richViewOptions = useRef<{ preferences?: Preferences; typewriter: boolean; readOnly: boolean } | null>(null);
+    function richOptions() {
+      const { preferences, typewriter, readOnly } = viewOptions.current;
+      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly };
+    }
     function applyViewOptions() {
       if (isComposing()) { pendingOptions.current = true; return; }
       pendingOptions.current = false;
       const { preferences, typewriter, readOnly } = viewOptions.current;
-      if (rich.current) {
-        rich.current.setOptions({ spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly });
+      const previous = richViewOptions.current;
+      if (rich.current && (!previous || previous.preferences !== preferences || previous.typewriter !== typewriter || previous.readOnly !== readOnly)) {
+        rich.current.setOptions(richOptions());
         model.current?.refreshCaret(); rich.current.render(false);
+        richViewOptions.current = viewOptions.current;
       }
       if (source.current) source.current.contentDOM.spellcheck = preferences?.spellcheck ?? false;
       source.current?.dispatch({ effects: sourceBehavior.current!.reconfigure(sourceOptions()) });
@@ -390,7 +398,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     function setMode(value: boolean) {
       const doc = model.current;
       if (!doc) return;
-      value = value && richAllowed(doc);
+      if (value && !richAllowed(doc)) { value = false; callbacks.current.onSourceFallback?.(); }
       if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
       if (value === activeMode.current && (value ? rich.current : source.current)) { setReadyMode(value ? "rich" : "source"); return; }
@@ -401,7 +409,17 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           doc.selection = { anchor: s.anchor, head: s.head };
         }
         doc.refreshCaret();
-        rich.current?.render(false);
+        if (rich.current) rich.current.render(false);
+        else {
+          rich.current = new RichEditor(root.current!, doc, initial.current.id, {
+            change: publish,
+            cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
+            image: file => void insertImage(file),
+            link: url => void (callbacks.current.onReference && !/^(?:https?:|mailto:)/i.test(url) ? callbacks.current.onReference(url) : /^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(initial.current.id, url)).catch(error => callbacks.current.onError(error.message)),
+            compositionFinished,
+          }, richOptions());
+          richViewOptions.current = viewOptions.current;
+        }
       } else {
         if (activeMode.current) {
           doc.selection = rich.current?.bookmark() || doc.selection;
@@ -524,21 +542,12 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       const start = () => {
         if (cancelled || started) return;
         started = true;
-        rich.current = new RichEditor(root.current!, model.current!, original.id, {
-          change: publish,
-          cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
-          image: (file) => void insertImage(file),
-          link: (url) =>
-            void (callbacks.current.onReference && !/^(?:https?:|mailto:)/i.test(url) ? callbacks.current.onReference(url) : /^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(original.id, url))
-              .catch((error) => callbacks.current.onError(error.message)),
-          compositionFinished,
-        });
         setMode(requested.current);
         if (!root.current?.closest(".document-editor")?.hasAttribute("hidden")) focusEditor();
       };
       // Exact image boxes on the first paint: the host reads natural sizes from the file headers.
       // The first render waits for them briefly; late answers re-render the blocks they size.
-      const sources = host.native ? localImageSources(original.content) : [];
+      const sources = host.native && requested.current && richAllowed(model.current!) ? localImageSources(original.content) : [];
       if (!sources.length) start();
       else {
         const sizes = host.imageSizes(original.id, sources).then(result => {

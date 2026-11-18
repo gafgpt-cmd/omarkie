@@ -34,6 +34,7 @@ export interface RichCallbacks {
   link(url: string): void;
   compositionFinished(): void;
 }
+export interface RichOptions { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; codeLineNumbers?: boolean; readOnly?: boolean }
 export class RichEditor {
   leaves = new Map<string, Leaf>();
   composing = false;
@@ -116,6 +117,7 @@ export class RichEditor {
     model: MarkdownDocument,
     documentId: string,
     callbacks: RichCallbacks,
+    options?: RichOptions,
   ) {
     this.root = root;
     this.model = model;
@@ -168,6 +170,7 @@ export class RichEditor {
     this.emojiPopup.addEventListener("mousedown", event => event.preventDefault());
     root.parentElement!.append(this.emojiPopup);
     root.parentElement!.append(this.tableToolbar);
+    if (options) this.setOptions(options);
     this.render(false);
   }
   private codeObserver: IntersectionObserver | null = null;
@@ -642,7 +645,7 @@ export class RichEditor {
     this.callbacks.cursor(line, column);
     this.updateWritingMode(); this.updateEmoji();
   }
-  setOptions(options: { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; codeLineNumbers?: boolean; readOnly?: boolean }) {
+  setOptions(options: RichOptions) {
     this.readOnly = options.readOnly ?? false;
     this.root.contentEditable = String(!this.readOnly);
     this.root.setAttribute("aria-readonly", String(this.readOnly));

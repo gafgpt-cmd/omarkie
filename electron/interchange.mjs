@@ -45,7 +45,9 @@ export async function convertExport(directory, format, source, html, destination
       }
       if (options.bibliography) {
         const bibliography = path.join(temporary, "references.json"); await writeFile(bibliography, options.bibliography, "utf8");
-        extra.push("--citeproc", "--bibliography=" + bibliography, "--csl=" + path.join(path.dirname(fileURLToPath(import.meta.url)), "../third-party/csl/nlm-citation-sequence.csl"));
+        const style = path.join(temporary, "vancouver.csl");
+        await writeFile(style, await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "../third-party/csl/nlm-citation-sequence.csl")));
+        extra.push("--citeproc", "--bibliography=" + bibliography, "--csl=" + style);
       }
       if (options.letterhead) {
         const escape = value => value.replace(/[\\`*_{}\[\]<>()#!|]/g, "\\$&");

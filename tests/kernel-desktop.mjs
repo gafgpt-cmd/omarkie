@@ -1,4 +1,5 @@
 import { _electron as electron, expect } from "playwright/test";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -30,14 +31,15 @@ await writeFile(
     ],
   }),
 );
-const env = { ...process.env, OMARKIE_DATA_DIR: directory };
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory });
 delete env.OMARKIE_DEV_URL;
 delete env.ELECTRON_RUN_AS_NODE;
-const application = await electron.launch({ args: [process.cwd()], env });
+const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 const page = await application.firstWindow(),
   errors = [],
   passed = [];
 page.on("pageerror", (error) => errors.push(error.message));
+await fullSize(application, page);
 const rich = page.locator(".rich-document"),
   source = page.locator(".source-surface .cm-content");
 async function mode(rendered) {

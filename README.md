@@ -14,7 +14,7 @@
 
 Omarkie is an open-source Markdown editor with live, inline rendering. Write directly in the formatted document, switch to source when you need it, and keep ordinary `.md` files in your own folders. It feels at home on [Omarchy](https://omarchy.org): it follows your Omarchy theme and font live, and it runs on Linux, Windows and macOS.
 
-**Status:** early development, version **0.1.2**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+**Status:** early development, version **0.2.0**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
 
 **No telemetry.** Omarkie never phones home: no analytics, no crash reports, no update checks, and the spellcheck dictionaries are built in.
 
@@ -27,8 +27,12 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 - **Themes and fonts**: 17 built-in themes, including Toypora, Toyzetlr and live Omarchy themes, plus pickers for the text, heading, code and interface fonts. The fonts are bundled, so documents look the same on any machine.
 - **Omarchy integration**: themes follow the current Omarchy palette and font, and update while the app is open when you run `omarchy-theme-set` or `omarchy-font-set`. Under Omarchy, Omarkie uses the Omarchy theme until you choose another theme yourself.
 - **A focused writing space**: menu bar, outline, focus and typewriter modes, word counts, find and replace, and personal background images.
-- **Works with Typora themes and plugins**: install Typora-style CSS themes, and use eight bundled community plugins or your own ([compatibility scope](docs/plugins.md)).
+- **Optional reading tools**: fold callouts/tables, view and resize images, adjust width, use slash commands and navigate a right outline. Fifteen offline plugins: eight community plugins plus seven focused reading ports ([compatibility scope](docs/plugins.md)).
+- **Works with Typora themes and plugins**: install compatible CSS themes and local plugins.
 - **Files you control**: folder tree, full-text search, quick open, recent files, autosave, session recovery and external-change conflict detection.
+- **Vault references**: Ctrl/Cmd-click wikilinks, aliases and tags; search tags; inspect linked mentions and a lazy graph. Ambiguous targets stay visible.
+- **Document workflows**: generic OKF-ready new notes, lazy Properties, explicit note/folder conversion previews and copied OKF bundles. Existing notes never migrate silently.
+- **Writing output**: reusable templates, neutral letterheads, Vancouver citations through Pandoc citeproc, and actual PDF/DOCX export. Non-destructive link/asset reports and on-demand Markdown checks ([workflow guide](docs/document-workflows.md)).
 - **Private by default**: remote images and embeds are blocked until you allow them, so opening a note never contacts other servers.
 - **Images, math and diagrams**: local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
 - **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252. BOM and mixed line endings survive edits, transforms and undo.
@@ -59,9 +63,9 @@ The screenshots use five of the built-in themes: Toyzetlr, Toypora, Toyzetlr Nig
 | --- | --- | --- |
 | **Toypora** / **Toypora Night** | Classic white page / soft night | Open Sans, 16 px, line height 1.6, 860 px column |
 | **Toyzetlr** / **Toyzetlr Night** | Warm paper, green accents | Literata text, Inter headings and interface, JetBrains Mono code |
-| **Omarchy** | Your live Omarchy palette | Your Omarchy font for text, headings, code and interface |
-| **Omarchy × Toypora** | Your live Omarchy palette | Toypora's classic reading fonts |
-| **Toypora × Omarchy** | Toypora's classic colors | Your Omarchy font, Liberation Sans text |
+| **Omarchy (auto)** | Your live Omarchy palette | Your Omarchy font for text, headings, code and interface |
+| **Omarchy colors · reading fonts** | Your live Omarchy palette | Classic reading fonts |
+| **White paper · Omarchy headings** | Classic white page | Omarchy headings, Liberation Sans text |
 
 Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Arimo, Tinos, your available Omarchy font, or the system fonts. Local-only fonts appear when they are installed. **Restore Toypora classic reading** brings back the classic set in one click.
 
@@ -77,13 +81,13 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 | Distribution | Package | Install |
 | --- | --- | --- |
-| Arch, Omarchy, Manjaro | `omarkie-0.1.2-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.1.2-1-any.pkg.tar.zst` |
-| Debian, Ubuntu, Mint | `Omarkie-0.1.2-linux-x64.deb` | `sudo apt install ./Omarkie-0.1.2-linux-x64.deb` |
-| Fedora, RHEL | `omarkie-0.1.2-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.1.2-1.x86_64.rpm` |
-| openSUSE | `omarkie-0.1.2-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.1.2-1.x86_64.rpm` |
-| Any x64 distribution | `Omarkie-0.1.2-linux-x64.AppImage` | `chmod +x` the file and run it |
+| Arch, Omarchy, Manjaro | `omarkie-0.2.0-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.2.0-1-any.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.2.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.2.0-linux-x64.deb` |
+| Fedora, RHEL | `omarkie-0.2.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.2.0-1.x86_64.rpm` |
+| openSUSE | `omarkie-0.2.0-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.2.0-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.2.0-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.1.2-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The Arch package is small (about 14 MB) because it runs on Arch's shared Electron runtime instead of bundling one: when built on a machine that already has an Electron series from 43 up (for example the one Obsidian uses), the newest of those, so the system keeps a single runtime; otherwise the recommended `electron44` it is built and tested with (`OMARKIE_ELECTRON=electron44 npm run package:arch` picks one explicitly). pacman installs the runtime automatically, and if it is ever removed, `omarkie` says so and offers to reinstall it. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.2.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 #### Update, uninstall and clean up
 
@@ -95,9 +99,11 @@ To update, install the new package over the old one with the same command as abo
 | Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
 | Remove the unused Electron runtime too | `sudo pacman -Rs omarkie` | not needed (bundled) | not needed (bundled) | not needed (bundled) |
 
-A build at its matching release tag uses the plain version (`0.1.2`). An Arch package built from a later commit is named `0.1.2.r<commits>.g<commit>`, for example `0.1.2.r3.g1a2b3c4`, so `pacman -Q omarkie` shows which build you have, and pacman treats it as newer than the release.
-Without the matching version tag, Git builds retain the source commit using another reachable version tag or a hash-only fallback (`.r0.g<commit>`).
-Packaged **About** shows the same build identity; other release artifact filenames keep the package version.
+- Matching release tag: plain version, such as `0.2.0`.
+- Later Arch builds: `0.2.0.r<commits>.g<commit>`.
+- Later Debian/RPM builds: `0.2.0+r<commits>.g<commit>`.
+- Without a matching tag, the build retains a reachable version tag or a hash-only fallback (`.r0.g<commit>`).
+- Packaged **About** shows the build identity. Arch/Debian/RPM filenames retain the revision.
 `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
 
 Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
@@ -154,9 +160,29 @@ npm test          # editor and file-layer unit tests
 npm run build     # type check and production build
 ```
 
-Linux full verification requires Xvfb: `xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" npm run verify'`.
+Full verification needs Pandoc and LibreOffice; Linux also needs Xvfb:
+`flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run verify'`.
 
 Linux and Windows use Electron; the macOS release uses a native Swift/AppKit host with WKWebView. Both share the same TypeScript/React interface and editing model. Desktop suites, packaging and the project layout are described in [CONTRIBUTING.md](CONTRIBUTING.md) and [the architecture](docs/architecture.md).
+
+## Performance targets
+
+Feature-release correctness uses `npm run verify`: editor, desktop, export, startup and disabled-plugin checks remain mandatory.
+Strict timing is separate: `npm run test:perf` still fails any exceeded [budget](tests/perf-budgets.json). No targets or fixtures were relaxed.
+
+Last measured baseline, before the final correctness fixes:
+
+| Check | Target ms | Median ms | Status |
+| --- | ---: | ---: | --- |
+| Launch to readable note | 1000 | 1718.8 | Unmet |
+| 1.5 MB note readable | 1500 | 1589.8 | Unmet |
+| Big-note scroll | 300 | 137.2 | Met in that baseline |
+| First photo | 150 | 412.5 | Unmet |
+
+- Linux timing run: `flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run test:perf'`.
+- Launch, big-note and photo targets remain optimization work, not release-speed claims.
+- Preview, startup and lazy-plugin optimizations remain enabled.
+- No unproven original-JPEG transport candidate was adopted.
 
 ## Current limitations
 

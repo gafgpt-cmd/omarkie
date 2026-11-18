@@ -29,7 +29,7 @@ async function observePaint(page) {
         const active = document.querySelector('.document-editor:not([hidden])');
         const mode = entry.detail?.mode;
         const view = active?.querySelector(mode === 'source' ? '.source-surface:not([hidden]) .cm-content' : '.rich-document');
-        window.firstNotePaint = { mode, visible: !!view?.getClientRects().length, text: !!view?.textContent, editable: view?.getAttribute('contenteditable') !== 'false', image: !!active?.querySelector('img') };
+        window.firstNotePaint = { mode, visible: !!view?.getClientRects().length, text: !!view?.textContent, editable: view?.getAttribute('contenteditable') !== 'false', image: !!active?.querySelector('.rich-document img'), richBuilt: !!active?.querySelector('.rich-document [data-cid]') };
       }
     }).observe({ entryTypes: ['mark'] });
   });
@@ -37,7 +37,7 @@ async function observePaint(page) {
 async function verifyPaint(page, mode, image) {
   await page.waitForFunction(() => window.firstNotePaint !== null);
   const result = await page.evaluate(() => ({ observation: window.firstNotePaint, painted: performance.getEntriesByName('omarkie:first-document-painted')[0]?.startTime, ready: performance.getEntriesByName('omarkie:editor-ready').filter(entry => entry.detail?.mode === window.firstNotePaint.mode)[0]?.startTime }));
-  assert.deepEqual(result.observation, { mode, visible: true, text: true, editable: true, image });
+  assert.deepEqual(result.observation, { mode, visible: true, text: true, editable: true, image, richBuilt: mode === 'rich' });
   assert.ok(Number.isFinite(result.ready) && result.ready <= result.painted, 'actual editor readiness precedes the document paint mark');
 }
 const application = await electron.launch({ args: [process.cwd(), ...headlessArguments, file], env });
@@ -85,16 +85,25 @@ await writeFile(fallbackFile, '# Fallback\n\n' + 'source-only '.repeat(30000), '
 const fallbackEnv = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: fallbackDirectory, OMARKIE_LANGUAGE: 'zh' });
 delete fallbackEnv.ELECTRON_RUN_AS_NODE; delete fallbackEnv.OMARKIE_DEV_URL;
 const fallbackApplication = await electron.launch({ args: [process.cwd(), ...headlessArguments, fallbackFile], env: fallbackEnv });
+const fallbackErrors = []; let fallbackPage;
 try {
-  const page = await fallbackApplication.firstWindow();
+  const page = await fallbackApplication.firstWindow(); fallbackPage = page;
+  page.on('pageerror', error => fallbackErrors.push(error.message)); page.on('crash', () => fallbackErrors.push('renderer crashed'));
   await page.waitForSelector('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content');
   await waitForSession(fallbackDirectory, fallbackFile);
   await observePaint(page); await page.reload();
   await page.waitForSelector('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content');
   await verifyPaint(page, 'source', false);
+  assert.equal(await page.locator('.source-toggle').getAttribute('aria-pressed'), 'true');
   await page.evaluate(() => localStorage.setItem('omarkie-plugins-v1', JSON.stringify({ read_only: { enabled: true } })));
   await page.reload();
   await page.waitForSelector('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content[contenteditable="false"]');
   await verifyPaint(page, 'source', false);
+  assert.deepEqual(fallbackErrors, []);
   console.log('PASS: source fallback exists and paints before optional read-only activation');
+} catch (error) {
+  const evidence = process.env.OMARKIE_QA_DIR || fallbackDirectory;
+  await fallbackPage?.screenshot({ path: path.join(evidence, 'source-startup-failure.png'), timeout: 5000 }).catch(() => {});
+  await writeFile(path.join(evidence, 'source-startup-failure.json'), JSON.stringify({ directory: fallbackDirectory, errors: fallbackErrors, error: error.stack }, null, 2), 'utf8');
+  throw error;
 } finally { await fallbackApplication.close(); }

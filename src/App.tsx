@@ -467,6 +467,7 @@ export default function App() {
                   }}
                   onSelection={text => { if (record.id === session.activeId) setSelection(text); }}
                   onCompositionEnd={() => { if (record.id === session.activeId) pluginRuntime.current?.documentChanged(); }}
+                  onSourceFallback={() => { if (record.id === session.activeId) setRendered(false); }}
                   onReady={mode => {
                     if (mode && record.id === session.activeId) performance.mark("omarkie:editor-ready", { detail: { id: record.id, mode } });
                     setReadyEditors(current => {
