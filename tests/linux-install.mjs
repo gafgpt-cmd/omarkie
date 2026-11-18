@@ -8,6 +8,12 @@ import { linuxArtifacts } from "../scripts/linux-artifacts.mjs";
 
 assert.equal(process.platform,"linux");
 const { deb, AppImage: image, version } = await linuxArtifacts("release/linux");
+const dependencies = execFileSync("dpkg-deb", ["--field", deb, "Depends"], { encoding: "utf8" }).trim().split(",").map(group => group.split("|").map(entry => entry.trim().split(/[\s(:]/)[0]));
+for (const name of ["libgbm1", "libasound2"]) assert.ok(dependencies.some(group => group.includes(name)), `DEB must install Electron runtime dependency: ${name}`);
+if (process.argv.includes("--metadata-only")) {
+  console.log("PASS: checksum-selected DEB declares GBM and ALSA runtime dependencies");
+  process.exit(0);
+}
 const qa = process.env.OMARKIE_QA_DIR || path.join(os.tmpdir(),"omarkie-linux-qa");
 await mkdir(qa,{recursive:true});
 const run = (command,args,options={}) => execFileSync(command,args,{stdio:"inherit",...options});
