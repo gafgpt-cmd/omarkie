@@ -26,7 +26,8 @@ app.whenReady().then(async () => {
   const root = await realpath(process.env.OMARKIE_DATA_DIR), results = [];
   const require = createRequire(import.meta.url);
   const modules = [require.resolve("koffi"), require.resolve("@koromix/koffi-" + process.platform + "-" + process.arch)];
-  if (modules.some(file => !file.startsWith(app.getAppPath() + path.sep))) throw new Error("Native bridge resolved outside the package");
+  const application = await realpath(app.getAppPath());
+  if (modules.some(file => !file.startsWith(application + path.sep))) throw new Error("Native bridge resolved outside the package");
   for (const action of ["rename", "move", "undo"]) for (const directory of [false, true]) {
     const scope = path.join(root, action + (directory ? "-directory" : "-file")); await mkdir(scope);
     const source = path.join(scope, directory ? "source" : "source.md"), child = path.join(scope, "child"); await mkdir(child);

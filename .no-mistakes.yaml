@@ -1,7 +1,7 @@
 # Same compatibility checks locally and in CI.
 commands:
   prepare: npm ci && npx playwright install chromium
-  test: flock -w 1800 /tmp/omarkie-electron.lock npm run verify
+  test: OMARKIE_TEST_HIDDEN=0 flock -w 1800 /tmp/omarkie-electron.lock npm run verify
   lint: npx tsc -b
 review:
   path_instructions:

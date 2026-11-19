@@ -153,6 +153,21 @@ test("slash commands find raw line starts and preserve mixed-ending undo", async
     } finally { await state.run.destroy(); }
   }
 });
+test("slash Enter uses the current prefix when edit notifications have not arrived", async () => {
+  let source = '/', replacement;
+  const state = await start('slashCommands', source, {
+    selectionRange: () => ({ from: source.length, to: source.length, context: 'paragraph_open' }),
+    replaceRange: (from, to, text, expected) => { replacement = { from, to, text, expected }; return true; },
+  });
+  try {
+    document.dispatchEvent(new Event('selectionchange'));
+    const menu = document.querySelector('.reading-slash-menu'); assert.equal(menu.hidden, false);
+    source = '/ta'; state.setMarkdown(source);
+    root().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    assert.deepEqual(replacement, { from: 0, to: 3, text: '| A | B |\n| --- | --- |\n|  |  |', expected: '/ta' });
+    assert.equal(menu.hidden, true);
+  } finally { await state.run.destroy(); }
+});
 test("width control uses the shared persisted preference callback and releases its DOM", async () => {
   let width = 80; const state = await start("widthSlider", "text\n", { getWidth: () => width, setWidth: value => width = value });
   const input = document.querySelector(".reading-width-slider input"); input.value = "96"; input.dispatchEvent(new Event("input")); assert.equal(width, 96);

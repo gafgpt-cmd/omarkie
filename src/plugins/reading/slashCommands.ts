@@ -38,6 +38,7 @@ export default ({ BasePlugin, utils }: any) => class extends BasePlugin {
     listen(api, document, "keydown", ((event: KeyboardEvent) => {
       if (event.isComposing || event.keyCode === 229 || menu.hidden || !api.root()?.contains(event.target as Node)) return;
       if (["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) {
+        refresh(); if (menu.hidden) return;
         event.preventDefault(); event.stopImmediatePropagation();
         if (event.key === "Escape") { if (anchor) dismissed = `${anchor.document}:${anchor.from}:${anchor.text}`; hide(); }
         else if (event.key === "Enter") choose(active);
