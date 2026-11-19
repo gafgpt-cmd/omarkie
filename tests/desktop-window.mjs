@@ -1,7 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-export const headlessArguments = process.platform === "linux" ? [`--ozone-platform=${process.env.OMARKIE_TEST_DISPLAY ? "x11" : "headless"}`] : [];
+// Playwright injects CDPScreenshotNewSurface through its electron loader only when launching the repository app; packaged-payload launches via executablePath miss it, and Page.captureScreenshot then hangs on Linux headless when the hidden test window has no fresh frame (https://issues.chromium.org/issues/571157133). Match Playwright's own default so evidence screenshots work in every payload.
+export const headlessArguments = process.platform === "linux" ? [`--ozone-platform=${process.env.OMARKIE_TEST_DISPLAY ? "x11" : "headless"}`, "--enable-features=CDPScreenshotNewSurface"] : [];
 export async function isolatedEnvironment(environment) {
   if (process.platform !== "linux") return environment;
   const directory = environment.OMARKIE_DATA_DIR;
