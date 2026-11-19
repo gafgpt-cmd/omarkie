@@ -341,6 +341,7 @@ export class DocumentStore {
         if (typeof record.id !== "string" || typeof record.content !== "string")
           continue;
         if (record.path) {
+          record.path = await realpath(record.path).catch(() => record.path);
           this.records.set(record.id, record);
           const changed = await this.check(record.id);
           if (changed && !changed.error) {

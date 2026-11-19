@@ -1,6 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -32,7 +32,7 @@ const dialog = page.getByRole("dialog", { name: "Document tools", exact: true })
 const qa = process.env.OMARKIE_QA_DIR || output; await mkdir(qa, { recursive: true });
 async function menu(name) { await page.getByRole("button", { name: "More actions", exact: true }).click(); await page.getByRole("menuitem", { name, exact: true }).click(); }
 async function close() { await page.keyboard.press("Escape"); await expect(dialog).toBeHidden(); }
-async function start() { await page.getByTitle(file, { exact: true }).click(); await expect(rich.getByRole("heading", { name: "Start", exact: true })).toBeVisible(); }
+async function start() { await page.getByTitle(await realpath(file), { exact: true }).click(); await expect(rich.getByRole("heading", { name: "Start", exact: true })).toBeVisible(); }
 async function text() { const toggle = page.locator(".source-toggle"); if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click(); const source = page.locator('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content'); await expect(source).toBeVisible(); await expect(source.locator('.cm-line').first()).toBeVisible(); return (await source.locator('.cm-line').allTextContents()).join("\n"); }
 async function richMode() { const toggle = page.locator(".source-toggle"); if (await toggle.getAttribute("aria-pressed") === "true") await toggle.click(); }
 try {

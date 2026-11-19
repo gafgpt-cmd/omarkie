@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { frontmatter, properties, setProperties, makeReady, validateOKF } from "../shared/frontmatter.mjs";
 import { newNote } from "../shared/new-note.mjs";
 import { references, referenceIndex, bundlePlan } from "../shared/references.mjs";
-import { DocumentStore } from "../electron/store.mjs";
+import { DocumentStore, digest } from "../electron/store.mjs";
 import { vaultSnapshot, exportBundle } from "../electron/document-workflows.mjs";
 import { conversionOptions, convertExport, pandocPath } from "../electron/interchange.mjs";
 const exec = promisify(execFile);
@@ -135,6 +135,39 @@ test("duplicate images remain referenced in upkeep, but ambiguous bundle export 
   const index = referenceIndex(snapshot);
   assert.equal(index.edges[0].state, "ambiguous"); assert.deepEqual(index.unused.map(item => item.relative), ["unused.png"]);
   assert.throws(() => bundlePlan(snapshot));
+});
+test("restored aliased notes retain canonical identity, duplicate choices and recovery bytes", async t => {
+  const root = await fixture(t), vault = path.join(root, "vault"), alias = path.join(root, "alias");
+  await mkdir(vault); await mkdir(path.join(vault, "one")); await mkdir(path.join(vault, "two"));
+  await symlink(vault, alias, process.platform === "win32" ? "junction" : "dir");
+  for (const folder of ["one", "two"]) await writeFile(path.join(vault, folder, "Same.md"), "# Same\n");
+  const saved = '---\r\ncustom: retained # keep\r\n---\r\n[[Same]] #focus\n';
+  for (const state of ["clean", "dirty", "conflict", "missing"]) {
+    const file = path.join(vault, state + ".md"), requested = path.join(alias, state + ".md");
+    const disk = '\uFEFF' + saved + (state === "conflict" ? "External change\r\n" : "");
+    if (state !== "missing") await writeFile(file, disk);
+    const profile = path.join(root, state); await mkdir(profile);
+    const content = state === "clean" ? saved : saved + "Unsaved draft\n";
+    const record = { id: state, path: requested, name: state + ".md", content, savedContent: saved, diskHash: digest('\uFEFF' + saved), encoding: "utf-8", bom: true, lineEnding: "\r\n" };
+    const sessionBytes = JSON.stringify({ version: 1, folder: alias, activeId: state, documents: [record] });
+    await writeFile(path.join(profile, "session.json"), sessionBytes);
+    const store = new DocumentStore(profile), session = await store.restore(), restored = session.documents[0];
+    assert.equal(restored.id, state); assert.equal(session.activeId, state);
+    assert.equal(restored.content, content); assert.equal(restored.savedContent, saved);
+    assert.equal(restored.bom, true); assert.equal(restored.encoding, "utf-8"); assert.equal(restored.lineEnding, "\r\n");
+    assert.equal(Boolean(restored.conflict), state === "conflict" || state === "missing");
+    assert.equal(await readFile(path.join(profile, "session.json"), "utf8"), sessionBytes);
+    if (state === "missing") { assert.equal(restored.path, requested); continue; }
+    assert.equal(restored.path, await realpath(file));
+    const index = referenceIndex(await vaultSnapshot(store)), current = index.notes.find(note => note.path === restored.path);
+    assert.ok(current);
+    const resolution = index.resolve(current, "Same", true);
+    assert.equal(resolution.state, "ambiguous");
+    assert.deepEqual(resolution.candidates.map(note => note.relative).sort(), ["one/Same.md", "two/Same.md"]);
+    assert.equal((await store.open(file)).id, state);
+    assert.equal(store.records.get(state).content, content);
+    assert.equal(await readFile(file, "utf8"), disk);
+  }
 });
 test("host snapshot/export uses selected-folder scope, bounded copied output and no source mutation", async t => {
   const root = await fixture(t), vault = path.join(root, "vault"), output = path.join(root, "output");
