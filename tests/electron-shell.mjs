@@ -104,7 +104,7 @@ try {
   await page.getByRole('button',{name:'管理插件…',exact:true}).click();
   const plugin = page.locator('.plugin-card').filter({has:page.getByRole('heading',{name:'Win-plugin-fixture',exact:true})});
   await plugin.getByRole('checkbox').check();
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.getElementById('write')).getPropertyValue('--plugin-fixture').trim())).toBe('loaded');
+  await expect.poll(() => page.evaluate(() => { const write = document.getElementById('write'); return write ? getComputedStyle(write).getPropertyValue('--plugin-fixture').trim() : ''; })).toBe('loaded');
   await plugin.getByRole('button',{name:'切换效果',exact:true}).click();
   await page.getByRole('dialog',{name:'插件管理',exact:true}).getByRole('button',{name:'完成',exact:true}).click();
   await expect(page.locator('#write')).toContainText('插件验收');
