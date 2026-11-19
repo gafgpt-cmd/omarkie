@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-// Playwright injects CDPScreenshotNewSurface through its electron loader only when launching the repository app; packaged-payload launches via executablePath miss it, and Page.captureScreenshot then hangs on Linux headless when the hidden test window has no fresh frame (https://issues.chromium.org/issues/571157133). Match Playwright's own default so evidence screenshots work in every payload.
+// Playwright injects CDPScreenshotNewSurface through its electron loader only when launching the repository app; packaged-payload launches via executablePath miss it, so pass it explicitly to match Playwright's default. The packaged-payload screenshot hang reproduced locally without it; with it ime-desktop passes unchanged against the packaged payload and captures the evidence screenshot. The tagged-run ime-desktop timeout was stuck at 'waiting for fonts to load', so the mechanism connecting this flag to that stall is unproven.
 export const headlessArguments = process.platform === "linux" ? [`--ozone-platform=${process.env.OMARKIE_TEST_DISPLAY ? "x11" : "headless"}`, "--enable-features=CDPScreenshotNewSurface"] : [];
 export async function isolatedEnvironment(environment) {
   if (process.platform !== "linux") return environment;
