@@ -17,6 +17,8 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   await expect(page.locator(".rich-document:visible")).toContainText("Readable restored text.");
   await expect.poll(() => page.evaluate(() => performance.getEntriesByName("omarkie:first-document-painted").length)).toBe(1);
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Control+1" : "Control+Shift+1");
+  await expect(page.getByRole("navigation", { name: "文档大纲", exact: true }).getByRole("button", { name: "Startup", exact: true })).toBeVisible();
   const loaded = () => page.evaluate(() => performance.getEntriesByType("resource").map(entry => entry.name));
   assert.ok(!(await loaded()).some(url => /codeMirror-|clipboard-/.test(url)), "reading needs neither CodeMirror nor Turndown");
   assert.ok(!(await loaded()).some(url => /\/(?:en|es|ca|ro)-/.test(url)), "Chinese startup needs no translation catalogs");

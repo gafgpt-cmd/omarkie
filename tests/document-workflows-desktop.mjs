@@ -1,0 +1,100 @@
+import { _electron as electron, expect } from "playwright/test";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, writeFile, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+const exec = promisify(execFile), root = fileURLToPath(new URL("..", import.meta.url));
+const scratch = await mkdtemp(path.join(os.tmpdir(), "document-workflow-ui-")), vault = path.join(scratch, "vault"), profile = path.join(scratch, "profile"), output = path.join(scratch, "output");
+for (const folder of [vault, profile, output, path.join(vault, "images"), path.join(vault, "one"), path.join(vault, "two")]) await mkdir(folder, { recursive: true });
+const source = '---\ncustom: preserved # keep\n---\n# Start\n\n[[Target#Heading|Visible alias]] and [[Same]] #focus\n\n![[images/photo space.png|120x80]]\n\nSupported statement [@reference].\n\n### Skipped level\n';
+const file = path.join(vault, "start.md");
+const mixedSource = '---\r\ncustom: retained # keep\r\n---\r\n# Mixed\n\nBody with mixed endings.\r\n';
+await writeFile(path.join(vault, "mixed.md"), mixedSource);
+const cyclicSource = '---\ntype: Reference\ncustom: &a [*a]\n---\n# Cyclic\n';
+await writeFile(path.join(vault, "cyclic.md"), cyclicSource);
+await writeFile(file, source); await writeFile(path.join(vault, "Target.md"), '---\ntype: Reference\ntags: [focus]\n---\n# Target\n\n## Heading\n');
+for (const relative of ["one/Same.md", "two/Same.md"]) await writeFile(path.join(vault, relative), "# Same\n");
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64");
+await writeFile(path.join(vault, "images/photo space.png"), png); await writeFile(path.join(vault, "images/unused.png"), png);
+await writeFile(path.join(profile, "session.json"), JSON.stringify({ version: 1, folder: vault, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "start.md", content: source, savedContent: source, diskHash: createHash("sha256").update(source).digest("hex"), bom: false, encoding: "utf-8", lineEnding: "\n" }] }));
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: profile, OMARKIE_LANGUAGE: "en" }); delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+const application = await electron.launch({ args: [root, ...headlessArguments], env }), page = await application.firstWindow(), errors = [], outbound = [];
+page.on("pageerror", error => errors.push(error.message));
+page.on("request", request => { if (/^https?:/.test(request.url())) outbound.push(request.url()); });
+await fullSize(application, page);
+const rich = page.locator('.document-editor:not([hidden]) .rich-document');
+const dialog = page.getByRole("dialog", { name: "Document tools", exact: true });
+const qa = process.env.OMARKIE_QA_DIR || output; await mkdir(qa, { recursive: true });
+async function menu(name) { await page.getByRole("button", { name: "More actions", exact: true }).click(); await page.getByRole("menuitem", { name, exact: true }).click(); }
+async function close() { await page.keyboard.press("Escape"); await expect(dialog).toBeHidden(); }
+async function start() { await page.getByTitle(await realpath(file), { exact: true }).click(); await expect(rich.getByRole("heading", { name: "Start", exact: true })).toBeVisible(); }
+async function text() { const toggle = page.locator(".source-toggle"); if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click(); const source = page.locator('.document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content'); await expect(source).toBeVisible(); await expect(source.locator('.cm-line').first()).toBeVisible(); return (await source.locator('.cm-line').allTextContents()).join("\n"); }
+async function richMode() { const toggle = page.locator(".source-toggle"); if (await toggle.getAttribute("aria-pressed") === "true") await toggle.click(); }
+try {
+  await expect(rich.getByRole("heading", { name: "Start", exact: true })).toBeVisible();
+  await page.evaluate(() => localStorage.setItem("omarkie-autosave", "false")); await page.reload();
+  await expect(rich.locator('a[href^="omarkie-wiki:"]')).toHaveCount(2);
+  await rich.getByRole("link", { name: "Same", exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(dialog).toBeVisible(); await expect(dialog.getByText("Link status: Several targets share this name")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "one/Same.md", exact: true })).toBeVisible(); await expect(dialog.getByRole("button", { name: "two/Same.md", exact: true })).toBeVisible(); await close();
+  await rich.getByRole("link", { name: "Visible alias", exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(rich.getByRole("heading", { name: "Heading", exact: true })).toBeVisible(); await expect(dialog).toBeHidden();
+  await menu("Linked mentions…"); await expect(dialog.getByRole("button", { name: /start\.md:/ })).toBeVisible();
+  await dialog.getByRole("button", { name: "Vault graph", exact: true }).click(); await expect(dialog.getByRole("img", { name: "Vault graph" })).toBeVisible(); await page.screenshot({ path: path.join(qa, "vault-graph.png") }); await close(); await start();
+  await rich.getByRole("link", { name: "#focus", exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(dialog.getByLabel("Tag search", { exact: true })).toHaveValue("focus"); await expect(dialog.getByRole("button", { name: "Target.md", exact: true })).toBeVisible(); await close();
+  await menu("Properties…"); await dialog.getByLabel("Property name", { exact: true }).fill("title"); await dialog.getByLabel("JSON value", { exact: true }).fill('"Changed title"');
+  await dialog.getByRole("button", { name: "Preview property change", exact: true }).click(); await expect(dialog.getByRole("heading", { name: "Preview all proposed changes" })).toBeVisible();
+  await page.screenshot({ path: path.join(qa, "properties-preview.png") });
+  await dialog.getByRole("button", { name: "Apply previewed changes", exact: true }).click(); await expect(dialog.getByText("Changes applied to drafts", { exact: true })).toBeVisible(); await close();
+  assert.match(await text(), /title.*Changed title/); await richMode(); await rich.click(); await page.keyboard.press("ControlOrMeta+z"); assert.equal(await text(), source); await richMode();
+  // Remove only the ambiguous reference in the draft, leaving original bytes on disk untouched.
+  await text(); const editor = page.locator('.document-editor:not([hidden]) .source-surface .cm-content'); await editor.click(); await page.keyboard.press("ControlOrMeta+a"); await page.keyboard.insertText(source.replace(" and [[Same]]", "")); await richMode();
+  await menu("Document tools…"); await dialog.getByRole("button", { name: "Preview note make-ready", exact: true }).click(); await expect(dialog.locator("pre").last()).toContainText('"type": "Reference"'); await dialog.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  await dialog.getByRole("button", { name: "Preview folder make-ready", exact: true }).click(); await expect(dialog.locator("details summary")).toHaveCount(6); await dialog.getByRole("button", { name: "Cancel preview", exact: true }).click();
+  await dialog.getByRole("button", { name: "Vault upkeep", exact: true }).click(); await dialog.getByRole("button", { name: "Inspect broken links and unused images", exact: true }).click(); await expect(dialog.getByText("images/unused.png", { exact: true })).toBeVisible(); await expect(dialog.getByText("images/photo space.png", { exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Check current Markdown", exact: true }).click(); await expect(dialog.locator("li").filter({ hasText: /MD001/ }).first()).toBeVisible();
+  await dialog.getByRole("button", { name: "Writing and export", exact: true }).click(); await dialog.getByLabel("Template name", { exact: true }).fill("Reusable note"); await dialog.getByRole("button", { name: "Save current note as template", exact: true }).click(); await expect(dialog.getByRole("button", { name: "New note from Reusable note", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "New note from Reusable note", exact: true }).click(); await expect(dialog).toBeHidden();
+  await expect(page.locator(".document-title")).toHaveAttribute("title", "Reusable note.md"); await expect(rich.getByRole("heading", { name: "Start", exact: true })).toBeVisible();
+  const templateText = await text(); assert.match(templateText, /custom: preserved # keep/); assert.match(templateText, /"type": "Reference"/); assert.match(templateText, /process:editor/); await richMode();
+  await start(); await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
+  await dialog.getByLabel("Vancouver citations via Pandoc citeproc", { exact: true }).check(); await dialog.getByLabel("CSL JSON bibliography", { exact: true }).fill(JSON.stringify([{ id: "reference", type: "article-journal", title: "Synthetic evidence", author: [{ family: "Example", given: "A" }], "container-title": "Sample Journal", issued: { "date-parts": [[2026]] } }]));
+  await dialog.getByLabel("Letterhead name", { exact: true }).fill("Example Organization"); await dialog.getByLabel("Letterhead details", { exact: true }).fill("Document service");
+  const docx = path.join(output, "letterhead.docx"), pdf = path.join(output, "letterhead.pdf");
+  await application.evaluate(({ dialog }, destinations) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: destinations.shift() }); }, [docx, pdf]);
+  await dialog.getByRole("button", { name: "Export letterhead DOCX", exact: true }).click();
+  await expect.poll(async () => readFile(docx).then(bytes => bytes.subarray(0, 2).toString(), () => "")).toBe("PK");
+  await dialog.getByRole("button", { name: "Export letterhead PDF", exact: true }).click();
+  await expect.poll(async () => readFile(pdf).then(bytes => bytes.subarray(0, 4).toString(), () => ""), { timeout: 30000 }).toBe("%PDF");
+  const { stdout } = await exec("pandoc", [docx, "--to=plain"]); assert.match(stdout, /Synthetic evidence/); assert.match(stdout, /Example Organization/); assert.doesNotMatch(stdout, /@reference/);
+  const pdfText = path.join(output, "letterhead.txt"); await exec("pdftotext", [pdf, pdfText]); assert.match(await readFile(pdfText, "utf8"), /Synthetic evidence/);
+  await dialog.getByRole("button", { name: "OKF", exact: true }).click();
+  await application.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, output);
+  await dialog.getByRole("button", { name: "Export copied OKF bundle", exact: true }).click(); await expect(dialog.getByText(/Copied bundle exported:/)).toBeVisible(); await page.screenshot({ path: path.join(qa, "writing-export.png") });
+  await close(); await page.getByRole("button", { name: "mixed.md", exact: true }).click();
+  await menu("Properties…"); await dialog.getByRole("button", { name: "Preview property change", exact: true }).click(); await dialog.getByRole("button", { name: "Apply previewed changes", exact: true }).click();
+  await expect(dialog.getByText("Changes applied to drafts", { exact: true })).toBeVisible(); await close();
+  const mixedPath = path.join(vault, "mixed.md"), mixedBody = mixedSource.slice(mixedSource.indexOf("\r\n---\r\n") + 7);
+  const expectedMixed = mixedSource.replace("\r\n---\r\n", '\r\n"type": "Reference"\r\n---\r\n');
+  await rich.click(); await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(mixedPath, "utf8"), { timeout: 20000 }).toBe(expectedMixed);
+  const savedMixed = await readFile(mixedPath, "utf8"); assert.equal(savedMixed.slice(savedMixed.indexOf("\r\n---\r\n") + 7), mixedBody);
+  await page.screenshot({ path: path.join(qa, "mixed-properties.png") });
+  await rich.click(); await page.keyboard.press("ControlOrMeta+z"); await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(mixedPath, "utf8"), { timeout: 20000 }).toBe(mixedSource);
+  await page.getByRole("button", { name: "cyclic.md", exact: true }).click(); await menu("Properties…");
+  await expect(dialog.getByText("Edit this YAML alias in source mode.", { exact: true })).toBeVisible();
+  assert.equal(await readFile(path.join(vault, "cyclic.md"), "utf8"), cyclicSource);
+  assert.equal(await readFile(file, "utf8"), source); assert.deepEqual(errors, []); assert.deepEqual(outbound, []);
+  console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings preserve exact body and undo", "cyclic YAML properties do not crash", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));
+} catch (error) {
+  await page.screenshot({ path: path.join(qa, "failure.png") });
+  await writeFile(path.join(qa, "failure.txt"), String(error) + "\n" + await page.locator("body").innerText());
+  throw error;
+} finally { await application.close(); }

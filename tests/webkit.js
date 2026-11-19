@@ -217,18 +217,20 @@ try {
     "rich DOM edit produces exact Markdown in separate source view",
   );
   window.__omarkie.command({ action: "undo" });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  check(
-    readSource() === original.replace("粗体", "粗测体"),
-    "fresh source view cannot undo an earlier rich edit",
-  );
+  await wait(() => readSource() === original);
+  check(readSource() === original, "source undo restores the original rich edit bytes");
+  window.__omarkie.command({ action: "redo" });
+  await wait(() => readSource() === original.replace("粗体", "粗测体"));
+  check(readSource() === original.replace("粗体", "粗测体"), "source redo restores the exact rich edit");
   await sourceMode(false);
   window.__omarkie.command({ action: "undo" });
-  await wait(() => root().querySelector("strong").textContent === "粗体");
-  check(true, "returning to rich mode restores its own undo history");
+  await sourceMode(true);
+  check(readSource() === original, "rich undo shares history after source undo and redo");
+  await sourceMode(false);
   window.__omarkie.command({ action: "redo" });
-  await wait(() => root().querySelector("strong").textContent === "粗测体");
-  check(true, "rich redo restores the edit after a source-view round trip");
+  await sourceMode(true);
+  check(readSource() === original.replace("粗体", "粗测体"), "rich redo restores the exact edit across both views");
+  await sourceMode(false);
   pointText("粗测体", 2);
   input("insertText", "新");
   const untouched = root().querySelector("h1");

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
+import { newNote } from "../shared/new-note.mjs";
 import { t } from "./i18n";
 import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
@@ -16,8 +17,8 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
   );
   const [fileOperationBusy, setFileOperationBusy] = useState(false);
   const [recent, setRecent] = useState<RecentEntry[]>([]);
-  const current = useRef({ documents, activeId });
-  current.current = { documents, activeId };
+  const current = useRef({ documents, activeId, folder });
+  current.current = { documents, activeId, folder };
   const inFlight = useRef(new Map<string, Promise<unknown>>());
   const closing = useRef(false);
   const closed = useRef<{ id: string; name: string }[]>([]);
@@ -48,13 +49,14 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
             : records[0]?.id || "",
         );
         setFolder(session?.folder || null);
-        if (session?.folder) {
-          const scanned = await host.scan();
-          if (!disposed) { setFiles(scanned.files); reportFolderScan(scanned); }
-        }
         if (session?.restoreError) setMessage(session.restoreError);
-        setRecent(await host.recent());
         setReady(true);
+        await Promise.all([
+          session?.folder ? host.scan().then(scanned => {
+            if (!disposed && current.current.folder === scanned.folder) { setFiles(scanned.files); reportFolderScan(scanned); }
+          }) : undefined,
+          host.recent().then(items => { if (!disposed) setRecent(items); }),
+        ]);
       })
       .catch((error) => {
         if (!disposed) {
@@ -215,7 +217,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
       id,
       path: null,
       name,
-      content: "",
+      content: newNote(name),
       savedContent: "",
       diskHash: null,
       lineEnding: "\n",
@@ -307,7 +309,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
         return record;
       });
       const id = records.some(record => record.id === current.current.activeId) ? current.current.activeId : records[0]?.id || "";
-      current.current = { documents: records, activeId: id }; setDocuments(records); setActiveId(id);
+      current.current = { ...current.current, documents: records, activeId: id }; setDocuments(records); setActiveId(id);
       await host.persist(current.current); await refresh(); setRecent(await host.recent()); return true;
     }
     return false;

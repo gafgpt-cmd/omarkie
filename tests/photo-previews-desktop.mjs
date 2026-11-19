@@ -1,5 +1,6 @@
 // npm run build && node tests/photo-previews-desktop.mjs
 import { _electron as electron, expect } from "playwright/test";
+import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, writeFile, readFile, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -12,10 +13,11 @@ await sharp({ create: { width: 6000, height: 4500, channels: 3, background: "#ab
 const original = await readFile(photo);
 await writeFile(file, content);
 await writeFile(path.join(root, "session.json"), JSON.stringify({ version: 1, activeId: "photo", documents: [{ id: "photo", path: file, name: "note.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, lineEnding: "\n" }] }));
-const env = { ...process.env, OMARKIE_DATA_DIR: root, OMARKIE_LANGUAGE: "zh" }; delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
-const app = await electron.launch({ args: [process.cwd()], env });
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: root, OMARKIE_LANGUAGE: "zh" }); delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
+const app = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 try {
   const page = await app.firstWindow(), image = page.locator(".rich-document img").first();
+  await fullSize(app, page);
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate(image => image.complete && image.naturalWidth > 0 && image.currentSrc.includes("?preview="))).toBe(true);
   // srcset w-descriptors make naturalWidth layout-dependent; decode to read the served pixel size.

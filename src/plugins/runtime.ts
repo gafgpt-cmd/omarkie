@@ -16,6 +16,14 @@ interface Options {
   getNumbered?(): { line: number; counter: string }[];
   composing?(): boolean;
   reservedHotkeys?: string[];
+  getHeadings?(): { line: number; level: number; text: string; id: string }[];
+  jump?(line: number): void;
+  imageOffset?(image: HTMLImageElement): number | undefined;
+  selectionRange?(): { from: number; to: number; context: string } | undefined;
+  replaceRange?(from: number, to: number, text: string, expected: string): boolean;
+  editable?(): boolean;
+  getWidth?(): number;
+  setWidth?(columns: number): void;
 }
 interface Running {
   definition: PluginDefinition; plugin: any; disposed: boolean;
@@ -76,6 +84,7 @@ export class PluginRuntime {
     this.focused?.classList.remove("md-focus"); this.focused = block; block?.classList.add("md-focus");
   };
   private focused: Element | null = null;
+  private paintListeners = new Set<() => void>();
   private windowStyle: HTMLStyleElement | null = null;
   private seeds = new Map<HTMLElement, string>();
   // Typora markers are only needed while a plugin runs, and the editor replaces whole blocks, so marking added nodes is enough.
@@ -95,6 +104,7 @@ export class PluginRuntime {
     }
     const spacers = partial ? [...scopes, ...records.map(record => record.target)].filter((node): node is HTMLElement => isSpacer(node) && node.parentElement === root) : [...root.querySelectorAll<HTMLElement>(":scope > .md-window-spacer")];
     if (spacers.length || (partial && records.some(record => [...record.removedNodes].some(isSpacer)))) this.seedWindow(root, spacers);
+    if (scopes.length && !this.options.composing?.()) for (const callback of this.paintListeners) callback();
   }
   // Windowed rendering replaces off-screen blocks with spacers, and CSS counters only see rendered blocks:
   // each spacer sets auto_number's counters to their values after the blocks it stands for, from the model.
@@ -182,7 +192,7 @@ export class PluginRuntime {
     const unwrap = (value: any) => (value && typeof value === "object" && proxies.get(value)) || value;
     // Nodes reached from a tracked node stay tracked, so class, style and listener changes made through them are undone on unload.
     const wrap = (value: any) => value instanceof Element ? track(value) : value;
-    const listener = (fn: EventListener) => { let wrapped = listeners.get(fn); if (!wrapped) { wrapped = event => fn.call(wrap(event.currentTarget), new Proxy(event, { get: (event, key) => { const value = Reflect.get(event, key, event); return typeof value === "function" ? value.bind(event) : wrap(value); } })); listeners.set(fn, wrapped); } return wrapped; };
+    const listener = (fn: EventListener) => { let wrapped = listeners.get(fn); if (!wrapped) { wrapped = event => { if (event.type === "keydown" && event.target instanceof Element && event.target.closest('button.md-ui[contenteditable="false"]')) return; return fn.call(wrap(event.currentTarget), new Proxy(event, { get: (event, key) => { const value = Reflect.get(event, key, event); return typeof value === "function" ? value.bind(event) : wrap(value); } })); }; listeners.set(fn, wrapped); } return wrapped; };
     const track = <T extends object>(target: T): T => { target = unwrap(target); if (tracked.has(target)) return tracked.get(target); const proxy = new Proxy(target, { get: (object, key) => {
       if (key === "addEventListener") return (name: string, fn: EventListener, opts?: boolean | AddEventListenerOptions) => { const wrapped = typeof fn === "function" ? listener(fn) : fn; (object as EventTarget).addEventListener(name, wrapped, opts); own(() => (object as EventTarget).removeEventListener(name, wrapped, opts)); };
       if (key === "removeEventListener") return (name: string, fn: EventListener, opts?: boolean | AddEventListenerOptions) => (object as EventTarget).removeEventListener(name, listeners.get(fn) || fn, opts);
@@ -280,6 +290,17 @@ export class PluginRuntime {
     const entities = { get eWrite() { const root = document.getElementById("write"); if (!root) throw new Error(t("请先打开文档。")); return track(root); }, get eContent() { const content = document.querySelector(".writing-area"); return content && track(content); }, querySelectorInWrite: (selector: string) => { const element = [...(this.write()?.querySelectorAll(selector) || [])].find(element => !isSpacer(element)); return element ? track(element) : null; }, querySelectorAllInWrite: (selector: string) => [...(this.write()?.querySelectorAll(selector) || [])].filter(element => !isSpacer(element)).map(track) };
     const utils: any = {
       PLUGIN_LOAD_ABORT: Symbol("PLUGIN_LOAD_ABORT"), supportHasSelector: CSS.supports("selector(:has(*))"), entities,
+      reading: {
+        root: this.write, own,
+        onPaint: (callback: () => void) => { if (item.disposed) return; this.paintListeners.add(callback); own(() => this.paintListeners.delete(callback)); callback(); },
+        documentId: () => this.options.getDocumentId?.() || this.options.getPath() || "untitled",
+        headings: () => this.options.getHeadings?.() || [], jump: (line: number) => this.options.jump?.(line),
+        imageOffset: (image: HTMLImageElement) => this.options.imageOffset?.(image),
+        selection: () => this.options.selectionRange?.(),
+        editable: () => !item.disposed && !this.locks.size && !this.options.composing?.() && (this.options.editable?.() ?? false),
+        replaceRange: (from: number, to: number, text: string, expected: string) => !item.disposed && !this.locks.size && !this.options.composing?.() && this.options.replaceRange?.(from, to, text, expected),
+        width: () => this.options.getWidth?.() ?? 80, setWidth: (columns: number) => { if (!item.disposed) this.options.setWidth?.(columns); },
+      },
       insertStyle, upsertStyle: insertStyle, replaceStyle: insertStyle, removeStyle: (name: string) => { item.styles.get(name)?.remove(); item.styles.delete(name); },
       notification: { show: (message: string) => { if (!item.disposed) this.options.notify(String(message)); } },
       eventHub: { eventType, on, addEventListener: on, off: item.events.off, removeEventListener: item.events.off, once: (name: string, callback: (...args: any[]) => unknown, order?: number) => on(name,callback,order,true), emit: (name: string, ...args: any[]) => { if (!item.disposed) this.event(name,...args); }, publishEvent: (name: string, ...args: any[]) => { if (!item.disposed) this.event(name,...args); } },

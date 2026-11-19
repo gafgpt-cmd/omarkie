@@ -236,9 +236,25 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           guard panel.runModal() == .OK, let destination = panel.url else { reply(id, ["ok": true, "value": NSNull()]); return }
           #endif
           let directory = store.dataDirectory, working = doc.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? directory
+          let options = args.count > 4 ? args[4] as? [String: Any] ?? [:] : [:]
           DispatchQueue.global(qos: .userInitiated).async {
             let result: [String: Any]
-            do { try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory); result = ["ok": true, "value": destination.path] }
+            do {
+              if format == "pdf" {
+                let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options)
+                DispatchQueue.main.async {
+                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store)
+                  self.pdfExporter = exporter
+                  exporter.export(markup) { result in
+                    do { try atomicWrite(destination, try result.get()); self.reply(id, ["ok": true, "value": destination.path]) }
+                    catch { self.reply(id, ["ok": false, "error": error.localizedDescription]) }
+                    self.pdfExporter = nil
+                  }
+                }
+                return
+              }
+              try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory, options: options); result = ["ok": true, "value": destination.path]
+            }
             catch { result = ["ok": false, "error": error.localizedDescription] }
             DispatchQueue.main.async { self.reply(id, result) }
           }
@@ -510,6 +526,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
       return try store.scan(file)
+    case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store)
+    case "exportBundle":
+      let payload = try arg(args, 0, [String: Any].self)
+      let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+      guard panel.runModal() == .OK, let directory = panel.url else { return nil }
+      return try owner.workspace.exportBundle(payload, store: store, parent: directory)
     case "scan": return try store.scan()
     case "openToken":
       let token = try arg(args, 0, String.self)
@@ -618,7 +640,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let path = record.path, !relative.contains(":"), !relative.contains("\\") else { throw NativeFailure("请先保存文档，并使用本地 Markdown 文件路径。") }
       let base = URL(fileURLWithPath: path).deletingLastPathComponent().resolvingSymlinksInPath()
       let target = (relative.hasPrefix("/") ? URL(fileURLWithPath: relative) : base.appendingPathComponent(relative)).standardizedFileURL
-      let root = store.folder ?? base
+      let root = store.folder.flatMap { $0 == base || contained($0, base) ? $0 : nil } ?? base
       guard target.path == target.resolvingSymlinksInPath().path,
         contained(root, target) || store.records.values.contains(where: { $0.path == target.path }) else { throw NativeFailure("链接位于已打开文件夹之外，请先打开该文件夹或目标文件。") }
       if !FileManager.default.fileExists(atPath: target.path) {
@@ -837,7 +859,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     let id = UUID().uuidString
     let location = directory.appendingPathComponent("windows/" + id)
     let draft = DocumentRecord(
-      id: id, name: "未命名.md", content: "", savedContent: "", lineEnding: "\n")
+      id: id, name: "未命名.md", content: Workspace.newNote("未命名.md"), savedContent: "", lineEnding: "\n")
     let host = makeWindow(directory: location, seed: SessionRecord(documents: [draft], activeId: id))
     if let previous {
       let group = previous.tabGroupID ?? UUID().uuidString

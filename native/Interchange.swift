@@ -54,8 +54,27 @@ final class Interchange {
     let candidates = [configured, Bundle.main.resourceURL?.appendingPathComponent("pandoc").path, "/opt/homebrew/bin/pandoc", "/usr/local/bin/pandoc", "/usr/bin/pandoc"].compactMap { $0 }
     return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
   }
-  static func export(_ format: String, source: String, html: String, destination: URL, workingDirectory: URL, temporaryDirectory: URL) throws {
-    let formats = ["docx", "rtf", "odt", "epub", "latex", "rst", "mediawiki", "textile", "opml", "revealjs"]
+  static func exportOptions(_ options: [String: Any], directory: URL) throws -> [String] {
+    guard options.keys.allSatisfy({ ["bibliography", "style", "letterhead"].contains($0) }) else { throw NativeFailure("导出选项无效") }
+    var arguments = [String]()
+    if options["style"] != nil || options["bibliography"] != nil {
+      guard options["style"] as? String == "vancouver", let text = options["bibliography"] as? String, text.utf8.count <= 2 * 1024 * 1024, let data = text.data(using: .utf8), let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], !entries.isEmpty, entries.count <= 5000 else { throw NativeFailure("CSL JSON 书目无效") }
+      var ids = Set<String>()
+      for entry in entries {
+        guard let id = entry["id"] as? String, id.range(of: "^[A-Za-z0-9_.:+/-]{1,256}$", options: .regularExpression) != nil, entry["type"] is String, ids.insert(id).inserted else { throw NativeFailure("CSL JSON 书目无效") }
+      }
+      let bibliography = directory.appendingPathComponent("references.json")
+      try data.write(to: bibliography)
+      guard let style = Bundle.main.resourceURL?.appendingPathComponent("csl/nlm-citation-sequence.csl"), FileManager.default.fileExists(atPath: style.path) else { throw NativeFailure("引用样式不可用") }
+      arguments = ["--citeproc", "--bibliography=" + bibliography.path, "--csl=" + style.path]
+    }
+    if options["letterhead"] != nil {
+      guard let header = options["letterhead"] as? [String: String], header.keys.allSatisfy({ ["name", "detail"].contains($0) }), let name = header["name"], let detail = header["detail"], name.count <= 200, detail.count <= 2000 else { throw NativeFailure("信头无效") }
+    }
+    return arguments
+  }
+  static func export(_ format: String, source: String, html: String, destination: URL, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any] = [:]) throws {
+    let formats = ["docx", "rtf", "odt", "epub", "latex", "rst", "mediawiki", "textile", "opml", "revealjs", "html5"]
     guard formats.contains(format), source.utf8.count <= DocumentStore.maxBytes, html.utf8.count <= 50 * 1024 * 1024 else { throw NativeFailure("导出格式或内容无效。") }
     let data: Data
     if let converter = pandoc() {
@@ -76,17 +95,26 @@ final class Interchange {
       end
       """
       try Data(lua.utf8).write(to: filter)
+      let arguments = try exportOptions(options, directory: conversion)
       var prepared = source
+      if !options.isEmpty {
+        let expression = try NSRegularExpression(pattern: "\\A\\uFEFF?---[ \\t]*(?:\\r\\n|\\r|\\n)[\\s\\S]*?^(?:---|\\.\\.\\.)[ \\t]*(?:\\r\\n|\\r|\\n|$)", options: [.anchorsMatchLines])
+        if let range = expression.firstMatch(in: prepared, range: NSRange(prepared.startIndex..., in: prepared))?.range { prepared = (prepared as NSString).replacingCharacters(in: range, with: "") }
+      }
+      if let header = options["letterhead"] as? [String: String] {
+        func escape(_ value: String) -> String { value.replacingOccurrences(of: "([\\\\`*_{}\\[\\]<>()#!|])", with: "\\\\$1", options: .regularExpression) }
+        prepared = "**" + escape(header["name"] ?? "") + "**\n\n" + escape(header["detail"] ?? "") + "\n\n---\n\n" + prepared
+      }
       // Text formats refer to a sibling asset folder so exported documents survive moving together.
       if ["latex", "rst", "mediawiki", "textile"].contains(format) {
         let expression = try NSRegularExpression(pattern: "data:image/(png|jpeg|gif|webp|svg\\+xml);base64,([A-Za-z0-9+/=]+)")
-        let matches = expression.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        let matches = expression.matches(in: prepared, range: NSRange(prepared.startIndex..., in: prepared))
         if !matches.isEmpty {
           let assets = canonicalFileURL(destination.deletingLastPathComponent()).appendingPathComponent(destination.deletingPathExtension().lastPathComponent + ".assets")
           try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
           guard try assets.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw NativeFailure("导出资源目录不能是符号链接。") }
           for match in matches.reversed() {
-            let mime = (source as NSString).substring(with: match.range(at: 1)), encoded = (source as NSString).substring(with: match.range(at: 2))
+            let mime = (prepared as NSString).substring(with: match.range(at: 1)), encoded = (prepared as NSString).substring(with: match.range(at: 2))
             guard let bytes = Data(base64Encoded: encoded), bytes.count <= DocumentStore.maxBytes else { throw NativeFailure("导出图片数据无效。") }
             let image = assets.appendingPathComponent(String(hashData(bytes).prefix(20)) + "." + (mime == "svg+xml" ? "svg" : mime))
             try atomicWrite(image, bytes)
@@ -95,13 +123,23 @@ final class Interchange {
           }
         }
       }
-      _ = try run(converter, arguments: ["--from=markdown+tex_math_dollars+raw_html+mark", "--to=" + format, "--standalone", "--lua-filter=" + filter.path, "--resource-path=" + destination.deletingLastPathComponent().path + ":" + workingDirectory.path, "--output=" + temp.path], input: Data(prepared.utf8), directory: workingDirectory)
+      _ = try run(converter, arguments: ["--from=markdown+tex_math_dollars+raw_html+mark", "--to=" + format, "--standalone", "--sandbox", "--lua-filter=" + filter.path, "--resource-path=" + destination.deletingLastPathComponent().path + ":" + workingDirectory.path, "--output=" + temp.path] + arguments, input: Data(prepared.utf8), directory: workingDirectory)
       data = try Data(contentsOf: temp)
-    } else if ["docx", "rtf", "odt"].contains(format) {
+    } else if options.isEmpty && ["docx", "rtf", "odt"].contains(format) {
       data = try run(URL(fileURLWithPath: "/usr/bin/textutil"), arguments: ["-convert", format, "-format", "html", "-stdin", "-stdout"], input: Data((html.contains("charset=") ? html : "<meta charset=\"utf-8\">" + html).utf8), directory: temporaryDirectory)
     } else { throw NativeFailure("此格式需要 Pandoc。请在导入导出设置中选择已安装的 Pandoc。") }
     guard !data.isEmpty, data.count <= 100 * 1024 * 1024 else { throw NativeFailure("转换器没有生成有效文件。") }
     try atomicWrite(destination, data)
+  }
+  static func renderedExport(source: String, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any]) throws -> String {
+    let file = temporaryDirectory.appendingPathComponent("citation-" + UUID().uuidString + ".html")
+    defer { try? FileManager.default.removeItem(at: file) }
+    try export("html5", source: source, html: "", destination: file, workingDirectory: workingDirectory, temporaryDirectory: temporaryDirectory, options: options)
+    let html = try String(contentsOf: file, encoding: .utf8)
+    let expression = try NSRegularExpression(pattern: "<body[^>]*>([\\s\\S]*)</body>")
+    let match = expression.firstMatch(in: html, range: NSRange(html.startIndex..., in: html))
+    let body = match.map { (html as NSString).substring(with: $0.range(at: 1)) } ?? html
+    return "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\"><style>body{font-family:serif;line-height:1.5}img{max-width:100%}</style><article class=\"print-document\">" + body + "</article>"
   }
   // Cocoa reads RTF tables that Pandoc's RTF reader currently omits. Preserve
   // pictures, notes, outline paragraphs and code before passing the body through Cocoa.

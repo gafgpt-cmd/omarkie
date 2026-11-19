@@ -11,5 +11,5 @@ export function safeDocumentHtml(html: string, documentId?: string, block = true
       element.setAttribute("src",`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
     }
   }
-  return DOMPurify.sanitize(template.innerHTML,{ALLOW_DATA_ATTR:false,FORBID_ATTR:["contenteditable"],ALLOWED_URI_REGEXP:allowedURI,...(block ? {ADD_TAGS:["video","audio","source","iframe"],ADD_ATTR:["allowfullscreen","sandbox"]} : {})});
+  return DOMPurify.sanitize(template.innerHTML,{ALLOW_DATA_ATTR:false,FORBID_ATTR:["contenteditable"],ALLOWED_URI_REGEXP:allowedURI,ADD_TAGS:["video","audio","source",...(block ? ["iframe"] : [])],ADD_ATTR:["controls",...(block ? ["allowfullscreen","sandbox"] : [])]});
 }

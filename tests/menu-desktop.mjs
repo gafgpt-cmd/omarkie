@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { createServer } from "node:http";
 import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import groups from "../shared/commands.json" with { type: "json" };
+import manifest from "../package.json" with { type: "json" };
 import { createTranslator } from "../shared/i18n.mjs";
 const t = createTranslator("en");
 if (process.platform !== "linux") {
@@ -27,7 +28,6 @@ let completed = false;
 let chosenPandoc = "";
 async function launch() {
   application = await electron.launch({ args: [process.cwd(), ...headlessArguments, "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"], env, timeout: 30000 });
-  assert.equal(await application.evaluate(({ app }) => app.commandLine.getSwitchValue("ozone-platform")), "headless");
   page = await application.firstWindow(); page.setDefaultTimeout(15000); page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") console.error("Renderer console: " + message.text()); });
   await fullSize(application, page);
@@ -523,7 +523,7 @@ try {
   pass("More > Autosave Existing Files", "Off pauses disk saves and survives reload; manual Save works; On resumes saving");
   await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
   await page.locator(".more-menu:not(.menu-bar-panel)").getByRole("menuitem", { name: /^About Omarkie/ }).click({ force: true });
-  await expect(page.getByRole("dialog")).toContainText("0.1.2");
+  await expect(page.getByRole("dialog")).toContainText(manifest.version);
   await page.getByRole("button", { name: t("关闭关于"), exact: true }).click({ force: true });
   pass("More > About Omarkie", "More menu opens actual version dialog");
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
@@ -757,14 +757,14 @@ try {
     pass(`Light/dark toggle: ${route}`, "Theme changes");
   }
   await menu("Omarkie", t("关于 Omarkie"));
-  await expect(page.getByRole("dialog")).toContainText("0.1.2");
+  await expect(page.getByRole("dialog")).toContainText(manifest.version);
   await page.getByRole("button", { name: t("关闭关于"), exact: true }).click({ force: true });
   pass("About Omarkie", "About dialog displays application version");
   await application.evaluate(({ Menu, BrowserWindow }, label) => {
     const item = Menu.getApplicationMenu().items[0].submenu.items.find(item => item.label === label);
     item.click(item, BrowserWindow.getAllWindows()[0]);
   }, t("关于 Omarkie"));
-  await expect(page.getByRole("dialog")).toContainText("0.1.2");
+  await expect(page.getByRole("dialog")).toContainText(manifest.version);
   await page.getByRole("button", { name: t("关闭关于"), exact: true }).click({ force: true });
   pass("Native About Omarkie", "Native application menu opens actual About dialog");
   await command("preferences");
@@ -780,11 +780,12 @@ try {
   await expect(page.getByRole("dialog", { name: t("插件管理"), exact: true })).toBeVisible();
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
-    const toggle = card.getByRole("checkbox"); await toggle.check({ force: true });
+    const toggle = card.getByRole("checkbox"); await toggle.check();
+    await expect(card.getByRole("button", { name: t("插件命令…"), exact: true })).toBeEnabled();
     await expect(card.locator(".plugin-toggle")).toContainText(t("已启用"));
     await expect(card.getByRole("alert")).toHaveCount(0);
     if (name === t("只读模式")) await expect(rich()).toHaveAttribute("contenteditable", "false");
-    await toggle.uncheck({ force: true });
+    await toggle.uncheck();
     await expect(card.locator(".plugin-toggle")).toContainText(t("未启用"));
     pass(`Plugin: ${name}`, "Bundled plugin starts and unloads without error");
   }
@@ -797,13 +798,13 @@ try {
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async (_window, options) => { globalThis.auditPluginDialogOptions = options; return { canceled: false, filePaths: [file] }; }; }, plugin);
   await install.click({ force: true });
   assert.deepEqual(await application.evaluate(() => globalThis.auditPluginDialogOptions.properties), ["openFile"]);
-  await expect(page.locator(".plugin-card")).toHaveCount(9);
+  await expect(page.locator(".plugin-card")).toHaveCount(16);
   const installed = page.locator(".plugin-card").last();
-  await installed.getByRole("checkbox").check({ force: true });
+  await installed.getByRole("checkbox").check();
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
-  await installed.getByRole("checkbox").uncheck({ force: true });
+  await installed.getByRole("checkbox").uncheck();
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
-  await expect(page.locator(".plugin-card")).toHaveCount(8);
+  await expect(page.locator(".plugin-card")).toHaveCount(15);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toHaveCount(0);
   pass("Install and remove local plugin", "Trust gate, installed stylesheet and removal work");
@@ -845,7 +846,7 @@ try {
   await command("preferences");
   await preferences().getByLabel(t("PicGo Server 地址"), { exact: true }).fill(`http://127.0.0.1:${uploader.address().port}/upload`);
   await preferences().getByRole("button", { name: t("完成"), exact: true }).click({ force: true });
-  const uploadedFile = path.join(data, (await page.locator(".document-title").textContent()).trim());
+  const uploadedFile = path.join(data, await page.locator(".document-title").getAttribute("title"));
   await command("upload-all-images");
   await expect.poll(() => uploads).toBe(1);
   await expect.poll(() => readFile(uploadedFile, "utf8")).toContain("https://example.invalid/audit-image.png");
@@ -865,6 +866,29 @@ try {
   await expect(preferences().getByLabel(t("显示远程图片"), { exact: true })).not.toBeChecked();
   await preferences().getByRole("button", { name: t("完成"), exact: true }).click({ force: true });
   pass("Automatic image upload", "Enabled insertion uploads to loopback fixture; network preferences restored off");
+  const workflowFile = await fixture('# Menu workflows\n\n[[Linked]] #audit\n');
+  await writeFile(path.join(data, 'Linked.md'), `# Linked\n\n[Menu](${path.basename(workflowFile)})\n`, 'utf8');
+  await application.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, data);
+  await command('folder');
+  const workflowSource = await sourceText();
+  for (const route of ['menu', 'native', 'toolbar']) for (const action of ['document-tools', 'properties', 'backlinks', 'graph']) {
+    await command(action, route);
+    const dialog = page.getByRole('dialog', { name: t('文档工具'), exact: true }); await expect(dialog).toBeVisible();
+    if (action === 'document-tools') await expect(dialog.getByRole('button', { name: 'OKF', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    if (action === 'properties') await expect(dialog.getByLabel(t('JSON 值'), { exact: true })).toBeVisible();
+    if (action === 'backlinks') await expect(dialog.getByRole('button', { name: /^Linked\.md:/ })).toBeVisible();
+    if (action === 'graph') await expect(dialog.getByRole('img', { name: t('知识库图谱'), exact: true })).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
+    pass(`${action}: ${route}`, 'Actual document workflow surface opens without source edits');
+  }
+  for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
+    await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+    await command(action, route);
+    const expected = action === 'text-reset' ? 16 : Math.max(12, Math.min(28, before + (action === 'text-larger' ? 1 : -1)));
+    await expect.poll(() => rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize))).toBe(expected);
+    pass(`${action}: ${route}`, `Visible text size ${expected}px`);
+  }
+  assert.equal(await sourceText(), workflowSource);
   for (const [code, title] of [["es", "Preferencias"], ["ca", "Preferències"], ["ro", "Preferințe"], ["zh", "偏好设置"], ["en", "Preferences"]]) {
     await rich().focus(); await command("preferences", "shortcut");
     await page.getByRole("dialog").getByRole("combobox").first().selectOption(code);
@@ -887,8 +911,8 @@ try {
       pass(`Pandoc selection persistence: ${route}`, "Chosen executable survives full application restart");
     }
   }
-  for (const item of inventory.find(item => item.role === "windowmenu")?.submenu || []) checks.push({ item: `Native Window > ${item.label}`, expected: "Native window role changes window state", observed: "Native desktop window state is not independently verified by the isolated Ozone headless backend", result: "UNVERIFIABLE" });
-  checks.push({ item: "Native Quit shortcut", expected: "Ctrl+Q quits through the native accelerator", observed: "Native accelerator dispatch is not independently verified by the isolated Ozone headless backend", result: "UNVERIFIABLE" });
+  for (const item of inventory.find(item => item.role === "windowmenu")?.submenu || []) checks.push({ item: `Native Window > ${item.label}`, expected: "Native window role changes window state", observed: "Native desktop window state is not independently verified by the isolated desktop backend", result: "UNVERIFIABLE" });
+  checks.push({ item: "Native Quit shortcut", expected: "Ctrl+Q quits through the native accelerator", observed: "Native accelerator dispatch is not independently verified by the isolated desktop backend", result: "UNVERIFIABLE" });
   const closed = application.waitForEvent("close");
   await application.evaluate(({ Menu, BrowserWindow }, label) => {
     const item = Menu.getApplicationMenu().items[0].submenu.items.find(item => item.label === label);

@@ -107,6 +107,51 @@ func runStoreTests() throws {
   do { _ = try store.reopen("unknown"); throw NativeFailure("unowned reopen") }
   catch let error as NativeFailure { try expect(error.message.contains("不可用"), "reopen refuses an unknown document id") }
   let workspace = Workspace(store.dataDirectory)
+  let workflowRoot = directory.appendingPathComponent("workflow-vault"), workflowOutput = directory.appendingPathComponent("workflow-output")
+  try fm.createDirectory(at: workflowRoot.appendingPathComponent("nested"), withIntermediateDirectories: true)
+  try fm.createDirectory(at: workflowOutput, withIntermediateDirectories: true)
+  let workflowStore = DocumentStore(directory.appendingPathComponent("workflow-data"))
+  var workflowAssets = [[String: String]]()
+  for relative in ["note.md", "nested/note.md"] {
+    let file = workflowRoot.appendingPathComponent(relative)
+    try atomicWrite(file, Data("# Note\n".utf8))
+    let opened = try workflowStore.open(file), image = try workflowStore.importImage(opened.id, bytes: png, name: "photo.png")
+    try expect(image.hasPrefix(".assets/"), "pasted attachment uses the default directory")
+    let source = (relative as NSString).deletingLastPathComponent
+    workflowAssets.append(["source": source.isEmpty ? image : source + "/" + image, "relative": "assets/" + (source.isEmpty ? image : source + "/" + image)])
+    try atomicWrite(file, Data("![photo](\(image))\n".utf8))
+  }
+  try fm.createDirectory(at: workflowRoot.appendingPathComponent(".private"), withIntermediateDirectories: true)
+  try atomicWrite(workflowRoot.appendingPathComponent(".private/secret.png"), png)
+  try atomicWrite(workflowRoot.appendingPathComponent(".assets/.hidden.png"), png)
+  try fm.createSymbolicLink(at: workflowRoot.appendingPathComponent(".assets/escape.png"), withDestinationURL: outside)
+  _ = try workflowStore.scan(workflowRoot)
+  let workflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  let workflowInventory = workflowSnapshot["assets"] as! [[String: String]], workflowNotes = workflowSnapshot["notes"] as! [[String: String]]
+  try expect(Set(workflowInventory.compactMap { $0["relative"] }) == Set(workflowAssets.compactMap { $0["source"] }), "snapshot includes root and nested default attachments only")
+  let workflowPayload: [String: Any] = ["notes": workflowNotes, "assets": workflowAssets, "index": "# Bundle\n", "log": "# Log\n"]
+  let workflowBundle = try workspace.exportBundle(workflowPayload, store: workflowStore, parent: workflowOutput)
+  for asset in workflowAssets {
+    try expect(try Data(contentsOf: URL(fileURLWithPath: workflowBundle).appendingPathComponent(asset["relative"]!)) == png, "bundle copies default attachment bytes")
+  }
+  for note in workflowNotes {
+    try expect(try String(contentsOf: workflowRoot.appendingPathComponent(note["relative"]!), encoding: .utf8) == note["content"], "bundle preserves source note bytes")
+  }
+  for (source, destination) in [(".assets/escape.png", "assets/copy.png"), (".private/secret.png", "assets/copy.png"), (".assets/../outside.png", "assets/copy.png"), (workflowAssets[0]["source"]!, "assets/.private/copy.png"), (workflowAssets[0]["source"]!, "assets/.assets/../escape.png")] {
+    var payload = workflowPayload, rejected = false
+    payload["assets"] = [["source": source, "relative": destination]]
+    do { _ = try workspace.exportBundle(payload, store: workflowStore, parent: workflowOutput) } catch { rejected = true }
+    try expect(rejected, "bundle refuses hidden, traversal and symlink paths")
+  }
+  let legacyWorkflowFile = workflowRoot.appendingPathComponent("legacy.md"), legacyWorkflowBytes = Data([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9, 0x0a])
+  try atomicWrite(legacyWorkflowFile, legacyWorkflowBytes)
+  let legacyWorkflowRecord = try workflowStore.open(legacyWorkflowFile, encoding: "windows-1252")
+  let legacyWorkflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  try expect((legacyWorkflowSnapshot["notes"] as! [[String: String]]).contains { $0["relative"] == "legacy.md" && $0["content"] == "# Café\n" }, "snapshot reuses an opened legacy encoding")
+  try expect(try Data(contentsOf: legacyWorkflowFile) == legacyWorkflowBytes && workflowStore.require(legacyWorkflowRecord.id).diskHash == hashData(legacyWorkflowBytes), "snapshot preserves legacy bytes and hashes")
+  try atomicWrite(legacyWorkflowFile, try DocumentStore.encode("# BOM wins\n", encoding: "utf-16le", bom: true))
+  let bomWorkflowSnapshot = try workspace.vaultSnapshot(workflowStore)
+  try expect((bomWorkflowSnapshot["notes"] as! [[String: String]]).contains { $0["relative"] == "legacy.md" && $0["content"] == "# BOM wins\n" }, "snapshot BOM overrides the previously chosen encoding")
   _ = try store.scan(directory)
   var latest = try store.require(record.id); latest.content = "未保存内容\r\n"; store.records[record.id] = latest
   let renamed = try workspace.execute(["action": "rename", "path": file.path, "name": "renamed.md"], store: store)
@@ -169,7 +214,28 @@ func runStoreTests() throws {
   catch let error as NativeFailure { try expect(error.code == "EXTERNAL_CHANGE", "conversion still refuses external disk edits") }
   let redecoded = try encodingStore.open(lossFile, id: utf16.id, encoding: "gbk")
   try expect(redecoded.content == "外部 GBK" && redecoded.encoding == "gbk", "explicit reopen decodes the actual file without rewriting it")
-  if Interchange.pandoc() != nil {
+  if let converter = Interchange.pandoc() {
+    for eol in ["\n", "\r\n", "\r"] {
+      for bom in ["", "\u{FEFF}"] {
+        for closing in ["---", "..."] {
+          let source = bom + "--- \t" + eol + "type: Reference" + eol + "title: Metadata sentinel" + eol + closing + " \t" + eol + "# Body sentinel\r\n\nRetained body.\r"
+          let file = directory.appendingPathComponent("letterhead-" + UUID().uuidString + ".md"), output = file.deletingPathExtension().appendingPathExtension("docx")
+          let bytes = Data(source.utf8), options: [String: Any] = ["letterhead": ["name": "Example Organization", "detail": "Document service"]]
+          try atomicWrite(file, bytes)
+          try Interchange.export("docx", source: source, html: "", destination: output, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: options)
+          let plain = String(data: try Interchange.run(converter, arguments: [output.path, "--to=plain"], input: nil, directory: directory), encoding: .utf8) ?? ""
+          try expect(plain.contains("Example Organization") && plain.contains("Body sentinel") && !plain.contains("Metadata sentinel") && !plain.contains("type: Reference"), "native DOCX letterhead excludes complete frontmatter")
+          let rendered = try Interchange.renderedExport(source: source, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: options)
+          try expect(rendered.contains("Body sentinel") && !rendered.contains("Metadata sentinel") && !rendered.contains("type: Reference"), "native PDF input excludes complete frontmatter")
+          try expect(try Data(contentsOf: file) == bytes, "native letterhead retains original BOM, metadata and endings")
+        }
+      }
+    }
+    let letterImage = directory.appendingPathComponent("letter-image.tex")
+    let imageSource = "---\rtitle: Metadata sentinel\r---\r![Figure](data:image/png;base64," + png.base64EncodedString() + ")"
+    try Interchange.export("latex", source: imageSource, html: "", destination: letterImage, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: ["letterhead": ["name": "Example Organization", "detail": "Document service"]])
+    let letterLatex = try String(contentsOf: letterImage, encoding: .utf8)
+    try expect(letterLatex.contains("letter-image.assets/") && !letterLatex.contains("data:image") && !letterLatex.contains("Metadata sentinel"), "native resource ranges follow letterhead preparation")
     let formula = directory.appendingPathComponent("formula.docx")
     try Interchange.export("docx", source: "# Formula\n\n$E=mc^2$\n", html: "<p>Formula</p>", destination: formula, workingDirectory: directory, temporaryDirectory: store.dataDirectory)
     let formulaMarkdown = try Interchange.importFile(formula, directory: store.dataDirectory)["markdown"] ?? ""

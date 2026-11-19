@@ -24,7 +24,9 @@ import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
 import type { FileOperation } from "./types";
-import type { Command } from "./types";
+import type { Command, ConversionOptions } from "./types";
+import type { ToolTab } from "./components/DocumentTools";
+const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -41,8 +43,19 @@ import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 export default function App() {
   const [painted, setPainted] = useState(false);
+  const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
+  const firstDocumentPainted = useRef(false);
+  const [paintedDocument, setPaintedDocument] = useState<string | null>(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const editors = useRef(new Map<string, EditorHandle>());
+  const pendingJump = useRef<{ id: string; line: number } | null>(null);
+  function jumpTo(id: string, line: number) {
+    pendingJump.current = null;
+    const target = editors.current.get(id);
+    if (target) target.jump(line);
+    else pendingJump.current = { id, line };
+  }
+  const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
@@ -56,6 +69,7 @@ export default function App() {
   const [typewriter, setTypewriter] = useState(false);
   const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
+  const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -74,8 +88,17 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
-  const pluginContext = useRef({ active, editor, notify: session.setMessage });
-  pluginContext.current = { active, editor, notify: session.setMessage };
+  const activeEditorReady = active ? readyEditors[active.id] : undefined;
+  useEffect(() => {
+    setMountedDocuments(current => {
+      let removed = false;
+      for (const id of current) if (!session.documents.some(record => record.id === id)) { removed = true; break; }
+      if (!removed && (!session.activeId || current.has(session.activeId))) return current;
+      return new Set(session.documents.filter(record => record.id === session.activeId || current.has(record.id)).map(record => record.id));
+    });
+  }, [session.activeId, session.documents]);
+  const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
+  pluginContext.current = { active, editor, preferences, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
   useEffect(() => {
     if (!painted || !Object.values(pluginPreferences).some(value => value.enabled)) { setRuntimeReady(false); return; }
@@ -89,6 +112,14 @@ export default function App() {
       getDocumentId: () => pluginContext.current.active?.id || "",
       getNumbered: () => pluginContext.current.editor()?.numbered() || [],
       composing: () => !!pluginContext.current.editor()?.composing(),
+      editable: () => !!pluginContext.current.active && !!pluginContext.current.editor()?.richMode(),
+      getHeadings: () => { const current = pluginContext.current.editor(), text = current?.markdown() || ""; return current?.headings(text) || extractHeadings(text); },
+      jump: line => pluginContext.current.editor()?.jump(line),
+      imageOffset: image => pluginContext.current.editor()?.imageOffset(image),
+      selectionRange: () => pluginContext.current.editor()?.selectionRange(),
+      replaceRange: (from, to, text, expected) => pluginContext.current.editor()?.replaceRange(from, to, text, expected) ?? false,
+      getWidth: () => pluginContext.current.preferences.editorColumns,
+      setWidth: editorColumns => setPreferences(previous => ({ ...previous, editorColumns: Math.max(40, Math.min(160, Math.round(editorColumns))) })),
       insert: text => pluginContext.current.editor()?.insert(text), replace: text => pluginContext.current.editor()?.transform(() => text),
       setReadOnly, notify: text => pluginContext.current.notify(text), changed: (id, state) => setPluginStates(previous => ({ ...previous, [id]: state })),
       reservedHotkeys: [...commandsByAction.values()].map(command => commandKey(command) || "").filter(Boolean),
@@ -102,18 +133,21 @@ export default function App() {
     if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
   }, [painted, dialog === "plugins"]);
+  useEffect(() => { localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences)); }, [pluginPreferences]);
   useEffect(() => {
-    localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
     if (!session.ready || !active) return;
     for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
-    if (!pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    if (!activeEditorReady || paintedDocument !== active.id || !pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
     return afterDocumentPaint(() => {
       for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
     });
-  }, [pluginDefinitions, pluginPreferences, session.ready, !!active, runtimeReady]);
+  }, [pluginDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
-  useEffect(() => { pluginRuntime.current?.documentChanged(); }, [active?.id, active?.path, active?.content]);
+  useEffect(() => {
+    if (!activeEditorReady || paintedDocument !== active?.id || !pluginRuntime.current) return;
+    return afterDocumentPaint(() => pluginRuntime.current?.documentChanged());
+  }, [active?.id, active?.path, active?.content, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !rendered); }, [rendered]);
   useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", sidebar); }, [sidebar]);
   async function installPlugin(folder = false) { const installed = await host.installPlugin(folder); if (installed) setInstalledPlugins(previous => [...previous.filter(item => item.id !== installed.id), { ...installed, description: t("本地插件，通过兼容接口运行。"), config: {} }]); }
@@ -125,8 +159,8 @@ export default function App() {
   }
   const settledContent = useSettled(active?.content || "", active?.id);
   const headings = useMemo(
-    () => (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent),
-    [settledContent, preferences],
+    () => sidebar && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
+    [settledContent, preferences, sidebar, tab, active?.id],
   );
   const characters = useMemo(
     () => countCharacters(settledContent),
@@ -139,6 +173,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
+    document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
+    document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
+    pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
   const checked = { source: !rendered, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
   const menuContext = editor()?.context() || "";
@@ -174,7 +211,7 @@ export default function App() {
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
-  async function exportDocument(kind: string) {
+  async function exportDocument(kind: string, options?: ConversionOptions) {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
@@ -184,7 +221,7 @@ export default function App() {
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
-      const result = kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
+      const result = options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
     } catch (error) { session.setMessage((error as Error).message); }
     finally { document.body.classList.remove("printing"); exportingRef.current = false; setExporting(false); }
@@ -217,12 +254,13 @@ export default function App() {
     if (action === "notice") { if (message) session.setMessage(message); }
     else if (action === "omarchy-theme") void refreshOmarchy();
     else if (action === "opened") {
-      if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) requestAnimationFrame(() => { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; editors.current.get(record.id)?.jump(line || heading?.line || 1); }); });
+      if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; jumpTo(record.id, line || heading?.line || 1); } });
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();
     else if (action === "open") void session.open();
     else if (action === "folder") void session.openFolder();
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
+    else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
     else if (action === "close") void session.close();
@@ -234,6 +272,7 @@ export default function App() {
     }
     else if (action === "quit") void session.quit();
     else if (action === "close-window") void session.closeWindow();
+    else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRendered((value) => !value);
     else if (action === "sidebar") setSidebar((value) => !value);
     else if (action === "outline" || action === "files" || action === "file-tree") {
@@ -291,13 +330,20 @@ export default function App() {
     if (!session.ready) return;
     performance.mark("omarkie:session-restored");
     void window.desktop?.ready?.();
-    let second = 0;
-    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => {
-      performance.mark("omarkie:first-document-painted");
-      setPainted(true);
-    }); });
-    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
   }, [session.ready]);
+  useEffect(() => {
+    if (!session.ready || active && !activeEditorReady) return;
+    const id = active?.id;
+    return afterDocumentPaint(() => {
+      if (pluginContext.current.active?.id !== id) return;
+      if (id && !firstDocumentPainted.current) {
+        performance.mark("omarkie:first-document-painted", { detail: { id, mode: activeEditorReady } });
+        firstDocumentPainted.current = true;
+      }
+      setPaintedDocument(id || null);
+      setPainted(true);
+    });
+  }, [session.ready, active?.id, activeEditorReady]);
   useEffect(() => host.onCommand((command) => commands.current(command)), []);
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -403,7 +449,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            {session.documents.map((record) => (
+            {session.documents.map((record) => record.id === session.activeId || mountedDocuments.has(record.id) ? (
               <div
                 className="document-editor"
                 hidden={record.id !== session.activeId}
@@ -412,8 +458,10 @@ export default function App() {
                 <MarkdownEditor
                   key={`${record.id}-${record.lineEnding}`}
                   ref={(handle) => {
-                    if (handle) editors.current.set(record.id, handle);
-                    else editors.current.delete(record.id);
+                    if (handle) {
+                      editors.current.set(record.id, handle);
+                      if (pendingJump.current?.id === record.id) jumpTo(record.id, pendingJump.current.line);
+                    } else editors.current.delete(record.id);
                   }}
                   document={record}
                   rendered={rendered}
@@ -428,9 +476,23 @@ export default function App() {
                   }}
                   onSelection={text => { if (record.id === session.activeId) setSelection(text); }}
                   onCompositionEnd={() => { if (record.id === session.activeId) pluginRuntime.current?.documentChanged(); }}
+                  onSourceFallback={() => { if (record.id === session.activeId) setRendered(false); }}
+                  onReady={mode => {
+                    if (mode && record.id === session.activeId) performance.mark("omarkie:editor-ready", { detail: { id: record.id, mode } });
+                    setReadyEditors(current => {
+                      if (mode) return current[record.id] === mode ? current : { ...current, [record.id]: mode };
+                      if (!Object.hasOwn(current, record.id)) return current;
+                      const next = { ...current }; delete next[record.id]; return next;
+                    });
+                  }}
+                  onReference={async url => {
+                    if (url.startsWith("#")) { const heading = extractHeadings(record.content).find(heading => heading.id === decodeURIComponent(url.slice(1))); if (heading) editors.current.get(record.id)?.jump(heading.line); return; }
+                    if (session.folder || /^omarkie-(wiki|tag):/.test(url)) setTools({ tab: "references", id: record.id, request: url });
+                    else await host.openDocumentLink(record.id, url);
+                  }}
                 />
               </div>
-            ))}
+            ) : null)}
             <article
               className="print-document"
               ref={printDocument}
@@ -460,10 +522,27 @@ export default function App() {
           </button>
         </div>
       )}
+      <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
+        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
+        close={() => setTools(null)}
+        open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
+        change={async item => {
+          if (readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
+          const record = item.token ? await session.openToken(item.token) : session.documents.find(record => record.id === tools.id);
+          if (!record) throw new Error(t("文档不可用"));
+          for (let attempt = 0; !editors.current.has(record.id) && attempt < 120; attempt++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          const target = editors.current.get(record.id);
+          if (!target || target.composing()) throw new Error(t("当前不可编辑"));
+          if (target.markdown() !== item.before) throw new Error(t("预览已过期，请重新预览后再应用。"));
+          target.transform(() => item.after);
+        }}
+        create={async (name, content) => { const record = { id: crypto.randomUUID(), path: null, name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }}
+        convert={async (format, options) => { if (session.activeId !== tools.id) throw new Error(t("请先选择原笔记再导出")); await exportDocument(format, options); }}
+      />}</Suspense>
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
-      {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) requestAnimationFrame(() => editors.current.get(record.id)?.jump(match.line)); }} />}
+      {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

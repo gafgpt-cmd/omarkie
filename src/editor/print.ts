@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { parseBlocks } from "./markdown.ts";
 import { imageReferences } from "./images.ts";
+import { sourceLines } from "../../shared/source-lines.mjs";
 import { t } from "../i18n.ts";
 import { pluginExportStyles } from "../plugins/exportStyles.ts";
 export function exportHtml(content: HTMLElement) {
@@ -94,26 +95,18 @@ export async function conversionMarkdown(source: string, rendered: HTMLElement) 
     return pending;
   }
   for (const image of imageReferences(source)) {
-    const data = await embed(image.url), alt = image.alt.replace(/[\\[\]]/g, c => "\\" + c);
+    const data = await embed(image.url), alt = image.alt.replace(/[\\[\]]/g, c => "\\" + c).replace(/\|/g, value => image.table ? "\\|" : value);
     const dimensions = image.width || image.height ? `{${image.width ? `width=${image.width}` : ""} ${image.height ? `height=${image.height}` : ""}}` : "";
     let replacement = `![${alt}](${data})${dimensions}`;
     if (image.source.startsWith("<")) {
-      const node = new DOMParser().parseFromString(DOMPurify.sanitize(image.source), "text/html").querySelector("img");
-      if (!node) throw new Error(t("HTML 图片无法转换。")); node.setAttribute("src", data); replacement = node.outerHTML;
+      const node = new DOMParser().parseFromString(DOMPurify.sanitize(image.table ? image.source.replaceAll("\\|", "|") : image.source), "text/html").querySelector("img");
+      if (!node) throw new Error(t("HTML 图片无法转换。")); node.setAttribute("src", data); replacement = image.table ? node.outerHTML.replaceAll("|", "\\|") : node.outerHTML;
     }
     changes.push({ from: image.from, to: image.to, text: replacement });
   }
-  const offsets = [0]; for (const line of source.split("\n")) offsets.push(offsets.at(-1)! + line.length + 1);
-  const blocked = parseBlocks(source).filter(block => ["fence", "code_block", "frontmatter", "math_block"].includes(block.kind));
-  for (const match of source.matchAll(/^ {0,3}\[([^\]^]+)\]:[ \t]*(<[^>\n]+>|[^ \t\n]+)(.*)$/gm)) {
-    const label = match[1].toLowerCase();
-    if (![...source.matchAll(/!\[([^\]]*)\](?:\[([^\]]*)\])?/g)].some(use => (use[2] || use[1]).toLowerCase() === label && source[use.index + use[0].length] !== "(")) continue;
-    if (blocked.some(block => match.index >= offsets[block.fromLine - 1] && match.index < offsets[block.toLine])) continue;
-    const url = match[2].replace(/^<|>$/g, "");
-    changes.push({ from: match.index, to: match.index + match[0].length, text: `[${match[1]}]: ${await embed(url)}${match[3]}` });
-  }
+  const { offsets } = sourceLines(source);
   const diagrams = [...rendered.querySelectorAll<HTMLElement>(".mermaid-block")]; let index = 0;
-  for (const block of parseBlocks(source).filter(block => block.kind === "fence" && /^ {0,3}(?:`{3,}|~{3,})(mermaid|sequence|flow)\s*(?:\r?\n|$)/.test(block.source))) {
+  for (const block of parseBlocks(source).filter(block => block.kind === "fence" && /^ {0,3}(?:`{3,}|~{3,})(mermaid|sequence|flow)\s*(?:\r\n|\r|\n|$)/.test(block.source))) {
     const diagram = diagrams[index++], svg = diagram?.querySelector<SVGSVGElement>("svg");
     if (!svg || diagram.classList.contains("diagram-error")) throw new Error(t("图表有语法错误，无法导出。"));
     changes.push({ from: offsets[block.fromLine - 1], to: Math.min(source.length, offsets[block.toLine]), text: `![流程图](${await diagramPNG(svg)})\n\n` });

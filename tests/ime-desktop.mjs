@@ -77,7 +77,7 @@ try {
   await cdp.send('Input.insertText',{text:'中文'});
   await expect(root).toBeVisible(); await saved(original.replace('# IME acceptance','# IME acceptance中文'));
   await page.keyboard.press(`${mod}+z`); await saved(original);
-  checks.push('Source composition delays mode switching until commit and preserves one source-session undo');
+  checks.push('Source composition delays mode switching until commit and remains one undo transaction');
   await page.getByRole('button',{name:'源码',exact:true}).click();
   await expect(source).toBeVisible(); await expect(source).toBeFocused();
   await source.press(mod==='Meta'?'Meta+ArrowUp':'Control+Home');

@@ -1,6 +1,6 @@
 {
   "name": "omarkie",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "A local Markdown writing space with live rendering and lossless source editing.",
   "private": true,
   "type": "module",
@@ -13,9 +13,10 @@
     "start": "electron .",
     "test": "node --import ./tests/setup-language.mjs --test tests/*.test.mjs",
     "test:desktop": "node tests/desktop.mjs",
+    "test:document-workflows": "node tests/document-workflows-desktop.mjs",
     "test:browser": "node tests/browser-startup.mjs",
     "test:perf": "node tests/perf-desktop.mjs",
-    "test:preserve": "npm run test:desktop && npm run test:features && npm run test:encoding && npm run test:parity && node tests/ime-desktop.mjs && node tests/compatibility-desktop.mjs",
+    "test:preserve": "npm run test:desktop && npm run test:features && npm run test:kernel-desktop && node tests/photo-previews-desktop.mjs && npm run test:encoding && npm run test:parity && node tests/ime-desktop.mjs && node tests/compatibility-desktop.mjs",
     "verify": "npm run build && npm test && npm run test:browser && npm run test:preserve",
     "package:mac": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs",
     "install:app": "npm run package:mac && node scripts/install.mjs",
@@ -23,7 +24,8 @@
     "package:preview": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs --preview",
     "test:webkit": "npm run build && node scripts/test-webkit.mjs",
     "test:kernel-desktop": "node tests/kernel-desktop.mjs",
-    "test:features": "node tests/features-desktop.mjs && node tests/menu-desktop.mjs && node tests/background-desktop.mjs && node tests/plugin-package-desktop.mjs && node tests/alignment-desktop.mjs && node tests/pdf-desktop.mjs && node tests/startup-desktop.mjs",
+    "test:features": "node tests/features-desktop.mjs && node tests/menu-desktop.mjs && node tests/background-desktop.mjs && node tests/plugin-package-desktop.mjs && node tests/alignment-desktop.mjs && node tests/pdf-desktop.mjs && node tests/startup-desktop.mjs && node tests/plugin-startup-desktop.mjs && node tests/editor-navigation-desktop.mjs && node tests/reference-navigation-desktop.mjs && node tests/quick-wins-desktop.mjs && npm run test:reading && npm run test:document-workflows && node tests/packaged-citations-desktop.mjs && node tests/packaged-workspace-desktop.mjs",
+    "test:reading": "node tests/reading-desktop.mjs",
     "test:alignment": "node tests/alignment-desktop.mjs",
     "test:encoding": "node tests/encoding-desktop.mjs",
     "package:dmg": "npm run package:mac && node scripts/package-dmg.mjs",
@@ -61,22 +63,26 @@
     "@mathjax/mathjax-newcm-font": "4.1.3",
     "@mathjax/src": "4.1.3",
     "dompurify": "3.4.17",
+    "entities": "8.1.0",
     "highlight.js": "11.12.0",
     "i18next": "26.5.3",
     "iconv-lite": "0.6.3",
     "image-size": "2.0.4",
     "lucide-react": "1.56.0",
-    "markdown-it": "15.0.2",
+    "koffi": "3.3.8",
+    "markdown-it": "15.0.3",
     "markdown-it-emoji": "3.1.0",
     "markdown-it-mark": "4.0.0",
     "markdown-it-sub": "2.0.0",
     "markdown-it-sup": "2.0.0",
     "markdown-it-task-lists": "2.1.1",
+    "markdownlint": "0.42.1",
     "mermaid": "12.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "turndown": "7.2.4",
-    "turndown-plugin-gfm": "1.0.2"
+    "turndown-plugin-gfm": "1.0.2",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@babel/parser": "8.0.4",
@@ -85,7 +91,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
-    "electron": "44.7.2",
+    "electron": "44.11.3",
     "electron-builder": "26.15.3",
     "i18next-cli": "1.75.3",
     "jsdom": "30.1.1",
@@ -104,6 +110,7 @@
       "dist/**/*",
       "electron/**/*",
       "shared/**/*",
+      "third-party/csl/**/*",
       "docs/showcase/**/*",
       "package.json"
     ],
@@ -128,8 +135,12 @@
       }
     ]
   },
+  "overrides": {
+    "katex": "0.18.2"
+  },
   "allowScripts": {
-    "electron": true
+    "electron": true,
+    "koffi": false
   },
   "author": {
     "name": "gafgpt-cmd",

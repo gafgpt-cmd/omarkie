@@ -10,9 +10,9 @@ import pkg from "../package.json" with { type: "json" };
 // for the pinned Electron: Chromium's chromium/deps/hunspell_dictionaries files under the names
 // this Chromium asks for. A different Electron needs new pins.
 export const dictionaryArchive = {
-  electron: "44.7.2",
-  url: "https://github.com/electron/electron/releases/download/v44.7.2/hunspell_dictionaries.zip",
-  sha256: "0e3693aad6494be74dbcc63f34d48ca30c05d9f5a0ccb408ebc89b17a8048907",
+  electron: "44.11.3",
+  url: "https://github.com/electron/electron/releases/download/v44.11.3/hunspell_dictionaries.zip",
+  sha256: "ef244e7c4178b1c1dcfae1b52c72915ff287bd43203fc742e435b175e936ee1f",
 };
 export const dictionaryFiles = {
   "en-US-10-1.bdic": "a075b01d9b015c616511a9e87da77da3d9881621db32f584e4606ddabf1c1100",

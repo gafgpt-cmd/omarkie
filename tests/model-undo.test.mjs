@@ -33,11 +33,12 @@ test("undo and redo replay every edit exactly and keep the block tree consistent
 
 test("typing groups undo in one step, including backspace past the group start", () => {
   const model = new MarkdownDocument("Hello world\n");
-  const type = (from, to, insert) => { model.selection = { anchor: from, head: from }; model.replace(from, to, insert, "typing", { anchor: from + insert.length, head: from + insert.length }); };
+  const type = (from, to, insert) => { const caret = insert ? from : to; model.selection = { anchor: caret, head: caret }; model.replace(from, to, insert, "typing", { anchor: from + insert.length, head: from + insert.length }); };
   type(5, 5, ","); type(6, 6, " "); type(7, 7, "d"); type(8, 8, "e"); type(8, 9, ""); type(7, 8, ""); type(6, 7, ""); type(5, 6, ""); type(4, 5, "");
   assert.equal(model.text, "Hell world\n");
   assert.ok(model.undo());
   assert.equal(model.text, "Hello world\n");
+  assert.equal(model.canUndo, false);
   assert.ok(model.redo());
   assert.equal(model.text, "Hell world\n");
 });
@@ -48,4 +49,46 @@ test("a 3 MB document keeps a full undo history", () => {
   let steps = 0;
   while (model.undo()) steps++;
   assert.equal(steps, 100);
+});
+
+test("property and rich edits preserve mixed line endings through undo and redo", () => {
+  const source = "\uFEFF---\r\ntype: Note\ncustom: keep\r\n---\n\n# Heading\r\nBody\nTail\r";
+  const model = new MarkdownDocument(source, "\r\n");
+  const at = model.text.indexOf("Body");
+  model.replace(at, at + 4, "Edited", "command");
+  assert.equal(model.toMarkdown(), source.replace("Body", "Edited"));
+  model.undo(); assert.equal(model.toMarkdown(), source);
+  const updated = source.replace("type: Note", "type: Reference");
+  model.replaceSource(updated, "document-command");
+  assert.equal(model.toMarkdown(), updated);
+  model.undo(); assert.equal(model.toMarkdown(), source);
+  model.redo(); assert.equal(model.toMarkdown(), updated);
+});
+
+test("mixed-ending typing and backspace retain one undo group and exact source", () => {
+  const source = "# Title\r\n\nHello world\r\nTail\r";
+  const model = new MarkdownDocument(source, "\r\n"), base = model.text.indexOf("Hello") + 5;
+  const type = (from, to, insert) => {
+    const caret = insert ? from : to;
+    model.selection = { anchor: caret, head: caret };
+    model.replace(from, to, insert, "typing", { anchor: from + insert.length, head: from + insert.length });
+  };
+  type(base, base, ","); type(base + 1, base + 1, " "); type(base + 2, base + 2, "d"); type(base + 3, base + 3, "e");
+  type(base + 3, base + 4, ""); type(base + 2, base + 3, ""); type(base + 1, base + 2, ""); type(base, base + 1, ""); type(base - 1, base, "");
+  const edited = source.replace("Hello", "Hell");
+  assert.equal(model.toMarkdown(), edited);
+  model.undo(); assert.equal(model.toMarkdown(), source); assert.equal(model.canUndo, false);
+  model.redo(); assert.equal(model.toMarkdown(), edited);
+});
+
+test("mixed-ending composition commits once and cancellation preserves redo", () => {
+  const source = "A\r\nB\nC\r", model = new MarkdownDocument(source, "\r\n"), at = model.text.indexOf("B");
+  model.beginComposition(); model.replace(at, at + 1, "你好", "composition");
+  assert.equal(model.endComposition(), true);
+  const edited = source.replace("B", "你好");
+  assert.equal(model.toMarkdown(), edited);
+  model.undo(); assert.equal(model.toMarkdown(), source);
+  model.beginComposition(); model.replace(at, at + 1, "候选", "composition"); model.replaceSource(source, "composition");
+  assert.equal(model.endComposition(), false); assert.equal(model.canRedo, true);
+  model.redo(); assert.equal(model.toMarkdown(), edited);
 });

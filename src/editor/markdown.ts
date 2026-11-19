@@ -1,15 +1,12 @@
-import MarkdownIt from "markdown-it";
-import taskLists from "markdown-it-task-lists";
-import { configureMath } from "./mathMarkdown.ts";
+import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
+import { collectImages } from "../../shared/image-references.mjs";
+import { parserContext } from "../../shared/parser-context.mjs";
+import { sourceLines } from "../../shared/source-lines.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
 import DOMPurify from "dompurify";
-import mark from "markdown-it-mark";
-import sub from "markdown-it-sub";
-import sup from "markdown-it-sup";
-import { full as emoji } from "markdown-it-emoji";
-import { configureDocumentSyntax } from "./markdownExtensions.ts";
+import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
 import { bundledImageUrls } from "./htmlResources.ts";
@@ -26,30 +23,19 @@ export interface Heading {
   text: string;
   id: string;
 }
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  breaks: true,
+const md = createMarkdown({
   highlight(code, language): string {
     return language && hljs?.getLanguage(language)
       ? hljs.highlight(code, { language, ignoreIllegals: true }).value
       : md.utils.escapeHtml(code);
   },
-})
-  .use(taskLists, { enabled: false })
-  .use(configureMath)
-  .use(mark).use(sub).use(sup).use(emoji, { shortcuts: {} })
-  .use(configureDocumentSyntax).disable("html_inline");
-// Local file:// images resolve through the asset protocol; markdown-it rejects the scheme by default.
-const validateLink = md.validateLink;
-md.validateLink = url => /^file:\/\//i.test(url.trim()) || validateLink(url);
+}).use(configureDocumentRendering);
 // Bumped on every option change so cached block renders are invalidated.
 export let markdownOptionsVersion = 0;
 export function setMarkdownOptions(options: { highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean }) {
   markdownOptionsVersion++;
   allowRemoteImages = (options as { remoteImages?: boolean }).remoteImages === true;
-  for (const [rule, enabled] of [["mark", options.highlight], ["sub", options.subscript], ["sup", options.superscript], ["emoji", options.emoji], ["math_inline", options.inlineMath]] as const)
-    enabled ? md.enable(rule, true) : md.disable(rule, true);
+  setSyntaxOptions(md, options);
 }
 const defaultFence = md.renderer.rules.fence!;
 md.renderer.rules.fence = (tokens, index, options, env, self) =>
@@ -73,16 +59,12 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
       imageSizes.set(`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(key)}`, [size[0], size[1]]);
   }
 }
-// Local image sources a document references (Markdown images and <img> tags); a light scan for
-// the size prefetch, so a source inside a code fence costs the host one failed lookup at most.
+export function markdownImageReferences(text: string) { return collectImages(md, text); }
 export function localImageSources(text: string) {
-  const sources = new Set<string>();
-  for (const match of text.matchAll(/!\[\[([^[\]\n|#]+)|!\[(?:\\.|[^\]\\])*\]\((<[^>\n]*>|(?:\\.|[^)\\\n])*)|<img\b[^>]*?\ssrc\s*=\s*["']([^"']+)["']/gi)) {
-    const raw = match[1] ?? (match[2] !== undefined ? match[2].trim().replace(/\s+(["']).*\1$/, "").replace(/^<|>$/g, "").replace(/\\([()])/g, "$1") : match[3]);
-    const source = raw.trim(), scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
-    if (source && (!scheme || scheme.length === 1 || scheme === "file")) sources.add(source);
-  }
-  return [...sources];
+  return [...new Set(markdownImageReferences(text).map(image => image.url).filter(source => {
+    const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
+    return !scheme || scheme.length === 1 || scheme === "file";
+  }))];
 }
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
@@ -109,7 +91,7 @@ md.renderer.rules.image = (tokens, index, _options, env) => {
 // Obsidian embeds resolve like Obsidian: next to the note first, then anywhere in the vault (host side).
 md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
   const token = tokens[index], meta = (token.meta || {}) as { target?: string; width?: string; height?: string }, target = (meta.target || "").split("#")[0], documentId = typeof env?.documentId === "string" ? env.documentId : undefined;
-  const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target);
+  const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target.replaceAll("%", "%25"));
   if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height);
   const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
   return media && documentId
@@ -117,7 +99,7 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     : `<span class="wiki-embed">${name}</span>`;
 };
 function cleanHtml(html: string, documentId?: string) {
-  const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"] });
+  const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   for (const image of template.content.querySelectorAll("img")) {
     const source = image.getAttribute("src") || "";
@@ -166,19 +148,19 @@ export function parseBlocks(
   source: string,
   environment: Record<string, unknown> = {},
 ): Block[] {
-  const lines = source.split("\n");
+  const { lines, offsets } = sourceLines(source), span = (from: number, to: number) => source.slice(offsets[from], offsets[to - 1] + lines[to - 1].length);
   const blocks: Block[] = [];
   let covered = 0;
-  if (lines[0] === "---") {
+  if (/^(?:\uFEFF)?---[ \t]*$/.test(lines[0])) {
     const end = lines
       .slice(1)
-      .findIndex((line) => line === "---" || line === "...");
+      .findIndex((line) => /^(?:---|\.\.\.)[ \t]*$/.test(line));
     if (end >= 0) {
       covered = end + 2;
       blocks.push({
         fromLine: 1,
         toLine: covered,
-        source: lines.slice(0, covered).join("\n"),
+        source: span(0, covered),
         kind: "frontmatter",
       });
     }
@@ -196,7 +178,7 @@ export function parseBlocks(
     blocks.push({
       fromLine: from + 1,
       toLine: to,
-      source: lines.slice(from, to).join("\n"),
+      source: span(from, to),
       kind: token.type,
     });
   }
@@ -228,8 +210,10 @@ export function editableHtml(
     ...md.renderer.rules,
     fence: (tokens, index) => fence(tokens[index]),
   };
-  const env = { ...environment, documentId, fragment: true },
-    tokens = md.parse(source, env);
+  const env = { ...environment, documentId, fragment: true };
+  const context = source.includes("|") ? parserContext(md, source, env) : null;
+  const tokens = context?.tokens || md.parse(source, env);
+  if (context) Object.assign(env, context.environment);
   const html = tokens
     .map((token, index) => {
       if (token.type === "inline") return inline(token);
@@ -252,8 +236,11 @@ export function editableHtml(
     })
     .join("");
   return DOMPurify.sanitize(html, {
+    ADD_TAGS: ["video", "audio", "source"],
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
     ADD_URI_SAFE_ATTR: ["src", "srcset"],
     ADD_ATTR: [
+      "controls",
       "contenteditable",
       "data-leaf",
       "data-task",

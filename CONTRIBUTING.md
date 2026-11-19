@@ -17,9 +17,10 @@ Remove personal information and credentials from examples.
 ## Set up development
 
 Use Node.js 26 and npm. Linux and Windows use Electron; macOS needs macOS 14+ and Xcode Command Line Tools.
-`npm run verify` requires Pandoc 3, LibreOffice and Playwright Chromium.
-On Linux, missing Chromium system libraries can be installed with `npx playwright install --with-deps chromium`.
-CI uses GitHub-hosted Ubuntu, installs the latest digest-verified Pandoc and LibreOffice Writer, then runs the required checks below with `OMARKIE_REQUIRE_CONVERTERS=1`.
+- `npm run verify` requires Pandoc 3, LibreOffice, Playwright Chromium and Poppler's `pdftotext` on PATH.
+- Linux also needs `flock`, Xvfb and xauth for the command below.
+- Missing Chromium libraries: `npx playwright install --with-deps chromium`.
+- CI uses GitHub-hosted Ubuntu with these dependencies and the latest digest-verified Pandoc; converters are mandatory via `OMARKIE_REQUIRE_CONVERTERS=1`.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
@@ -47,6 +48,14 @@ npm run verify
 ```
 
 Includes the production build, unit tests, browser startup and Electron compatibility suites.
+Desktop checks cover shared undo, photo previews, reading tools, document workflows, packaged citations and collision-safe file operations.
+Strict timing stays separate; see [performance targets](README.md#performance-targets).
+
+Linux CI-equivalent invocation:
+
+```sh
+OMARKIE_REQUIRE_CONVERTERS=1 flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run verify'
+```
 
 Focused suites:
 
@@ -57,8 +66,10 @@ Focused suites:
 | `npm run test:browser` | Illustrated startup, decoded pictures, source roundtrip and restored drafts | Playwright Chromium; run `npm run build` first |
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
-| `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and mode history | macOS desktop |
-| `npm run test:features` | Menus, shortcuts, fonts, preferences, plugins, navigation, writing modes, file workflows, PDF open, and startup (explicit file skips the restored session) | Electron; Linux runs headless |
+| `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and shared rich/source history | Electron desktop |
+| `npm run test:features` | Menus, preferences, navigation, file workflows, PDF open, startup/plugin ordering, reading/document tools and packaged regressions | Electron + converters; Linux uses the invocation above |
+| `npm run test:reading` | Callout/table folding, image viewing/resizing, slash commands, width and right outline | Electron; included in `test:features` |
+| `npm run test:document-workflows` | Properties, OKF conversion/bundles, references, templates and citation/letterhead output | Electron + Pandoc + `pdftotext`; included in `test:features` |
 | `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron + Pandoc + LibreOffice |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | Electron; Linux runs headless |
@@ -88,7 +99,7 @@ node scripts/install.mjs
 
 Use `npm run package:preview` for a separate preview application and data directory when checking a change without touching your normal session. Native builds are locally signed, not Apple-notarized.
 
-On Windows x64, run `npm run package:win` to create the NSIS EXE installer, ZIP, and checksums in `release/windows/`. The same original M icon is generated as a multi-resolution ICO. The Windows package contains only the two runtime file-bridge dependencies; frontend libraries are already bundled.
+On Windows x64, run `npm run package:win` to create the NSIS EXE installer, ZIP, and checksums in `release/windows/`. The same original M icon is generated as a multi-resolution ICO. Runtime dependencies are selected by `scripts/prepare-electron.mjs`, including the platform-native file-operation bridge; frontend libraries are already bundled.
 
 After packaging on Windows, `npm run test:windows` installs the EXE into an isolated temporary folder, runs the desktop suite against the installed executable, checks Unicode document arguments, single-instance opening and file-association registration, and uninstalls the application. It preserves recovery data. Evidence goes to `OMARKIE_QA_DIR` in the runner temporary directory. This is automated acceptance on a Windows Server runner, not a manual Windows 10/11 IME check.
 

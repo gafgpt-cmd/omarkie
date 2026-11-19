@@ -40,7 +40,7 @@ export function toyporaOmarchyTheme(palette: OmarchyPalette = omarchyDefault): T
   const css = `:root[data-theme][data-appearance]{${vars};--document-font:"Open Sans","Clear Sans","Helvetica Neue",Helvetica,Arial,"Noto Color Emoji",sans-serif;--chrome-font:"Open Sans","Helvetica Neue",Arial,"Noto Color Emoji",sans-serif}`
     + `.rich-document,.print-document{font-family:var(--document-font)}${scope} :is(.rich-document,.print-document) :is(code,pre,.md-fence){font-family:"Lucida Console",Consolas,Courier,monospace}`
     + `${scope} .rich-document a{color:${c.accent};text-decoration:none}${scope} .rich-document{caret-color:${c.accent}}`;
-  return { id: "omarchy-toypora", name: t("Omarchy 配色 · Toypora 字体"), description: t("Omarchy 配色 · Toypora 字体"), dark, paper: c.background, ink: c.foreground, accent: c.accent, css };
+  return { id: "omarchy-toypora", name: t("Omarchy 配色 · 阅读字体"), description: t("Omarchy 配色 · 阅读字体"), dark, paper: c.background, ink: c.foreground, accent: c.accent, css };
 }
 export const omarchyThemes = [
   omarchyTheme(),

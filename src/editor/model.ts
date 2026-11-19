@@ -19,16 +19,20 @@ export interface DocumentRoot {
 interface Snapshot {
   text: string;
   selection: SelectionBookmark;
+  rawSource: string | null;
 }
 // Undo stores the edit, not two copies of the document: large files keep a full history.
-interface Command {
+interface TextChange {
   from: number;
   removed: string;
   inserted: string;
+}
+interface Command extends TextChange {
   before: SelectionBookmark;
   after: SelectionBookmark;
   kind: string;
   time: number;
+  raw?: TextChange;
 }
 // Beyond these the rich view falls back to source mode: a single element would hold the block.
 export const richTextLimit = 12_000_000;
@@ -39,6 +43,21 @@ const newlines = (text: string) => {
   for (let at = text.indexOf("\n"); at >= 0; at = text.indexOf("\n", at + 1)) count++;
   return count;
 };
+export function sourceOffset(source: string, offset: number, start = 0) {
+  let target = start + offset, at = start - 2;
+  while ((at = source.indexOf("\r\n", at + 2)) >= 0 && at < target) target++;
+  return target;
+}
+function nonDefaultEndings(source: string, ending: string) {
+  return ending === "\n" ? source.includes("\r") : ending === "\r\n" ? /\r(?!\n)|(?<!\r)\n/.test(source) : source.includes("\n");
+}
+function sourceChange(source: string, from: number, to: number, insert: string, ending: string): TextChange {
+  const first = sourceOffset(source, from), last = sourceOffset(source, to - from, first);
+  const removed = source.slice(first, last), count = newlines(insert), endings = count ? removed.match(/\r\n?|\n/g) : null;
+  let index = 0;
+  const inserted = count ? insert.replace(/\n/g, () => endings?.length === count ? endings[index++] : ending) : insert;
+  return { from: first, removed, inserted };
+}
 // Blocks keep their ids across parses: exact matches first, then same-kind blocks at the same position.
 function assignIds(old: DocumentNode[], blocks: Block[]) {
   const used = new Set<string>(), reusable = new Map<string, DocumentNode[]>();
@@ -83,6 +102,7 @@ export class MarkdownDocument {
     return { children: this.children };
   }
   private original: string;
+  private rawSource: string | null = null;
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
   private group = false;
@@ -90,63 +110,29 @@ export class MarkdownDocument {
   beginComposition() {
     if (this.compositionSession) return;
     this.closeGroup();
-    this.compositionSession = { entry: { text:this.text,selection:{...this.selection} }, undo:this.undoStack, redo:this.redoStack };
+    this.compositionSession = { entry: { text:this.text,selection:{...this.selection},rawSource:this.rawSource }, undo:this.undoStack, redo:this.redoStack };
     this.undoStack=[]; this.redoStack=[];
   }
   endComposition() {
     const session=this.compositionSession; if (!session) return false;
-    const after={text:this.text,selection:{...this.selection}};
+    const after={text:this.text,selection:{...this.selection},rawSource:this.rawSource};
     this.undoStack=session.undo; this.redoStack=session.redo;
-    this.text=session.entry.text; this.selection=session.entry.selection; this.compositionSession=null;
+    this.text=session.entry.text; this.selection=session.entry.selection; this.rawSource=session.entry.rawSource; this.compositionSession=null;
     this.closeGroup();
-    const changed=this.replace(0,this.text.length,after.text,"composition",after.selection);
+    const changed=after.rawSource === null ? this.replace(0,this.text.length,after.text,"composition",after.selection) : this.replaceSource(after.rawSource,"composition",after.selection);
     this.closeGroup(); return changed;
   }
-  private sourceSession: {
-    entry: Snapshot;
-    undo: Command[];
-    redo: Command[];
-  } | null = null;
   get canUndo() {
     return this.undoStack.length > 0;
   }
   get canRedo() {
     return this.redoStack.length > 0;
   }
-  beginSourceSession() {
-    if (this.sourceSession) return;
-    this.closeGroup();
-    this.sourceSession = {
-      entry: { text: this.text, selection: { ...this.selection } },
-      undo: this.undoStack,
-      redo: this.redoStack,
-    };
-    this.undoStack = [];
-    this.redoStack = [];
-  }
-  endSourceSession() {
-    const session = this.sourceSession;
-    if (!session) return;
-    const after = { text: this.text, selection: { ...this.selection } };
-    this.undoStack = session.undo;
-    this.redoStack = session.redo;
-    this.text = session.entry.text;
-    this.selection = session.entry.selection;
-    this.sourceSession = null;
-    this.closeGroup();
-    this.replace(
-      0,
-      this.text.length,
-      after.text,
-      "source-session",
-      after.selection,
-    );
-    this.closeGroup();
-  }
   lineEnding: string;
   constructor(source: string, lineEnding = "\n") {
     this.lineEnding = lineEnding;
     this.original = source;
+    if (nonDefaultEndings(source, lineEnding)) this.rawSource = source;
     this.text = source.replace(/\r\n?/g, "\n");
     this.selection = { anchor: this.text.length, head: this.text.length };
     this.parse();
@@ -157,6 +143,7 @@ export class MarkdownDocument {
   }
   private normalizedOriginal: string | null = null;
   toMarkdown() {
+    if (this.rawSource !== null) return this.rawSource;
     this.normalizedOriginal ??= this.original.replace(/\r\n?/g, "\n");
     if (this.text === this.normalizedOriginal) return this.original;
     return this.lineEnding === "\n" ? this.text : this.text.replace(/\n/g, this.lineEnding);
@@ -225,6 +212,12 @@ export class MarkdownDocument {
     if (this.nodes.length && (covered ? !gaps.length : gaps.length === 1 && gaps[0].from === caret)) return;
     this.parse();
   }
+  get tracksLineEndings() {
+    return this.rawSource !== null;
+  }
+  replaceSource(source: string, kind = "source-command", selection?: SelectionBookmark) {
+    return this.recordChange(0, this.text.length, source, kind, selection, source);
+  }
   replace(
     from: number,
     to: number,
@@ -232,6 +225,9 @@ export class MarkdownDocument {
     kind = "command",
     selection?: SelectionBookmark,
   ) {
+    return this.recordChange(from, to, insert, kind, selection);
+  }
+  private recordChange(from: number, to: number, insert: string, kind: string, selection?: SelectionBookmark, rawSource?: string) {
     from = Math.max(0, Math.min(from, this.text.length));
     to = Math.max(from, Math.min(to, this.text.length));
     insert = insert.replace(/\r\n?/g, "\n");
@@ -244,9 +240,23 @@ export class MarkdownDocument {
     while (tail < shortest - head && removed.charCodeAt(removed.length - 1 - tail) === insert.charCodeAt(insert.length - 1 - tail)) tail++;
     from += head; to -= tail; insert = insert.slice(head, insert.length - tail);
     const deleted = removed.slice(head, removed.length - tail);
+    const rawBefore = this.rawSource ?? (rawSource !== undefined && nonDefaultEndings(rawSource, this.lineEnding) ? this.toMarkdown() : null);
+    let raw: TextChange | undefined;
+    if (rawBefore !== null) {
+      if (rawSource === undefined) raw = sourceChange(rawBefore, from, to, insert, this.lineEnding);
+      else {
+        let first = 0, last = 0;
+        const shortest = Math.min(rawBefore.length, rawSource.length);
+        while (first < shortest && rawBefore.charCodeAt(first) === rawSource.charCodeAt(first)) first++;
+        while (last < shortest - first && rawBefore.charCodeAt(rawBefore.length - 1 - last) === rawSource.charCodeAt(rawSource.length - 1 - last)) last++;
+        if (first < rawBefore.length - last || first < rawSource.length - last) raw = { from: first, removed: rawBefore.slice(first, rawBefore.length - last), inserted: rawSource.slice(first, rawSource.length - last) };
+      }
+      if (raw && raw.removed === raw.inserted) raw = undefined;
+      if (raw) this.rawSource = rawBefore.slice(0, raw.from) + raw.inserted + rawBefore.slice(raw.from + raw.removed.length);
+    }
     this.text = this.text.slice(0, from) + insert + this.text.slice(to);
     this.selection = selection;
-    if (from === to && !insert) return false;
+    if (from === to && !insert && !raw) return false;
     const now = Date.now(),
       previous = this.undoStack.at(-1),
       end = previous ? previous.from + previous.inserted.length : -1;
@@ -256,7 +266,8 @@ export class MarkdownDocument {
       previous?.kind === kind &&
       (kind === "composition" || now - previous.time < 800) &&
       previous.after.head === before.selection.head &&
-      before.selection.anchor === before.selection.head;
+      before.selection.anchor === before.selection.head &&
+      !!previous.raw === !!raw;
     if (grouped && !deleted && from === end) previous.inserted += insert;
     else if (grouped && !insert && to === end && from >= previous.from) previous.inserted = previous.inserted.slice(0, from - previous.from);
     else if (grouped && !insert && to === end && from < previous.from) {
@@ -264,18 +275,29 @@ export class MarkdownDocument {
       previous.inserted = "";
       previous.from = from;
     } else {
-      this.undoStack.push({ from, removed: deleted, inserted: insert, before: before.selection, after: { ...this.selection }, kind, time: now });
+      this.undoStack.push({ from, removed: deleted, inserted: insert, before: before.selection, after: { ...this.selection }, kind, time: now, raw });
       if (this.undoStack.length > 100) this.undoStack.shift();
     }
-    if (this.undoStack.at(-1) === previous && previous) { previous.after = { ...this.selection }; previous.time = now; }
+    if (this.undoStack.at(-1) === previous && previous) {
+      previous.after = { ...this.selection }; previous.time = now;
+      if (raw && previous.raw && rawBefore !== null) {
+        const old = previous.raw, first = Math.min(old.from, raw.from), last = Math.max(old.from + old.inserted.length, raw.from + raw.removed.length);
+        const span = rawBefore.slice(first, last);
+        previous.raw = {
+          from: first,
+          removed: span.slice(0, old.from - first) + old.removed + span.slice(old.from - first + old.inserted.length),
+          inserted: span.slice(0, raw.from - first) + raw.inserted + span.slice(raw.from - first + raw.removed.length),
+        };
+      }
+    }
     while (
       this.undoStack.length > 1 &&
-      this.undoStack.reduce((bytes, command) => bytes + 2 * (command.removed.length + command.inserted.length), 0) > 16 * 1024 * 1024
+      this.undoStack.reduce((bytes, command) => bytes + 2 * (command.removed.length + command.inserted.length + (command.raw?.removed.length ?? 0) + (command.raw?.inserted.length ?? 0)), 0) > 16 * 1024 * 1024
     )
       this.undoStack.shift();
     this.group = ["typing", "composition"].includes(kind);
     this.redoStack = [];
-    if (!this.patch(from, to, insert, before.text) && !this.patchWindow(from, to, insert, before.text)) this.parse();
+    if ((from !== to || insert) && !this.patch(from, to, insert, before.text) && !this.patchWindow(from, to, insert, before.text)) this.parse();
     return true;
   }
   // Fast path for typing inside one top-level paragraph: re-parse only that paragraph and shift
@@ -382,10 +404,10 @@ export class MarkdownDocument {
     source: string,
     lineEnding = source.includes("\r\n") ? "\r\n" : "\n",
   ) {
-    this.sourceSession = null;
     this.compositionSession = null;
     this.lineEnding = lineEnding;
     this.original = source;
+    this.rawSource = nonDefaultEndings(source, lineEnding) ? source : null;
     this.normalizedOriginal = null;
     this.text = source.replace(/\r\n?/g, "\n");
     this.selection = {
@@ -401,22 +423,28 @@ export class MarkdownDocument {
     const command = this.undoStack.pop();
     if (!command) return false;
     this.redoStack.push(command);
-    this.apply(command.from, command.from + command.inserted.length, command.removed, command.before);
+    this.apply(command.from, command.from + command.inserted.length, command.removed, command.before, command.raw, true);
     return true;
   }
   redo() {
     const command = this.redoStack.pop();
     if (!command) return false;
     this.undoStack.push(command);
-    this.apply(command.from, command.from + command.removed.length, command.inserted, command.after);
+    this.apply(command.from, command.from + command.removed.length, command.inserted, command.after, command.raw);
     return true;
   }
-  private apply(from: number, to: number, insert: string, selection: SelectionBookmark) {
+  private apply(from: number, to: number, insert: string, selection: SelectionBookmark, raw?: TextChange, reverse = false) {
+    if (this.rawSource !== null || raw) {
+      const source = this.rawSource ?? this.toMarkdown();
+      const patch = raw ?? sourceChange(source, from, to, insert, this.lineEnding);
+      const removed = reverse && raw ? patch.inserted : patch.removed, inserted = reverse && raw ? patch.removed : patch.inserted;
+      this.rawSource = source.slice(0, patch.from) + inserted + source.slice(patch.from + removed.length);
+    }
     const previous = this.text;
     this.text = previous.slice(0, from) + insert + previous.slice(to);
     this.selection = { ...selection };
     this.closeGroup();
-    if (!this.patch(from, to, insert, previous) && !this.patchWindow(from, to, insert, previous)) this.parse();
+    if ((from !== to || insert) && !this.patch(from, to, insert, previous) && !this.patchWindow(from, to, insert, previous)) this.parse();
   }
   // Index of the first block ending at or after the position; blocks are sorted and disjoint.
   private lowerIndex(position: number) {

@@ -34,6 +34,7 @@ export interface RichCallbacks {
   link(url: string): void;
   compositionFinished(): void;
 }
+export interface RichOptions { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; codeLineNumbers?: boolean; readOnly?: boolean }
 export class RichEditor {
   leaves = new Map<string, Leaf>();
   composing = false;
@@ -93,18 +94,20 @@ export class RichEditor {
   private tabSize = 2;
   private typewriter = false;
   private autoPair = false;
+  private codeLineNumbers = false;
   private readOnly = false;
   private protectReadOnly = (event: Event) => {
     if (!this.readOnly) return;
     if (event.type === "keydown") {
       const key = event as KeyboardEvent;
+      if (["Enter", " "].includes(key.key) && key.target instanceof Element && key.target.closest('button.md-ui[contenteditable="false"]')) return;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Escape"].includes(key.key) || ((key.metaKey || key.ctrlKey) && ["a", "c", "f"].includes(key.key.toLowerCase()))) return;
     }
     event.preventDefault(); event.stopImmediatePropagation();
   };
   private scrollFrame = 0;
   private fenceBehavior: Compartment | null = null;
-  private fenceOptions() { return [codeMirror!.EditorState.readOnly.of(this.readOnly), codeMirror!.EditorView.editable.of(!this.readOnly), codeMirror!.indentUnit.of(" ".repeat(this.tabSize)), ...(this.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])]; }
+  private fenceOptions() { return [...(this.codeLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(this.readOnly), codeMirror!.EditorView.editable.of(!this.readOnly), codeMirror!.indentUnit.of(" ".repeat(this.tabSize)), ...(this.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])]; }
   readonly root: HTMLElement;
   readonly model: MarkdownDocument;
   readonly documentId: string;
@@ -114,6 +117,7 @@ export class RichEditor {
     model: MarkdownDocument,
     documentId: string,
     callbacks: RichCallbacks,
+    options?: RichOptions,
   ) {
     this.root = root;
     this.model = model;
@@ -166,6 +170,7 @@ export class RichEditor {
     this.emojiPopup.addEventListener("mousedown", event => event.preventDefault());
     root.parentElement!.append(this.emojiPopup);
     root.parentElement!.append(this.tableToolbar);
+    if (options) this.setOptions(options);
     this.render(false);
   }
   private codeObserver: IntersectionObserver | null = null;
@@ -381,8 +386,21 @@ export class RichEditor {
       ?.setBaseAndExtent(anchor.node, anchor.offset, head.node, head.offset);
     this.expandInline();
   }
+  private caretBounds() {
+    const selection = window.getSelection();
+    if (!selection?.isCollapsed || !selection.rangeCount || !this.root.contains(selection.focusNode)) return null;
+    const range = selection.getRangeAt(0);
+    const rect = typeof range.getBoundingClientRect === "function" ? range.getBoundingClientRect() : null;
+    if (rect?.height) return rect;
+    const element = selection.focusNode?.nodeType === Node.ELEMENT_NODE ? selection.focusNode as HTMLElement : selection.focusNode?.parentElement;
+    return element?.closest<HTMLElement>("[data-cid]")?.getBoundingClientRect() || null;
+  }
   render(restore = true) {
     if (this.composing) return;
+    const scroller = this.windowed ? this.root.parentElement : null;
+    const caret = scroller && this.caretBounds();
+    const bounds = caret?.height && scroller ? scroller.getBoundingClientRect() : null;
+    const keepCaret = bounds && caret && caret.top < bounds.bottom && caret.bottom > bounds.top;
     this.mutating = true;
     const fresh = new Map<string, Leaf>();
     const desired: HTMLElement[] = [];
@@ -469,8 +487,21 @@ export class RichEditor {
       if (current && desired[i].parentNode === this.root && holds(desired[i])) { current.remove(); i--; continue; }
       this.root.insertBefore(desired[i], current || null);
     }
+    if (this.codeLineNumbers) for (const body of this.root.querySelectorAll<HTMLElement>(".md-fence:not(.fence-editing)>.fence-body")) {
+      const code = body.querySelector("code"), text = code?.textContent || "";
+      if (!code) continue;
+      const lines = text.replace(/\n$/, "").split("\n").length;
+      if (body.dataset.numberedLines !== String(lines)) { body.dataset.numberedLines = String(lines); body.dataset.lineNumbers = Array.from({ length: lines }, (_, index) => index + 1).join("\n"); }
+    }
     this.measure();
     if (restore && !this.fence) this.restore();
+    if (keepCaret) {
+      const caret = this.caretBounds(), bounds = scroller!.getBoundingClientRect();
+      if (caret?.height) {
+        if (caret.top < bounds.top) scroller!.scrollTop -= bounds.top - caret.top;
+        else if (caret.bottom > bounds.bottom) scroller!.scrollTop += caret.bottom - bounds.bottom;
+      }
+    }
     this.mutating = false;
     this.highlightVisibleCode();
     void renderDiagrams(this.root).catch(() => {}).then(() => this.scheduleMeasure());
@@ -614,7 +645,7 @@ export class RichEditor {
     this.callbacks.cursor(line, column);
     this.updateWritingMode(); this.updateEmoji();
   }
-  setOptions(options: { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; readOnly?: boolean }) {
+  setOptions(options: RichOptions) {
     this.readOnly = options.readOnly ?? false;
     this.root.contentEditable = String(!this.readOnly);
     this.root.setAttribute("aria-readonly", String(this.readOnly));
@@ -625,6 +656,7 @@ export class RichEditor {
     this.tabSize = options.tabSize;
     this.typewriter = options.typewriter;
     this.autoPair = options.autoPair ?? false;
+    this.codeLineNumbers = options.codeLineNumbers ?? false;
     this.fence?.view.dispatch({ effects: this.fenceBehavior!.reconfigure(this.fenceOptions()) });
     this.updateWritingMode();
   }

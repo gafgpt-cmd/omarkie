@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 // A PDF opens as the Markdown copy an external converter makes; without a converter it can open in the PDF viewer.
 const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-pdf-ui-")), pdf = path.join(root, "Clinical Atlas.pdf"), converter = path.join(root, "convert.cjs");
@@ -21,7 +21,7 @@ async function launch(name, extra, args) {
   const searchPath = (base.PATH || "").split(path.delimiter).filter(folder => !existsSync(path.join(folder, process.platform === "win32" ? "pdf-md.exe" : "pdf-md"))).join(path.delimiter);
   const env = await isolatedEnvironment({ ...base, OMARKIE_DATA_DIR: data, OMARKIE_LANGUAGE: "zh", PATH: searchPath, ...extra });
   const application = await electron.launch({ args: [process.cwd(), ...headlessArguments, ...args], env, timeout: 30000 }), page = await application.firstWindow();
-  page.on("pageerror", error => errors.push(error.message)); await fullSize(application, page);
+  page.on("pageerror", error => errors.push(error.message));
   return { application, page };
 }
 let application;

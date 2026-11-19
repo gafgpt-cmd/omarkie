@@ -66,3 +66,10 @@
 .markdown-alert-title{font-weight:600;color:#3474b8}.markdown-alert-title::before{content:"ⓘ";margin-right:.45em}.markdown-alert-tip .markdown-alert-title{color:#29814e}.markdown-alert-warning .markdown-alert-title{color:#ae7619}.markdown-alert-caution .markdown-alert-title{color:#be4444}.markdown-alert-important .markdown-alert-title{color:#8050b3}
 .markdown-alert>p:first-child{font-weight:normal}
 .markdown-alert-title::before{content:none}.markdown-alert-title .alert-icon{display:inline-block;width:1em;height:1em;vertical-align:-.12em;margin-right:.45em}
+.rich-document{max-width:var(--editor-columns,80ch)!important;line-height:var(--editor-line-height,1.6)!important}
+.source-surface .cm-content{max-width:calc(var(--editor-columns,80ch) + 60px)!important}
+.source-surface .cm-scroller,.source-surface .cm-content{line-height:var(--editor-line-height,1.6)!important}
+.source-line-numbers .cm-gutters,.code-line-numbers .fence-editing .cm-gutters{display:flex!important;background:var(--code);color:var(--muted);border-right:1px solid var(--border)}
+.code-line-numbers .md-fence:not(.fence-editing)>.fence-body{position:relative;padding-left:4.5em}
+.code-line-numbers .md-fence:not(.fence-editing)>.fence-body>code{white-space:pre}
+.code-line-numbers .md-fence:not(.fence-editing)>.fence-body::before{content:attr(data-line-numbers);position:absolute;left:0;top:0;bottom:0;width:3.5em;padding:inherit;padding-left:0;padding-right:.6em;text-align:right;color:var(--muted);border-right:1px solid var(--border);white-space:pre;pointer-events:none;user-select:none;font:inherit}

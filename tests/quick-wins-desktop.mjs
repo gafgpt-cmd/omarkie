@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-quick-wins-"));
-const env = { ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh" }; delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
-const application = await electron.launch({ args: [process.cwd()], env });
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "zh" }); delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 try {
   const page = await application.firstWindow();
   await expect(page.locator(".app-shell")).toBeVisible();
@@ -13,7 +14,7 @@ try {
   await page.keyboard.press("ControlOrMeta+,");
   const preferences = page.getByRole("dialog", { name: "偏好设置", exact: true });
   await expect(preferences).toBeVisible();
-  for (const [id, name] of [["omarchy", "Omarchy（自动）"], ["toypora-omarchy", "Toypora 纸张 · Omarchy 标题"], ["omarchy-toypora", "Omarchy 配色 · Toypora 字体"]]) {
+  for (const [id, name] of [["omarchy", "Omarchy（自动）"], ["toypora-omarchy", "白纸 · Omarchy 标题"], ["omarchy-toypora", "Omarchy 配色 · 阅读字体"]]) {
     await expect(preferences.getByLabel("主题", { exact: true }).locator(`option[value="${id}"]`)).toHaveText(name);
   }
   const available = await application.evaluate(({ session }) => session.defaultSession.availableSpellCheckerLanguages);

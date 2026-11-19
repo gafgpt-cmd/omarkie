@@ -4,9 +4,16 @@ import { createHash } from "node:crypto";
 import { readFile, mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import pkg from "../package.json" with {type:"json"};
+import { linuxArtifacts } from "../scripts/linux-artifacts.mjs";
 
 assert.equal(process.platform,"linux");
+const { deb, AppImage: image, version } = await linuxArtifacts("release/linux");
+const dependencies = execFileSync("dpkg-deb", ["--field", deb, "Depends"], { encoding: "utf8" }).trim().split(",").map(group => group.split("|").map(entry => entry.trim().split(/[\s(:]/)[0]));
+for (const name of ["libgbm1", "libasound2", "libx11-xcb1"]) assert.ok(dependencies.some(group => group.includes(name)), `DEB must install Electron runtime dependency: ${name}`);
+if (process.argv.includes("--metadata-only")) {
+  console.log("PASS: checksum-selected DEB declares GBM, ALSA and X11/XCB runtime dependencies");
+  process.exit(0);
+}
 const qa = process.env.OMARKIE_QA_DIR || path.join(os.tmpdir(),"omarkie-linux-qa");
 await mkdir(qa,{recursive:true});
 const run = (command,args,options={}) => execFileSync(command,args,{stdio:"inherit",...options});
@@ -18,7 +25,6 @@ const exercise = async (executable,kind) => {
   const session = path.join(dataDir,"session.json");
   return {session,hash:createHash("sha256").update(await readFile(session)).digest("hex")};
 };
-const deb = path.resolve(`release/linux/Omarkie-${pkg.version}-linux-x64.deb`);
 run("sudo",["apt-get","install","-y",deb]);
 const installed = "/opt/Omarkie/omarkie";
 await stat(installed);
@@ -32,11 +38,10 @@ assert.equal(createHash("sha256").update(await readFile(retained.session)).diges
 
 // Extract the AppImage to test its actual payload without requiring FUSE on a
 // headless runner. Do not disable Chromium's sandbox in either distribution.
-const image = path.resolve(`release/linux/Omarkie-${pkg.version}-linux-x64.AppImage`);
 const extraction = await mkdtemp(path.join(os.tmpdir(),"omarkie-appimage-"));
 run(image,["--appimage-extract"],{cwd:extraction,stdio:"ignore"});
 const sandbox = path.join(extraction,"squashfs-root/chrome-sandbox");
 run("sudo",["chown","root:root",sandbox]); run("sudo",["chmod","4755",sandbox]);
 await exercise(path.join(extraction,"squashfs-root/omarkie"),"appimage");
-await writeFile(path.join(qa,"installer-results.json"),JSON.stringify({version:pkg.version,debInstall:true,debUninstall:true,recoveryPreserved:true,desktopAssociation:true,appImageExtractedPayload:true,fuseMountTested:false,sandboxDisabled:false},null,2));
+await writeFile(path.join(qa,"installer-results.json"),JSON.stringify({version,debInstall:true,debUninstall:true,recoveryPreserved:true,desktopAssociation:true,appImageExtractedPayload:true,fuseMountTested:false,sandboxDisabled:false},null,2));
 console.log("PASS: installed DEB, AppImage payload, PDF/edit/save/recovery, file association and uninstall");

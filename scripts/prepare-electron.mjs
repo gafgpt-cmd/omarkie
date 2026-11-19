@@ -6,7 +6,9 @@ import { spellcheckDictionaries } from "./spellcheck-dictionaries.mjs";
 import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 // Folders the Electron host reads at runtime, at the same relative paths as in the repository.
-export const applicationFolders = ["dist", "electron", "shared", "docs/showcase"];
+export const applicationFolders = ["dist", "electron", "shared", "docs/showcase", "third-party/csl"];
+export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi"];
+export const nativeBridgeModule = (platform = process.platform, arch = process.arch) => `@koromix/koffi-${platform === "windows" ? "win32" : platform}-${arch}`;
 // Ship only the Node file bridge's dependencies; Vite bundles the editor.
 export async function prepareElectronApplication(platform) {
   const application = path.resolve(`build/${platform}-app`);
@@ -15,7 +17,7 @@ export async function prepareElectronApplication(platform) {
   for (const folder of applicationFolders) await cp(folder, path.join(application, folder), { recursive: true });
   const index = path.join(application, "dist/index.html");
   await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
-  for (const name of ["iconv-lite", "safer-buffer", "i18next", "image-size"]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
+  for (const name of [...nodeBridgeModules, nativeBridgeModule(platform)]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
   await cp("LICENSE", path.join(application, "LICENSE"));
   await cp("build/icon.png", path.join(application, "icon.png"));
   await licenseNotices(path.join(application, "ThirdPartyLicenses"));
@@ -25,7 +27,7 @@ export async function prepareElectronApplication(platform) {
     name: pkg.name, version: pkg.version, description: pkg.description,
     main: pkg.main, type: "module", license: pkg.license, author: pkg.author,
     ...(platform === "linux" ? { desktopName: "omarkie.desktop" } : {}),
-    homepage: pkg.homepage, dependencies: { "iconv-lite": pkg.dependencies["iconv-lite"], i18next: pkg.dependencies.i18next, "image-size": pkg.dependencies["image-size"] },
+    homepage: pkg.homepage, dependencies: { "iconv-lite": pkg.dependencies["iconv-lite"], i18next: pkg.dependencies.i18next, "image-size": pkg.dependencies["image-size"], yaml: pkg.dependencies.yaml, koffi: pkg.dependencies.koffi, [nativeBridgeModule(platform)]: pkg.dependencies.koffi },
   }, null, 2));
   return application;
 }

@@ -1,14 +1,19 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-export const headlessArguments = process.platform === "linux" ? ["--ozone-platform=headless"] : [];
+export const headlessArguments = process.platform === "linux" ? [`--ozone-platform=${process.env.OMARKIE_TEST_DISPLAY ? "x11" : "headless"}`] : [];
 export async function isolatedEnvironment(environment) {
   if (process.platform !== "linux") return environment;
   const directory = environment.OMARKIE_DATA_DIR;
   const runtime = path.join(directory, "runtime");
   await mkdir(runtime, { recursive: true, mode: 0o700 });
-  const isolated = { ...environment, OMARKIE_TEST_HIDDEN: environment.OMARKIE_TEST_HIDDEN ?? "1", XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(directory, "config"), XDG_STATE_HOME: path.join(directory, "state"), XDG_DATA_HOME: path.join(directory, "share") };
+  const display = environment.OMARKIE_TEST_DISPLAY;
+  const isolated = { ...environment, OMARKIE_TEST_HIDDEN: environment.OMARKIE_TEST_HIDDEN ?? (display ? "0" : "1"), XDG_RUNTIME_DIR: runtime, XDG_CONFIG_HOME: path.join(directory, "config"), XDG_STATE_HOME: path.join(directory, "state"), XDG_DATA_HOME: path.join(directory, "share") };
   for (const key of ["DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS", "XAUTHORITY"]) delete isolated[key];
+  if (display) {
+    isolated.DISPLAY = display;
+    if (environment.XAUTHORITY) isolated.XAUTHORITY = environment.XAUTHORITY;
+  }
   return isolated;
 }
 

@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 
-import { MarkdownDocument, richTextLimit } from "./model.ts";
+import { MarkdownDocument, richTextLimit, sourceOffset } from "./model.ts";
 import { RichEditor } from "./RichEditor.ts";
 import { host } from "../host";
 import type { DocumentRecord } from "../types";
@@ -45,6 +45,9 @@ export interface EditorHandle {
   transform(change: (text: string) => string): void;
   headings(text: string): Heading[] | null;
   numbered(): { line: number; counter: string }[];
+  imageOffset(image: HTMLImageElement): number | undefined;
+  selectionRange(): { from: number; to: number; context: string } | undefined;
+  replaceRange(from: number, to: number, text: string, expected: string): boolean;
 }
 interface Props {
   document: DocumentRecord;
@@ -57,10 +60,13 @@ interface Props {
   onCursor(line: number, column: number): void;
   onSelection?(text: string): void;
   onCompositionEnd?(): void;
+  onReference?(url: string): Promise<void>;
+  onReady?(mode: "rich" | "source" | null): void;
+  onSourceFallback?(): void;
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd },
+    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -68,14 +74,16 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const model = useRef<MarkdownDocument | null>(null),
       rich = useRef<RichEditor | null>(null),
       source = useRef<EditorView | null>(null);
-    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd });
-    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd };
+    const callbacks = useRef({ onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback });
+    callbacks.current = { onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback };
     const initial = useRef(record),
       requested = useRef(rendered),
       activeMode = useRef(rendered);
     const [visibleMode, setVisibleMode] = useState(
       rendered && record.content.length <= richTextLimit,
     );
+    const [readyMode, setReadyMode] = useState<"rich" | "source" | null>(null);
+    const [jumpLine, setJumpLine] = useState<number | null>(null);
     const oversizedNotice = useRef(false);
     const [editingImage, setEditingImage] = useState<ImageReference | null>(null);
     const imageQueue = useRef(Promise.resolve());
@@ -97,13 +105,20 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
     }
+    const richViewOptions = useRef<{ preferences?: Preferences; typewriter: boolean; readOnly: boolean } | null>(null);
+    function richOptions() {
+      const { preferences, typewriter, readOnly } = viewOptions.current;
+      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly };
+    }
     function applyViewOptions() {
       if (isComposing()) { pendingOptions.current = true; return; }
       pendingOptions.current = false;
       const { preferences, typewriter, readOnly } = viewOptions.current;
-      if (rich.current) {
-        rich.current.setOptions({ spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, readOnly });
+      const previous = richViewOptions.current;
+      if (rich.current && (!previous || previous.preferences !== preferences || previous.typewriter !== typewriter || previous.readOnly !== readOnly)) {
+        rich.current.setOptions(richOptions());
         model.current?.refreshCaret(); rich.current.render(false);
+        richViewOptions.current = viewOptions.current;
       }
       if (source.current) source.current.contentDOM.spellcheck = preferences?.spellcheck ?? false;
       source.current?.dispatch({ effects: sourceBehavior.current!.reconfigure(sourceOptions()) });
@@ -115,7 +130,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       setMode(requested.current);
     }
     const sourceBehavior = useRef<Compartment | null>(null);
-    const sourceOptions = () => [codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
+    const sourceOptions = () => [...(viewOptions.current.preferences?.sourceLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
     const viewOptions = useRef({ preferences, typewriter, readOnly });
     viewOptions.current = { preferences, typewriter, readOnly };
     function historyState() {
@@ -229,6 +244,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         source.current.focus();
       }
     }
+    function logicalImageOffset(image: HTMLImageElement) {
+      const object = image.closest<HTMLElement>(".md-inline[data-mark='image']");
+      if (object) { const leaf = rich.current?.leaves.get(object.closest<HTMLElement>("[data-leaf]")?.dataset.leaf || ""); const position = leaf?.positions[Number(object.dataset.inlineFrom)]; if (position !== undefined) return position; }
+      const block = image.closest<HTMLElement>("[data-cid]"), node = model.current?.nodes.find(item => item.id === block?.dataset.cid);
+      if (!node || !block) return undefined;
+      const index = [...block.querySelectorAll("img")].indexOf(image), reference = imageReferences(node.source)[index];
+      return reference ? node.from + reference.from : undefined;
+    }
     function ensureSource() {
       if (source.current || !sourceParent.current || !model.current) return;
       const doc = model.current;
@@ -299,13 +322,18 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                   : update.transactions.some((t) => t.isUserEvent("input.type"))
                     ? "typing"
                     : "source-command";
-                doc.replace(
-                  0,
-                  doc.text.length,
-                  update.state.doc.toString(),
-                  kind,
-                  { anchor: selected.anchor, head: selected.head },
-                );
+                const selection = { anchor: selected.anchor, head: selected.head };
+                if (doc.tracksLineEndings) {
+                  const source = doc.toMarkdown(), parts: string[] = [];
+                  let raw = 0, logical = 0;
+                  update.changes.iterChanges((from, to, _from, _to, inserted) => {
+                    const first = sourceOffset(source, from - logical, raw), last = sourceOffset(source, to - from, first);
+                    parts.push(source.slice(raw, first), inserted.toString().replace(/\n/g, doc.lineEnding));
+                    raw = last; logical = to;
+                  });
+                  parts.push(source.slice(raw));
+                  doc.replaceSource(parts.join(""), kind, selection);
+                } else doc.replace(0, doc.text.length, update.state.doc.toString(), kind, selection);
                 publish();
               } else if (update.selectionSet) {
                 doc.selection = {
@@ -371,38 +399,60 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     function setMode(value: boolean) {
       const doc = model.current;
       if (!doc) return;
-      value = value && richAllowed(doc);
-      if (!value && !codeMirror) { void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
+      if (value && !richAllowed(doc)) { value = false; callbacks.current.onSourceFallback?.(); }
+      if (!value && !codeMirror) { setReadyMode(null); void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
+      if (value === activeMode.current && (value ? rich.current : source.current)) { setReadyMode(value ? "rich" : "source"); return; }
       doc.closeGroup();
       if (value) {
         if (!activeMode.current && source.current) {
           const s = source.current.state.selection.main;
           doc.selection = { anchor: s.anchor, head: s.head };
         }
-        doc.endSourceSession();
         doc.refreshCaret();
-        rich.current?.render(false);
+        if (rich.current) rich.current.render(false);
+        else {
+          rich.current = new RichEditor(root.current!, doc, initial.current.id, {
+            change: publish,
+            cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
+            image: file => void insertImage(file),
+            link: url => void (callbacks.current.onReference && !/^(?:https?:|mailto:)/i.test(url) ? callbacks.current.onReference(url) : /^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(initial.current.id, url)).catch(error => callbacks.current.onError(error.message)),
+            compositionFinished,
+          }, richOptions());
+          richViewOptions.current = viewOptions.current;
+        }
       } else {
         if (activeMode.current) {
           doc.selection = rich.current?.bookmark() || doc.selection;
           rich.current?.releaseFence();
         }
-        doc.beginSourceSession();
         ensureSource();
         syncSource();
       }
       activeMode.current = value;
       setVisibleMode(value);
+      if (value ? rich.current : source.current) setReadyMode(value ? "rich" : "source");
       historyState();
     }
     useImperativeHandle(
       ref,
       () => ({
         view: () => source.current,
+        imageOffset: image => { const from = logicalImageOffset(image), doc = model.current; return from === undefined || !doc ? undefined : sourceOffset(doc.toMarkdown(), from); },
+        selectionRange: () => { const doc = model.current; if (!doc) return; const selection = activeMode.current && !isComposing() ? rich.current?.bookmark() || doc.selection : doc.selection, source = doc.toMarkdown(); return { from: sourceOffset(source, Math.min(selection.anchor, selection.head)), to: sourceOffset(source, Math.max(selection.anchor, selection.head)), context: activeMode.current ? doc.nodeAt(selection.head)?.kind || "" : "source" }; },
+        replaceRange: (from, to, text, expected) => {
+          const doc = model.current;
+          if (!doc || editingBlocked()) return false;
+          doc.closeGroup(); rich.current?.releaseFence();
+          const source = doc.toMarkdown();
+          if (from < 0 || to < from || to > source.length || source.slice(from, to) !== expected) return false;
+          const position = (source.slice(0, from) + text).replace(/\r\n?/g, "\n").length;
+          doc.replaceSource(source.slice(0, from) + text + source.slice(to), "reading-command", { anchor: position, head: position });
+          if (activeMode.current) rich.current?.render(); else syncSource(); publish(); focusEditor(); return true;
+        },
         composing: isComposing,
         markdown: () => model.current?.toMarkdown() || "",
-        transform: change => { const doc = model.current; if (!doc || editingBlocked()) return; doc.closeGroup(); const next = change(doc.text); if (next !== doc.text) { doc.replace(0, doc.text.length, next, "document-command"); if (activeMode.current) rich.current?.render(false); else syncSource(); publish(); } },
+        transform: change => { const doc = model.current; if (!doc || editingBlocked()) return; doc.closeGroup(); const current = doc.toMarkdown(), next = change(current); if (next !== current) { doc.replaceSource(next, "document-command"); if (activeMode.current) rich.current?.render(false); else syncSource(); publish(); } },
         find: () => {
           if (!activeMode.current) {
             ensureSource();
@@ -415,22 +465,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
             searchField.current?.select();
           });
         },
-        jump: (line) => {
-          if (activeMode.current) rich.current?.jump(line);
-          else if (source.current) {
-            const target = source.current.state.doc.line(
-              Math.min(line, source.current.state.doc.lines),
-            );
-            source.current.dispatch({
-              selection: { anchor: target.from },
-              effects: codeMirror!.EditorView.scrollIntoView(target.from, {
-                y: "start",
-                yMargin: 30,
-              }),
-            });
-            source.current.focus();
-          }
-        },
+        jump: setJumpLine,
         wrap: (before, after = "") => {
           if (editingBlocked()) return;
           if (activeMode.current) rich.current?.wrap(before, after);
@@ -493,21 +528,12 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       const start = () => {
         if (cancelled || started) return;
         started = true;
-        rich.current = new RichEditor(root.current!, model.current!, original.id, {
-          change: publish,
-          cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
-          image: (file) => void insertImage(file),
-          link: (url) =>
-            void (/^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(original.id, url))
-              .catch((error) => callbacks.current.onError(error.message)),
-          compositionFinished,
-        });
         setMode(requested.current);
         if (!root.current?.closest(".document-editor")?.hasAttribute("hidden")) focusEditor();
       };
       // Exact image boxes on the first paint: the host reads natural sizes from the file headers.
       // The first render waits for them briefly; late answers re-render the blocks they size.
-      const sources = host.native ? localImageSources(original.content) : [];
+      const sources = host.native && requested.current && richAllowed(model.current!) ? localImageSources(original.content) : [];
       if (!sources.length) start();
       else {
         const sizes = host.imageSizes(original.id, sources).then(result => {
@@ -519,6 +545,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       }
       return () => {
         cancelled = true;
+        callbacks.current.onReady?.(null);
         if (compositionTimer.current !== null) clearTimeout(compositionTimer.current);
         rich.current?.destroy();
         source.current?.destroy();
@@ -540,10 +567,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         return;
       model.current.replaceExternal(record.content, record.lineEnding);
       if (activeMode.current) rich.current?.render(false);
-      else {
-        model.current.beginSourceSession();
-        syncSource();
-      }
+      else syncSource();
       historyState();
     }, [record.content]);
     useEffect(() => {
@@ -551,16 +575,35 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     });
     useEffect(() => {
       applyViewOptions();
-    }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, typewriter, readOnly]);
+    }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, preferences?.sourceLineNumbers, preferences?.codeLineNumbers, preferences?.lineHeight, preferences?.editorColumns, preferences?.fontSize, typewriter, readOnly]);
+    useLayoutEffect(() => {
+      if (readyMode && (readyMode === "rich") === visibleMode && (visibleMode ? rich.current : source.current)) callbacks.current.onReady?.(readyMode);
+    }, [readyMode, visibleMode]);
     useLayoutEffect(() => {
       // Focus once after the mode's DOM is visible, before keyboard input.
       // A delayed frame can restore an older caret after a navigation key.
       if (!root.current?.closest(".document-editor")?.hasAttribute("hidden"))
         focusEditor();
     }, [visibleMode]);
+    useLayoutEffect(() => {
+      if (jumpLine === null || !readyMode || (readyMode === "rich") !== visibleMode || activeMode.current !== visibleMode) return;
+      if (visibleMode) {
+        if (!rich.current) return;
+        rich.current.jump(jumpLine);
+      } else {
+        if (!source.current) return;
+        const target = source.current.state.doc.line(Math.max(1, Math.min(jumpLine, source.current.state.doc.lines)));
+        source.current.dispatch({
+          selection: { anchor: target.from },
+          effects: codeMirror!.EditorView.scrollIntoView(target.from, { y: "start", yMargin: 30 }),
+        });
+        source.current.focus();
+      }
+      setJumpLine(null);
+    }, [jumpLine, readyMode, visibleMode]);
     return (
       <div
-        className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"}`}
+        className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"} ${preferences?.codeLineNumbers ? "code-line-numbers" : ""}`}
       >
         {searchOpen && visibleMode && (
           <div
@@ -627,17 +670,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         }} />}
         <div className="rich-scroller" hidden={!visibleMode} onDoubleClick={event => {
           const image = (event.target as HTMLElement).closest("img"); if (!image || readOnly) return;
-          const object = image.closest<HTMLElement>(".md-inline[data-mark='image']");
-          let from: number | undefined;
-          if (object) { const leaf = rich.current?.leaves.get(object.closest<HTMLElement>("[data-leaf]")?.dataset.leaf || ""); from = leaf?.positions[Number(object.dataset.inlineFrom)]; }
-          const node = image.closest<HTMLElement>("[data-cid]"); if (from === undefined && node) from = model.current?.nodes.find(item => item.id === node.dataset.cid)?.from;
+          const from = logicalImageOffset(image);
           const reference = imageReferences(model.current?.text || "").find(item => item.from === from);
           if (reference) { event.preventDefault(); setEditingImage(reference); }
         }} onContextMenu={event => { if ((event.target as HTMLElement).closest("img")) { event.preventDefault(); (event.target as HTMLElement).dispatchEvent(new MouseEvent("dblclick", { bubbles: true })); } }}>
           <div className="rich-document" ref={root} />
         </div>
         <div
-          className="source-surface"
+          className={`source-surface ${preferences?.sourceLineNumbers ? "source-line-numbers" : ""}`}
           hidden={visibleMode}
           ref={sourceParent}
         />

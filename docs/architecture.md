@@ -26,7 +26,9 @@ flowchart TD
 
 Input-method composition pauses re-rendering of the affected DOM. On commit the edited leaf receives a minimal diff, container prefixes of multi-line quotes and lists are kept, and the change is one undo step. Mode switches wait for composition to finish. Cross-block replacement, paragraph merge and split, task toggles and table edits all go through the same transaction layer.
 
-The source view is a separate CodeMirror instance that reads the model's source and sends changes back through the same transactions; code blocks and formulas use inline CodeMirror editors. Rich text and code blocks share one history. Source mode keeps its own history and joins the rich history as a single transaction when you return; selections survive the switch through bookmarks.
+- Source view and inline code/formula editors use separate CodeMirror instances, but share `MarkdownDocument` history with rich text.
+- Switching views closes the typing group, not the history. Bookmarks retain selections.
+- Transactions retain original line-ending spans alongside normalized editor text; transforms and undo preserve mixed endings.
 
 MathJax 4 (SVG output with bundled New Computer Modern fonts) and Mermaid load on demand. Export waits for formulas, diagrams and fonts before producing HTML or PDF.
 
@@ -34,7 +36,11 @@ MathJax 4 (SVG output with bundled New Computer Modern fonts) and Mermaid load o
 
 `shared/commands.json` defines every menu item, shortcut and front-end command once: `key` holds the macOS binding and `pcKey` the Linux/Windows binding. On Linux the native menu bar is hidden and `src/components/MenuBar.tsx` renders the same commands inside the window, so the theme also styles the menus; clipboard roles run in the main process. `blockCommands.ts` converts paragraphs on source lines while keeping container prefixes and the selection, one history transaction per action.
 
-`markdownExtensions.ts` maps the table of contents, footnotes, front matter, comments and restricted HTML back to source positions. Turning an extension off re-renders without rewriting the file. Pasting prefers the app's own Markdown type, then sanitised HTML converted to Markdown. `legacyDiagrams.ts` translates the supported legacy sequence/flow syntax to Mermaid for rendering only ([diagrams.md](diagrams.md)).
+- `shared/markdown.mjs` configures the parser; `document-syntax.mjs`, `math-syntax.mjs` and `wiki-syntax.mjs` own syntax rules.
+- `shared/parser-context.mjs` maps parser-recognized contexts back to original source offsets, including table escapes, block prefixes and line endings. Reference indexing and image extraction use it.
+- `src/editor/markdownExtensions.ts` supplies document rendering rules. Disabling a syntax option re-renders without rewriting the file.
+- Pasting prefers the app's own Markdown type, then sanitised HTML converted to Markdown.
+- `legacyDiagrams.ts` translates the supported legacy sequence/flow syntax to Mermaid for rendering only ([diagrams.md](diagrams.md)).
 
 ## Themes, fonts and Omarchy
 
@@ -52,9 +58,11 @@ Spellcheck languages are stored with editor preferences and validated against El
 
 Packagers stamp the [build identity](../README.md#update-uninstall-and-clean-up) into the packaged HTML metadata for About; unpackaged builds show `dev`.
 
-Vault search reads one file at a time (8 MiB per file, 512 MiB total), yields between files, and keeps the 5-second deadline and 500-result cap.
+Electron vault search reads one file at a time (8 MiB per file, 512 MiB total), yields between files, and keeps the 5-second deadline and 500-result cap.
 
 `electron/workspace.mjs` (and `native/Workspace.swift`) manage folder tokens, recent items, full-text search, copy/rename/move/Trash and a one-step undo for file operations. Image moves copy everything first and only then move originals to the Trash.
+
+Rename, move and their undo use OS no-replace operations. Destination collisions preserve both items and leave draft paths unchanged.
 
 ## Encodings and conversion
 
@@ -72,6 +80,12 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (scope per suite: CONTRIBUTING.md).
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.
 
-**Speed budgets.** After `npm run build`, `npm run test:perf` measures desktop startup, large-note opening/scrolling and lazy photo loading with isolated profiles and cached generated fixtures. `tests/perf-budgets.json` sets budgets of 1000 / 1500 / 300 / 150 ms respectively; current builds are expected to fail. Results include medians, decoded image dimensions and loaded-image counts in `/tmp/omarkie-perf-qa/perf-results.json` (`OMARKIE_QA_DIR` overrides the directory). Set `OMARKIE_PERF_RUNS` (default 3), `OMARKIE_PERF_REPORT_ONLY=1`, or `OMARKIE_EXECUTABLE` with optional `OMARKIE_APP` for an installed executable/asar.
+**Speed checks.** After `npm run build`, use the [timing command and release policy](../README.md#performance-targets).
+- `tests/perf-desktop.mjs` creates fresh synthetic fixtures and isolated profiles under `test-results/` each run.
+- Results: `test-results/perf/perf-results.json`; `OMARKIE_QA_DIR` overrides the output directory.
+- Reports include medians, decoded image dimensions and loaded-image counts.
+- Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
+- `OMARKIE_PERF_RUNS` sets repetitions (default 3).
+- `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar.
 
 Automated composition checks do not replace manual input-method testing.
