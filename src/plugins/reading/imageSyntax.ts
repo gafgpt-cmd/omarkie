@@ -4,9 +4,9 @@ export function imageRange(text: string, from: number) {
 }
 function dimensions(attributes: string, width: number, height: number) {
   let found = false;
-  const next = attributes.replace(/\b(width|height)(\s*=\s*)(["']?)(\d+(?:\.\d+)?)(px|%)?\3/gi, (_match, key: string, space: string, quote: string, _value: string, unit: string) => {
+  const next = attributes.replace(/(^|\s)(width|height)(\s*=\s*)(["']?)(\d+(?:\.\d+)?)(px|%)?\4/gi, (_match, prefix: string, key: string, space: string, quote: string, _value: string, unit: string) => {
     if (key.toLowerCase() === "width") found = true;
-    return `${key}${space}${quote}${key.toLowerCase() === "width" ? width : height}${unit === "px" ? "px" : ""}${quote}`;
+    return `${prefix}${key}${space}${quote}${key.toLowerCase() === "width" ? width : height}${unit === "px" ? "px" : ""}${quote}`;
   });
   return found ? next : `${next.trimEnd()} width=${width}`;
 }
@@ -28,7 +28,7 @@ export function resizedImage(source: string, width: number, height: number) {
     let changed = source.replace(/(\s+)([\w:-]+)(\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g, (match, space: string, name: string, equals: string, double: string | undefined, single: string | undefined, bare: string | undefined) => {
       const key = name.toLowerCase(), quote = double !== undefined ? '"' : single !== undefined ? "'" : "", value = double ?? single ?? bare ?? "";
       if (key === "width") hasWidth = true;
-      const next = key === "width" ? String(width) : key === "height" ? String(height) : key === "style" ? value.replace(/\b(width|height)(\s*:\s*)[\d.]+(?:px|%)/gi, (_part, dimension: string, colon: string) => `${dimension}${colon}${dimension.toLowerCase() === "width" ? width : height}px`) : undefined;
+      const next = key === "width" ? String(width) : key === "height" ? String(height) : key === "style" ? value.replace(/(^|;)(\s*)(width|height)(\s*:\s*)[\d.]+(?:px|%)/gi, (_part, prefix: string, space: string, dimension: string, colon: string) => `${prefix}${space}${dimension}${colon}${dimension.toLowerCase() === "width" ? width : height}px`) : undefined;
       return next === undefined ? match : `${space}${name}${equals}${quote}${next}${quote}`;
     });
     if (!hasWidth) changed = changed.replace(/(\s*\/?>)$/, ` width="${width}"$1`);

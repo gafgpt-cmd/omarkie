@@ -84,7 +84,7 @@ export function DocumentTools({ record, documents, files, preferences, initial, 
       <button disabled={busy} onClick={() => void run(() => ready(false))}>{t("预览笔记整理")}</button>
       <button disabled={busy} onClick={() => void run(() => ready(true))}>{t("预览文件夹整理")}</button>
       <button disabled={busy} onClick={() => void run(async () => { const value = await scan(); setReport(value.notes.flatMap(note => validateOKF(note.content, note.relative, note.relative === "index.md").map(issue => `${note.relative}: ${issues[issue] || issue}`)).concat(t("校验完成。"))); })}>{t("校验文件夹 OKF")}</button>
-      <button disabled={busy} onClick={() => void run(() => { setReport(validateOKF(record.content, record.name).map(issue => issues[issue] || issue).concat(t("校验完成。"))); })}>{t("校验笔记 OKF")}</button>
+      <button disabled={busy} onClick={() => void run(() => { const relative = files.find(file => record.path && file.path === record.path)?.relative.replace(/\\/g, "/"); setReport(validateOKF(record.content, relative || record.name, relative === "index.md").map(issue => issues[issue] || issue).concat(t("校验完成。"))); })}>{t("校验笔记 OKF")}</button>
       <button disabled={busy} onClick={() => void run(async () => { const value = await scan(), plan = bundlePlan(value, undefined, preferences); const destination = await host.exportBundle(plan); if (destination) setMessage(t("已导出副本压缩包：{{path}}", { path: destination })); })}>{t("导出 OKF 副本压缩包")}</button>
     </section>}
     {tab === "writing" && <section>

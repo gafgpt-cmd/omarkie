@@ -75,6 +75,15 @@ test("resizing retains syntax, paths, captions, titles and unrelated attributes"
   const source = "text ![[my image.png|Caption]]{width=100} tail";
   assert.equal(imageRange(source, 5).source, "![[my image.png|Caption]]{width=100}");
 });
+test("resize changes only complete dimension fields, retaining borders and constraints", () => {
+  for (const [source, expected] of [
+    ['<img src="a.png" width="100" height="50" style="border-width:1px;max-width:100%;min-width:20px;border-height:2px;max-height:90%;min-height:10px">', '<img src="a.png" width="300" height="150" style="border-width:1px;max-width:100%;min-width:20px;border-height:2px;max-height:90%;min-height:10px">'],
+    ["<img src='a.png' style=' width : 100px; border-width:1px; HEIGHT:50%;max-height:100%;--width:5px'>", "<img src='a.png' style=' width : 300px; border-width:1px; HEIGHT:150px;max-height:100%;--width:5px' width=\"300\">"],
+    ['<img src="a.png" style="max-width:100%;border-width:1px" data-width="40" data-height="20">', '<img src="a.png" style="max-width:100%;border-width:1px" data-width="40" data-height="20" width="300">'],
+    ['![alt](a.png){data-width=40 data-height=20 width=100 height=50}', '![alt](a.png){data-width=40 data-height=20 width=300 height=150}'],
+    ['![[a.png|Caption]]{data-width=40 data-height=20}', '![[a.png|Caption]]{data-width=40 data-height=20 width=300}'],
+  ]) assert.equal(resizedImage(source, 300, 150), expected);
+});
 test("wiki resize shares dimension grammar and preserves captions, paths and mixed-ending undo", () => {
   for (const [source, expected, expectedHeight] of [
     ['![[folder/my figure.jpg|100 x 50]]', '![[folder/my figure.jpg|300x150]]', '150'],
