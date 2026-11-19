@@ -71,7 +71,8 @@ module.exports = { plugin: InsertDate }
 
 ## Themes
 
-Preferences lists 17 built-in themes with live previews: Plain White, Warm Paper, Mist Ink, Graphite, Deep Sea, Pine Night, Toypora, Toypora Night, Toypora × Omarchy, Toyzetlr, Toyzetlr Night, Omarchy, Omarchy × Toypora, Omarchy Dark, Omarchy Light, Rosé Pine and Rosé Pine Dawn. The Omarchy themes follow the live Omarchy palette and font. **Preferences → Fonts** overrides the text, heading, code and interface fonts of any theme; the fonts are bundled with the app. Theme and font choices persist locally and are included in exported HTML/PDF styles.
+Built-in themes, Omarchy variants and font choices: [Themes and fonts](../README.md#themes-and-fonts).
+Preferences shows live previews. Choices persist locally and are included in exported HTML/PDF styles.
 
 Custom CSS installation supports local CSS imports plus referenced fonts and images. Resources are embedded, with depth/size limits and checks against directory traversal and symlink escapes. Remote resources must be downloaded first. Basic `#write`, `#typora-sidebar` and `.md-fences` selectors are adapted, along with common palette variables. This is **partial Typora theme compatibility**; no claim is made that every third-party theme renders identically.
 

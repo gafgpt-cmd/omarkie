@@ -101,9 +101,9 @@ To update, install the new package over the old one with the same command as abo
 
 - Matching release tag: plain version, such as `0.2.0`.
 - Later Arch builds: `0.2.0.r<commits>.g<commit>`.
-- Later Debian/RPM builds: `0.2.0+r<commits>.g<commit>`.
+- Later DEB/RPM/AppImage builds: `0.2.0+r<commits>.g<commit>`.
 - Without a matching tag, the build retains a reachable version tag or a hash-only fallback (`.r0.g<commit>`).
-- Packaged **About** shows the build identity. Arch/Debian/RPM filenames retain the revision.
+- Packaged **About** shows the build identity. All Linux artifact filenames retain the revision.
 `-Rs` keeps the Electron runtime if another application, such as Obsidian, still needs it.
 
 Uninstalling never touches your documents. Settings, recovery drafts, installed themes and plugins, and the background image stay in `~/.config/Omarkie`. Move that folder to the Trash to remove them as well, or to reset Omarkie to its defaults; unsaved drafts in it are lost. For the AppImage, delete the file.
@@ -160,8 +160,7 @@ npm test          # editor and file-layer unit tests
 npm run build     # type check and production build
 ```
 
-Full verification needs Pandoc and LibreOffice; Linux also needs Xvfb:
-`flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run verify'`.
+Full verification: [dependencies and commands](CONTRIBUTING.md#make-a-change).
 
 Linux and Windows use Electron; the macOS release uses a native Swift/AppKit host with WKWebView. Both share the same TypeScript/React interface and editing model. Desktop suites, packaging and the project layout are described in [CONTRIBUTING.md](CONTRIBUTING.md) and [the architecture](docs/architecture.md).
 

@@ -6,7 +6,7 @@
 - Ambiguous targets list every candidate. Missing targets never create files.
 - Heading fragments open their target line.
 - Open a folder before vault search, linked mentions or graph.
-- Graph loads only when opened. First 200 notes; full inventory still serves reports.
+- Graph loads only when opened. First 200 notes; reports use the bounded inventory below.
 
 ## Source safety
 
@@ -15,7 +15,8 @@
 - Properties edit YAML node ranges, not a whole-document serializer.
 - Unknown YAML fields/comments and body text remain unchanged.
 - Cyclic YAML aliases stay intact; their value is source-edit-only in Properties.
-- Note/folder make-ready previews each proposed change.
+- Note/folder make-ready previews each proposed change; index.md/log.md are excluded.
+- Validation: only the selected folder's root index.md may declare `okf_version`. Other index metadata and all log.md frontmatter are rejected.
 - Apply uses editor history; normal conflict-aware saving remains responsible for disk writes.
 - Re-preview after any intervening edit.
 - Properties preserve mixed line endings through the byte-aware model and shared undo history.
@@ -38,9 +39,9 @@
 - Actual Pandoc citeproc; maintained official NLM/Vancouver style.
 - Neutral configurable letterhead; actual DOCX or PDF.
 - Converter options are structured and allowlisted. No arbitrary flags, filters or CSL paths.
-- Custom workflow exports strip frontmatter from the export copy, not the note.
+- Citation or letterhead exports strip frontmatter from the export copy, not the note.
 - PDF rendering blocks network access. Local images travel through the existing portable conversion path.
-- Pandoc required for citations. No plain-text or textutil substitute for citation exports.
+- Pandoc required for document-tool PDF and all citation/letterhead exports. No plain-text or textutil substitute for these.
 - Templates persist locally; using one creates a separate draft.
 
 ## Reuse
