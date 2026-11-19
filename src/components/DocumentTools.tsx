@@ -17,8 +17,8 @@ const jsonValue = (value: unknown) => { try { return JSON.stringify(value); } ca
 function templates(): Template[] {
   try { const value = JSON.parse(localStorage.getItem("omarkie-templates") || "[]"); return Array.isArray(value) ? value.filter(item => typeof item?.name === "string" && typeof item?.content === "string").slice(0, 50) : []; } catch { return []; }
 }
-export function DocumentTools({ record, documents, files, preferences, initial, request, close, open, change, create, convert }: {
-  record: DocumentRecord; documents: DocumentRecord[]; files: FileEntry[]; preferences: Preferences; initial: ToolTab; request?: string;
+export function DocumentTools({ record, documents, files, folder, preferences, initial, request, close, open, change, create, convert }: {
+  record: DocumentRecord; documents: DocumentRecord[]; files: FileEntry[]; folder: string | null; preferences: Preferences; initial: ToolTab; request?: string;
   close(): void; open(token: string, line?: number): Promise<void>;
   change(change: Change): Promise<void>; create(name: string, content: string): Promise<void>;
   convert(format: string, options: ConversionOptions): Promise<void>;
@@ -84,7 +84,7 @@ export function DocumentTools({ record, documents, files, preferences, initial, 
       <button disabled={busy} onClick={() => void run(() => ready(false))}>{t("预览笔记整理")}</button>
       <button disabled={busy} onClick={() => void run(() => ready(true))}>{t("预览文件夹整理")}</button>
       <button disabled={busy} onClick={() => void run(async () => { const value = await scan(); setReport(value.notes.flatMap(note => validateOKF(note.content, note.relative, note.relative === "index.md").map(issue => `${note.relative}: ${issues[issue] || issue}`)).concat(t("校验完成。"))); })}>{t("校验文件夹 OKF")}</button>
-      <button disabled={busy} onClick={() => void run(() => { const relative = files.find(file => record.path && file.path === record.path)?.relative.replace(/\\/g, "/"); setReport(validateOKF(record.content, relative || record.name, relative === "index.md").map(issue => issues[issue] || issue).concat(t("校验完成。"))); })}>{t("校验笔记 OKF")}</button>
+      <button disabled={busy} onClick={() => void run(() => { const root = !!folder && record.path?.replaceAll("\\", "/") === folder.replaceAll("\\", "/").replace(/\/?$/, "/") + "index.md"; setReport(validateOKF(record.content, record.name, root).map(issue => issues[issue] || issue).concat(t("校验完成。"))); })}>{t("校验笔记 OKF")}</button>
       <button disabled={busy} onClick={() => void run(async () => { const value = await scan(), plan = bundlePlan(value, undefined, preferences); const destination = await host.exportBundle(plan); if (destination) setMessage(t("已导出副本压缩包：{{path}}", { path: destination })); })}>{t("导出 OKF 副本压缩包")}</button>
     </section>}
     {tab === "writing" && <section>

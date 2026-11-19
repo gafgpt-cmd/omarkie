@@ -1,4 +1,5 @@
 import { sourceLines } from "./source-lines.mjs";
+import { inlineDestination } from "./link-destination.mjs";
 import { decodeHTMLAttribute } from "entities";
 
 export function upperBound(offsets, at) {
@@ -96,7 +97,7 @@ export function parserContext(md, source, initial = {}) {
   const view = at => at - upperBound(removed, at - 1), chunks = []; let from = 0;
   for (const at of removed) { chunks.push(normalized.slice(from, at)); from = at + 1; }
   chunks.push(normalized.slice(from));
-  const text = chunks.join(""), excluded = environment.sourceHidden.map(([from, to]) => [view(from), view(to)]), htmlRanges = [], imageUses = [], htmlTags = [];
+  const text = chunks.join(""), excluded = environment.sourceHidden.map(([from, to]) => [view(from), view(to)]), htmlRanges = [], imageUses = [], linkUses = [], htmlTags = [];
   for (const [from, to] of environment.sourceDefinitions || []) excluded.push([view(offsets[from]), view(Math.min(normalized.length, offsets[to]))]);
   for (const token of tokens) {
     if (["fence", "code_block", "frontmatter", "math_block"].includes(token.type) && token.map) excluded.push([view(offsets[token.map[0]]), view(Math.min(normalized.length, offsets[token.map[1]]))]);
@@ -120,9 +121,14 @@ export function parserContext(md, source, initial = {}) {
     for (const child of children) {
       if (["image", "link_open"].includes(child.type) && child.meta?.labelTo >= 0) {
         excluded.push([position(child.meta.labelTo + 1), position(child.meta.sourceTo)]);
-        if (child.type === "image") {
-          excluded.push([position(child.meta.labelFrom), position(child.meta.labelTo)]);
-          imageUses.push({ from: position(child.meta.sourceFrom), to: position(child.meta.sourceTo), labelTo: position(child.meta.labelTo), url: child.attrGet("src") });
+        const image = child.type === "image", from = position(child.meta.sourceFrom), to = position(child.meta.sourceTo), labelTo = child.meta.labelTo;
+        const destination = inlineDestination(md, content, labelTo + 1, child.meta.sourceTo);
+        const range = destination ? [destination.from, destination.to] : [labelTo + 1, child.meta.sourceTo];
+        const use = { from, to, image, alias: content.slice(child.meta.sourceFrom + (image ? 2 : 1), labelTo), url: destination?.target ?? child.attrGet(image ? "src" : "href"), destinationRange: range.map(at => position(at) - from), referenceStyle: !destination, title: child.attrGet("title") };
+        linkUses.push(use);
+        if (image) {
+          excluded.push([position(child.meta.labelFrom), position(labelTo)]);
+          imageUses.push(use);
         }
       }
       if (!["math_inline", "html_embed", "code_inline", "comment"].includes(child.type)) continue;
@@ -161,5 +167,5 @@ export function parserContext(md, source, initial = {}) {
   };
   const lineNumber = at => upperBound(offsets, at + upperBound(removedView, at - 1));
   for (const token of tokens) if (token.meta?.sourceCell) token.meta.sourceCell = token.meta.sourceCell.map(originalOffset);
-  return { text, environment, tokens, excluded, imageUses, htmlTags, sourceOffset, lineNumber, blockCursor, viewOffset: at => view(offsets[at]), tableCursor: () => rangeCursor(environment.sourceTables.map(([from, to]) => [view(from), view(to)])) };
+  return { text, environment, tokens, excluded, imageUses, linkUses, htmlTags, sourceOffset, lineNumber, blockCursor, viewOffset: at => view(offsets[at]), tableCursor: () => rangeCursor(environment.sourceTables.map(([from, to]) => [view(from), view(to)])) };
 }

@@ -1,5 +1,17 @@
 import { wikiSyntax, headingText, headingSlug } from "./wiki-syntax.mjs";
 import { inlineDestination } from "./link-destination.mjs";
+export function imageAttributes(source) {
+  const match = /^\{([^{}\n]*)\}/.exec(source);
+  if (!match) return null;
+  const entries = [], dimensions = {};
+  for (const attribute of match[1].matchAll(/(?:^|\s)([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/gd)) {
+    const name = attribute[1].toLowerCase(), value = attribute[2] ?? attribute[3] ?? attribute[4];
+    if (!['width', 'height'].includes(name) || !/^\d+(?:\.\d+)?(?:px|%)?$/.test(value)) continue;
+    const [from, to] = attribute.indices[2] || attribute.indices[3] || attribute.indices[4];
+    entries.push({ name, value, from: from + 1, to: to + 1 }); dimensions[name] = value.replace(/px$/, '');
+  }
+  return entries.length ? { source: match[0], entries, ...dimensions } : null;
+}
 export function configureDocumentSyntax(md) {
   md.use(wikiSyntax);
   md.inline.ruler.before("image", "wiki_embed", (state, silent) => {
@@ -34,12 +46,12 @@ export function configureDocumentSyntax(md) {
     for (const block of state.tokens) for (const [index, image] of (block.children || []).entries()) {
       const next = block.children[index + 1];
       if (!["image", "wiki_embed"].includes(image.type) || next?.type !== "text") continue;
-      const match = /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(next.content);
-      if (!match) continue;
-      for (const [, key, value] of match[1].matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) {
-        if (image.type === "wiki_embed") image.meta = { ...image.meta, [key]: value.replace(/px$/, "") }; else image.attrSet(key, value.replace(/px$/, ""));
+      const attributes = imageAttributes(next.content);
+      if (!attributes) continue;
+      for (const { name, value } of attributes.entries) {
+        if (image.type === "wiki_embed") image.meta = { ...image.meta, [name]: value.replace(/px$/, "") }; else image.attrSet(name, value.replace(/px$/, ""));
       }
-      image.meta = { ...image.meta, attributes: match[0] }; next.content = next.content.slice(match[0].length);
+      image.meta = { ...image.meta, attributes: attributes.source }; next.content = next.content.slice(attributes.source.length);
     }
   });
   md.inline.ruler.before("emphasis", "html_break", (state, silent) => {

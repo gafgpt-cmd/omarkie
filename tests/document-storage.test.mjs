@@ -16,7 +16,7 @@ test('document storage failures show alerts and preserve saved UI state', async 
   const original = dom.window.Storage.prototype.setItem;
   try {
     const { DocumentTools } = await server.ssrLoadModule('/src/components/DocumentTools.tsx');
-    const props = { record: { name: 'fixture.md', content: 'x'.repeat(900000) }, documents: [], files: [], preferences: {}, initial: 'writing', close() {}, async open() {}, async change() {}, async create() {}, async convert() {} };
+    const props = { record: { name: 'fixture.md', content: 'x'.repeat(900000) }, documents: [], files: [], folder: null, preferences: {}, initial: 'writing', close() {}, async open() {}, async change() {}, async create() {}, async convert() {} };
     const buttons = () => [...document.querySelectorAll('button')];
     const button = name => buttons().find(button => button.textContent === name);
     const field = name => [...document.querySelectorAll('label')].find(label => label.firstChild?.textContent === name).querySelector('input,textarea');

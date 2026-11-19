@@ -1,5 +1,5 @@
 import { createMarkdown, setSyntaxOptions } from "./markdown.mjs";
-import { inlineDestination } from "./link-destination.mjs";
+import { imageAttributes } from "./document-syntax.mjs";
 import { parserContext, rangeCursor } from "./parser-context.mjs";
 import { frontmatter, properties, makeReady } from "./frontmatter.mjs";
 import { headingSlug as slug } from "./wiki-syntax.mjs";
@@ -23,18 +23,17 @@ export function referenceParts(value, wiki = false) {
 }
 export function references(source, options = {}) {
   setSyntaxOptions(md, options);
-  const { text, environment, excluded, htmlTags, sourceOffset, lineNumber, blockCursor, viewOffset, tableCursor } = parserContext(md, source);
+  const { text, environment, excluded, htmlTags, linkUses, sourceOffset, lineNumber, blockCursor, viewOffset, tableCursor } = parserContext(md, source);
   try { const fm = frontmatter(text); if (fm.start > fm.bom.length) excluded.push([0, text.length - fm.body.length]); } catch { excluded.push([0, text.indexOf("\n\n") < 0 ? text.length : text.indexOf("\n\n")]); }
   let blocked = blockCursor();
   const result = [];
   const add = ({ target, image, wiki = false, alias, destinationRange, referenceStyle = false, title, from, to, html = false, width = "", height = "" }) => {
     const size = image && wiki ? /^\s*(\d+)(?:\s*x\s*(\d+))?\s*$/i.exec(alias || "") : null;
     if (size) { width = size[1]; height = size[2] || ""; }
-    const attributes = image && !html ? /^\{([^{}\n]*\b(?:width|height)\s*=[^{}\n]*)\}/.exec(text.slice(to)) : null;
-    const dimensions = attributes?.[1] || "";
-    for (const [, name, value] of dimensions.matchAll(/\b(width|height)\s*=\s*["']?(\d+(?:\.\d+)?(?:px|%)?)["']?/g)) { if (name === "width") width = value.replace(/px$/, ""); else height = value.replace(/px$/, ""); }
-    if (attributes) to += attributes[0].length;
-    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, title, dimensionAlias: !!size, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
+    const attributes = image && !html ? imageAttributes(text.slice(to)) : null;
+    width = attributes?.width ?? width; height = attributes?.height ?? height;
+    if (attributes) to += attributes.source.length;
+    result.push({ target, image, wiki, alias, destinationRange, referenceStyle, title, dimensionAlias: !!size, attributes, width, height, from, to, line: lineNumber(from), source: text.slice(from, to) });
   };
   const matches = [...text.matchAll(/(!?)\[\[([^\[\]\n|]+)(?:\|([^\[\]\n]*))?\]\]/g), ...htmlTags.filter(tag => /^<(?:a|img|video|audio|source)\b/i.test(tag.source)).map(tag => Object.assign([tag.source], { index: tag.from, attributes: tag.attributes }))].sort((a, b) => a.index - b.index);
   for (const match of matches) {
@@ -47,35 +46,11 @@ export function references(source, options = {}) {
     const dimension = name => { const value = match.attributes?.get(name)?.value || ""; return /^\d+(?:\.\d+)?(?:px|%)?$/.test(value) ? value.replace(/px$/, "") : ""; };
     add({ target, image, wiki, alias, destinationRange, from: match.index, to: match.index + match[0].length, html, width: dimension("width"), height: dimension("height") });
   }
-  const literal = rangeCursor(result.map(ref => [ref.from, ref.to])), suffixRanges = [], markdownSuffixes = [], state = new md.inline.State(text, md, environment, []);
   blocked = blockCursor();
-  for (const match of text.matchAll(/!?\[/g)) {
-    const from = match.index, image = match[0] === "![", open = from + (image ? 1 : 0);
-    while (suffixRanges.length && from >= suffixRanges.at(-1)[1]) suffixRanges.pop();
-    if (blocked(from) || literal(from) || suffixRanges.length && from >= suffixRanges.at(-1)[0]) continue;
-    const end = md.helpers.parseLinkLabel(state, open, !image);
-    if (end < 0) continue;
-    const alias = text.slice(open + 1, end), tail = text.slice(end + 1);
-    const inline = inlineDestination(md, text, end + 1);
-    if (inline) {
-      if (inline.target) {
-        const destinationRange = [inline.from - from, inline.to - from];
-        add({ target: inline.target, image, alias, destinationRange, from, to: inline.end });
-        const range = [end + 1, inline.end]; suffixRanges.push(range); markdownSuffixes.push(range);
-      }
-    } else if (!tail.startsWith("(")) {
-      const labelEnd = text[end + 1] === "[" ? md.helpers.parseLinkLabel(state, end + 1) : -1;
-      const label = labelEnd >= 0 ? text.slice(end + 2, labelEnd) : "", id = md.utils.normalizeReference(label || alias), definition = environment.references?.[id];
-      if (definition) {
-        const to = labelEnd >= 0 ? labelEnd + 1 : end + 1;
-        add({ target: definition.href, image, alias, destinationRange: [end + 1 - from, to - from], referenceStyle: true, title: definition.title, from, to });
-        const range = [end + 1, to]; suffixRanges.push(range); markdownSuffixes.push(range);
-      }
-    }
+  for (const use of [...linkUses].sort((a, b) => a.from - b.from)) {
+    if (!blocked(use.from) && use.url) add({ ...use, target: use.url });
   }
-  result.sort((a, b) => a.from - b.from);
-  const inSuffix = rangeCursor(markdownSuffixes);
-  const visible = result.filter(ref => !inSuffix(ref.from));
+  const visible = result.sort((a, b) => a.from - b.from);
   const tags = [], referenced = rangeCursor(visible.map(ref => [ref.from, ref.to]));
   blocked = blockCursor();
   for (const match of text.matchAll(/(^|\s)#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gu)) {
@@ -167,7 +142,7 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
       let label = ref.dimensionAlias ? target.relative.split("/").at(-1) : ref.alias || ref.target;
       label = !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
       if (ref.table && ref.image) label = label.replaceAll("|", "\\|");
-      const dimensions = ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
+      const dimensions = ref.attributes ? ref.attributes.source.slice(0, -1) + (ref.width && !ref.attributes.width ? ` width=${ref.width}` : "") + (ref.height && !ref.attributes.height ? ` height=${ref.height}` : "") + "}" : ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
       const media = ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
       const replacement = media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
       edits.push({ from: ref.from, to: ref.to, replacement });

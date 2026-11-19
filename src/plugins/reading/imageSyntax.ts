@@ -1,14 +1,13 @@
 import { imageReferences } from "../../editor/images.ts";
+import { imageAttributes } from "../../../shared/document-syntax.mjs";
 export function imageRange(text: string, from: number) {
   return imageReferences(text).find(image => image.from === from);
 }
 function dimensions(attributes: string, width: number, height: number) {
-  let found = false;
-  const next = attributes.replace(/(^|\s)(width|height)(\s*=\s*)(["']?)(\d+(?:\.\d+)?)(px|%)?\4/gi, (_match, prefix: string, key: string, space: string, quote: string, _value: string, unit: string) => {
-    if (key.toLowerCase() === "width") found = true;
-    return `${prefix}${key}${space}${quote}${key.toLowerCase() === "width" ? width : height}${unit === "px" ? "px" : ""}${quote}`;
-  });
-  return found ? next : `${next.trimEnd()} width=${width}`;
+  const parsed = imageAttributes(`{${attributes}}`);
+  let next = attributes;
+  for (const { name, value, from, to } of [...(parsed?.entries || [])].reverse()) next = next.slice(0, from - 1) + (name === "width" ? width : height) + (value.endsWith("px") ? "px" : "") + next.slice(to - 1);
+  return parsed?.width ? next : `${next.trimEnd()} width=${width}`;
 }
 export function resizedImage(source: string, width: number, height: number) {
   width = Math.max(16, Math.min(10000, Math.round(width))); height = Math.max(1, Math.min(10000, Math.round(height)));
