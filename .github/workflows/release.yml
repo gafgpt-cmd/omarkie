@@ -193,6 +193,8 @@ jobs:
       - name: Check Apple Silicon runner
         run: node -e "if(process.platform !== 'darwin' || process.arch !== 'arm64') process.exit(1)"
       - run: npm ci
+      - name: Install Pandoc with Homebrew checksum verification
+        run: brew install pandoc
       - run: npm test
       - run: npm run test:native
       - name: Build native app, DMG, ZIP, and checksums
