@@ -23,7 +23,8 @@ import type { Preferences } from "../preferences";
 import type { BlockArguments } from "./blockCommands.ts";
 import { t } from "../i18n";
 import type { Heading } from "./markdown.ts";
-import { localImageSources, numberedBlocks, rememberImageSizes } from "./markdown.ts";
+import { localImageSources, numberedBlocks, rememberImageSizes, speechText } from "./markdown.ts";
+import { ttsTextLimit } from "../../shared/tts.mjs";
 export interface ReadingContext {
   nodes: readonly DocumentNode[];
   headings: readonly Heading[];
@@ -45,6 +46,7 @@ export interface EditorHandle {
   command(action: string, args?: BlockArguments): void;
   insert(text: string): void;
   selectionText(markdown?: boolean): string;
+  readingText(fromCursor: boolean): string;
   clearFormat(): void;
   findNext(back?: boolean): void;
   context(): string;
@@ -524,6 +526,34 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           if (activeMode.current) { const value = rich.current?.clipboard(); return (markdown ? value?.markdown : value?.plain) || ""; }
           const selected = source.current?.state.selection.main;
           return selected ? source.current!.state.sliceDoc(selected.from, selected.to) : "";
+        },
+        readingText: fromCursor => {
+          const doc = model.current, inRichMode = activeMode.current;
+          if (!doc) return "";
+          const view = source.current?.state;
+          const selection = inRichMode ? rich.current?.bookmark() : view?.selection.main;
+          if (!selection) return "";
+          const { head, anchor } = selection;
+          let from = Math.min(head, anchor), to = Math.max(head, anchor);
+          if (from === to) {
+            if (fromCursor) to = doc.text.length;
+            else if (inRichMode) {
+              const block = doc.nodeAt(head);
+              if (!block || head < block.from || head > block.to || block.kind === "frontmatter") return "";
+              ({ from, to } = block);
+            } else {
+              const lines = view!.doc, line = lines.lineAt(head);
+              if (!line.text.trim()) return "";
+              let first = line, last = line;
+              while (first.number > 1 && lines.line(first.number - 1).text.trim()) first = lines.line(first.number - 1);
+              while (last.number < lines.lines && lines.line(last.number + 1).text.trim()) last = lines.line(last.number + 1);
+              from = first.from; to = last.to;
+            }
+          }
+          if (to - from > ttsTextLimit) throw new Error(t("朗读文字过长，请选择较短的段落。"));
+          if (inRichMode && head !== anchor) return rich.current!.clipboard().plain;
+          const text = doc.text.slice(from, to);
+          return inRichMode ? speechText(text) : text;
         },
         clearFormat: () => { if (activeMode.current && !viewOptions.current.readOnly) rich.current?.clearFormat(); },
         findNext: (back = false) => { if (activeMode.current) findNext(back); else if (source.current) (back ? codeMirror!.cmFindPrevious : codeMirror!.cmFindNext)(source.current); },

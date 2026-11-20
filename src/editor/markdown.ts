@@ -167,6 +167,15 @@ export function renderMarkdown(
 ) {
   return cleanHtml(md.render(source, { ...environment, documentId }), documentId, typeof environment.standalone === "boolean" ? environment.standalone : undefined);
 }
+
+export function speechText(source: string) {
+  const content = (tokens: Token[]): string => tokens.map(token => {
+    if (token.children) return content(token.children);
+    if (token.type === "softbreak" || token.type === "hardbreak") return "\n";
+    return ["text", "code_inline", "math_inline", "wiki_link", "wiki_embed", "emoji", "fence", "code_block"].includes(token.type) ? token.content : "";
+  }).join("");
+  return md.parse(source, {}).filter(token => token.type === "inline" || token.type === "fence" || token.type === "code_block").map(token => content([token])).filter(Boolean).join("\n").trim();
+}
 export function parseBlocks(
   source: string,
   environment: Record<string, unknown> = {},

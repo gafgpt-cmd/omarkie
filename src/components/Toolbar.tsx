@@ -93,6 +93,7 @@ export function Toolbar(props: Props) {
         {props.payload && <button type="button" className="icon-button" disabled={props.disabled} aria-label={t("Payload")} aria-expanded={props.payload.open} title={t("Payload")} onClick={props.payload.show}><Sparkles size={16} /></button>}
         <div className="menu-container" ref={root}>
           <button
+            onMouseDown={event => { if (window.desktop?.readAloud) event.preventDefault(); }}
             className="icon-button"
             aria-label={t("更多操作")}
             aria-expanded={open}
@@ -128,6 +129,17 @@ export function Toolbar(props: Props) {
                   <kbd aria-hidden="true">{shortcut}</kbd>
                 </button>
               ))}
+              {window.desktop?.readAloud && <section className="command-group">
+                <div className="menu-divider" />
+                {([
+                  ["tts-paragraph", t("朗读选区或段落")],
+                  ["tts-cursor", t("从光标处朗读")],
+                  ["tts-stop", t("停止朗读")],
+                ] as const).map(([action, label]) => <button key={action} role="menuitem" disabled={props.disabled && action !== "tts-stop"}
+                  onMouseDown={event => event.preventDefault()} onClick={() => { setOpen(false); props.command(action); }}>
+                  <span className="menu-check" /><span>{label}</span>
+                </button>)}
+              </section>}
               {commandGroups.filter(group => ["段落", "表格", "格式", "显示", "编辑", "文件"].includes(group.title)).map(group => {
                 const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction));
                 return <section className="command-group" key={group.title}><div className="menu-divider" /><p>{t(group.title)}</p>{extra.map(item => <button key={item.action} role={item.action in (props.checked || {}) ? "menuitemcheckbox" : "menuitem"} aria-checked={props.checked?.[item.action]} aria-label={t(item.label)} disabled={

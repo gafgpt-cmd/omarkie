@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("desktop", {
   plugins: () => call("plugins"), installPlugin: folder => call("installPlugin", folder), removePlugin: id => call("removePlugin", id),
   themes: () => call("themes"), omarchyTheme: () => call("omarchyTheme"), editRole: role => call("editRole", role), setRemoteImages: value => call("setRemoteImages", value), installTheme: () => call("installTheme"), conversionSettings: choose => call("conversionSettings", choose), importDocument: () => call("importDocument"), exportConverted: (id, format, source, html, options) => call("exportConverted", id, format, source, html, options), imageAction: (id, sources, action, options) => call("imageAction", id, sources, action, options),
   spellcheckLanguages: languages => call("spellcheckLanguages", languages),
+  readAloud: text => call("readAloud", text),
   ready: () => call("ready"),
   cancelClose: () => call("cancelClose"),
   fileOperation: operation => call("fileOperation", operation),

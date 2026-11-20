@@ -122,6 +122,14 @@ Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and oth
 
 PDFs (Linux and Windows): **Open** a `.pdf`, or pass one to `omarkie`, and Omarkie opens a Markdown copy with its pictures, made by an external PDF-to-Markdown converter and kept in the data folder (`PDF/`), so an unchanged PDF opens again without converting. The converter is called as `<converter> <file.pdf> --output <folder>` and must write a `.md` file there. Omarkie uses `OMARKIE_PDF_CONVERTER` (a path, or a JSON list such as `["python3", "/path/to/orchestrator.py"]`), else a `pdf-converter` file with the same content in the data folder, else `pdf-md` on `PATH`. Without a converter, or when it fails, Omarkie offers to open the PDF in your PDF viewer.
 
+### Read aloud offline
+
+- Linux and Windows: **More actions → Read selection or paragraph**, **Read from cursor**, or **Stop reading**.
+- A selection takes priority. With no selection, read the current paragraph or everything from the cursor to the end. Source mode reads literal Markdown.
+- Install [eSpeak NG](https://github.com/espeak-ng/espeak-ng) separately. Example on Linux: `OMARKIE_TTS='["espeak-ng","--stdin","-b","1"]' omarkie`.
+- Set `OMARKIE_TTS` before launching the app. Use one executable name/path or a JSON array of the executable and fixed arguments. No shell. The program gets UTF-8 text on stdin and must own playback in the foreground.
+- Off by default. Omarkie starts only the configured program, only when asked. No speech engine is bundled. Use a trusted offline program; no eSpeak NG (GPL-3.0) code is included. The note is not edited.
+
 ## Build from source
 
 Use **Node.js 26** and npm.

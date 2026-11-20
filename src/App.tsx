@@ -371,6 +371,13 @@ export default function App() {
       chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
     else if (action === "focus") setFocus((value) => !value);
     else if (action === "typewriter") setTypewriter(value => !value);
+    else if (action === "tts-paragraph" || action === "tts-cursor" || action === "tts-stop") {
+      if (!window.desktop?.readAloud) return;
+      try {
+        const text = action === "tts-stop" ? null : editor()?.readingText(action === "tts-cursor") ?? "";
+        void host.readAloud!(text).catch(error => session.setMessage(error.message));
+      } catch (error) { session.setMessage((error as Error).message); }
+    }
     else if (action === "new-file" || action === "new-folder") setFileOperation({ action, path: session.folder || undefined, name: action === "new-file" ? t("未命名.md") : t("新文件夹") });
     else if (action === "undo-file") void session.fileOperation({ action: "undo" }).catch(e => session.setMessage(e.message));
     else if (["preferences", "plugins", "quick-open", "statistics", "recent", "global-search", "table", "link", "reference-link", "footnote"].includes(action)) {

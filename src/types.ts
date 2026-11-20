@@ -129,6 +129,7 @@ export interface Host {
   exportHtml(name: string, html: string): Promise<string | null>;
   writeClipboard(text: string): Promise<unknown>;
   readClipboard(): Promise<string>;
+  readAloud?(text: string | null): Promise<void>;
   openLink(url: string): Promise<unknown>;
   openDocumentLink(id: string, url: string): Promise<unknown>;
   confirmDiscard(name: string): Promise<boolean>;

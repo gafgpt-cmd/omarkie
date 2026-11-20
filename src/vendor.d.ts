@@ -12,6 +12,7 @@ declare module "*shared/document-syntax.mjs" {
   export function imageAttributes(source: string): { source: string; width?: string; height?: string; entries: { name: string; value: string; from: number; to: number }[] } | null;
 }
 declare module "*shared/new-note.mjs" { export function newNote(name: string, now?: string): string; }
+declare module "*shared/tts.mjs" { export const ttsTextLimit: number; }
 declare module "*shared/frontmatter.mjs" {
   export function properties(text: string): Record<string, unknown>;
   export function setProperties(text: string, updates: Record<string, unknown>): string;

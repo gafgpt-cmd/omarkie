@@ -31,6 +31,7 @@ import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
+import { ttsTextLimit } from "../shared/tts.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -66,6 +67,8 @@ let window,
 const pending = [], pendingPdfs = [];
 let rendererReady = false;
 let revealWindow = () => {};
+let speech;
+function stopSpeech() { speech?.abort(); speech = undefined; }
 
 const pluginToken = randomUUID();
 const authorizedPlugin = item => item && ({ ...item, url: item.url + "?token=" + pluginToken });
@@ -133,6 +136,21 @@ const handlers = {
     for (const definition of menuDefinitions) {
       const item = Menu.getApplicationMenu()?.getMenuItemById(definition.action);
       if (item) item.enabled = commandEnabled(definition);
+    }
+  },
+  readAloud: async (_, text) => {
+    if (text === null) { stopSpeech(); return; }
+    if (typeof text === "string" && text.length > ttsTextLimit) throw new Error(t("朗读文字过长，请选择较短的段落。"));
+    if (typeof text !== "string" || !text.trim()) throw new Error(t("没有可朗读的文字。"));
+    const configured = process.env.OMARKIE_TTS?.trim();
+    if (!configured) throw new Error(t("未配置朗读：请设置 OMARKIE_TTS。"));
+    stopSpeech();
+    const current = speech = new AbortController();
+    try {
+      const { speak } = await import("./tts.mjs");
+      await speak(configured, text, current.signal);
+    } finally {
+      if (speech === current) speech = undefined;
     }
   },
   background: () => readBackground(store.dataDir),
@@ -504,6 +522,7 @@ app
         callback(false),
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      created.webContents.on("render-process-gone", stopSpeech);
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
       if (development) window.loadURL(development);
@@ -515,6 +534,7 @@ app
         }
       });
       window.on("closed", () => {
+        stopSpeech();
         window = null;
         rendererReady = false;
       });
