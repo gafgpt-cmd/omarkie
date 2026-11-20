@@ -6,12 +6,21 @@ import { createServer } from "node:http";
 import assert from "node:assert/strict";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-"));
 const uploads = [];
+const payloadRequests = [];
 const server = createServer(async (request, response) => {
+  if (request.url === "/payload/v1/chat/completions") {
+    let body = ""; for await (const chunk of request) body += chunk;
+    payloadRequests.push(JSON.parse(body));
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ choices: [{ message: { content: "Synthetic payload reply." } }] }));
+    return;
+  }
   try { let body = ""; for await (const chunk of request) body += chunk; const value = JSON.parse(body); assert.equal(request.method, "POST"); assert.equal(value.list.length, 1); const file = value.list[0]; assert.match(file, /fixture-[A-Fa-f0-9-]+\.png$/); const bytes = await readFile(file); assert.deepEqual([...bytes.subarray(0, 8)], [137,80,78,71,13,10,26,10]); uploads.push({ bytes: bytes.length }); response.writeHead(200, {"Content-Type":"application/json"}); response.end(JSON.stringify({success:true,result:["https://images.example.invalid/owned-fixture.png"]})); }
   catch (error) { response.writeHead(400); response.end(JSON.stringify({error:error.message})); }
 });
 await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 const uploaderURL = `http://127.0.0.1:${server.address().port}/upload`;
+const payloadBaseURL = `http://127.0.0.1:${server.address().port}/payload/v1`;
 
 try {
   const contents = path.join(directory, "WebKitTests.app/Contents"),
@@ -34,6 +43,10 @@ try {
       "native/App.swift",
       "native/PDFExporter.swift",
       "tests/WebKitTests.swift",
+      "native/LearningTools.swift",
+      "native/ReadingStore.swift",
+      "-framework",
+      "JavaScriptCore",
       "-o",
       executable,
       "-framework",
@@ -48,6 +61,8 @@ try {
   await cp("docs/showcase", path.join(resources, "showcase"), { recursive: true });
   await cp("shared/commands.json", path.join(resources, "commands.json"));
   await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
+  await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
+  await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
   await cp("tests/fixtures/plugin-package", path.join(resources, "Plugin-package-fixture"), {recursive:true});
   await cp("tests/webkit.js", path.join(resources, "web-tests.js"));
   await writeFile(
@@ -71,6 +86,8 @@ try {
         ...process.env,
         OMARKIE_DATA_DIR: path.join(directory, "data"),
         OMARKIE_TEST_UPLOADER: uploaderURL,
+        OMARKIE_TEST_PAYLOAD: payloadBaseURL,
+        OMARKIE_CLEAN_SCRIPT: JSON.stringify([process.execPath, path.resolve("tests/fixtures/clean-script.cjs"), "complete"]),
       },
       stdio: "inherit",
     });
@@ -81,6 +98,11 @@ try {
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
+  assert.deepEqual(payloadRequests.map(body => [body.model, body.max_tokens, body.max_completion_tokens, body.messages.slice(1).map(message => message.content)]), [
+    ["native-fixture", 768, undefined, ["Synthetic source paragraph."]],
+    ["native-fixture", undefined, 384, ["Synthetic source paragraph.", "What is this?"]],
+  ]);
+  console.log("PASS: native Payload only sends approved bounded requests to the owned endpoint");
   if (process.env.OMARKIE_QA_DIR) {
     await mkdir(process.env.OMARKIE_QA_DIR, { recursive: true });
     await cp(path.join(directory, "data/native-test-long.pdf"), path.join(process.env.OMARKIE_QA_DIR, "native-pagination.pdf"));

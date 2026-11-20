@@ -52,11 +52,18 @@ try {
   await expect(send).toBeDisabled();
   await panel.getByRole("button", { name: "Preferences", exact: true }).click();
   await preferences.getByLabel("Allow Payload requests to https://inference.example.test").check();
+  await preferences.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(send).toBeEnabled();
+  await expect(panel).toContainText("Sends this note’s text to https://inference.example.test.");
+  await expect(panel).toContainText("Do not send identifiable medical data.");
+  assert.equal(requests.length, 0);
+  await panel.getByRole("button", { name: "Close Payload" }).click();
+  await page.keyboard.press("ControlOrMeta+,");
   await preferences.getByLabel("Payload base URL").fill("https://inference.example.test:8443/v1");
   await expect(preferences.getByLabel("Allow Payload requests to https://inference.example.test:8443")).not.toBeChecked();
+  await preferences.getByLabel("Use max_completion_tokens instead of max_tokens").check();
   await preferences.getByLabel("Payload base URL").fill(`${origin}/v1`);
   await preferences.getByRole("button", { name: "Done", exact: true }).click();
-  await panel.getByRole("button", { name: "Close Payload" }).click();
   await expect.poll(() => bundleRequests.filter(url => /\/PayloadPanel-[^/]+\.js$/.test(url)).length).toBe(1);
   assert.equal(requests.length, 0);
 
@@ -73,6 +80,8 @@ try {
   await expect(summary.locator("strong")).toHaveText("Triangle:");
   assert.equal(requests[0].url, "/v1/chat/completions");
   assert.equal(requests[0].body.messages[1].content, selection);
+  assert.equal(requests[0].body.max_completion_tokens, 768);
+  assert.equal(requests[0].body.max_tokens, undefined);
   assert.equal(await readFile(file, "utf8"), original);
 
   const question = panel.getByLabel("Ask one question about this text");
@@ -82,6 +91,7 @@ try {
     await expect(question).toHaveValue("");
     await expect(panel.getByRole("region", { name: "Payload answer" })).toHaveText("Three sides.");
     assert.deepEqual(requests.at(-1).body.messages.slice(1).map(message => message.content), [selection, text]);
+    assert.equal(requests.at(-1).body.max_completion_tokens, 384);
   }
   await summary.getByRole("button", { name: "Append as callout" }).click();
   await page.getByRole("button", { name: "Source", exact: true }).click();

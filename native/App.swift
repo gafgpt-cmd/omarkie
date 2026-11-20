@@ -191,6 +191,17 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         return
       }
     #endif
+    if name == "cleanConverted" || name == "readingStore" || name == "payloadRequest" || name == "payloadKey" {
+      Task { @MainActor in
+        do {
+          let result = try await self.learningTool(name, args)
+          self.reply(id, ["ok": true, "value": result ?? NSNull()])
+        } catch {
+          self.reply(id, ["ok": false, "error": (error as? NativeFailure)?.message ?? "阅读图层数据无效。", "code": "LEARNING_ERROR"])
+        }
+      }
+      return
+    }
     if name == "readResource", let address = args.first as? String, let url = URL(string: address), ["http", "https"].contains(url.scheme ?? "") {
       Task { @MainActor in
         do {
@@ -367,6 +378,40 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           "ok": false, "error": error.localizedDescription,
           "code": (error as? NativeFailure)?.code ?? "DOCUMENT_ERROR",
         ])
+    }
+  }
+  @MainActor func learningTool(_ name: String, _ args: [Any]) async throws -> Any? {
+    switch name {
+    case "cleanConverted":
+      let body = try arg(args, 0, String.self)
+      return try await Task.detached(priority: .userInitiated) { try NativeClean.run(body) }.value
+    case "payloadKey":
+      try owner.payload.setKey(args.first, args.dropFirst().first)
+      return nil
+    case "payloadRequest":
+      return try await owner.payload.request(arg(args, 0, [String: Any].self))
+    case "readingStore":
+      let id = try arg(args, 0, String.self), request = try arg(args, 1, [String: Any].self)
+      let scope = try NativeReadingStore.scope(store, id)
+      let folder = store.folder
+      let result = try await owner.readingStore.perform(scope, request) { [weak self] in
+        DispatchQueue.main.sync {
+          guard let self, self.store.folder == folder else { return false }
+          return (try? self.store.require(id).path) == scope.file.path
+        }
+      }
+      guard request["action"] as? String == "export" else { return result }
+      guard let markdown = result as? String else { throw NativeFailure("无法导出。请选择新的文件名。") }
+      let suggestion = request["defaultName"] as? String ?? ""
+      let name = suggestion.utf8.count <= 240 && suggestion.hasSuffix(".md") && !suggestion.contains("/") && !suggestion.contains("\0") ? suggestion : "阅读笔记.md"
+      let panel = NSSavePanel()
+      panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+      panel.nameFieldStringValue = name
+      guard panel.runModal() == .OK, let destination = panel.url else { return false }
+      do { try NativeReadingStore.export(markdown, destination) }
+      catch { throw NativeFailure("无法导出。请选择新的文件名。") }
+      return true
+    default: throw NativeFailure("阅读图层数据无效。")
     }
   }
   func reply(_ id: String, _ result: [String: Any]) {
@@ -773,6 +818,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
 }
 final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValidation {
   lazy var workspace = Workspace(directory)
+  lazy var readingStore = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
+  lazy var payload = NativePayload(Bundle.main.resourceURL!.appendingPathComponent("payload-recipe.json"))
   var fileOperationRunning = false
   var recentClosedFiles: [(url: URL, group: String?)] = []
   lazy var commandGroups: [CommandGroup] = {

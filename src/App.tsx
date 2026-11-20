@@ -106,6 +106,9 @@ export default function App() {
     const id = cleanId;
     if (id) requestAnimationFrame(() => editors.current.get(id)?.focus());
   }
+  function openClean() {
+    if (active && !editor()?.composing()) setCleanId(active.id);
+  }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadEnabled = preferences.payloadEnabled && !!window.desktop?.payloadRequest;
   const activePayload = payloadEnabled && payload?.id === active?.id ? payload : null;
@@ -122,23 +125,24 @@ export default function App() {
   }
   function appendPayload(summary: string) {
     const target = editor();
-    if (!active || !target || readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
+    if (!active || active.conflict || !target || readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
     const source = target.markdown(), eol = active.lineEnding;
     const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
-    if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "")) throw new Error(t("当前不可编辑"));
+    if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
   }
   const readingView = readingViews[session.activeId] || defaultReadingLayers;
   const readingVisible = readingOpen && !!active && !focus;
   const renderedView = readingVisible ? readingView.visual : rendered;
-  const remoteImages = preferences.remoteImages && !readingVisible;
+  const suppressRemoteImages = readingVisible || cleanVisible;
+  const remoteImages = preferences.remoteImages && !suppressRemoteImages;
   const previousRemoteImages = useRef(remoteImages);
   useLayoutEffect(() => {
-    if (previousRemoteImages.current !== remoteImages || readingVisible && preferences.remoteImages) {
+    if (previousRemoteImages.current !== remoteImages || suppressRemoteImages && preferences.remoteImages) {
       const options = { ...preferences, remoteImages };
       setMarkdownOptions(options);
     }
     previousRemoteImages.current = remoteImages;
-  }, [preferences, readingVisible, remoteImages]);
+  }, [preferences, suppressRemoteImages, remoteImages]);
   function setRenderedView(value: boolean) {
     if (readingVisible) setReadingViews(current => ({ ...current, [session.activeId]: { ...readingView, visual: value } }));
     else setRendered(value);
@@ -270,6 +274,13 @@ export default function App() {
     if (window.desktop?.readingStore && active?.path && session.folder)
       setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
   }
+  const readingSaved = !!active?.path && !!session.folder;
+  function closeReading() {
+    setReadingOpen(false);
+    if (cleanVisible) closeClean();
+    if (flashcardsVisible) closeFlashcards();
+    setPayload(null);
+  }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
   async function exportDocument(kind: string, options?: ConversionOptions) {
@@ -325,7 +336,7 @@ export default function App() {
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
     else if (action === "clean-converted" && active) {
       if (cleanVisible) closeClean();
-      else if (!editor()?.composing()) setCleanId(active.id);
+      else openClean();
     }
     else if (action === "collect-reading" && active) {
       const current = editor();
@@ -543,7 +554,8 @@ export default function App() {
                   }}
                   document={record}
                   rendered={record.id === session.activeId ? renderedView : rendered}
-                  readOnly={readOnly || readingVisible && record.id === session.activeId}
+                  readOnly={readOnly}
+                  reading={readingVisible && record.id === session.activeId}
                   preferences={preferences}
                   typewriter={typewriter}
                   onChange={(content) => session.update(record.id, { content })}
@@ -577,9 +589,14 @@ export default function App() {
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><ReadingLayers
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={!!active.path && !!session.folder} state={readingView}
+              saved={readingSaved} state={readingView}
               change={value => setReadingViews(current => ({ ...current, [active.id]: value }))}
-              close={() => setReadingOpen(false)}
+              actions={{
+                clean: { visible: cleanVisible, open: openClean, close: closeClean },
+                ask: payloadEnabled ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote), close: () => setPayload(null) } : undefined,
+                card: readingSaved ? { visible: flashcardsVisible, open: openFlashcards, close: closeFlashcards } : undefined,
+              }}
+              close={closeReading}
             /></Suspense>}
             <article
               className="print-document"
@@ -590,7 +607,7 @@ export default function App() {
       </main>
       <Suspense fallback={null}>{activePayload && <PayloadPanel
         key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
-        preferences={preferences} editable={!readOnly && !session.fileOperationBusy} append={appendPayload}
+        preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
         configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
       />}</Suspense>
       <footer className="statusbar">
@@ -601,7 +618,7 @@ export default function App() {
           {countUnit === "characters" ? t("{{count}} 字", { count: selection ? selectionCharacters : characters }) : t("{{count}} 词", { count: selection ? documentStatistics(selection, selection, preferences.readingSpeed).words : wholeStatistics?.words || 0 })}{selection && t("（选中）")}{exporting && t(" · 正在导出…")}
         </button>
         {window.desktop?.readingStore && active && <button type="button" aria-label={t("阅读图层")} title={t("阅读图层")}
-          aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => setReadingOpen(value => !value)}><Layers size={15} /></button>}
+          aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => readingVisible ? closeReading() : setReadingOpen(true)}><Layers size={15} /></button>}
         {active && <button aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
       </footer>
       {focus && (

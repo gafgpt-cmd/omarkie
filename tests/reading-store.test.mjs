@@ -3,9 +3,11 @@ import { appendFile, link, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFil
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { readingAnchor, resolveReadingAnchors } from "../electron/reading-anchors.mjs";
+import readingCore from "../shared/reading-core.cjs";
 import { readingMarkdown, readingStore } from "../electron/reading-store.mjs";
-import { DocumentStore } from "../electron/store.mjs";
+import { digest, DocumentStore } from "../electron/store.mjs";
+
+const { readingAnchor, resolveReadingAnchors } = readingCore(digest);
 
 const body = "This long paragraph has enough distinct words to keep its identity after a minor spelling edit.";
 const block = (text = body, line = 4, headings = ["Title", "Topic"]) => ({ block: text, headings, line });

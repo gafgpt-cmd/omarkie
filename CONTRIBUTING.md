@@ -73,6 +73,7 @@ Focused suites:
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and shared rich/source history | Electron desktop |
 | `npm run test:features` | Menus, preferences, navigation, file workflows, PDF open, startup/plugin ordering, reading/document tools and packaged regressions | Electron + converters; Linux uses the invocation above |
 | `npm run test:reading` | Callout/table folding, image viewing/resizing, slash commands, width and right outline | Electron; included in `test:features` |
+| `npm run test:learning` | Clean, Payload, margin notes, study cards and five UI locales | Electron; included in `test:features` |
 | `npm run test:document-workflows` | Properties, OKF conversion/bundles, references, templates and citation/letterhead output | Electron + Pandoc + `pdftotext`; included in `test:features` |
 | `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron + Pandoc + LibreOffice |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |

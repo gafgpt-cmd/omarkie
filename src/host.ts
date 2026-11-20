@@ -181,7 +181,7 @@ export const host: Host = window.desktop
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
-            const error = new Error(response.error);
+            const error = new Error(response.code === "LEARNING_ERROR" ? t(response.error) : response.error);
             Object.assign(error, { code: response.code });
             throw error;
           }

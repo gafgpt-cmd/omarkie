@@ -32,21 +32,20 @@
 
 ## Clean converted text
 
-- File → Clean converted text opens a read-only reading layer. Back to source or Esc hides it without applying.
+- File → Clean converted text, or Reading Layers → Clean, opens a read-only preview. Back to source or Esc hides it without applying.
 - Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
 - A change to the note or its disk revision requires a fresh preview.
 - Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
-- Linux/Windows: set `OMARKIE_CLEAN_SCRIPT` to an executable path or JSON argv, e.g. `["python3","/path/to/pdf-md-pipeline/stage2/run_passes.py"]`.
+- Optional desktop hook: set `OMARKIE_CLEAN_SCRIPT` to an executable path or a JSON array of executable and arguments.
 - The hook runs the installed Stage 2 p01–p07 CLI on a private UTF-8 scratch copy: `source.md --passes 1,2,3,4,5,6,7 --report report.json`. No pipeline code is bundled or copied.
 - The hook receives no original path. Asset-dependent repairs cannot inspect the source folder. Failed hooks leave the document untouched; unset the hook to use the built-in cleanup alone.
-- Reading layer integration: lazily import `previewClean(record)` and `bakeClean(preview, current, editor)` from `src/cleanLayer.ts`. Keep the preview separate from the L0 document and supply current record/editor getters at bake time.
 
 ## Reading Layers
 
-- Linux/Windows desktop. Open a vault folder and a saved Markdown file in it. Open **Reading Layers** in the status bar.
+- Open a vault folder and a saved Markdown file in either desktop app. Open **Reading Layers** in the status bar.
 - Eyes show or hide layers per document. The pencil marks the active layer. L0 is locked; close the rail to edit the source.
 - Remote media stays off in the reader, even if enabled for editing.
-- Select text in the reader. Choose **Note to self** and **Pin note**. `Alt+Enter` focuses the selection actions.
+- Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** saves a Markdown copy for the open vault. It never overwrites a file.
 - Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
@@ -54,7 +53,7 @@
 
 ## Study cards (L5)
 
-- Open a folder and a saved note in the Electron app. Select **Reading Layers → Cards**.
+- Open a folder and a saved note. Select **Reading Layers → Cards**.
 - **Make cards from highlights and notes** drafts up to 10 per note. Aim for 5–10; fewer distinct sources produce fewer cards.
 - Edit the questions and answers. Save only the selected cards.
 - For a single card, select text in Reading Layers and choose **Make it a card**. Opening the composer saves nothing.
@@ -100,7 +99,7 @@
 
 ## Payload
 
-- Electron desktop: Preferences → Payload. Off by default; no background requests.
+- Desktop: Preferences → Payload. Off by default; no background requests.
 - Set the OpenAI-compatible base URL (default `http://127.0.0.1:11434/v1`) and model. The app appends `/chat/completions`.
 - Optional API key: set it for the session. It stays in memory, scoped to the configured origin, never saved to disk.
 - Non-loopback URLs require HTTPS and an explicit allowance for that scheme, host and port. To revoke, select its URL and uncheck the allowance. Redirects are refused.

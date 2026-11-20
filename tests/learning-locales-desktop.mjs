@@ -1,0 +1,83 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { _electron as electron, expect } from "playwright/test";
+import { languages } from "../shared/languages.mjs";
+import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+
+for (const [language] of languages) {
+  const catalog = JSON.parse(await readFile(new URL(`../shared/locales/${language}.json`, import.meta.url)));
+  function label(key, args = {}) {
+    assert.ok(Object.hasOwn(catalog, key) && catalog[key].trim(), `${language}: untranslated learning key ${key}`);
+    return catalog[key].replace(/{{(\w+)}}/g, (_, name) => {
+      assert.ok(Object.hasOwn(args, name), `${language}: missing interpolation ${name}`);
+      return args[name];
+    });
+  }
+  const home = await mkdtemp(path.join(os.tmpdir(), `omarkie-learning-${language}-`));
+  const vault = path.join(home, "vault"), file = path.join(vault, "locale.md");
+  const excerpt = "A localized selection fixture.", content = `# Locale fixture\n\n${excerpt}\n\n==Highlight fixture==\n`;
+  await mkdir(vault);
+  await writeFile(file, content);
+  const record = { id: "fixture", path: file, name: "locale.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), lineEnding: "\n" };
+  await writeFile(path.join(home, "session.json"), JSON.stringify({ version: 1, folder: vault, documents: [record], activeId: record.id }));
+  const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, OMARKIE_LANGUAGE: language });
+  delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL; delete env.OMARKIE_CLEAN_SCRIPT;
+  const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
+  try {
+    const page = await application.firstWindow();
+    const rich = page.locator(".document-editor:not([hidden]) .rich-document");
+    const button = (root, key, args) => root.getByRole("button", { name: label(key, args), exact: true });
+    await expect(page.locator("html")).toHaveAttribute("lang", language);
+    await expect(rich.getByRole("heading", { name: "Locale fixture", exact: true })).toBeVisible();
+    await button(page, "阅读图层").click();
+    const rail = page.getByRole("complementary", { name: label("阅读图层"), exact: true });
+    const margin = page.getByRole("complementary", { name: label("页边笔记"), exact: true });
+    await expect(margin).toContainText(label("选择文本以添加页边笔记。"));
+    await expect(button(margin, "导出笔记和卡片")).toBeVisible();
+    await expect(button(rail, "显示{{layer}}", { layer: label("问答摘要") })).toBeDisabled();
+    await button(rail, "显示{{layer}}", { layer: label("清理") }).click();
+    const clean = page.getByRole("region", { name: label("清理图层预览"), exact: true });
+    await button(clean, "查看差异").click();
+    await expect(clean.getByRole("heading", { name: label("清理前"), exact: true })).toBeVisible();
+    await expect(button(clean, "应用到源文档")).toBeEnabled();
+    await button(clean, "返回源文档").click();
+    await button(rail, "显示{{layer}}", { layer: label("卡片") }).click();
+    const cards = page.getByRole("dialog", { name: label("学习卡片"), exact: true });
+    await expect(cards).toContainText(label("本笔记卡片：{{total}} / {{limit}}", { total: 0, limit: 10 }));
+    await button(cards, "从高亮和笔记生成卡片").click();
+    await expect(cards.getByRole("textbox", { name: label("答案"), exact: true })).toHaveValue("Highlight fixture");
+    await expect(button(cards, "保存选中卡片")).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await button(rail, "显示{{layer}}", { layer: label("卡片") }).click();
+    await button(cards, "考考我").click();
+    const review = page.getByRole("dialog", { name: label("考考我"), exact: true });
+    await expect(review).toContainText(label("资料库没有到期的新卡或复习卡。"));
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("ControlOrMeta+,");
+    const preferences = page.getByRole("dialog");
+    await preferences.getByLabel(label("Enable Payload")).check();
+    await preferences.getByLabel(label("Payload model")).fill("locale-fixture");
+    await page.keyboard.press("Escape");
+    await rich.getByText(excerpt, { exact: true }).selectText();
+    await page.keyboard.press("Alt+Enter");
+    const selection = page.getByRole("dialog", { name: label("选区操作"), exact: true });
+    await expect(button(selection, "给自己写笔记")).toBeEnabled();
+    await expect(button(selection, "制作卡片")).toBeEnabled();
+    await button(selection, "询问选中内容").click();
+    const panel = page.getByRole("complementary", { name: label("Payload"), exact: true });
+    await expect(panel).toContainText(label("Sends the selected text to {{origin}}.", { origin: "http://127.0.0.1:11434" }));
+    await expect(panel).toContainText(label("Do not send identifiable medical data. Even a local server can forward requests."));
+    await expect(panel.getByLabel(label("Ask one question about this text"))).toBeVisible();
+    await expect(button(panel, "Send question")).toBeDisabled();
+    await button(panel, "Close Payload").click();
+    await button(rail, "关闭阅读图层").click();
+    await page.locator(".menu-container > button").click();
+    await page.getByRole("menuitem", { name: label("Collect highlights and callouts"), exact: true }).click();
+    await expect(rich.getByRole("heading", { name: label("Reading summary"), exact: true })).toBeVisible();
+    assert.equal(await readFile(file, "utf8"), content);
+    console.log(`PASS: ${language} learning controls resolve directly in their catalog and render in the desktop UI`);
+  } finally { await application.close(); }
+}

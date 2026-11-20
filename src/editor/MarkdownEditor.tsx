@@ -56,12 +56,13 @@ export interface EditorHandle {
   imageOffset(image: HTMLImageElement): number | undefined;
   selectionRange(): { from: number; to: number; context: string } | undefined;
   readingContext(): ReadingContext | undefined;
-  replaceRange(from: number, to: number, text: string, expected: string): boolean;
+  replaceRange(from: number, to: number, text: string, expected: string, allowReading?: boolean): boolean;
 }
 interface Props {
   document: DocumentRecord;
   rendered: boolean;
   readOnly?: boolean;
+  reading?: boolean;
   preferences?: Preferences;
   typewriter?: boolean;
   onChange(content: string): void;
@@ -75,7 +76,7 @@ interface Props {
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
+    { document: record, rendered, readOnly: locked = false, reading = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -108,8 +109,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const pendingOptions = useRef(false);
     const compositionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isComposing = () => !!(rich.current?.composing || sourceComposing.current || source.current?.composing);
-    function editingBlocked() {
-      if (viewOptions.current.readOnly) return true;
+    function editingBlocked(allowReading = false) {
+      if (viewOptions.current.locked || !allowReading && viewOptions.current.readOnly) return true;
       if (!isComposing()) return false;
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
@@ -140,8 +141,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     }
     const sourceBehavior = useRef<Compartment | null>(null);
     const sourceOptions = () => [...(viewOptions.current.preferences?.sourceLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
-    const viewOptions = useRef({ preferences, typewriter, readOnly });
-    viewOptions.current = { preferences, typewriter, readOnly };
+    const readOnly = locked || reading;
+    const viewOptions = useRef({ preferences, typewriter, readOnly, locked });
+    viewOptions.current = { preferences, typewriter, readOnly, locked };
     function historyState() {
       if (root.current?.closest(".document-editor")?.hasAttribute("hidden"))
         return;
@@ -461,9 +463,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           const from = Math.min(anchor, head), to = Math.max(anchor, head);
           return { nodes: doc.nodes, headings: (doc.environment.headings as Heading[] | undefined) || [], from, to, index: doc.nodeIndexNear(from), text: doc.text };
         },
-        replaceRange: (from, to, text, expected) => {
+        replaceRange: (from, to, text, expected, allowReading) => {
           const doc = model.current;
-          if (!doc || editingBlocked()) return false;
+          if (!doc || editingBlocked(allowReading)) return false;
           doc.closeGroup(); rich.current?.releaseFence();
           const source = doc.toMarkdown();
           if (from < 0 || to < from || to > source.length || source.slice(from, to) !== expected) return false;

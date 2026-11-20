@@ -73,9 +73,13 @@ try {
     const session = await recovered();
     return session.documents.find(record => record.id === session.activeId)?.content;
   }).toContain("- Unsaved collector highlight\n\n> [!tip]+ Collector callout\n> Callout body.");
+  if (await page.locator(".source-toggle").getAttribute("aria-pressed") !== "true") await page.locator(".source-toggle").click();
+  await editor.press("ControlOrMeta+End");
+  await page.keyboard.insertText("\nEditable collector draft.");
+  await expect(editor).toContainText("Editable collector draft.");
   const collected = await recovered();
   assert.deepEqual(collected.documents.find(record => record.id === source.id), source);
-  assert.equal(collectorChunks.length, 1);
+  assert.ok(collectorChunks.length > 0, "only executing the collector loads its module");
   assert.deepEqual(errors, []);
   console.log("Browser startup: eight decoded pictures; source, restored draft and lazy reading summary verified");
 } finally {

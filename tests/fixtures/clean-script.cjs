@@ -1,5 +1,6 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+if (process.env.OMARKIE_TEST_CLEAN_RUN) fs.appendFileSync(process.env.OMARKIE_TEST_CLEAN_RUN, "run\n");
 const [mode, file, selectionFlag, selection, reportFlag, report] = process.argv.slice(2);
 assert.equal(selectionFlag, "--passes");
 assert.equal(selection, "1,2,3,4,5,6,7");

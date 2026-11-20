@@ -31,7 +31,7 @@ export async function bakeClean(preview: CleanPreview, current: () => DocumentRe
   assertCurrent();
   if (preview.path && host.native && await host.check(preview.id)) throw new Error(t("源文档已改变，请重新预览。"));
   const target = assertCurrent();
-  if (preview.markdown !== preview.source && !target.replaceRange(0, preview.source.length, preview.markdown, preview.source)) {
+  if (preview.markdown !== preview.source && !target.replaceRange(0, preview.source.length, preview.markdown, preview.source, true)) {
     throw new Error(t("当前不可编辑"));
   }
 }

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { requestPayload, setPayloadKey } from "../electron/payload.mjs";
 import { payloadEndpoint } from "../shared/payload-endpoint.mjs";
+import { t } from "../electron/i18n.mjs";
 import { createTranslator } from "../shared/i18n.mjs";
 
 const remote = "https://inference.example.test:8443";
@@ -48,11 +49,12 @@ test("Payload refuses overlapping requests, oversized responses and provider err
   const { promise, resolve } = Promise.withResolvers();
   const fetch = context.mock.method(globalThis, "fetch", () => promise);
   const first = requestPayload(request);
-  await assert.rejects(requestPayload(request), /current Payload request/);
+  await assert.rejects(requestPayload(request), { message: t("Wait for the current Payload request to finish.") });
   resolve(new Response("x".repeat(64_001)));
-  await assert.rejects(first, /Payload failed/);
+  const failure = t("Payload failed. Check the endpoint, model, and API key.");
+  await assert.rejects(first, { message: failure });
   fetch.mock.mockImplementation(async () => new Response("private provider error details", { status: 400 }));
-  await assert.rejects(requestPayload(request), error => /Payload failed/.test(error.message) && !error.message.includes("private provider"));
+  await assert.rejects(requestPayload(request), { message: failure });
 });
 
 test("Payload notices localize in Chinese as well as the English-source catalogs", () => {

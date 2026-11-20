@@ -9,10 +9,11 @@ import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const dir = await mkdtemp(path.join(os.tmpdir(), "omarkie-clean-ui-"));
 const file = path.join(dir, "sample.md"), profile = path.join(dir, "profile");
+const hookRuns = path.join(dir, "clean-runs");
 const hook = fileURLToPath(new URL("./fixtures/clean-script.cjs", import.meta.url));
 const source = "# Sample\n\npublisher artifact\n\nMethods\n\nA reconst-\nruction.\n";
 await writeFile(file, source);
-const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: profile, OMARKIE_LANGUAGE: "en", OMARKIE_CLEAN_SCRIPT: JSON.stringify([process.execPath, hook, "complete"]) });
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: profile, OMARKIE_LANGUAGE: "en", OMARKIE_TEST_CLEAN_RUN: hookRuns, OMARKIE_CLEAN_SCRIPT: JSON.stringify([process.execPath, hook, "complete"]) });
 delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({ args: [root, ...headlessArguments, file], env });
 try {
@@ -34,9 +35,11 @@ try {
   await page.reload();
   await expect(rich.getByText("publisher artifact", { exact: true })).toBeVisible();
   assert.equal(chunks.length, 0);
+  await assert.rejects(readFile(hookRuns), { code: "ENOENT" });
 
   await open();
   assert.ok(chunks.length > 0);
+  assert.equal(await readFile(hookRuns, "utf8"), "run\n");
   await expect(preview.getByText("A reconstruction.", { exact: true })).toBeVisible();
   await expect(preview.getByText("publisher artifact", { exact: true })).toHaveCount(0);
   await preview.getByRole("button", { name: "Show changes" }).click();

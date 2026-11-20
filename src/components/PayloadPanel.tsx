@@ -37,8 +37,8 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
     if (ask) setAnswer("");
     try {
       const result = await host.payloadRequest!({
-        baseUrl: preferences.payloadBaseUrl, confirmedOrigin: endpoint.origin, allowedOrigin: endpoint.local ? undefined : endpoint.origin,
-        model: preferences.payloadModel, modernLimit: preferences.payloadModernLimit, source, question: ask ? question.trim() : undefined,
+        baseUrl: preferences.payloadBaseUrl, confirmedOrigin: endpoint.origin, ...(endpoint.local ? {} : { allowedOrigin: endpoint.origin }),
+        model: preferences.payloadModel, modernLimit: preferences.payloadModernLimit, source, ...(ask ? { question: question.trim() } : {}),
       });
       if (ask) { setAnswer(preview.render(result)); setQuestion(""); }
       else {

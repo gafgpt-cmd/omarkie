@@ -23,7 +23,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       let record = try store.open(file, id: "webkit-fixture")
       host = NativeWindowHost(
         owner: owner, directory: directory,
-        seed: SessionRecord(documents: [record], activeId: record.id))
+        seed: SessionRecord(documents: [record], activeId: record.id, folder: directory.path))
       owner.hosts.append(host)
       host.show(hidden: true)
       host.webView.navigationDelegate = self
@@ -38,7 +38,8 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       let script = try String(
         contentsOf: Bundle.main.resourceURL!.appendingPathComponent("web-tests.js"), encoding: .utf8
       )
-      webView.callAsyncJavaScript(script, arguments: ["uploaderURL": ProcessInfo.processInfo.environment["OMARKIE_TEST_UPLOADER"] ?? ""], in: nil, in: .page) { result in
+      let environment = ProcessInfo.processInfo.environment
+      webView.callAsyncJavaScript(script, arguments: ["uploaderURL": environment["OMARKIE_TEST_UPLOADER"] ?? "", "payloadBaseURL": environment["OMARKIE_TEST_PAYLOAD"] ?? ""], in: nil, in: .page) { result in
         do {
           let value = try result.get()
           guard let output = value as? [String: Any], output["error"] == nil else {
@@ -76,10 +77,34 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             withJSONObject: output, options: [.prettyPrinted, .sortedKeys])
           print(String(data: data, encoding: .utf8)!)
           print("PASS: native WebKit bridge persisted exact editor bytes")
-          exit(0)
+          Task { @MainActor in
+            do {
+              try await self.checkLearningPersistence()
+              exit(0)
+            } catch { self.fail(error) }
+          }
         } catch { self.fail(error) }
       }
     } catch { fail(error) }
+  }
+  @MainActor func checkLearningPersistence() async throws {
+    let scope = try NativeReadingStore.scope(host.store, "webkit-fixture")
+    let reopened = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
+    let items = try await reopened.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]]
+    guard items?.map({ $0["type"] as? String ?? "" }) == ["note", "card", "answer"],
+          items?.last?["rating"] as? Int == 5,
+          let markdown = try await reopened.perform(scope, ["action": "export"]) as? String,
+          markdown.contains("Native margin note."), markdown.contains("Synthetic question\n\nSynthetic answer") else {
+      throw NativeFailure("Native reading journal did not replay notes, cards and ratings into Markdown.")
+    }
+    let export = owner.directory.appendingPathComponent("native-reading.md")
+    try NativeReadingStore.export(markdown, export)
+    do {
+      try NativeReadingStore.export("Must not overwrite", export)
+      throw NativeFailure("Native reading export overwrote an existing file.")
+    } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
+    guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
+    print("PASS: native journal replay, Markdown export and exclusive destination")
   }
   func fail(_ error: Error) {
     fputs("\(error)\n", stderr)

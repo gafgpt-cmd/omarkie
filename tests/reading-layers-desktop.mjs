@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +20,10 @@ const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, 
 delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 let app, page;
 const errors = [], requested = [];
+let sends = 0;
+const server = createServer((_, response) => { sends++; response.writeHead(500).end(); });
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+const origin = `http://127.0.0.1:${server.address().port}`;
 async function launch() {
   app = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
   page = await app.firstWindow();
@@ -32,6 +37,7 @@ async function openRail() {
   await expect(page.getByRole("complementary", { name: "Margin notes", exact: true })).toBeVisible();
 }
 async function selectWords(locator, text) {
+  await locator.click();
   const { x, y, end } = await locator.evaluate((element, text) => {
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
@@ -52,11 +58,12 @@ async function selectWords(locator, text) {
 }
 try {
   await launch();
+  await page.evaluate(() => localStorage.setItem("omarkie-autosave", "false"));
   requested.length = 0;
   await page.reload();
   await expect(page.locator(".document-editor:not([hidden]) h1")).toHaveText("Reading");
   await page.waitForFunction(() => performance.getEntriesByName("omarkie:first-document-painted").length > 0);
-  assert.ok(!requested.some(url => /\/(?:ReadingLayers|MarginNotes)-/.test(url)));
+  assert.ok(!requested.some(url => /\/(?:ReadingLayers|MarginNotes|CleanLayer|Flashcards|PayloadPanel)-/.test(url)));
   await assert.rejects(stat(sidecar), { code: "ENOENT" });
   await page.keyboard.press("ControlOrMeta+/");
   const source = page.locator(".document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content");
@@ -70,6 +77,16 @@ try {
   await expect(canvas).toContainText("L0Source");
   await expect(canvas.getByRole("button")).toHaveCount(0);
   await expect(rail.locator('[data-active="true"]')).toContainText("Margin notes");
+  const clean = page.getByRole("region", { name: "Clean layer preview", exact: true });
+  await rail.getByRole("button", { name: "Show Clean", exact: true }).click();
+  await clean.getByRole("button", { name: "Bake into source", exact: true }).click();
+  await expect(clean).toBeHidden();
+  await rail.getByRole("button", { name: "Close Reading Layers", exact: true }).click();
+  await expect(source.locator(".cm-line").nth(1)).toHaveText('"type": "Reference"');
+  await source.press("ControlOrMeta+z");
+  await expect(source.locator(".cm-line").first()).toHaveText("# Reading");
+  assert.equal(await readFile(file, "utf8"), original);
+  await openRail();
 
   await page.keyboard.press("ControlOrMeta+,");
   const preferences = page.getByRole("dialog", { name: "Preferences", exact: true });
@@ -78,6 +95,9 @@ try {
   await expect(rich.locator(".remote-image")).toContainText("Remote sample");
   await expect(rich.getByRole("img", { name: "Remote sample", exact: true })).toHaveCount(0);
   await remote.uncheck();
+  await preferences.getByLabel("Enable Payload").check();
+  await preferences.getByLabel("Payload model").fill("offline-fixture");
+  await preferences.getByLabel("Payload base URL").fill(`${origin}/v1`);
   await preferences.getByRole("button", { name: "Done", exact: true }).click();
 
   const popover = await selectWords(rich.locator("p").filter({ hasText: body }), "distinct words");
@@ -95,6 +115,29 @@ try {
   const { entry } = JSON.parse(await readFile(log, "utf8"));
   assert.equal(entry.document, "reading.md");
   assert.deepEqual(entry.anchor.headings, ["Reading", "Section"]);
+
+  const paragraph = rich.locator("p").filter({ hasText: body });
+  await selectWords(paragraph, "distinct words");
+  await popover.getByRole("button", { name: "Ask about it", exact: true }).click();
+  const payload = page.getByRole("complementary", { name: "Payload", exact: true });
+  await expect(payload).toContainText(`Sends the selected text to ${origin}.`);
+  await expect(payload.getByRole("button", { name: "Send question", exact: true })).toBeDisabled();
+  await expect(payload.getByRole("button", { name: "Send text for summary", exact: true })).toHaveCount(0);
+  await payload.getByRole("button", { name: "Close Payload", exact: true }).click();
+  assert.equal(sends, 0);
+  assert.equal(JSON.parse(await readFile(log, "utf8")).entry.type, "note");
+
+  await selectWords(paragraph, "distinct words");
+  await popover.getByRole("button", { name: "Make it a card", exact: true }).click();
+  const cards = page.getByRole("dialog", { name: "Study cards", exact: true });
+  await expect(cards.getByRole("textbox", { name: "Answer", exact: true })).toHaveValue(entry.anchor.quote);
+  await cards.getByRole("button", { name: "Save selected cards", exact: true }).click();
+  await expect(cards).toContainText("Cards in this note: 1 / 10");
+  await page.keyboard.press("Escape");
+  const saved = (await readFile(log, "utf8")).trim().split("\n").map(row => JSON.parse(row).entry);
+  assert.deepEqual(saved.map(item => item.type), ["note", "card"]);
+  assert.equal(saved[1].anchor.hash, saved[0].anchor.hash);
+  assert.equal(saved[1].anchor.quote, saved[0].anchor.quote);
 
   await rail.getByRole("button", { name: "Hide Margin notes", exact: true }).click();
   await expect(margin).toHaveCount(0);
@@ -114,6 +157,7 @@ try {
   await app.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, output);
   await margin.getByRole("button", { name: "Export notes and cards", exact: true }).click();
   await expect.poll(() => readFile(output, "utf8").catch(() => "")).toContain("A durable margin note");
+  assert.match(await readFile(output, "utf8"), /\[\u2026\][\s\S]*distinct words/);
   assert.equal(await readFile(file, "utf8"), original);
   if (process.env.OMARKIE_QA_DIR) {
     await mkdir(process.env.OMARKIE_QA_DIR, { recursive: true });
@@ -136,5 +180,10 @@ try {
   await expect(page.locator(".layers-orphans")).toContainText("Source selection note");
   assert.deepEqual(errors, []);
   assert.deepEqual(requested.filter(url => /^(https?|wss?):/i.test(url)), []);
-  console.log("PASS: lazy Reading Layers, rich/source selection, lossless local notes, export, reattachment and orphans");
-} finally { await app?.close().catch(() => {}); }
+  assert.equal(sends, 0);
+  console.log("PASS: shared selection note, offline follow-up and card; lazy layers, persisted anchors, Markdown export and orphan tray");
+} finally {
+  await app?.close().catch(() => {});
+  server.closeAllConnections();
+  await new Promise(resolve => server.close(resolve));
+}

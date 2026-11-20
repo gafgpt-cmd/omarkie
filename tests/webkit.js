@@ -70,6 +70,29 @@ const readSource = () =>
     .join("\n");
 try {
   await wait(() => root()?.querySelector("strong"));
+  const cleanInput = "# Clean fixture\n\npublisher artifact\n\nA reconst-\nruction.\n";
+  const clean = await window.desktop.cleanConverted(cleanInput);
+  check(clean.ok && clean.value === "# Clean fixture\n\nA reconst-\nruction.\n", "native Clean CLI processes a private copy");
+  const documentId = "webkit-fixture";
+  const store = request => window.desktop.readingStore(documentId, request);
+  const block = { block: "This anchored sentence has enough words to survive a spelling edit.", headings: ["Synthetic fixture"], line: 4 };
+  const note = await store({ action: "put", item: { type: "note", id: "native-note", body: "Native margin note.", anchor: { ...block, quote: "anchored sentence" } } });
+  check(note.ok && note.value.anchor.hash.length === 64 && note.value.document === "WebKit-fixture.md", "native bridge creates a scoped and hashed margin note");
+  const fuzzy = await store({ action: "resolve", blocks: [{ ...block, line: 11, block: block.block.replace("spelling", "speling") }] });
+  const orphan = await store({ action: "resolve", blocks: [] });
+  check(fuzzy.ok && fuzzy.value[0].line === 11 && orphan.ok && orphan.value[0].line === null, "native fuzzy reattachment and orphaning share the journal");
+  const card = await store({ action: "put", item: { type: "card", id: "native-card", front: "Synthetic question", back: "Synthetic answer" } });
+  const answer = await store({ action: "put", item: { type: "answer", id: "native-answer", cardId: "native-card", rating: 5 } });
+  const review = await store({ action: "list", scope: "vault", types: ["card", "answer"] });
+  check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
+  const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });
+  check(!unknown.ok, "native reading store rejects an unregistered document");
+  const payload = { baseUrl: payloadBaseURL, confirmedOrigin: new URL(payloadBaseURL).origin, model: "native-fixture", source: "Synthetic source paragraph." };
+  const rejected = await window.desktop.payloadRequest({ ...payload, confirmedOrigin: "https://example.invalid" });
+  check(!rejected.ok, "native Payload rejects an unconfirmed origin");
+  const summary = await window.desktop.payloadRequest(payload);
+  const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
+  check(summary.ok && followUp.ok && summary.value === "Synthetic payload reply." && followUp.value === summary.value, "native Payload reaches only the explicit fixture endpoint");
   check(
     location.protocol === "omarkie:" && window.desktop !== undefined,
     "bundled modules load through native WebKit scheme and bridge",

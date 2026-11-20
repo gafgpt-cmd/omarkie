@@ -32,7 +32,7 @@ export interface ReadingRequests {
   list: { scope?: "document" | "vault"; types?: readonly ReadingItem["type"][] };
   put: { item: ReadingItem };
   resolve: { blocks: readonly ReadingBlock[] };
-  export: Record<never, never>;
+  export: { defaultName?: string };
 }
 
 export interface ReadingResults {
