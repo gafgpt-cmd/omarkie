@@ -15,6 +15,8 @@ try {
   const context = await browser.newContext({ locale: "es-ES", viewport: { width: 1380, height: 960 } });
   const page = await context.newPage(), errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  const collectorChunks = [];
+  page.on("request", request => { if (/\/reading-collector-[^/]+\.js$/.test(request.url())) collectorChunks.push(request.url()); });
   await page.goto(server.resolvedUrls.local[0]);
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
   await expect(page.getByRole("button", { name: "Más acciones", exact: true })).toBeVisible();
@@ -56,8 +58,26 @@ try {
   const photo = active.locator("img").first();
   await photo.scrollIntoViewIfNeeded();
   await expect.poll(() => photo.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  assert.deepEqual(collectorChunks, [], "opening and editing notes do not load the collector");
+  await page.locator(".source-toggle").click();
+  await editor.press("ControlOrMeta+End");
+  const excerpt = "\n\n==Unsaved collector highlight==\n\n> [!tip]+ Collector callout\n> Callout body.\n";
+  await page.keyboard.insertText(excerpt);
+  const recovered = () => page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-session-v1")));
+  await expect.poll(async () => (await recovered()).documents.find(record => record.id === after.activeId)?.content).toContain(excerpt.trim());
+  const source = (await recovered()).documents.find(record => record.id === after.activeId);
+  await page.getByRole("button", { name: "Más acciones", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Recopilar resaltados y avisos", exact: true }).click();
+  await expect(page.locator(".document-title")).toHaveAttribute("title", "Resumen de lectura.md");
+  await expect.poll(async () => {
+    const session = await recovered();
+    return session.documents.find(record => record.id === session.activeId)?.content;
+  }).toContain("- Unsaved collector highlight\n\n> [!tip]+ Collector callout\n> Callout body.");
+  const collected = await recovered();
+  assert.deepEqual(collected.documents.find(record => record.id === source.id), source);
+  assert.equal(collectorChunks.length, 1);
   assert.deepEqual(errors, []);
-  console.log("Browser startup: eight decoded pictures; source and restored draft preserved");
+  console.log("Browser startup: eight decoded pictures; source, restored draft and lazy reading summary verified");
 } finally {
   try { await browser?.close(); }
   finally { await server.close(); }

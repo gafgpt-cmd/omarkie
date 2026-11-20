@@ -8,6 +8,14 @@
 - Open a folder before vault search, linked mentions or graph.
 - Graph loads only when opened. First 200 notes; reports use the bounded inventory below.
 
+## Reading summary
+
+- File → Collect highlights and callouts.
+- Collects `==highlights==` and `> [!type]` callouts from the current draft, in source order.
+- Opens a separate Markdown draft. Save it wherever you want.
+- No matches: no draft. The source note stays unchanged.
+- Parser: existing markdown-it (MIT). [Quartz](https://github.com/jackyzha0/quartz/blob/v4/quartz/plugins/transformers/ofm.ts) (MIT) reviewed; no code copied.
+
 ## Source safety
 
 - Opening/saving existing notes never adds metadata.

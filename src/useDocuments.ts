@@ -210,14 +210,14 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     if (record.controlCharacters) setMessage(t("“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。", { name: record.name, count: record.controlCharacters }));
     return record;
   }
-  async function create() {
+  async function create(draft?: { name: string; body: string }) {
     const id = crypto.randomUUID();
-    const name = current.current.documents.filter((record) => !record.path).length ? t("未命名 {{count}}.md", { count: current.current.documents.filter((record) => !record.path).length + 1 }) : t("未命名.md");
+    const name = draft?.name ?? (current.current.documents.filter((record) => !record.path).length ? t("未命名 {{count}}.md", { count: current.current.documents.filter((record) => !record.path).length + 1 }) : t("未命名.md"));
     const record: DocumentRecord = {
       id,
       path: null,
       name,
-      content: newNote(name),
+      content: newNote(name) + (draft?.body ?? ""),
       savedContent: "",
       diskHash: null,
       lineEnding: "\n",

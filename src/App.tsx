@@ -317,6 +317,17 @@ export default function App() {
       if (cleanVisible) closeClean();
       else if (!editor()?.composing()) setCleanId(active.id);
     }
+    else if (action === "collect-reading" && active) {
+      const current = editor();
+      if (current?.composing()) { session.setMessage(t("Finish composing text before collecting highlights and callouts.")); return; }
+      const markdown = current?.markdown() ?? active.content;
+      void import("../shared/reading-collector.ts").then(({ collectReadingItems, readingSummary }) => {
+        const items = collectReadingItems(markdown);
+        if (!items.length) { session.setMessage(t("No highlights or callouts in this note.")); return; }
+        const title = t("Reading summary");
+        return session.create({ name: `${title}.md`, body: readingSummary(items, title, t("Source: {{name}}", { name: active.name })) });
+      }).catch(error => session.setMessage(error.message));
+    }
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
     else if (action === "close") void session.close();
@@ -467,7 +478,7 @@ export default function App() {
         select={session.setActiveId}
         openToken={session.openToken}
         openFolder={session.openFolder}
-        create={session.create}
+        create={() => void session.create()}
         refresh={session.refresh}
         close={session.close}
         jump={(line) => editor()?.jump(line)}
