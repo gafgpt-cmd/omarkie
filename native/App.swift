@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 import WebKit
 
@@ -86,13 +87,6 @@ class EditorWindow: NSWindow {
       }
     } else { performDrag(with: event) }
   }
-}
-
-private final class GrammarNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-  func urlSession(_ session: URLSession, task: URLSessionTask,
-    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
-    completionHandler: @escaping (URLRequest?) -> Void
-  ) { completionHandler(nil) }
 }
 
 final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler,
@@ -199,7 +193,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         return
       }
     #endif
-    if name == "cleanConverted" || name == "readingStore" || name == "payloadRequest" || name == "payloadKey" {
+    if name == "cleanConverted" || name == "readingStore" || name == "payloadRequest" || name == "payloadKey" || name == "readAloud" || name == "bibliography" {
       Task { @MainActor in
         do {
           let result = try await self.learningTool(name, args)
@@ -264,7 +258,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           let chapters = project == nil ? nil : (try arg(args, 2, [String].self))
           let ext = ["latex":"tex", "revealjs":"html", "mediawiki":"wiki"][format] ?? format
           #if WEBTEST
-          let destination = store.dataDirectory.appendingPathComponent("native-converted." + ext)
+          let destination = project == nil
+            ? store.dataDirectory.appendingPathComponent("native-converted." + ext)
+            : store.dataDirectory.deletingLastPathComponent().appendingPathComponent("native-project." + ext)
           #else
           let panel = NSSavePanel()
           panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]
@@ -412,6 +408,39 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     }
   }
   @MainActor func learningTool(_ name: String, _ args: [Any]) async throws -> Any? {
+    if name == "readAloud" {
+      guard let value = args.first, value is NSNull || value is String else { throw NativeFailure("没有可朗读的文字。") }
+      if value is NSNull { owner.speech?.stop() }
+      else {
+        if owner.speech == nil { owner.speech = NativeSpeech() }
+        try await owner.speech?.read(value as? String)
+      }
+      return nil
+    }
+    if name == "bibliography" {
+      let root = try arg(args, 0, String.self), action = try arg(args, 1, String.self)
+      guard store.folder?.path == root, !root.isEmpty else { throw NativeFailure("请先打开笔记文件夹") }
+      owner.releaseBibliographies()
+      var value = args.count > 2 ? args[2] as? String : nil
+      if action == "link" {
+        #if WEBTEST
+          value = owner.directory.appendingPathComponent("native-zotero.json").path
+        #else
+          let panel = NSOpenPanel()
+          panel.allowedContentTypes = [.json]
+          panel.title = "关联 Zotero 自动导出"
+          guard panel.runModal() == .OK, let file = panel.url else { return false }
+          value = file.path
+        #endif
+        guard store.folder?.path == root else { throw NativeFailure("请先打开笔记文件夹") }
+      }
+      let result = try owner.bibliographyService().perform(root, action, value)
+      if action == "open" {
+        guard let path = result as? String, NSWorkspace.shared.open(URL(fileURLWithPath: path)) else { throw NativeFailure("无法打开引用的本地 PDF") }
+        return nil
+      }
+      return result
+    }
     switch name {
     case "cleanConverted":
       let body = try arg(args, 0, String.self)
@@ -455,38 +484,18 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     let address = try arg(args, 0, String.self), approved = try arg(args, 1, String.self)
     let text = try arg(args, 2, String.self)
     let failure = NativeFailure("LanguageTool request failed")
-    guard address.utf16.count <= 500, text.utf16.count <= 20_000,
-      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      let parts = URLComponents(string: address), let url = parts.url,
-      let scheme = parts.scheme, let host = parts.host, !host.isEmpty,
-      parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
-      parts.percentEncodedPath.hasSuffix("/v2/check")
-    else { throw failure }
-    let local = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
-    let originHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-    let origin = "\(scheme)://\(originHost)" + (parts.port.map { ":\($0)" } ?? "")
-    guard (local && scheme == "http") || (scheme == "https" && (local || approved == origin)) else { throw failure }
+    guard text.utf16.count <= 20_000, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          let endpoint = NativeEndpoint.parse(address, max: 500),
+          endpoint.parts.percentEncodedPath.hasSuffix("/v2/check"),
+          endpoint.local || approved == endpoint.origin, let url = endpoint.parts.url else { throw failure }
 
     var form = URLComponents()
     form.queryItems = [URLQueryItem(name: "text", value: text), URLQueryItem(name: "language", value: "auto")]
-    var request = URLRequest(url: url)
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
     request.httpMethod = "POST"
     request.httpBody = form.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
     request.setValue("application/x-www-form-urlencoded;charset=UTF-8", forHTTPHeaderField: "Content-Type")
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.httpShouldSetCookies = false
-    configuration.urlCredentialStorage = nil
-    configuration.timeoutIntervalForResource = 15
-    let session = URLSession(configuration: configuration, delegate: GrammarNoRedirect(), delegateQueue: nil)
-    defer { session.invalidateAndCancel() }
-    let (bytes, response) = try await session.bytes(for: request)
-    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw failure }
-    var data = Data()
-    for try await byte in bytes {
-      guard data.count < 2_000_000 else { throw failure }
-      data.append(byte)
-    }
-    return try JSONSerialization.jsonObject(with: data)
+    return try JSONSerialization.jsonObject(with: await NativeEndpoint.response(request, timeout: 15, limit: 2_000_000))
   }
   func arg<T>(_ args: [Any], _ index: Int, _ type: T.Type) throws -> T {
     guard args.indices.contains(index), let value = args[index] as? T else {
@@ -638,7 +647,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     case "openFolder":
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
-      return try store.scan(file)
+      let result = try store.scan(file)
+      Task { @MainActor in self.owner.releaseBibliographies() }
+      return result
     case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)
     case "exportBundle":
       let payload = try arg(args, 0, [String: Any].self)
@@ -652,6 +663,21 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
       return try jsonValue(record)
     case "reopen": return try jsonValue(store.reopen(arg(args, 0, String.self)))
+    case "imageSizes":
+      let id = try arg(args, 0, String.self), sources = try arg(args, 1, [String].self)
+      _ = try store.require(id)
+      guard sources.count <= 200 else { return [:] as [String: [Int]] }
+      var sizes = [String: [Int]]()
+      for source in sources where source.utf8.count <= 4096 {
+        guard let file = try? store.asset(id, relative: source),
+              let image = CGImageSourceCreateWithURL(file as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int, width > 0, height > 0 else { continue }
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        sizes[source] = (5...8).contains(orientation) ? [height, width] : [width, height]
+      }
+      return sizes
     case "readResource":
       guard let url = URL(string: try arg(args, 0, String.self)) else { throw NativeFailure("资源引用无效。") }
       let (data, mime) = try Resources(Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store).read(url, project: args.count > 1 && args[1] as? Bool == true)
@@ -888,6 +914,19 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
   lazy var workspace = Workspace(directory)
   lazy var readingStore = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
   lazy var payload = NativePayload(Bundle.main.resourceURL!.appendingPathComponent("payload-recipe.json"))
+  var speech: NativeSpeech?
+  private var bibliographies: NativeBibliographies?
+  @MainActor func bibliographyService() -> NativeBibliographies {
+    if let bibliographies { return bibliographies }
+    let service = NativeBibliographies(directory) { [weak self] root in
+      for host in self?.hosts ?? [] where host.store.folder?.path == root { host.send("bibliography-changed") }
+    }
+    bibliographies = service
+    return service
+  }
+  @MainActor func releaseBibliographies() {
+    bibliographies?.release(except: Set(hosts.compactMap { $0.store.folder?.path }))
+  }
   var fileOperationRunning = false
   var recentClosedFiles: [(url: URL, group: String?)] = []
   lazy var commandGroups: [CommandGroup] = {
@@ -1014,7 +1053,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     let entries = recentClosedFiles.suffix(20).map { item -> [String: String] in var result = ["path": item.url.path]; if let group = item.group { result["group"] = group }; return result }
     if let bytes = try? JSONSerialization.data(withJSONObject: entries) { try? atomicWrite(directory.appendingPathComponent("recent-closed.json"), bytes) }
   }
-  func windowClosed(_ host: NativeWindowHost) {
+  @MainActor func windowClosed(_ host: NativeWindowHost) {
     if !terminating {
       let activePath = host.store.records[host.store.activeId ?? ""]?.path
       let records = host.store.records.values.sorted { a,b in a.path == activePath ? false : b.path == activePath ? true : a.name < b.name }
@@ -1036,6 +1075,8 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     host.webView.stopLoading()
     host.window.close()
     hosts.removeAll(where: { $0 === host })
+    if hosts.isEmpty { speech?.stop() }
+    releaseBibliographies()
     if terminating && hosts.isEmpty { NSApp.reply(toApplicationShouldTerminate: true) }
   }
   func cancelTermination() {

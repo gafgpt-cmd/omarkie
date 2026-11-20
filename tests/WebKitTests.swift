@@ -20,10 +20,11 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       _ = try Interchange.installPlugin(plugin, directory: directory)
       _ = try Interchange.installPlugin(Bundle.main.resourceURL!.appendingPathComponent("Plugin-package-fixture"), directory: directory)
       try atomicWrite(directory.appendingPathComponent("Background-fixture.png"),Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=")!)
+      try atomicWrite(directory.appendingPathComponent("native-zotero.json"), Data("[{\"id\":\"watched\",\"type\":\"book\",\"title\":\"Watched native reference\"}]".utf8))
       let record = try store.open(file, id: "webkit-fixture")
       host = NativeWindowHost(
         owner: owner, directory: directory,
-        seed: SessionRecord(documents: [record], activeId: record.id, folder: directory.path))
+        seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
       host.show(hidden: true)
       host.webView.navigationDelegate = self
@@ -39,7 +40,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         contentsOf: Bundle.main.resourceURL!.appendingPathComponent("web-tests.js"), encoding: .utf8
       )
       let environment = ProcessInfo.processInfo.environment
-      webView.callAsyncJavaScript(script, arguments: ["uploaderURL": environment["OMARKIE_TEST_UPLOADER"] ?? "", "payloadBaseURL": environment["OMARKIE_TEST_PAYLOAD"] ?? ""], in: nil, in: .page) { result in
+      webView.callAsyncJavaScript(script, arguments: ["uploaderURL": environment["OMARKIE_TEST_UPLOADER"] ?? "", "payloadBaseURL": environment["OMARKIE_TEST_PAYLOAD"] ?? "", "grammarOrigin": environment["OMARKIE_TEST_GRAMMAR"] ?? ""], in: nil, in: .page) { result in
         do {
           let value = try result.get()
           guard let output = value as? [String: Any], output["error"] == nil else {
@@ -80,6 +81,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           Task { @MainActor in
             do {
               try await self.checkLearningPersistence()
+              try await self.checkReaderPersistence()
               exit(0)
             } catch { self.fail(error) }
           }
@@ -105,6 +107,54 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
     print("PASS: native journal replay, Markdown export and exclusive destination")
+  }
+  @MainActor func checkReaderPersistence() async throws {
+    let directory = owner.directory, root = canonicalFileURL(directory).path
+    let bibliography = owner.bibliographyService()
+    let export = directory.appendingPathComponent("native-zotero.json")
+    let attachment = directory.appendingPathComponent("native-cited.pdf")
+    try atomicWrite(attachment, Data("%PDF-1.7\n".utf8))
+    func waitForInfo(_ stale: Bool, title: String) async throws {
+      let deadline = ContinuousClock.now + .seconds(5)
+      while ContinuousClock.now < deadline {
+        if let info = try bibliography.perform(root, "info") as? [String: Any],
+           info["stale"] as? Bool == stale,
+           (info["csl"] as? String)?.contains(title) == true { return }
+        try await Task.sleep(nanoseconds: 50_000_000)
+      }
+      throw NativeFailure("Native Zotero watcher did not reach expected state for \(title).")
+    }
+    try atomicWrite(export, Data("[".utf8))
+    try await waitForInfo(true, title: "Watched native reference")
+    let updated: [[String: Any]] = [["id": "new", "type": "book", "title": "Updated native reference", "omarkie-pdf": [attachment.path]]]
+    try atomicWrite(export, try JSONSerialization.data(withJSONObject: updated))
+    try await waitForInfo(false, title: "Updated native reference")
+    let reopened = NativeBibliographies(directory) { _ in }
+    guard let live = try reopened.perform(root, "info") as? [String: Any], live["stale"] as? Bool == false,
+          let csl = live["csl"] as? String, csl.contains("Updated native reference"), !csl.contains(attachment.path),
+          try reopened.perform(root, "open", "new") as? String == canonicalFileURL(attachment).path else {
+      throw NativeFailure("Native Zotero replacement, CSL isolation or PDF resolution failed.")
+    }
+    let options: [String: Any] = ["bibliography": csl, "style": "vancouver"]
+    let note = try Interchange.renderedExport(source: "# Note\n\nCitation [@new].\n", workingDirectory: directory, temporaryDirectory: directory, options: options)
+    let project = try Interchange.renderedExport(source: "", workingDirectory: directory, temporaryDirectory: directory, options: options, chapters: ["# First\n\nCitation [@new].\n", "# Second\n\nAgain [@new].\n"])
+    guard note.contains("Updated native reference"), project.components(separatedBy: "Updated native reference").count == 2 else {
+      throw NativeFailure("Single note and project did not share the native bibliography.")
+    }
+    let output = directory.deletingLastPathComponent()
+    let docxURL = output.appendingPathComponent("native-project.docx")
+    let pdfURL = output.appendingPathComponent("native-project.pdf")
+    guard let converter = Interchange.pandoc(),
+          let pdfText = PDFDocument(url: pdfURL)?.string else { throw NativeFailure("Native project files were not generated.") }
+    let docxText = String(decoding: try Interchange.run(converter, arguments: [docxURL.path, "--to=plain"], input: nil, directory: directory), as: UTF8.self)
+    for text in [docxText, pdfText] {
+      guard let first = text.range(of: "First native chapter"),
+            let second = text.range(of: "Second native chapter"), first.lowerBound < second.lowerBound,
+            text.components(separatedBy: "Watched native reference").count == 2 else {
+        throw NativeFailure("Native project output lost chapter order or duplicated the bibliography.")
+      }
+    }
+    print("PASS: native Zotero stale/live state, PDF resolution, chapter order and one citeproc bibliography")
   }
   func fail(_ error: Error) {
     fputs("\(error)\n", stderr)

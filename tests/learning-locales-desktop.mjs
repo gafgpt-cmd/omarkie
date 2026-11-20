@@ -25,6 +25,7 @@ for (const [language] of languages) {
   await writeFile(path.join(home, "session.json"), JSON.stringify({ version: 1, folder: vault, documents: [record], activeId: record.id }));
   const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, OMARKIE_LANGUAGE: language });
   delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL; delete env.OMARKIE_CLEAN_SCRIPT;
+  delete env.OMARKIE_TTS;
   const application = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
   try {
     const page = await application.firstWindow();
@@ -60,6 +61,10 @@ for (const [language] of languages) {
     const preferences = page.getByRole("dialog");
     await preferences.getByLabel(label("Enable Payload")).check();
     await preferences.getByLabel(label("Payload model")).fill("locale-fixture");
+    await expect(preferences.getByRole("option", { name: label("Off (natural size)"), exact: true })).toHaveCount(1);
+    await expect(preferences.getByLabel(label("Standalone image scale limit"))).toHaveValue("2");
+    await preferences.getByLabel(label("Enable on-demand grammar checks")).check();
+    await expect(preferences.getByLabel(label("LanguageTool check URL"))).toHaveValue("http://127.0.0.1:8081/v2/check");
     await page.keyboard.press("Escape");
     await rich.getByText(excerpt, { exact: true }).selectText();
     await page.keyboard.press("Alt+Enter");
@@ -74,10 +79,25 @@ for (const [language] of languages) {
     await expect(button(panel, "Send question")).toBeDisabled();
     await button(panel, "Close Payload").click();
     await button(rail, "关闭阅读图层").click();
+    await button(page, "Check grammar…").click();
+    const grammar = page.getByRole("dialog", { name: label("Send to LanguageTool?"), exact: true });
+    await expect(button(grammar, "Send note")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.locator(".menu-container > button").click();
+    await page.getByRole("menuitem", { name: label("朗读选区或段落"), exact: true }).click();
+    await expect(page.locator(".toast")).toContainText(label("未配置朗读：请设置 OMARKIE_TTS。"));
+    await page.locator(".menu-container > button").click();
+    await page.getByRole("menuitem", { name: label("文档工具…"), exact: true }).click();
+    const tools = page.getByRole("dialog", { name: label("文档工具"), exact: true });
+    await button(tools, "写作与导出").click();
+    await expect(button(tools, "关联 Zotero 自动导出")).toBeEnabled();
+    await expect(button(tools, "导出项目为 {{format}}", { format: "DOCX" })).toBeEnabled();
+    await expect(tools.getByRole("heading", { name: label("项目导出"), exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.locator(".menu-container > button").click();
     await page.getByRole("menuitem", { name: label("Collect highlights and callouts"), exact: true }).click();
     await expect(rich.getByRole("heading", { name: label("Reading summary"), exact: true })).toBeVisible();
     assert.equal(await readFile(file, "utf8"), content);
-    console.log(`PASS: ${language} learning controls resolve directly in their catalog and render in the desktop UI`);
+    console.log(`PASS: ${language} learning and reader controls resolve directly in their catalog and render in the desktop UI`);
   } finally { await application.close(); }
 }

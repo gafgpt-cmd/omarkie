@@ -83,7 +83,7 @@
 
 ## Vault bibliography
 
-- In the Electron app, open a notes folder, then **File → Document tools → Writing and export**.
+- Open a notes folder in the desktop app, then **File → Document tools → Writing and export**.
 - **Import CSL JSON** saves one bibliography for that folder. To save pasted or edited CSL JSON, use **Save vault bibliography**. Without a folder, import and paste apply only to the current export.
 - In either editor, type `[@` and a key, author, or title prefix. Choose a match with click, Enter, or Tab; use ↑/↓ to move and Escape to dismiss. The insertion is one undo step.
 - In **Writing and export**, enable Vancouver citations to export with the saved bibliography, or edit the field for a one-off export.
@@ -122,7 +122,7 @@
 
 1. File → Document tools → Writing and export → Choose project folder.
 2. Set a numeric YAML `order:` in each chapter, e.g. `order: 10`.
-3. Set the bibliography and letterhead in the same panel. Export project as DOCX or PDF.
+3. Enable Vancouver citations to reuse the saved vault bibliography. Set the letterhead in the same panel, then export as DOCX or PDF.
 4. Save outside the project folder.
 
 - Includes Markdown notes in subfolders. Lower numbers first; ties and unnumbered notes sort by relative path. Unnumbered notes come last.

@@ -7,7 +7,16 @@ import assert from "node:assert/strict";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-"));
 const uploads = [];
 const payloadRequests = [];
+const grammarRequests = [];
 const server = createServer(async (request, response) => {
+  if (request.url?.endsWith("/v2/check")) {
+    let body = ""; for await (const chunk of request) body += chunk;
+    const form = new URLSearchParams(body);
+    grammarRequests.push([request.method, request.url, form.get("text"), form.get("language")]);
+    if (request.url.startsWith("/redirect/")) response.writeHead(307, { location: "/v2/check" }).end();
+    else response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ matches: [{ offset: 0, length: 1, message: "Synthetic finding" }] }));
+    return;
+  }
   if (request.url === "/payload/v1/chat/completions") {
     let body = ""; for await (const chunk of request) body += chunk;
     payloadRequests.push(JSON.parse(body));
@@ -45,6 +54,8 @@ try {
       "tests/WebKitTests.swift",
       "native/LearningTools.swift",
       "native/ReadingStore.swift",
+      "native/Bibliography.swift",
+      "native/Speech.swift",
       "-framework",
       "JavaScriptCore",
       "-o",
@@ -58,6 +69,7 @@ try {
   );
   await cp("dist", path.join(resources, "dist"), { recursive: true });
   await cp("native/bridge.js", path.join(resources, "bridge.js"));
+  await cp("third-party/csl", path.join(resources, "csl"), { recursive: true });
   await cp("docs/showcase", path.join(resources, "showcase"), { recursive: true });
   await cp("shared/commands.json", path.join(resources, "commands.json"));
   await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
@@ -67,7 +79,7 @@ try {
   await cp("tests/webkit.js", path.join(resources, "web-tests.js"));
   await writeFile(
     path.join(contents, "Info.plist"),
-    '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.omarkie.webkittests</string><key>CFBundleExecutable</key><string>WebKitTests</string></dict></plist>',
+    '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>org.omarkie.webkittests</string><key>CFBundleExecutable</key><string>WebKitTests</string><key>NSAppTransportSecurity</key><dict><key>NSExceptionDomains</key><dict><key>127.0.0.1</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict></dict></dict></dict></plist>',
   );
   execFileSync(
     "/usr/bin/codesign",
@@ -87,6 +99,8 @@ try {
         OMARKIE_DATA_DIR: path.join(directory, "data"),
         OMARKIE_TEST_UPLOADER: uploaderURL,
         OMARKIE_TEST_PAYLOAD: payloadBaseURL,
+        OMARKIE_TEST_GRAMMAR: `http://127.0.0.1:${server.address().port}`,
+        OMARKIE_TTS: JSON.stringify([process.execPath, "-e", 'const fs = require("node:fs"); fs.writeFileSync(process.argv[1], fs.readFileSync(0));', path.join(directory, "spoken.txt")]),
         OMARKIE_CLEAN_SCRIPT: JSON.stringify([process.execPath, path.resolve("tests/fixtures/clean-script.cjs"), "complete"]),
       },
       stdio: "inherit",
@@ -103,6 +117,12 @@ try {
     ["native-fixture", undefined, 384, ["Synthetic source paragraph.", "What is this?"]],
   ]);
   console.log("PASS: native Payload only sends approved bounded requests to the owned endpoint");
+  assert.deepEqual(grammarRequests, [
+    ["POST", "/v2/check", "A😀 + &?", "auto"],
+    ["POST", "/redirect/v2/check", "A😀 + &?", "auto"],
+  ]);
+  assert.equal(await readFile(path.join(directory, "spoken.txt"), "utf8"), "Native café $(literal) speech.");
+  console.log("PASS: native grammar loopback and redirect refusal; synthetic speech receives literal UTF-8 stdin");
   if (process.env.OMARKIE_QA_DIR) {
     await mkdir(process.env.OMARKIE_QA_DIR, { recursive: true });
     await cp(path.join(directory, "data/native-test-long.pdf"), path.join(process.env.OMARKIE_QA_DIR, "native-pagination.pdf"));

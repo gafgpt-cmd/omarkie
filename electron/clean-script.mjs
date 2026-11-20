@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { t } from "./i18n.mjs";
+import { hookArguments } from "./cli-hook.mjs";
 
 const exec = promisify(execFile);
 const passes = "1,2,3,4,5,6,7";
@@ -12,9 +13,8 @@ const maxBytes = 20 * 1024 * 1024;
 export async function runCleanScript(body, configured = process.env.OMARKIE_CLEAN_SCRIPT) {
   if (typeof body !== "string" || Buffer.byteLength(body) > maxBytes) throw new Error(t("文件内容无效或超过 20 MB。"));
   if (!configured) return null;
-  let argv;
-  try { argv = configured.startsWith("[") ? JSON.parse(configured) : [configured]; } catch {}
-  if (!Array.isArray(argv) || !argv.length || argv.some(part => typeof part !== "string" || !part || part.includes("\0"))) {
+  const argv = hookArguments(configured);
+  if (!argv) {
     throw new Error(t("清理脚本设置无效。"));
   }
   const scratch = await mkdtemp(path.join(tmpdir(), "omarkie-clean-"));

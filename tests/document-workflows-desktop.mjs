@@ -116,6 +116,15 @@ try {
   await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
   await dialog.getByLabel("Vancouver citations via Pandoc citeproc", { exact: true }).check();
   await dialog.getByLabel("CSL JSON bibliography", { exact: true }).fill(JSON.stringify([{ id: "reference", type: "article-journal", title: "Combined reference", author: [{ family: "Example" }] }]));
+  await dialog.getByRole("button", { name: "Save vault bibliography", exact: true }).click();
+  await close();
+  await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
+  await expect(dialog.getByLabel("CSL JSON bibliography", { exact: true })).toHaveValue(/Combined reference/);
+  await dialog.getByLabel("Vancouver citations via Pandoc citeproc", { exact: true }).check();
+  const single = path.join(output, "project-single-note.docx");
+  await application.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, single);
+  await dialog.getByRole("button", { name: "Export letterhead DOCX", exact: true }).click();
+  await expect.poll(async () => (await exec("pandoc", [single, "--to=plain"]).catch(() => ({ stdout: "" }))).stdout, { timeout: 30000 }).toContain("Combined reference");
   const projectDocx = path.join(output, "project.docx"), projectPdf = path.join(output, "project.pdf");
   const unsafeDestination = path.join(project, "inside.docx");
   await writeFile(unsafeDestination, "existing asset");

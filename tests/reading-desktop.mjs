@@ -34,6 +34,8 @@ const virtual = '# Virtual\n\n> [!tip]- Windowed title\n> body\n\n| A | B |\n| -
 const virtualFile = path.join(directory, "virtual.md"); await writeFile(virtualFile, virtual, "utf8");
 await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 1, activeId: "fixture", documents: [{ id: "fixture", path: file, name: "reading.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), bom: false, lineEnding: "\n" }, { id: "virtual", path: virtualFile, name: "virtual.md", content: virtual, savedContent: virtual, diskHash: createHash("sha256").update(virtual).digest("hex"), bom: false, lineEnding: "\n" }, { id: "mixed-image", path: mixedFile, name: "mixed-image.md", content: mixedOriginal, savedContent: mixedOriginal, diskHash: createHash("sha256").update(mixedOriginal).digest("hex"), bom: false, lineEnding: "\r\n" }, { id: "raw-slash", path: slashFile, name: "raw-slash.md", content: slashOriginal, savedContent: slashOriginal, diskHash: createHash("sha256").update(slashOriginal).digest("hex"), bom: false, lineEnding: "\r" }] }), "utf8");
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: directory, OMARKIE_LANGUAGE: "en" }); delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
+// Pointer drags on this surface need a mapped window in headless Chromium.
+if (process.platform === "linux" && !process.env.OMARKIE_TEST_DISPLAY) env.OMARKIE_TEST_HIDDEN = "0";
 let application, page;
 const errors = [], external = [], resources = [], passed = [];
 async function launch() {

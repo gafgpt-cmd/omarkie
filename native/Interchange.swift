@@ -58,13 +58,10 @@ final class Interchange {
     guard options.keys.allSatisfy({ ["bibliography", "style", "letterhead"].contains($0) }) else { throw NativeFailure("导出选项无效") }
     var arguments = [String]()
     if options["style"] != nil || options["bibliography"] != nil {
-      guard options["style"] as? String == "vancouver", let text = options["bibliography"] as? String, text.utf8.count <= 2 * 1024 * 1024, let data = text.data(using: .utf8), let entries = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], !entries.isEmpty, entries.count <= 5000 else { throw NativeFailure("CSL JSON 书目无效") }
-      var ids = Set<String>()
-      for entry in entries {
-        guard let id = entry["id"] as? String, id.range(of: "^[A-Za-z0-9_.:+/-]{1,256}$", options: .regularExpression) != nil, entry["type"] is String, ids.insert(id).inserted else { throw NativeFailure("CSL JSON 书目无效") }
-      }
+      guard options["style"] as? String == "vancouver", let text = options["bibliography"] as? String else { throw NativeFailure("CSL JSON 书目无效") }
+      let entries = try NativeBibliographies.parse(text)
       let bibliography = directory.appendingPathComponent("references.json")
-      try data.write(to: bibliography)
+      try JSONSerialization.data(withJSONObject: entries).write(to: bibliography)
       guard let style = Bundle.main.resourceURL?.appendingPathComponent("csl/nlm-citation-sequence.csl"), FileManager.default.fileExists(atPath: style.path) else { throw NativeFailure("引用样式不可用") }
       arguments = ["--citeproc", "--bibliography=" + bibliography.path, "--csl=" + style.path]
     }

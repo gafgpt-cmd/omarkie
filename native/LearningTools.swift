@@ -2,6 +2,54 @@ import CoreFoundation
 import Darwin
 import Foundation
 
+enum NativeEndpoint {
+  static func parse(_ value: String, max: Int) -> (parts: URLComponents, origin: String, local: Bool)? {
+    guard value.utf16.count <= max else { return nil }
+    let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard raw.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) != nil,
+          raw.range(of: #"[\s?#\\]"#, options: .regularExpression) == nil,
+          var parts = URLComponents(string: raw), let scheme = parts.scheme?.lowercased(),
+          let host = parts.url?.host?.lowercased(), !host.isEmpty,
+          parts.user == nil, parts.password == nil else { return nil }
+    let local = ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host)
+    guard local || scheme == "https" else { return nil }
+    if let port = parts.port {
+      guard (0...65535).contains(port) else { return nil }
+      if (scheme == "https" && port == 443) || (scheme == "http" && port == 80) { parts.port = nil }
+    }
+    parts.scheme = scheme
+    let originHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+    return (parts, "\(scheme)://\(originHost)" + (parts.port.map { ":\($0)" } ?? ""), local)
+  }
+
+  private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+      completionHandler(nil)
+    }
+  }
+
+  static func response(_ request: URLRequest, timeout: TimeInterval, limit: Int) async throws -> Data {
+    let failure = URLError(.badServerResponse)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpShouldSetCookies = false
+    configuration.httpCookieStorage = nil
+    configuration.urlCredentialStorage = nil
+    configuration.timeoutIntervalForResource = timeout
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let (bytes, response) = try await session.bytes(for: request, delegate: NoRedirect())
+    guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status), response.expectedContentLength <= limit else { throw failure }
+    var data = Data()
+    if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
+    for try await byte in bytes {
+      guard data.count < limit else { throw failure }
+      data.append(byte)
+    }
+    return data
+  }
+}
+
 final class NativePayload {
   private struct Endpoint {
     let url: URL
@@ -9,32 +57,13 @@ final class NativePayload {
     let local: Bool
 
     init?(_ input: Any?) {
-      guard let value = input as? String, value.utf16.count <= 2048 else { return nil }
-      let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard raw.range(of: #"^https?://"#, options: [.regularExpression, .caseInsensitive]) != nil,
-            raw.range(of: #"[\s?#\\]"#, options: .regularExpression) == nil,
-            var parts = URLComponents(string: raw), let scheme = parts.scheme?.lowercased(),
-            let host = parts.url?.host?.lowercased(), !host.isEmpty,
-            parts.user == nil, parts.password == nil else { return nil }
-      local = ["localhost", "127.0.0.1", "[::1]", "::1"].contains(host)
-      guard local || scheme == "https" else { return nil }
-      if let port = parts.port {
-        guard (0...65535).contains(port) else { return nil }
-        if (scheme == "https" && port == 443) || (scheme == "http" && port == 80) { parts.port = nil }
-      }
-      parts.scheme = scheme
+      guard let value = input as? String, let endpoint = NativeEndpoint.parse(value, max: 2048) else { return nil }
+      var parts = endpoint.parts
       parts.percentEncodedPath = parts.percentEncodedPath.replacingOccurrences(of: #"/+$"#, with: "", options: .regularExpression) + "/chat/completions"
       guard let url = parts.url else { return nil }
-      let hostForOrigin = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
-      origin = "\(scheme)://\(hostForOrigin)" + (parts.port.map { ":\($0)" } ?? "")
+      origin = endpoint.origin
+      local = endpoint.local
       self.url = url
-    }
-  }
-
-  private final class NoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-      completionHandler(nil)
     }
   }
 
@@ -83,21 +112,7 @@ final class NativePayload {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
       if let credential, credential.origin == endpoint.origin { request.setValue("Bearer " + credential.value, forHTTPHeaderField: "Authorization") }
       request.httpBody = try JSONSerialization.data(withJSONObject: ["model": model.trimmingCharacters(in: .whitespacesAndNewlines), "messages": messages, "stream": false, limit: question == nil ? 768 : 384])
-      let configuration = URLSessionConfiguration.ephemeral
-      configuration.httpShouldSetCookies = false
-      configuration.httpCookieStorage = nil
-      configuration.urlCredentialStorage = nil
-      configuration.timeoutIntervalForResource = 45
-      let session = URLSession(configuration: configuration)
-      defer { session.invalidateAndCancel() }
-      let (bytes, response) = try await session.bytes(for: request, delegate: NoRedirect())
-      guard let status = (response as? HTTPURLResponse)?.statusCode, (200..<300).contains(status), response.expectedContentLength <= 64_000 else { throw failure }
-      var data = Data()
-      if response.expectedContentLength > 0 { data.reserveCapacity(Int(response.expectedContentLength)) }
-      for try await byte in bytes {
-        guard data.count < 64_000 else { throw failure }
-        data.append(byte)
-      }
+      let data = try await NativeEndpoint.response(request, timeout: 45, limit: 64_000)
       guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let choices = object["choices"] as? [[String: Any]], let message = choices.first?["message"] as? [String: Any],
             let content = (message["content"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !content.isEmpty else { throw failure }
@@ -112,14 +127,10 @@ enum NativeClean {
   static func run(_ body: String, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> String? {
     guard body.utf8.count <= DocumentStore.maxBytes else { throw NativeFailure("文件内容无效或超过 20 MB。") }
     guard let configured = environment["OMARKIE_CLEAN_SCRIPT"], !configured.isEmpty else { return nil }
-    let argv = configured.hasPrefix("[") ? (try? JSONDecoder().decode([String].self, from: Data(configured.utf8))) : [configured]
-    guard let argv, let command = argv.first, argv.allSatisfy({ !$0.isEmpty && !$0.contains("\0") }) else { throw NativeFailure("清理脚本设置无效。") }
+    guard let argv = NativeHook.arguments(configured) else { throw NativeFailure("清理脚本设置无效。") }
     let fm = FileManager.default
     let failure = NativeFailure("清理脚本失败。文档未更改。")
-    let candidate = command.contains("/") ? command : (environment["PATH"] ?? "").components(separatedBy: ":").lazy.map {
-      URL(fileURLWithPath: $0.isEmpty ? fm.currentDirectoryPath : $0).appendingPathComponent(command).path
-    }.first(where: fm.isExecutableFile(atPath:))
-    guard let candidate else { throw failure }
+    guard let binary = NativeHook.executable(argv[0], environment: environment) else { throw failure }
     let directory = fm.temporaryDirectory.appendingPathComponent("omarkie-clean-" + UUID().uuidString)
     do {
       try fm.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
@@ -127,7 +138,7 @@ enum NativeClean {
       let source = directory.appendingPathComponent("source.md"), report = directory.appendingPathComponent("report.json")
       try atomicWrite(source, Data(body.utf8))
       let process = Process()
-      process.executableURL = URL(fileURLWithPath: candidate)
+      process.executableURL = binary
       process.arguments = Array(argv.dropFirst()) + [source.path, "--passes", passes, "--report", report.path]
       process.standardInput = FileHandle.nullDevice; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
       let finished = DispatchSemaphore(value: 0)

@@ -93,6 +93,27 @@ try {
   const summary = await window.desktop.payloadRequest(payload);
   const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
   check(summary.ok && followUp.ok && summary.value === "Synthetic payload reply." && followUp.value === summary.value, "native Payload reaches only the explicit fixture endpoint");
+  const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
+  check(sizes.ok && sizes.value["Background-fixture.png"]?.join("x") === "1x1" && Object.keys(sizes.value).length === 1, "native original dimensions are scoped to owned images");
+  const grammar = await window.desktop.checkGrammar(`${grammarOrigin}/v2/check`, "", "A😀 + &?");
+  const redirected = await window.desktop.checkGrammar(`${grammarOrigin}/redirect/v2/check`, "", "A😀 + &?");
+  const insecure = await window.desktop.checkGrammar("http://example.invalid/v2/check", "", "Never send.");
+  check(grammar.ok && grammar.value.matches[0].message === "Synthetic finding" && !redirected.ok && !insecure.ok, "native Grammar uses bounded approved transport without redirects");
+  const stopped = await window.desktop.readAloud(null);
+  const spoken = await window.desktop.readAloud("Native café $(literal) speech.");
+  const tooLong = await window.desktop.readAloud("x".repeat(20001));
+  check(stopped.ok && spoken.ok && !tooLong.ok, "native speech is explicit, literal and bounded");
+  const vault = (await window.desktop.restore()).value.folder;
+  const linked = await window.desktop.bibliography(vault, "link");
+  const suggestions = await window.desktop.bibliography(vault, "suggest", "wat");
+  const wrongVault = await window.desktop.bibliography(`${vault}/unopened`, "info");
+  check(linked.ok && linked.value && suggestions.ok && suggestions.value[0].id === "watched" && !wrongVault.ok, "native bridge authorizes only the open bibliography vault");
+  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver" };
+  const chapters = ["# First native chapter\n\nSource [@watched].\n", "# Second native chapter\n\nAgain [@watched].\n"];
+  const outside = await window.desktop.exportConverted({ folder: `${vault}/unknown` }, "docx", chapters, "", citeOptions);
+  const projectDocx = await window.desktop.exportConverted({ folder: vault }, "docx", chapters, "", citeOptions);
+  const projectPdf = await window.desktop.exportConverted({ folder: vault }, "pdf", chapters, "", citeOptions);
+  check(!outside.ok && projectDocx.ok && projectPdf.ok, "native bridge rejects unknown vaults and exports cited project DOCX and PDF");
   check(
     location.protocol === "omarkie:" && window.desktop !== undefined,
     "bundled modules load through native WebKit scheme and bridge",

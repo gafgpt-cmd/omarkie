@@ -89,6 +89,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     { document: record, rendered, active = true, readOnly: locked = false, reading = false, citationVault, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
+    const readOnly = locked || reading;
     const root = useRef<HTMLDivElement>(null),
       sourceParent = useRef<HTMLDivElement>(null);
     const model = useRef<MarkdownDocument | null>(null),
@@ -120,13 +121,6 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const pendingOptions = useRef(false);
     const compositionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isComposing = () => !!(rich.current?.composing || sourceComposing.current || source.current?.composing);
-<<<<<<< HEAD
-    function editingBlocked(allowReading = false) {
-      if (viewOptions.current.locked || !allowReading && viewOptions.current.readOnly) return true;
-||||||| parent of dccd943 (feat: add vault bibliography and Zotero citations)
-    function editingBlocked() {
-      if (viewOptions.current.readOnly) return true;
-=======
     const picker = useCitationPicker(citationVault, citationContext, !readOnly, onError);
     const citation = useRef(picker); citation.current = picker;
     const citationEnabled = useRef(false); citationEnabled.current = !!citationVault;
@@ -169,9 +163,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         },
       };
     }
-    function editingBlocked() {
-      if (viewOptions.current.readOnly) return true;
->>>>>>> dccd943 (feat: add vault bibliography and Zotero citations)
+    function editingBlocked(allowReading = false) {
+      if (viewOptions.current.locked || !allowReading && viewOptions.current.readOnly) return true;
       if (!isComposing()) return false;
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
@@ -202,7 +195,6 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     }
     const sourceBehavior = useRef<Compartment | null>(null);
     const sourceOptions = () => [...(viewOptions.current.preferences?.sourceLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
-    const readOnly = locked || reading;
     const viewOptions = useRef({ preferences, typewriter, readOnly, locked });
     viewOptions.current = { preferences, typewriter, readOnly, locked };
     function historyState() {
@@ -729,7 +721,6 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         onBlur={citationVault ? event => { if (!event.currentTarget.contains(event.relatedTarget)) picker.close(); } : undefined}
         onPointerDownCapture={citationVault ? event => { if (!(event.target as Element).closest(".emoji-completion")) picker.close(); } : undefined}
       >
-<<<<<<< HEAD
         {active && preferences?.grammarEnabled && host.checkGrammar && (
           <Suspense fallback={null}>
             <GrammarCheck key={JSON.stringify([preferences.grammarUrl, preferences.grammarOrigin])}
@@ -761,10 +752,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
               }} />
           </Suspense>
         )}
-||||||| parent of dccd943 (feat: add vault bibliography and Zotero citations)
-=======
         {picker.content}
->>>>>>> dccd943 (feat: add vault bibliography and Zotero citations)
         {searchOpen && visibleMode && (
           <div
             className="rich-search"

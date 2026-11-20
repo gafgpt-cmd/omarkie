@@ -24,6 +24,8 @@ try {
     "native/PDFExporter.swift",
       "native/LearningTools.swift",
       "native/ReadingStore.swift",
+      "native/Bibliography.swift",
+      "native/Speech.swift",
       "-framework",
       "JavaScriptCore",
       "-o",

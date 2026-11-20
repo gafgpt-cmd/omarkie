@@ -124,7 +124,7 @@ PDFs (Linux and Windows): **Open** a `.pdf`, or pass one to `omarkie`, and Omark
 
 ### Read aloud offline
 
-- Linux and Windows: **More actions → Read selection or paragraph**, **Read from cursor**, or **Stop reading**.
+- Desktop: **More actions → Read selection or paragraph**, **Read from cursor**, or **Stop reading**.
 - A selection takes priority. With no selection, read the current paragraph or everything from the cursor to the end. Source mode reads literal Markdown.
 - Install [eSpeak NG](https://github.com/espeak-ng/espeak-ng) separately. Example on Linux: `OMARKIE_TTS='["espeak-ng","--stdin","-b","1"]' omarkie`.
 - Set `OMARKIE_TTS` before launching the app. Use one executable name/path or a JSON array of the executable and fixed arguments. No shell. The program gets UTF-8 text on stdin and must own playback in the foreground.
