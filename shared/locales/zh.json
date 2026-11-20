@@ -125,6 +125,8 @@
   "Editor width slider": "编辑器宽度滑块",
   "Adjust the same persisted column width used in Preferences.": "调整偏好设置中保存的同一列宽。",
   "Editor columns": "编辑器列宽",
+  "Standalone image scale limit": "独立图片放大上限",
+  "Off (natural size)": "关闭（原始尺寸）",
   "Slash commands": "斜杠命令",
   "Type / in an empty paragraph. Choose a snippet with arrows and Enter.": "在空段落输入 /，用方向键和回车选择片段。",
   "Right outline": "右侧大纲",

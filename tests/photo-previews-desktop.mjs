@@ -8,12 +8,35 @@ import path from "node:path";
 import os from "node:os";
 import sharp from "sharp";
 const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-photo-desktop-"));
-const photo = path.join(root, "camera.jpg"), file = path.join(root, "note.md"), content = "# Photo\n\n![Camera](camera.jpg)\n";
+const photo = path.join(root, "camera.jpg"), file = path.join(root, "note.md");
+const content = `# Photo
+
+![Camera](camera.jpg)
+
+![Standalone](small.jpg)
+
+![[small.jpg]]
+
+<img src="small.jpg" alt="Standalone HTML">
+
+Text ![Inline](small.jpg) text
+
+Text <img src="small.jpg" alt="Inline HTML"> text
+
+![Sized Markdown](small.jpg){width=240}
+
+![[small.jpg|220]]
+
+<img src="small.jpg" alt="Sized HTML" width="200">
+
+<img src="small.jpg" alt="Styled HTML" style="width: 180px">
+`;
 await sharp({ create: { width: 6000, height: 4500, channels: 3, background: "#ab6644" } }).jpeg().withMetadata({ orientation: 6 }).toFile(photo);
+await sharp({ create: { width: 96, height: 48, channels: 3, background: "#886644" } }).jpeg().toFile(path.join(root, "small.jpg"));
 const original = await readFile(photo);
 await writeFile(file, content);
 await writeFile(path.join(root, "session.json"), JSON.stringify({ version: 1, activeId: "photo", documents: [{ id: "photo", path: file, name: "note.md", content, savedContent: content, diskHash: createHash("sha256").update(content).digest("hex"), bom: false, lineEnding: "\n" }] }));
-const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: root, OMARKIE_LANGUAGE: "zh" }); delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: root, OMARKIE_LANGUAGE: "en" }); delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
 const app = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
 try {
   const page = await app.firstWindow(), image = page.locator(".rich-document img").first();
@@ -38,6 +61,49 @@ try {
     return result;
   });
   assert.equal(exported.ok, true); assert.deepEqual(Buffer.from(exported.value.base64, "base64"), original);
+  const rich = page.locator(".document-editor:not([hidden]) .rich-document");
+  const figure = alt => rich.getByRole("img", { name: alt, exact: true });
+  const display = locator => locator.evaluate(img => {
+    const { width, height } = img.getBoundingClientRect();
+    return [Math.round(width), Math.round(height)];
+  });
+  const column = await image.evaluate(img => img.closest(".md-inline").getBoundingClientRect().width);
+  await expect.poll(() => display(image)).toEqual([Math.round(column), Math.round(column * 4 / 3)]);
+  for (const [locator, width] of [
+    [figure("Standalone"), 192],
+    [figure("small.jpg").first(), 192],
+    [figure("Standalone HTML"), 192],
+    [figure("Inline"), 96],
+    [figure("Inline HTML"), 96],
+    [figure("Sized Markdown"), 240],
+    [figure("small.jpg").last(), 220],
+    [figure("Sized HTML"), 200],
+    [figure("Styled HTML"), 180],
+  ]) {
+    await locator.scrollIntoViewIfNeeded();
+    await expect.poll(() => locator.evaluate(img => img.complete && img.naturalWidth > 0)).toBe(true);
+    await expect.poll(() => display(locator)).toEqual([width, width / 2]);
+  }
+  async function setScale(from, to) {
+    await page.keyboard.press("ControlOrMeta+,");
+    const preferences = page.getByRole("dialog", { name: "Preferences", exact: true });
+    const scale = preferences.getByRole("combobox", { name: "Standalone image scale limit" });
+    await expect(scale).toHaveValue(from); await scale.selectOption(to);
+    await preferences.getByRole("button", { name: "Done", exact: true }).click();
+  }
+  await setScale("2", "3");
+  await expect.poll(() => display(figure("Standalone"))).toEqual([288, 144]);
+  await expect.poll(() => display(figure("Sized Markdown"))).toEqual([240, 120]);
+  await setScale("3", "1");
+  await expect.poll(() => display(figure("Standalone"))).toEqual([96, 48]);
+  await page.reload();
+  await expect.poll(() => display(figure("Standalone"))).toEqual([96, 48]);
+  await page.locator(".source-toggle").click();
+  const source = page.locator(".document-editor:not([hidden]) .source-surface:not([hidden]) .cm-content");
+  await expect(source).toBeVisible();
+  assert.equal((await source.locator(".cm-line").allTextContents()).join("\n"), content);
+  assert.equal(await readFile(file, "utf8"), content);
+  await page.locator(".source-toggle").click();
   const htmlPath = path.join(root, "export.html");
   await app.evaluate(({ dialog, BrowserWindow }, htmlPath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: htmlPath });
@@ -49,5 +115,5 @@ try {
   const embedded = /src="data:image\/jpeg;base64,([^"]+)"/.exec(html);
   assert.ok(embedded); assert.deepEqual(Buffer.from(embedded[1], "base64"), original);
   assert.deepEqual(await readFile(photo), original);
-  console.log("PASS: cold original, warm WebP, EXIF rotation, cached preview and original export resource");
+  console.log("PASS: cold original, warm WebP, EXIF, reading width and scale limits, explicit and inline sizes, source and export");
 } finally { await app.close(); }

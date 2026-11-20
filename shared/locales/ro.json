@@ -136,6 +136,8 @@
   "Editor width slider": "Controlul lățimii editorului",
   "Adjust the same persisted column width used in Preferences.": "Ajustează aceeași lățime salvată în Preferințe.",
   "Editor columns": "Coloanele editorului",
+  "Standalone image scale limit": "Limită de mărire pentru imaginile independente",
+  "Off (natural size)": "Dezactivat (dimensiune naturală)",
   "Slash commands": "Comenzi cu bară oblică",
   "Type / in an empty paragraph. Choose a snippet with arrows and Enter.": "Scrie / într-un paragraf gol. Alege un fragment cu săgețile și Enter.",
   "Right outline": "Structură în dreapta",

@@ -233,6 +233,7 @@ export default function App() {
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
     document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
     document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
+    document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
   const checked = { source: !renderedView, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };

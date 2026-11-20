@@ -1,9 +1,11 @@
 import { language } from "./i18n.ts";
 import { backgroundDefaults } from "./background.ts";
 import { defaultFonts, fontIds, type FontPreferences } from "./fonts.ts";
+export const standaloneImageScales = [1, 1.5, 2, 3, 4] as const;
 export interface Preferences extends FontPreferences {
   imageUploader: string; imageAutoUpload: boolean;
   remoteImages: boolean; imageFolder: string; imagePrefix: boolean; imageEscape: boolean;
+  standaloneImageScale: (typeof standaloneImageScales)[number];
   pdfPaper: "a4" | "letter"; pdfMargin: number; pdfHeader: string; pdfFooter: string;
   readingSpeed: number;
   payloadEnabled: boolean; payloadBaseUrl: string; payloadModel: string;
@@ -16,6 +18,7 @@ export interface Preferences extends FontPreferences {
   highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean;
 }
 export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true,
+  standaloneImageScale: 2,
   payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false };
 export function loadPreferences(): Preferences {
   try {
@@ -33,6 +36,7 @@ export function loadPreferences(): Preferences {
     if (typeof saved.payloadModel === "string" && saved.payloadModel.length <= 256) next.payloadModel = saved.payloadModel;
     if (Array.isArray(saved.payloadAllowedOrigins)) next.payloadAllowedOrigins = saved.payloadAllowedOrigins.filter((origin: unknown) => typeof origin === "string" && origin.length <= 2048).slice(0, 50);
     if (Array.isArray(saved.spellcheckLanguages)) next.spellcheckLanguages = [...new Set<string>(saved.spellcheckLanguages.filter((code: unknown) => typeof code === "string" && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(code)))].slice(0, 100);
+    next.standaloneImageScale = standaloneImageScales.find(scale => scale === saved.standaloneImageScale) ?? next.standaloneImageScale;
     if (saved.pdfPaper === "letter") next.pdfPaper = "letter";
     if (Number.isFinite(saved.pdfMargin)) next.pdfMargin = Math.max(18, Math.min(100, saved.pdfMargin));
     if (Number.isFinite(saved.readingSpeed)) next.readingSpeed = Math.max(50, Math.min(1000, saved.readingSpeed));

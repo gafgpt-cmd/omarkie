@@ -192,7 +192,7 @@ export function renderNode(
     const id = leaf("", [0, 1]); holder.innerHTML = `<blockquote><p><span data-leaf="${id}"><br /></span></p></blockquote>`;
   } else if (["html_preview", "html_block"].includes(node.kind)) {
     const { id, raw } = fenceLeaf();
-    holder.innerHTML = `<div class="md-fence md-html" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId)}</div><pre class="fence-body"><code>${escapeHtml(raw)}</code></pre><span class="fence-language">html</span></div>`;
+    holder.innerHTML = `<div class="md-fence md-html" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId, { standalone: true })}</div><pre class="fence-body"><code>${escapeHtml(raw)}</code></pre><span class="fence-language">html</span></div>`;
   } else if (node.kind === "frontmatter") {
     const id = leaf(node.source, null, "code");
     holder.innerHTML = `<pre class="md-frontmatter"><code data-leaf="${id}">${escapeHtml(node.source)}</code></pre>`;
@@ -400,7 +400,7 @@ function tokenInlineHtml(
       append(`<span class="md-meta md-cell-break">${escapeHtml(token.markup)}</span><br>${cursor === raw.length ? '<br class="md-ui" data-break-placeholder>' : ''}`);
       continue;
     }
-    if (token.type === "html_embed") { const source = spelling(token.content, cursor); append(object(source, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
+    if (token.type === "html_embed") { const source = spelling(token.content, cursor); append(object(source, renderMarkdown(token.content, documentId, { ...environment, fragment: true, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_embed") { const decoded = token.markup + (token.meta?.attributes || ""), source = spelling(decoded, cursor); append(object(source, renderMarkdown(decoded, documentId, { ...environment, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_link" || token.type === "vault_tag") {
       const view = renderMarkdown(token.markup, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");

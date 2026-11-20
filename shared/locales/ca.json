@@ -136,6 +136,8 @@
   "Editor width slider": "Control d’amplada de l’editor",
   "Adjust the same persisted column width used in Preferences.": "Ajusta la mateixa amplada desada a Preferències.",
   "Editor columns": "Columnes de l’editor",
+  "Standalone image scale limit": "Límit d’ampliació d’imatges independents",
+  "Off (natural size)": "Desactivat (mida natural)",
   "Slash commands": "Ordres amb barra",
   "Type / in an empty paragraph. Choose a snippet with arrows and Enter.": "Escriu / en un paràgraf buit. Tria un fragment amb les fletxes i Retorn.",
   "Right outline": "Esquema a la dreta",

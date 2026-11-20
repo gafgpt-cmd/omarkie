@@ -63,6 +63,13 @@
 - Use **Export notes and cards** in the margin notes panel for a Markdown copy.
 - [Obsidian Spaced Repetition](https://stephenmwangi.com/obsidian-spaced-repetition/flashcards/reviewing/) (MIT): review UI ideas only; no code copied.
 
+## Reading images
+
+- Unsized standalone images fill the reading column, up to 2× their natural width by default.
+- Preferences → Image → Standalone image scale limit: change the cap or choose **Off (natural size)**. Large images still fit the column.
+- Explicit Markdown `{width=N}`, wiki `![[image|N]]`, and HTML `width` take precedence. Inline images keep their size.
+- Display only. Markdown, exports, and the full-window Image viewer are unchanged.
+
 ## Bounds
 
 - Selected folder only; no symlink traversal or ancestor-vault grants.

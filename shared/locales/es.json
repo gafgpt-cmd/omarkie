@@ -136,6 +136,8 @@
   "Editor width slider": "Control de anchura del editor",
   "Adjust the same persisted column width used in Preferences.": "Ajusta la misma anchura guardada en Preferencias.",
   "Editor columns": "Columnas del editor",
+  "Standalone image scale limit": "Límite de ampliación de imágenes independientes",
+  "Off (natural size)": "Desactivado (tamaño natural)",
   "Slash commands": "Comandos con barra",
   "Type / in an empty paragraph. Choose a snippet with arrows and Enter.": "Escribe / en un párrafo vacío. Elige un fragmento con las flechas e Intro.",
   "Right outline": "Esquema a la derecha",

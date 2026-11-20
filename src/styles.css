@@ -1002,7 +1002,11 @@ svg {
   object-fit: contain;
   vertical-align: middle;
 }
-.rich-document .md-inline[data-mark="image"]:has(> .md-view > img.md-standalone),
+.rich-document img.md-fit-image:not(table img) {
+  zoom: var(--standalone-image-scale, 2);
+  max-height: none;
+}
+.rich-document .md-inline[data-mark="image"]:has(> .md-view > img:is(.md-standalone, .md-fit-image)),
 .print-document p:has(> img.md-standalone:only-child) {
   display: block;
   text-align: center;

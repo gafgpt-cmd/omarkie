@@ -78,7 +78,7 @@ function imageHtml(source: string, alt: string, documentId: string | undefined, 
       : "";
   if (!url) return `<span class="remote-image">${alt}（${md.utils.escapeHtml(source)}）</span>`;
   const natural = imageSizes.get(url), size = width && !width.endsWith("%") && !height && natural ? [width, String(Math.round(Number(width) * natural[1] / natural[0]))] : width || height ? [width, height] : natural?.map(String);
-  return `<img src="${url}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ' class="md-standalone"' : ""} />`;
+  return `<img src="${url}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ` class="md-standalone${width || height ? "" : " md-fit-image"}"` : ""} />`;
 }
 // An image alone on its line is laid out as a centred figure.
 // The rich editor renders each image on its own and says whether it fills its line.
@@ -98,7 +98,7 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
     : `<span class="wiki-embed">${name}</span>`;
 };
-function cleanHtml(html: string, documentId?: string) {
+function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
   const safe = DOMPurify.sanitize(html, { ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   for (const image of template.content.querySelectorAll("img")) {
@@ -106,8 +106,16 @@ function cleanHtml(html: string, documentId?: string) {
     if (/^https?:\/\//i.test(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
     if (documentId && source && !/^(?:https?:|data:|omarkie-asset:)/i.test(source)) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
+    if (standalone === true && !image.classList.contains("md-standalone") &&
+        !image.hasAttribute("width") && !image.hasAttribute("height") &&
+        !image.style.width && !image.style.height && !image.style.inlineSize && !image.style.blockSize) {
+      const parent = image.parentElement ?? template.content;
+      if ((parent === template.content || image.parentElement?.tagName === "P") &&
+          parent.children.length === 1 && !parent.textContent?.trim()) image.classList.add("md-fit-image");
+    }
     const size = imageSizes.get(image.getAttribute("src") || "");
-    if (typeof navigator !== "undefined" && /Electron\//.test(navigator.userAgent) && /^omarkie-asset:/.test(image.src) && /\.jpe?g$/i.test(decodeURIComponent(new URL(image.src).pathname))) {
+    // Without header dimensions, let the original provide the intrinsic width, not a JPEG preview.
+    if ((size || standalone !== true || !image.classList.contains("md-fit-image")) && typeof navigator !== "undefined" && /Electron\//.test(navigator.userAgent) && /^omarkie-asset:/.test(image.src) && /\.jpe?g$/i.test(decodeURIComponent(new URL(image.src).pathname))) {
       image.loading = "lazy"; image.decoding = "async";
       image.setAttribute("sizes", "auto");
       image.setAttribute("srcset", [800, 1200, 1600, 2400].map(width => `${image.src}?preview=${width} ${width}w`).join(", "));
@@ -142,7 +150,7 @@ export function renderMarkdown(
   documentId?: string,
   environment: Record<string, unknown> = {},
 ) {
-  return cleanHtml(md.render(source, { ...environment, documentId }), documentId);
+  return cleanHtml(md.render(source, { ...environment, documentId }), documentId, typeof environment.standalone === "boolean" ? environment.standalone : undefined);
 }
 export function parseBlocks(
   source: string,
