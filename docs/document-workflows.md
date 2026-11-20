@@ -65,4 +65,16 @@
 - Official producer inspected: https://github.com/GoogleCloudPlatform/open-knowledge-format
 - Its Python package depends on cloud tooling; not installed or advertised as a validator.
 - Structural validation follows the permissive spec: unknown types/fields and absent optional families are allowed.
-- No cloud, AI service, analytics or telemetry added.
+- Document tools add no cloud service, analytics or telemetry.
+
+## Payload
+
+- Electron desktop: Preferences → Payload. Off by default; no background requests.
+- Set the OpenAI-compatible base URL (default `http://127.0.0.1:11434/v1`) and model. The app appends `/chat/completions`.
+- Optional API key: set it for the session. It stays in memory, scoped to the configured origin, never saved to disk.
+- Non-loopback URLs require HTTPS and an explicit allowance for that scheme, host and port. To revoke, select its URL and uncheck the allowance. Redirects are refused.
+- Select text or use the current note. Open **Payload**, review the destination and sensitive-data notice, then choose **Send text for summary**. Even local servers can forward requests.
+- The recipe keeps decisions, thresholds, exceptions and red flags. Spanish by default; a question can ask for English. Output may be wrong; check it against the source.
+- Input: 24 KB of text. Output: up to 768 tokens for summaries, 384 for answers. Choose `max_completion_tokens` if your endpoint requires it.
+- **Append as callout** is one undoable edit. Questions reuse the original text, not previous answers; only the latest answer stays visible. No request history, cache or telemetry.
+- Reuse: Markdown preview uses the existing markdown-it parser (MIT). Single-question interaction inspired by DeepTutor (Apache-2.0); no code copied.

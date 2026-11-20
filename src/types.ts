@@ -53,11 +53,21 @@ export interface Command {
   document?: DocumentRecord;
   anchor?: string;
   line?: number;
+  selection?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean }
 export interface BundlePayload { notes: VaultNote[]; assets: { source: string; relative: string }[]; index: string; log: string }
 export interface ConversionOptions { bibliography?: string; style?: "vancouver"; letterhead?: { name: string; detail: string } }
+export interface PayloadRequest {
+  baseUrl: string;
+  confirmedOrigin: string;
+  allowedOrigin?: string;
+  model: string;
+  source: string;
+  question?: string;
+  modernLimit: boolean;
+}
 export interface Host {
   vaultSnapshot(): Promise<VaultSnapshot>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
@@ -123,6 +133,8 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   onCommand(callback: (command: Command) => void): () => void;
+  payloadRequest?(request: PayloadRequest): Promise<string>;
+  payloadKey?(baseUrl: string, value: string): Promise<void>;
 }
 declare global {
   interface Window {

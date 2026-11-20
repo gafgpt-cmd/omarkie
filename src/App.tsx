@@ -28,6 +28,7 @@ import type { Command, ConversionOptions } from "./types";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
+const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -72,6 +73,7 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
+  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -97,6 +99,26 @@ export default function App() {
     if (id) requestAnimationFrame(() => editors.current.get(id)?.focus());
   }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
+  const payloadEnabled = preferences.payloadEnabled && !!window.desktop?.payloadRequest;
+  const activePayload = payloadEnabled && payload?.id === active?.id ? payload : null;
+  useEffect(() => {
+    if (payload && (!payloadEnabled || payload.id !== active?.id)) setPayload(null);
+  }, [payloadEnabled, payload, active?.id]);
+  function openPayload(mode: "summary" | "question", selectedSource?: string) {
+    if (!payloadEnabled || !active) return;
+    const target = editor();
+    const selected = selectedSource ?? target?.selectionText(true);
+    if (selectedSource !== undefined && !selectedSource.trim()) return;
+    const source = selected || target?.markdown() || active.content;
+    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
+  }
+  function appendPayload(summary: string) {
+    const target = editor();
+    if (!active || !target || readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
+    const source = target.markdown(), eol = active.lineEnding;
+    const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
+    if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "")) throw new Error(t("当前不可编辑"));
+  }
   useEffect(() => {
     setMountedDocuments(current => {
       let removed = false;
@@ -253,13 +275,14 @@ export default function App() {
   useEffect(() => {
     editor()?.focus();
   }, [session.activeId]);
-  commands.current = ({ action, document: opened, anchor, line, message }) => {
+  commands.current = ({ action, document: opened, anchor, line, message, selection }) => {
     if (["new", "newWindow", "newTab", "open"].includes(action) && window.desktop?.windowAction) { void host.windowAction(action).catch((error: Error) => session.setMessage(error.message)); return; }
     const context = commandsByAction.get(action)?.context;
     if (readOnly && ((context && context !== "document") || ["delete-word", "undo", "redo", "paste-plain", "image", "table", "link", "reference-link", "footnote", "copy-all-images", "move-all-images", "upload-all-images"].includes(action))) { session.setMessage(t("只读模式已开启，请先在插件管理中关闭或切换只读效果。")); return; }
     if (context && !active) return;
     if (["rich", "table"].includes(context || "") && !editor()?.richMode()) return;
     if (action === "notice") { if (message) session.setMessage(message); }
+    else if (action === "payload-summary" || action === "payload-question") openPayload(action === "payload-summary" ? "summary" : "question", selection);
     else if (action === "omarchy-theme") void refreshOmarchy();
     else if (action === "opened") {
       if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; jumpTo(record.id, line || heading?.line || 1); } });
@@ -395,7 +418,7 @@ export default function App() {
           : t("本地草稿");
   return (
     <div
-      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}`}
+      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -408,6 +431,7 @@ export default function App() {
         autosave={session.autosave}
         disabled={!active}
         context={editor()?.context() || ""}
+        payload={payloadEnabled ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
@@ -516,6 +540,11 @@ export default function App() {
           </>
         )}
       </main>
+      <Suspense fallback={null}>{activePayload && <PayloadPanel
+        key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
+        preferences={preferences} editable={!readOnly && !session.fileOperationBusy} append={appendPayload}
+        configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
+      />}</Suspense>
       <footer className="statusbar">
         <button id="footer-word-count-label" onClick={() => setDialog("statistics")}
           title={t("{{status}} · 第 {{line}} 行，第 {{column}} 列 · Markdown · {{encoding}}", { status, line: cursor.line, column: cursor.column, encoding: encodingNames[active?.encoding || "utf-8"] })}

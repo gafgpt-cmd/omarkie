@@ -3,6 +3,8 @@ const call = (name, ...args) => ipcRenderer.invoke(`document:${name}`, ...args);
 contextBridge.exposeInMainWorld("desktop", {
   viewState: (focus, typewriter, sidebar, checked, disabled, context) => call("viewState", focus, typewriter, sidebar, checked, disabled, context),
   language: () => ipcRenderer.sendSync("app:language"), setLanguage: choice => call("setLanguage", choice),
+  payloadRequest: request => call("payloadRequest", request),
+  payloadKey: (baseUrl, value) => call("payloadKey", baseUrl, value),
   readResource: address => call("readResource", address),
   imageSizes: (id, sources) => call("imageSizes", id, sources),
   background: () => call("background"), chooseBackground: () => call("chooseBackground"), clearBackground: () => call("clearBackground"),

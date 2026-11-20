@@ -1,0 +1,37 @@
+.app-shell.payload-open { grid-template-columns: var(--sidebar-width) minmax(0, 1fr) min(32vw, 420px); }
+.app-shell.sidebar-hidden.payload-open { grid-template-columns: 0 minmax(0, 1fr) min(38vw, 420px); }
+.payload-panel {
+  grid-area: 2 / 3;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border-inline-start: 1px solid var(--border);
+  font-size: 13px;
+}
+.payload-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.payload-panel h2 { margin: 0; font-size: 14px; }
+.payload-body { padding: 16px 16px 36px; overflow: auto; overflow-wrap: anywhere; }
+.payload-body p { line-height: 1.45; }
+.payload-notice { border-inline-start: 2px solid var(--accent); padding-inline-start: 10px; margin-bottom: 14px; }
+.payload-notice p { margin: 0 0 6px; }
+.payload-body section, .payload-body form { margin-top: 16px; }
+.payload-result { border-block: 1px solid var(--border); padding-block: 8px; }
+.payload-result > :first-child { margin-top: 0; }
+.payload-result > :last-child { margin-bottom: 0; }
+.payload-result table { width: 100%; border-collapse: collapse; }
+.payload-result :is(th, td) { padding: 5px; border: 1px solid var(--border); }
+.payload-result pre { white-space: pre-wrap; }
+@media (max-width: 800px) {
+  .app-shell.payload-open { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
+  .app-shell.sidebar-hidden.payload-open { grid-template-columns: 0 minmax(0, 1fr); }
+  .payload-panel { grid-area: 2 / 2; justify-self: end; width: min(100%, 360px); z-index: 8; }
+}
+@media print { .payload-panel { display: none; } }

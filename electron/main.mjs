@@ -120,6 +120,8 @@ ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== wi
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
 const handlers = {
+  payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
+  payloadKey: async (_, baseUrl, value) => (await import("./payload.mjs")).setPayloadKey(baseUrl, value),
   viewState: (_, _focus, _typewriter, _sidebar, checked, disabled, context) => {
     viewChecked = checked || {};
     viewDisabled = disabled === true;

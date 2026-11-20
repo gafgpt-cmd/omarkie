@@ -5,6 +5,7 @@ import type { Preferences } from "../preferences";
 import { ThemePicker } from "./ThemePicker";
 import { BackgroundSettings } from "./BackgroundSettings";
 import { FontSettings } from "./FontSettings";
+import { PayloadSettings } from "./PayloadSettings";
 import type { BackgroundAsset } from "../background";
 import { t, languages, languageChoice, languageKey } from "../i18n";
 export function PreferencesDialog({ value, change, theme, changeTheme, themes, installTheme, background, chooseBackground, clearBackground, plugins, close }: { value: Preferences; change(next: Preferences): void; theme: string; changeTheme(theme: string): void; themes: { id: string; name: string }[]; installTheme(): Promise<void>; background: BackgroundAsset | null; chooseBackground(): Promise<void>; clearBackground(): Promise<void>; plugins(): void; close(): void }) {
@@ -24,6 +25,7 @@ export function PreferencesDialog({ value, change, theme, changeTheme, themes, i
     <FontSettings value={value} change={change} changeTheme={changeTheme} />
     <BackgroundSettings asset={background} value={value} change={change} choose={chooseBackground} clear={clearBackground} />
     <fieldset><legend>{t("插件")}</legend><p className="dialog-note">{t("无图阅读、只读模式、段落聚焦与常显语法标记等社区插件。")}</p><button onClick={plugins}>{t("管理插件…")}</button></fieldset>
+    {window.desktop?.payloadRequest && <PayloadSettings value={value} change={change} />}
     <fieldset><legend>{t("编辑器")}</legend><div className="form-grid">
       <label>{t("正文字号")}<input type="number" min={12} max={28} value={value.fontSize} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 28) change({ ...value, fontSize: n }); }} /></label>
       <label>{t("Line height")}<input aria-label={t("Line height")} type="number" min={1} max={2.5} step={0.1} value={value.lineHeight} onChange={e => { const n = Number(e.target.value); if (n >= 1 && n <= 2.5) change({ ...value, lineHeight: n }); }} /></label>

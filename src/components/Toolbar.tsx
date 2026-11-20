@@ -12,6 +12,7 @@ import {
   Bold,
   Italic,
   Code2,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { commandGroups, commandKey, shortcutLabel } from "../commands";
@@ -29,6 +30,7 @@ interface Props {
   disabled: boolean;
   context: string;
   checked?: Record<string, boolean>;
+  payload?: { open: boolean; show(): void };
 }
 export function Toolbar(props: Props) {
   const [open, setOpen] = useState(false),
@@ -88,6 +90,7 @@ export function Toolbar(props: Props) {
         >
           <Code2 size={16} />
         </button>
+        {props.payload && <button type="button" className="icon-button" disabled={props.disabled} aria-label={t("Payload")} aria-expanded={props.payload.open} title={t("Payload")} onClick={props.payload.show}><Sparkles size={16} /></button>}
         <div className="menu-container" ref={root}>
           <button
             className="icon-button"
