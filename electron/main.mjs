@@ -19,7 +19,7 @@ import { Workspace } from "./workspace.mjs";
 import { vaultSnapshot, exportBundle } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
 import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
@@ -176,6 +176,16 @@ const handlers = {
   readResource: async (_, address) => exportResource(address,store,path.join(root,"dist")),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  readingStore: async (_, id, request) => {
+    const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
+    if (request?.action !== "export") return readingStore(store, id, request);
+    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card"] });
+    const result = await dialog.showSaveDialog(window, { defaultPath: t("阅读笔记.md"), filters: [{ name: "Markdown", extensions: ["md"] }] });
+    if (result.canceled) return false;
+    try { await writeFile(result.filePath, readingMarkdown(entries), { encoding: "utf8", flag: "wx", mode: 0o600 }); }
+    catch { throw new Error(t("无法导出。请选择新的文件名。")); }
+    return true;
+  },
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: () => vaultSnapshot(store),

@@ -33,6 +33,17 @@
 - The hook receives no original path. Asset-dependent repairs cannot inspect the source folder. Failed hooks leave the document untouched; unset the hook to use the built-in cleanup alone.
 - Reading layer integration: lazily import `previewClean(record)` and `bakeClean(preview, current, editor)` from `src/cleanLayer.ts`. Keep the preview separate from the L0 document and supply current record/editor getters at bake time.
 
+## Reading Layers
+
+- Linux/Windows desktop. Open a vault folder and a saved Markdown file in it. Open **Reading Layers** in the status bar.
+- Eyes show or hide layers per document. The pencil marks the active layer. L0 is locked; close the rail to edit the source.
+- Remote media stays off in the reader, even if enabled for editing.
+- Select text in the reader. Choose **Note to self** and **Pin note**. `Alt+Enter` focuses the selection actions.
+- Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
+- **Export notes and cards** saves a Markdown copy for the open vault. It never overwrites a file.
+- Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
+- Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
+
 ## Bounds
 
 - Selected folder only; no symlink traversal or ancestor-vault grants.

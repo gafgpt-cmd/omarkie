@@ -224,3 +224,5 @@ try {
   await writeFile(path.join(evidence, "failure.json"), JSON.stringify({ passed, errors, external, resources, renderer: page && await page.evaluate(() => ({ plugins: localStorage.getItem('omarkie-plugins-v1'), marks: performance.getEntriesByType('mark').map(mark => mark.name), text: document.body.innerText })).catch(() => null), error: error.stack, directory }, null, 2), "utf8");
   throw error;
 } finally { if (application) await application.close().catch(() => {}); }
+
+await import("./reading-layers-desktop.mjs");

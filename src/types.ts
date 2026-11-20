@@ -1,3 +1,5 @@
+import type { ReadingStore } from "../shared/reading-store.ts";
+
 export interface DocumentRecord {
   id: string;
   path: string | null;
@@ -69,6 +71,7 @@ export interface PayloadRequest {
   modernLimit: boolean;
 }
 export interface Host {
+  readingStore?: ReadingStore;
   vaultSnapshot(): Promise<VaultSnapshot>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;

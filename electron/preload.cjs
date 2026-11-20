@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("desktop", {
   openFolder: () => call("folder"),
   showcase: () => call("showcase"),
   scan: () => call("scan"),
+  readingStore: (id, request) => call("readingStore", id, request),
   vaultSnapshot: () => call("vaultSnapshot"),
   exportBundle: payload => call("exportBundle", payload),
   cleanConverted: body => call("cleanConverted", body),

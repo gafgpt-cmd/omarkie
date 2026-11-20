@@ -15,7 +15,7 @@ import {
   useState,
 } from "react";
 
-import { MarkdownDocument, richTextLimit, sourceOffset } from "./model.ts";
+import { MarkdownDocument, richTextLimit, sourceOffset, type DocumentNode } from "./model.ts";
 import { RichEditor } from "./RichEditor.ts";
 import { host } from "../host";
 import type { DocumentRecord } from "../types";
@@ -24,6 +24,14 @@ import type { BlockArguments } from "./blockCommands.ts";
 import { t } from "../i18n";
 import type { Heading } from "./markdown.ts";
 import { localImageSources, numberedBlocks, rememberImageSizes } from "./markdown.ts";
+export interface ReadingContext {
+  nodes: readonly DocumentNode[];
+  headings: readonly Heading[];
+  from: number;
+  to: number;
+  index: number;
+  text: string;
+}
 export interface EditorHandle {
   view(): EditorView | null;
   find(): void;
@@ -47,6 +55,7 @@ export interface EditorHandle {
   numbered(): { line: number; counter: string }[];
   imageOffset(image: HTMLImageElement): number | undefined;
   selectionRange(): { from: number; to: number; context: string } | undefined;
+  readingContext(): ReadingContext | undefined;
   replaceRange(from: number, to: number, text: string, expected: string): boolean;
 }
 interface Props {
@@ -440,6 +449,18 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         view: () => source.current,
         imageOffset: image => { const from = logicalImageOffset(image), doc = model.current; return from === undefined || !doc ? undefined : sourceOffset(doc.toMarkdown(), from); },
         selectionRange: () => { const doc = model.current; if (!doc) return; const selection = activeMode.current && !isComposing() ? rich.current?.bookmark() || doc.selection : doc.selection, source = doc.toMarkdown(); return { from: sourceOffset(source, Math.min(selection.anchor, selection.head)), to: sourceOffset(source, Math.max(selection.anchor, selection.head)), context: activeMode.current ? doc.nodeAt(selection.head)?.kind || "" : "source" }; },
+        readingContext: () => {
+          const doc = model.current;
+          if (!doc || isComposing()) return;
+          let { anchor, head } = (activeMode.current && rich.current?.bookmark()) || doc.selection;
+          const view = activeMode.current ? null : source.current, selection = view && window.getSelection();
+          if (selection?.anchorNode && selection.focusNode && view!.contentDOM.contains(selection.anchorNode) && view!.contentDOM.contains(selection.focusNode)) {
+            anchor = view!.posAtDOM(selection.anchorNode, selection.anchorOffset);
+            head = view!.posAtDOM(selection.focusNode, selection.focusOffset);
+          }
+          const from = Math.min(anchor, head), to = Math.max(anchor, head);
+          return { nodes: doc.nodes, headings: (doc.environment.headings as Heading[] | undefined) || [], from, to, index: doc.nodeIndexNear(from), text: doc.text };
+        },
         replaceRange: (from, to, text, expected) => {
           const doc = model.current;
           if (!doc || editingBlocked()) return false;
