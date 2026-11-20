@@ -20,6 +20,7 @@
   const methods = [
     "background", "chooseBackground", "clearBackground",
     "cleanConverted", "readingStore", "payloadRequest", "payloadKey",
+    "checkGrammar",
     "restore", "imageAction", "importDocument", "exportConverted", "themes", "installTheme", "plugins", "installPlugin", "removePlugin", "conversionSettings", "ready", "fileOperation", "recent", "recentAction", "searchFiles", "reveal",
     "registerDraft",
     "open",

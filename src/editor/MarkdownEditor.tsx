@@ -8,6 +8,8 @@ import type { ImageReference } from "./images";
 import { textMatches, replaceTextMatches } from "./search";
 import {
   forwardRef,
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useImperativeHandle,
@@ -33,6 +35,8 @@ export interface ReadingContext {
   index: number;
   text: string;
 }
+const GrammarCheck = lazy(() => import("./GrammarCheck"));
+
 export interface EditorHandle {
   view(): EditorView | null;
   find(): void;
@@ -63,6 +67,7 @@ export interface EditorHandle {
 interface Props {
   document: DocumentRecord;
   rendered: boolean;
+  active?: boolean;
   readOnly?: boolean;
   reading?: boolean;
   preferences?: Preferences;
@@ -78,7 +83,7 @@ interface Props {
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, readOnly: locked = false, reading = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
+    { document: record, rendered, active = true, readOnly: locked = false, reading = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -661,6 +666,37 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       <div
         className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"} ${preferences?.codeLineNumbers ? "code-line-numbers" : ""}`}
       >
+        {active && preferences?.grammarEnabled && host.checkGrammar && (
+          <Suspense fallback={null}>
+            <GrammarCheck key={JSON.stringify([preferences.grammarUrl, preferences.grammarOrigin])}
+              url={preferences.grammarUrl} approvedOrigin={preferences.grammarOrigin}
+              content={record.content} mode={readyMode} readOnly={readOnly}
+              snapshot={() => isComposing() ? null : model.current?.text ?? null}
+              surface={() => {
+                if (activeMode.current) {
+                  const view = rich.current;
+                  return view && { root: view.root, range: (from, to) => view.grammarRange(from, to) };
+                }
+                const view = source.current;
+                return view && { root: view.contentDOM, range: (from, to) => {
+                  if (!view.visibleRanges.some(range => from >= range.from && to <= range.to)) return null;
+                  const start = view.domAtPos(from), end = view.domAtPos(to);
+                  const range = document.createRange();
+                  range.setStart(start.node, start.offset); range.setEnd(end.node, end.offset);
+                  return range;
+                } };
+              }}
+              apply={(text, { from, to }, replacement) => {
+                const doc = model.current;
+                if (!doc || editingBlocked() || doc.text !== text) return false;
+                doc.closeGroup(); rich.current?.releaseFence();
+                doc.replace(from, to, replacement, "grammar-fix");
+                if (activeMode.current) rich.current?.render(); else syncSource();
+                publish(); focusEditor();
+                return true;
+              }} />
+          </Suspense>
+        )}
         {searchOpen && visibleMode && (
           <div
             className="rich-search"

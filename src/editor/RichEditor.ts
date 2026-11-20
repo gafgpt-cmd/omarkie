@@ -343,12 +343,13 @@ export class RichEditor {
     this.pins.push(...missing.map(item => typeof item === "number" ? { from: item, to: item } : item));
     this.render(false);
   }
-  private domPoint(position: number): { node: Node; offset: number } | null {
-    this.ensureRendered(position);
+  private domPoint(position: number, exact = false): { node: Node; offset: number } | null {
+    if (!exact) this.ensureRendered(position);
     const candidates = [...this.leaves.values()].filter(
       (leaf) =>
         position >= leaf.positions[0] && position <= leaf.positions.at(-1)!,
     );
+    if (exact && !candidates.some(leaf => leaf.positions.includes(position))) return null;
     const leaf =
       candidates[0] ||
       [...this.leaves.values()].sort(
@@ -373,6 +374,15 @@ export class RichEditor {
       local -= text.length;
     }
     return { node: element, offset: 0 };
+  }
+  grammarRange(from: number, to: number) {
+    const start = this.domPoint(from, true), end = this.domPoint(to, true);
+    if (!start || !end) return null;
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    // Do not mark ranges whose Markdown offsets do not map to literal visible text.
+    return range.toString() === this.model.text.slice(from, to) ? range : null;
   }
   restore(selection = this.model.selection, focus = true) {
     this.pins = [];

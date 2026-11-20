@@ -562,6 +562,7 @@ export default function App() {
                   }}
                   document={record}
                   rendered={record.id === session.activeId ? renderedView : rendered}
+                  active={record.id === session.activeId}
                   readOnly={readOnly}
                   reading={readingVisible && record.id === session.activeId}
                   preferences={preferences}

@@ -12,6 +12,7 @@ export interface Preferences extends FontPreferences {
   payloadAllowedOrigins: string[]; payloadModernLimit: boolean;
   lineHeight: number; editorColumns: number; sourceLineNumbers: boolean; codeLineNumbers: boolean;
   fontSize: number; tabSize: number; spellcheck: boolean; spellcheckLanguages: string[]; autoPair: boolean;
+  grammarEnabled?: boolean; grammarUrl?: string; grammarOrigin?: string;
   backgroundOpacity: number; backgroundBlur: number;
   backgroundPosition: "center" | "top" | "bottom" | "left" | "right";
   backgroundSize: "cover" | "contain" | "repeat";
@@ -37,6 +38,9 @@ export function loadPreferences(): Preferences {
     if (Array.isArray(saved.payloadAllowedOrigins)) next.payloadAllowedOrigins = saved.payloadAllowedOrigins.filter((origin: unknown) => typeof origin === "string" && origin.length <= 2048).slice(0, 50);
     if (Array.isArray(saved.spellcheckLanguages)) next.spellcheckLanguages = [...new Set<string>(saved.spellcheckLanguages.filter((code: unknown) => typeof code === "string" && /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(code)))].slice(0, 100);
     next.standaloneImageScale = standaloneImageScales.find(scale => scale === saved.standaloneImageScale) ?? next.standaloneImageScale;
+    if (saved.grammarEnabled === true) next.grammarEnabled = true;
+    if (typeof saved.grammarUrl === "string" && saved.grammarUrl.length <= 500) next.grammarUrl = saved.grammarUrl;
+    if (typeof saved.grammarOrigin === "string" && saved.grammarOrigin.length <= 500) next.grammarOrigin = saved.grammarOrigin;
     if (saved.pdfPaper === "letter") next.pdfPaper = "letter";
     if (Number.isFinite(saved.pdfMargin)) next.pdfMargin = Math.max(18, Math.min(100, saved.pdfMargin));
     if (Number.isFinite(saved.readingSpeed)) next.readingSpeed = Math.max(50, Math.min(1000, saved.readingSpeed));

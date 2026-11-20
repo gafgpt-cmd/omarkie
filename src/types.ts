@@ -84,6 +84,7 @@ export interface Host {
   installTheme(): Promise<string | null>;
   omarchyTheme(): Promise<import("./themes").OmarchyPalette | null>;
   spellcheckLanguages(languages?: string[]): Promise<string[]>;
+  checkGrammar?(url: string, approvedOrigin: string, text: string): Promise<unknown>;
   setRemoteImages(allow: boolean): Promise<unknown>;
   background(): Promise<import("./background").BackgroundAsset | null>;
   chooseBackground(): Promise<import("./background").BackgroundAsset | null>;

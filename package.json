@@ -17,7 +17,7 @@
     "test:browser": "node tests/browser-startup.mjs",
     "test:perf": "node tests/perf-desktop.mjs",
     "test:preserve": "npm run test:desktop && npm run test:features && npm run test:kernel-desktop && node tests/photo-previews-desktop.mjs && npm run test:encoding && npm run test:parity && node tests/ime-desktop.mjs && node tests/compatibility-desktop.mjs",
-    "verify": "npm run build && npm test && npm run test:browser && npm run test:preserve",
+    "verify": "npm run build && npm test && npm run test:browser && npm run test:preserve && node tests/grammar-desktop.mjs",
     "package:mac": "npm run build && node scripts/icon.mjs && node scripts/package-native.mjs",
     "install:app": "npm run package:mac && node scripts/install.mjs",
     "test:native": "node scripts/test-native.mjs",

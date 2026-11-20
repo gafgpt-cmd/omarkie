@@ -159,6 +159,15 @@ Open a Markdown file or a folder, or start from the Showcase examples (**Help �
 | Search the folder | `Ctrl+Shift+F` | `⌘⇧F` |
 | Quick open | `Ctrl+P` | `⌘⇧O` |
 
+### Grammar with LanguageTool
+
+- Start the [self-hosted LanguageTool HTTP server](https://dev.languagetool.org/http-server) (LGPL-2.1). Omarkie does not bundle or start it.
+- Enable **Preferences → LanguageTool grammar**. Default: `http://127.0.0.1:8081/v2/check`.
+- For a non-loopback server, enter its HTTPS `/v2/check` URL and approve its exact origin. Redirects are blocked.
+- Choose **Check grammar… → Send note**. Only this action sends the current Markdown (up to 20,000 characters) to the displayed endpoint. Check the server's data policy before sending sensitive text.
+- Click an underline or pick a grammar finding. Choose a replacement to edit, or close to leave the note unchanged. Undo reverses the edit. Editing clears old findings.
+- Desktop only. Off by default. No requests on open, edit, or enable. Separate from offline spellcheck and Markdown lint.
+
 ## Development
 
 ```sh

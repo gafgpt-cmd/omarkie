@@ -175,6 +175,7 @@ export const host: Host = window.desktop
   ? new Proxy({ native: true } as Host, {
       get(target, name: keyof Host) {
         if (name === "native") return true;
+        if (name === "checkGrammar" && !window.desktop![name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {

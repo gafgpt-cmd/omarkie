@@ -87,6 +87,13 @@ class EditorWindow: NSWindow {
   }
 }
 
+private final class GrammarNoRedirect: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+  func urlSession(_ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) { completionHandler(nil) }
+}
+
 final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler,
   WKNavigationDelegate, WKUIDelegate
 {
@@ -199,6 +206,13 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         } catch {
           self.reply(id, ["ok": false, "error": (error as? NativeFailure)?.message ?? "阅读图层数据无效。", "code": "LEARNING_ERROR"])
         }
+      }
+      return
+    }
+    if name == "checkGrammar" {
+      Task { @MainActor in
+        do { reply(id, ["ok": true, "value": try await checkGrammar(args)]) }
+        catch { reply(id, ["ok": false, "error": "LanguageTool request failed"]) }
       }
       return
     }
@@ -419,6 +433,43 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       let text = String(data: data, encoding: .utf8)
     else { return }
     webView.evaluateJavaScript("window.__omarkie.receive(\(text))", completionHandler: nil)
+  }
+  private func checkGrammar(_ args: [Any]) async throws -> Any {
+    let address = try arg(args, 0, String.self), approved = try arg(args, 1, String.self)
+    let text = try arg(args, 2, String.self)
+    let failure = NativeFailure("LanguageTool request failed")
+    guard address.utf16.count <= 500, text.utf16.count <= 20_000,
+      !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      let parts = URLComponents(string: address), let url = parts.url,
+      let scheme = parts.scheme, let host = parts.host, !host.isEmpty,
+      parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
+      parts.percentEncodedPath.hasSuffix("/v2/check")
+    else { throw failure }
+    let local = ["localhost", "127.0.0.1", "::1", "[::1]"].contains(host)
+    let originHost = host.contains(":") && !host.hasPrefix("[") ? "[\(host)]" : host
+    let origin = "\(scheme)://\(originHost)" + (parts.port.map { ":\($0)" } ?? "")
+    guard (local && scheme == "http") || (scheme == "https" && (local || approved == origin)) else { throw failure }
+
+    var form = URLComponents()
+    form.queryItems = [URLQueryItem(name: "text", value: text), URLQueryItem(name: "language", value: "auto")]
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = form.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
+    request.setValue("application/x-www-form-urlencoded;charset=UTF-8", forHTTPHeaderField: "Content-Type")
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.httpShouldSetCookies = false
+    configuration.urlCredentialStorage = nil
+    configuration.timeoutIntervalForResource = 15
+    let session = URLSession(configuration: configuration, delegate: GrammarNoRedirect(), delegateQueue: nil)
+    defer { session.invalidateAndCancel() }
+    let (bytes, response) = try await session.bytes(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw failure }
+    var data = Data()
+    for try await byte in bytes {
+      guard data.count < 2_000_000 else { throw failure }
+      data.append(byte)
+    }
+    return try JSONSerialization.jsonObject(with: data)
   }
   func arg<T>(_ args: [Any], _ index: Int, _ type: T.Type) throws -> T {
     guard args.indices.contains(index), let value = args[index] as? T else {

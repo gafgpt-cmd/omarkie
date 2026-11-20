@@ -183,6 +183,7 @@ const handlers = {
     if (Array.isArray(languages) && process.platform !== "darwin") session.defaultSession.setSpellCheckerLanguages([...new Set(languages.filter(code => typeof code === "string" && available.includes(code)))]);
     return available;
   },
+  checkGrammar: async (_, url, approvedOrigin, text) => (await import("./grammar.mjs")).checkGrammar(url, approvedOrigin, text),
   setRemoteImages: async (_, value) => { remoteImages = value === true; return true; },
   setLanguage: async (_, choice) => {
     if (choice !== "auto" && !languages.some(([code]) => code === choice)) throw new Error(t("语言无效。"));
