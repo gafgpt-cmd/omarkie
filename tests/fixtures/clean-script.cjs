@@ -1,0 +1,10 @@
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const [mode, file, selectionFlag, selection, reportFlag, report] = process.argv.slice(2);
+assert.equal(selectionFlag, "--passes");
+assert.equal(selection, "1,2,3,4,5,6,7");
+assert.equal(reportFlag, "--report");
+const source = fs.readFileSync(file, "utf8").replace(/\r\n?/g, "\n");
+fs.writeFileSync(file, source.replace("publisher artifact\n\n", ""));
+const passes = Object.fromEntries(selection.split(",").map(number => [`p0${number}`, { status: mode === "partial" && number === "5" ? "error" : "ok" }]));
+fs.writeFileSync(report, JSON.stringify([{ passes }]));

@@ -22,6 +22,17 @@
 - Properties preserve mixed line endings through the byte-aware model and shared undo history.
 - Upkeep reports only. No asset deletion.
 
+## Clean converted text
+
+- File → Clean converted text opens a read-only reading layer. Back to source or Esc hides it without applying.
+- Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
+- A change to the note or its disk revision requires a fresh preview.
+- Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
+- Linux/Windows: set `OMARKIE_CLEAN_SCRIPT` to an executable path or JSON argv, e.g. `["python3","/path/to/pdf-md-pipeline/stage2/run_passes.py"]`.
+- The hook runs the installed Stage 2 p01–p07 CLI on a private UTF-8 scratch copy: `source.md --passes 1,2,3,4,5,6,7 --report report.json`. No pipeline code is bundled or copied.
+- The hook receives no original path. Asset-dependent repairs cannot inspect the source folder. Failed hooks leave the document untouched; unset the hook to use the built-in cleanup alone.
+- Reading layer integration: lazily import `previewClean(record)` and `bakeClean(preview, current, editor)` from `src/cleanLayer.ts`. Keep the preview separate from the L0 document and supply current record/editor getters at bake time.
+
 ## Bounds
 
 - Selected folder only; no symlink traversal or ancestor-vault grants.

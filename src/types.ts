@@ -61,6 +61,7 @@ export interface ConversionOptions { bibliography?: string; style?: "vancouver";
 export interface Host {
   vaultSnapshot(): Promise<VaultSnapshot>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
+  cleanConverted?(body: string): Promise<string | null>;
   native: boolean;
   cancelClose(): Promise<unknown>;
   windowAction(action: string): Promise<unknown>;

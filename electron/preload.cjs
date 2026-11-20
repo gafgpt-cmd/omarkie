@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("desktop", {
   scan: () => call("scan"),
   vaultSnapshot: () => call("vaultSnapshot"),
   exportBundle: payload => call("exportBundle", payload),
+  cleanConverted: body => call("cleanConverted", body),
   openToken: (token) => call("token", token),
   reopen: id => call("reopen", id),
   chooseImage: (id, options) => call("chooseImage", id, options),

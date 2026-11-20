@@ -27,6 +27,7 @@ import type { FileOperation } from "./types";
 import type { Command, ConversionOptions } from "./types";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
+const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -70,6 +71,7 @@ export default function App() {
   const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
+  const [cleanId, setCleanId] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -88,6 +90,12 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const cleanVisible = !!active && cleanId === active.id;
+  function closeClean() {
+    setCleanId(null);
+    const id = cleanId;
+    if (id) requestAnimationFrame(() => editors.current.get(id)?.focus());
+  }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   useEffect(() => {
     setMountedDocuments(current => {
@@ -261,6 +269,10 @@ export default function App() {
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
+    else if (action === "clean-converted" && active) {
+      if (cleanVisible) closeClean();
+      else if (!editor()?.composing()) setCleanId(active.id);
+    }
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
     else if (action === "close") void session.close();
@@ -452,7 +464,7 @@ export default function App() {
             {session.documents.map((record) => record.id === session.activeId || mountedDocuments.has(record.id) ? (
               <div
                 className="document-editor"
-                hidden={record.id !== session.activeId}
+                hidden={record.id !== session.activeId || cleanVisible}
                 key={record.id}
               >
                 <MarkdownEditor
@@ -493,6 +505,10 @@ export default function App() {
                 />
               </div>
             ) : null)}
+            {cleanVisible && <Suspense fallback={<p role="status">{t("正在清理文本…")}</p>}><CleanLayer
+              key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
+              canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
+            /></Suspense>}
             <article
               className="print-document"
               ref={printDocument}
