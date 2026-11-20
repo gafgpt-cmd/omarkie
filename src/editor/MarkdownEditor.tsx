@@ -89,6 +89,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const initial = useRef(record),
       requested = useRef(rendered),
       activeMode = useRef(rendered);
+    const starting = useRef(true);
     const [visibleMode, setVisibleMode] = useState(
       rendered && record.content.length <= richTextLimit,
     );
@@ -551,6 +552,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       const start = () => {
         if (cancelled || started) return;
         started = true;
+        starting.current = false;
         setMode(requested.current);
         if (!root.current?.closest(".document-editor")?.hasAttribute("hidden")) focusEditor();
       };
@@ -568,6 +570,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       }
       return () => {
         cancelled = true;
+        starting.current = true;
         callbacks.current.onReady?.(null);
         if (compositionTimer.current !== null) clearTimeout(compositionTimer.current);
         rich.current?.destroy();
@@ -579,7 +582,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     }, []);
     useEffect(() => {
       requested.current = rendered;
-      setMode(rendered);
+      if (!starting.current) setMode(rendered);
     }, [rendered]);
     useEffect(() => {
       if (

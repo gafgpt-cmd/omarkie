@@ -53,11 +53,18 @@ if (typeof document !== "undefined")
 // Sizes announced by the host before a document's first render, keyed like the image rule keys
 // them: by the raw source and by its Markdown-normalized form.
 export function rememberImageSizes(documentId: string, sizes: Record<string, [number, number]>) {
+  let changed = false;
   for (const [source, size] of Object.entries(sizes)) {
     if (!Array.isArray(size) || !(size[0] > 0) || !(size[1] > 0)) continue;
-    for (const key of new Set([source, md.normalizeLink(source)]))
-      imageSizes.set(`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(key)}`, [size[0], size[1]]);
+    for (const key of new Set([source, md.normalizeLink(source)])) {
+      const url = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(key)}`;
+      const previous = imageSizes.get(url);
+      if (previous?.[0] === size[0] && previous[1] === size[1]) continue;
+      imageSizes.set(url, [size[0], size[1]]);
+      changed = true;
+    }
   }
+  if (changed) markdownOptionsVersion++;
 }
 export function markdownImageReferences(text: string) { return collectImages(md, text); }
 export function localImageSources(text: string) {
@@ -120,7 +127,15 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
       image.setAttribute("sizes", "auto");
       image.setAttribute("srcset", [800, 1200, 1600, 2400].map(width => `${image.src}?preview=${width} ${width}w`).join(", "));
     }
-    if (size && !image.hasAttribute("width") && !image.hasAttribute("height")) { image.setAttribute("width", String(size[0])); image.setAttribute("height", String(size[1])); }
+    if (size && !image.hasAttribute("height")) {
+      const width = image.getAttribute("width");
+      if (width === null) {
+        image.setAttribute("width", String(size[0]));
+        image.setAttribute("height", String(size[1]));
+      } else if (!image.style.aspectRatio) {
+        image.style.aspectRatio = `${size[0]} / ${size[1]}`;
+      }
+    }
     const bundled = bundledImageUrls.get(image.getAttribute("src") || "");
     if (bundled) image.src = bundled;
   }
