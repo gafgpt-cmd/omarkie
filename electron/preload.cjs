@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld("desktop", {
   scan: () => call("scan"),
   readingStore: (id, request) => call("readingStore", id, request),
   vaultSnapshot: () => call("vaultSnapshot"),
+  bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),
   cleanConverted: body => call("cleanConverted", body),
   openToken: (token) => call("token", token),

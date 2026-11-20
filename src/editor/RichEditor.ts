@@ -247,6 +247,17 @@ export class RichEditor {
       ? element.closest<HTMLElement>("[data-leaf]")
       : null;
   }
+  citationPosition(x: number, y: number) {
+    const caret = document.caretPositionFromPoint?.(x, y);
+    const range = !caret ? document.caretRangeFromPoint?.(x, y) : null;
+    const node = caret?.offsetNode ?? range?.startContainer;
+    if (!node || !this.leafElement(node) || this.citationExcluded(node)) return null;
+    return this.point(node, caret?.offset ?? range!.startOffset);
+  }
+  citationExcluded(node: Node | null = window.getSelection()?.anchorNode ?? null) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    return !element || !this.root.contains(element) || !!element.closest("a,code,pre,.cm-editor,.md-view,.md-ui,[data-mark='code'],[data-mark='math'],[data-mark='image']");
+  }
   private point(node: Node, offset: number) {
     const parent =
       node.nodeType === Node.ELEMENT_NODE

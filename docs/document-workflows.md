@@ -81,6 +81,32 @@
 - Export creates a fresh directory outside the source vault.
 - Notes/assets are copied; root index.md/log.md are real OKF documents.
 
+## Vault bibliography
+
+- In the Electron app, open a notes folder, then **File → Document tools → Writing and export**.
+- **Import CSL JSON** saves one bibliography for that folder. To save pasted or edited CSL JSON, use **Save vault bibliography**. Without a folder, import and paste apply only to the current export.
+- In either editor, type `[@` and a key, author, or title prefix. Choose a match with click, Enter, or Tab; use ↑/↓ to move and Escape to dismiss. The insertion is one undo step.
+- In **Writing and export**, enable Vancouver citations to export with the saved bibliography, or edit the field for a one-off export.
+- Vault bibliographies are stored in this app profile, keyed by the selected folder. They are not written into notes or shared with other profiles.
+
+### Zotero
+
+1. In Zotero with [Better BibTeX](https://retorque.re/zotero-better-bibtex/exporting/auto/) installed, export a collection as **Better CSL JSON** with **Keep updated** checked.
+2. Choose **Link Zotero auto-export** and select that JSON file. Keep it at the same path. External changes refresh suggestions and exports; missing or malformed exports keep the last valid copy.
+3. To include PDF paths, add this snippet under Better BibTeX → Export → Postscript before exporting:
+
+   ```js
+   if (Translator.BetterCSLJSON) {
+     const pdfs = (zotero.attachments || []).map(a => a.localPath)
+       .filter(file => typeof file === "string" && /\.pdf$/i.test(file));
+     if (pdfs.length) csl["omarkie-pdf"] = pdfs;
+   }
+   ```
+
+- Right-click `[@key]` → **Open cited PDF**, or place the caret in it and press Alt+Enter. The first valid local PDF opens in the system viewer. No Zotero API, remote URL, or PDF conversion.
+- **Disconnect Zotero** retains the bibliography but disables live refresh and PDF opening. **Clear vault bibliography** removes the saved bibliography and link without changing the Zotero export.
+- Limits: 2 MiB and 5,000 unique keys per export. Keep JSON with attachment paths private.
+
 ## Export
 
 - CSL JSON bibliography; `[@key]` citations.
@@ -98,6 +124,7 @@
 - YAML CST/ranges: yaml, ISC; loaded with document tools.
 - Markdown checks: markdownlint, MIT; loaded on request.
 - Link/backlink model informed by Foam graph/workspace, MIT. No Foam source copied.
+- Zotero interoperability: Better BibTeX (MIT), documented Better CSL JSON export and postscript APIs. Zettlr (GPL-3.0) citation UX reference only; no code copied.
 - OKF: official v0.2 §§4, 8, 9, 11; https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md
 - Official producer inspected: https://github.com/GoogleCloudPlatform/open-knowledge-format
 - Its Python package depends on cloud tooling; not installed or advertised as a validator.

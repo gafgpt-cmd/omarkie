@@ -122,6 +122,16 @@ const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
+let bibliography;
+function releaseBibliography() { bibliography?.close(); bibliography = undefined; }
+async function vaultBibliography(folder) {
+  if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+  if (bibliography?.root === folder) return bibliography;
+  const { VaultBibliography } = await import("./bibliography.mjs");
+  if (folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+  if (bibliography && bibliography.root !== folder) releaseBibliography();
+  return bibliography ??= new VaultBibliography(store.dataDir, folder, () => send("bibliography-changed"));
+}
 const handlers = {
   payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
   payloadKey: async (_, baseUrl, value) => (await import("./payload.mjs")).setPayloadKey(baseUrl, value),
@@ -208,6 +218,20 @@ const handlers = {
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: () => vaultSnapshot(store),
+  bibliography: async (_, folder, action, value) => {
+    if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
+    if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+    if (action === "link") {
+      const result = await dialog.showOpenDialog(window, { title: t("关联 Zotero 自动导出"), properties: ["openFile"], filters: [{ name: "CSL JSON", extensions: ["json"] }] });
+      if (result.canceled) return false;
+      value = result.filePaths[0];
+    }
+    const service = await vaultBibliography(folder);
+    if (action === "link") { await service.run(action, value); return true; }
+    if (action !== "open") return service.run(action, value);
+    const file = await service.run("pdf", value);
+    if (folder !== store.folder || !file || await shell.openPath(file)) throw new Error(t("无法打开引用的本地 PDF"));
+  },
   exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : exportBundle(store, payload, result.filePaths[0]); },
   exportConverted: async (_, id, format, source, html, options) => {
     const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
@@ -484,6 +508,7 @@ app
         } catch (error) {
           return { ok: false, error: error.message, code: error.code };
         }
+        finally { if (bibliography && bibliography.root !== store.folder) releaseBibliography(); }
       });
     function createWindow() {
       window = new BrowserWindow({
@@ -538,6 +563,7 @@ app
         stopSpeech();
         window = null;
         rendererReady = false;
+        releaseBibliography();
       });
     }
     ipcMain.handle("app:close", (event) => {

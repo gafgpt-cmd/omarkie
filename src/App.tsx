@@ -565,6 +565,7 @@ export default function App() {
                   active={record.id === session.activeId}
                   readOnly={readOnly}
                   reading={readingVisible && record.id === session.activeId}
+                  citationVault={painted && record.id === session.activeId && host.bibliography ? session.folder ?? undefined : undefined}
                   preferences={preferences}
                   typewriter={typewriter}
                   onChange={(content) => session.update(record.id, { content })}
@@ -648,7 +649,7 @@ export default function App() {
         close={closeFlashcards}
       /></Suspense>}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
-        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
+        key={JSON.stringify([tools.id, tools.request, session.folder])} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
         open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
         change={async item => {

@@ -37,6 +37,8 @@ export interface ReadingContext {
 }
 const GrammarCheck = lazy(() => import("./GrammarCheck"));
 
+import { useCitationPicker } from "./CitationPicker";
+import { citationDraft } from "./citationSyntax";
 export interface EditorHandle {
   view(): EditorView | null;
   find(): void;
@@ -70,6 +72,7 @@ interface Props {
   active?: boolean;
   readOnly?: boolean;
   reading?: boolean;
+  citationVault?: string;
   preferences?: Preferences;
   typewriter?: boolean;
   onChange(content: string): void;
@@ -83,7 +86,7 @@ interface Props {
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, active = true, readOnly: locked = false, reading = false, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
+    { document: record, rendered, active = true, readOnly: locked = false, reading = false, citationVault, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const root = useRef<HTMLDivElement>(null),
@@ -117,8 +120,58 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const pendingOptions = useRef(false);
     const compositionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isComposing = () => !!(rich.current?.composing || sourceComposing.current || source.current?.composing);
+<<<<<<< HEAD
     function editingBlocked(allowReading = false) {
       if (viewOptions.current.locked || !allowReading && viewOptions.current.readOnly) return true;
+||||||| parent of dccd943 (feat: add vault bibliography and Zotero citations)
+    function editingBlocked() {
+      if (viewOptions.current.readOnly) return true;
+=======
+    const picker = useCitationPicker(citationVault, citationContext, !readOnly, onError);
+    const citation = useRef(picker); citation.current = picker;
+    const citationEnabled = useRef(false); citationEnabled.current = !!citationVault;
+    function citationContext() {
+      const doc = model.current, richEditor = activeMode.current ? rich.current : null, view = activeMode.current ? null : source.current;
+      if (!doc || isComposing() || (!richEditor && !view)) return null;
+      const selection = view?.state.selection.main ?? doc.selection;
+      function sourceExcluded(at: number) {
+        const current = codeMirror!.syntaxTree(view!.state).resolveInner(at, 1);
+        for (let node: typeof current | null = current; node; node = node.parent) {
+          if (node.name === "Link") {
+            const cite = citationDraft(doc!.text, node.to - 1);
+            if (cite?.from === node.from && cite.to === node.to) continue;
+            return true;
+          }
+          if (/^(?:FencedCode|CodeBlock|InlineCode|Image|HTMLBlock|HTMLTag)$/.test(node.name)) return true;
+        }
+        return false;
+      }
+      return {
+        text: doc.text,
+        caret: selection.anchor === selection.head ? selection.head : null,
+        excluded(at: number) { return richEditor ? richEditor.citationExcluded() : sourceExcluded(at); },
+        coords(at: number) {
+          if (view) return view.coordsAtPos(at, -1);
+          const dom = window.getSelection();
+          return dom?.rangeCount ? dom.getRangeAt(0).getBoundingClientRect() : null;
+        },
+        position(x: number, y: number) {
+          if (!view) return richEditor!.citationPosition(x, y);
+          const at = view.posAtCoords({ x, y });
+          return at == null || sourceExcluded(at) ? null : at;
+        },
+        insert(from: number, to: number, text: string) {
+          if (editingBlocked()) return;
+          doc.closeGroup();
+          if (!doc.replace(from, to, text, "citation")) return;
+          if (richEditor) richEditor.render(); else syncSource();
+          publish(); focusEditor();
+        },
+      };
+    }
+    function editingBlocked() {
+      if (viewOptions.current.readOnly) return true;
+>>>>>>> dccd943 (feat: add vault bibliography and Zotero citations)
       if (!isComposing()) return false;
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
@@ -178,6 +231,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const publish = () => {
       if (activeMode.current && !richAllowed(model.current!)) setMode(false);
       callbacks.current.onChange(model.current!.toMarkdown());
+      if (activeMode.current && citationEnabled.current && root.current?.contains(document.activeElement)) citation.current.update(model.current!.text, model.current!.selection.head);
       historyState();
     };
     function matches() {
@@ -368,6 +422,10 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                   selected.head - line.from + 1,
                 );
                 callbacks.current.onSelection?.(update.state.sliceDoc(selected.from, selected.to));
+                if (citationEnabled.current && !activeMode.current && document.activeElement === update.view.contentDOM) {
+                  if (update.docChanged) citation.current.update(doc.text, selected.head);
+                  else citation.current.cursor();
+                }
                 if (viewOptions.current.typewriter) requestAnimationFrame(() => {
                   if (source.current === update.view) update.view.dispatch({ effects: codeMirror!.EditorView.scrollIntoView(selected.head, { y: "center" }) });
                 });
@@ -433,7 +491,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         else {
           rich.current = new RichEditor(root.current!, doc, initial.current.id, {
             change: publish,
-            cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); historyState(); },
+            cursor: (line, column) => { callbacks.current.onCursor(line, column); callbacks.current.onSelection?.(rich.current?.clipboard().plain || ""); if (citationEnabled.current) citation.current.cursor(); historyState(); },
             image: file => void insertImage(file),
             link: url => void (callbacks.current.onReference && !/^(?:https?:|mailto:)/i.test(url) ? callbacks.current.onReference(url) : /^(?:https?:|mailto:)/i.test(url) ? host.openLink(url) : host.openDocumentLink(initial.current.id, url)).catch(error => callbacks.current.onError(error.message)),
             compositionFinished,
@@ -451,6 +509,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       activeMode.current = value;
       setVisibleMode(value);
       if (value ? rich.current : source.current) setReadyMode(value ? "rich" : "source");
+      if (citationEnabled.current) citation.current.close();
       historyState();
     }
     useImperativeHandle(
@@ -665,7 +724,12 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     return (
       <div
         className={`editor-surface ${visibleMode ? "rich-mode" : "source-mode"} ${preferences?.codeLineNumbers ? "code-line-numbers" : ""}`}
+        onKeyDownCapture={citationVault ? picker.keydown : undefined}
+        onContextMenuCapture={citationVault ? picker.contextMenu : undefined}
+        onBlur={citationVault ? event => { if (!event.currentTarget.contains(event.relatedTarget)) picker.close(); } : undefined}
+        onPointerDownCapture={citationVault ? event => { if (!(event.target as Element).closest(".emoji-completion")) picker.close(); } : undefined}
       >
+<<<<<<< HEAD
         {active && preferences?.grammarEnabled && host.checkGrammar && (
           <Suspense fallback={null}>
             <GrammarCheck key={JSON.stringify([preferences.grammarUrl, preferences.grammarOrigin])}
@@ -697,6 +761,10 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
               }} />
           </Suspense>
         )}
+||||||| parent of dccd943 (feat: add vault bibliography and Zotero citations)
+=======
+        {picker.content}
+>>>>>>> dccd943 (feat: add vault bibliography and Zotero citations)
         {searchOpen && visibleMode && (
           <div
             className="rich-search"

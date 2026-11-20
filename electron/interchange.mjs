@@ -16,13 +16,25 @@ export async function pandocPath() {
   return "";
 }
 const exportFormats = new Set(["docx", "rtf", "odt", "epub", "latex", "rst", "mediawiki", "textile", "opml", "revealjs", "pdf"]);
+export const cslByteLimit = 2 * 1024 * 1024;
+export function parseCSL(text, allowEmpty = false) {
+  const invalid = () => new Error(t("CSL JSON 书目无效"));
+  if (typeof text !== "string" || Buffer.byteLength(text) > cslByteLimit) throw invalid();
+  let entries;
+  try { entries = JSON.parse(text.replace(/^\uFEFF/, "")); } catch { throw invalid(); }
+  if (!Array.isArray(entries) || (!allowEmpty && !entries.length) || entries.length > 5000) throw invalid();
+  const keys = new Set();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || !/^[\w.:+/-]{1,256}$/.test(entry.id) || typeof entry.type !== "string" || keys.has(entry.id)) throw invalid();
+    keys.add(entry.id);
+  }
+  return entries;
+}
 export function conversionOptions(options = {}) {
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["bibliography", "style", "letterhead"].includes(key))) throw new Error(t("导出选项无效"));
   if (options.style !== undefined && options.style !== "vancouver") throw new Error(t("引用样式无效"));
   if (options.bibliography !== undefined) {
-    if (typeof options.bibliography !== "string" || options.bibliography.length > 2 * 1024 * 1024) throw new Error(t("CSL JSON 书目无效"));
-    let entries; try { entries = JSON.parse(options.bibliography); } catch { throw new Error(t("CSL JSON 书目无效")); }
-    if (!Array.isArray(entries) || !entries.length || entries.length > 5000 || entries.some(entry => !entry || typeof entry !== "object" || typeof entry.id !== "string" || !/^[\w.:+/-]{1,256}$/.test(entry.id) || typeof entry.type !== "string") || new Set(entries.map(entry => entry.id)).size !== entries.length) throw new Error(t("CSL JSON 书目无效"));
+    parseCSL(options.bibliography);
     if (options.style !== "vancouver") throw new Error(t("请选择引用样式"));
   }
   if (options.style && !options.bibliography) throw new Error(t("请添加 CSL JSON 书目"));

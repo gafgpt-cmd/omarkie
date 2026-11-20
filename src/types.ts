@@ -70,9 +70,21 @@ export interface PayloadRequest {
   question?: string;
   modernLimit: boolean;
 }
+export interface CitationMatch { id: string; title: string; authors: string }
+export interface BibliographyInfo { csl: string; source: string | null; stale: boolean }
+interface BibliographyOperations {
+  info: BibliographyInfo;
+  save: void;
+  clear: void;
+  link: boolean;
+  disconnect: void;
+  suggest: CitationMatch[];
+  open: void;
+}
 export interface Host {
   readingStore?: ReadingStore;
   vaultSnapshot(): Promise<VaultSnapshot>;
+  bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;
   native: boolean;

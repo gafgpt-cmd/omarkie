@@ -13,7 +13,7 @@
     "start": "electron .",
     "test": "node --import ./tests/setup-language.mjs --test tests/*.test.mjs",
     "test:desktop": "node tests/desktop.mjs",
-    "test:document-workflows": "node tests/document-workflows-desktop.mjs",
+    "test:document-workflows": "node tests/document-workflows-desktop.mjs && node tests/bibliography-desktop.mjs",
     "test:browser": "node tests/browser-startup.mjs",
     "test:perf": "node tests/perf-desktop.mjs",
     "test:preserve": "npm run test:desktop && npm run test:features && npm run test:kernel-desktop && node tests/photo-previews-desktop.mjs && npm run test:encoding && npm run test:parity && node tests/ime-desktop.mjs && node tests/compatibility-desktop.mjs",
