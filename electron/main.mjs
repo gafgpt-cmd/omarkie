@@ -16,7 +16,7 @@ import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
-import { vaultSnapshot, exportBundle } from "./document-workflows.mjs";
+import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { readFile, realpath, stat, writeFile } from "node:fs/promises";
@@ -202,7 +202,7 @@ const handlers = {
     applyLanguage(choice); buildMenu(); setTimeout(() => window?.webContents.reload()); return true;
   },
   installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : installTheme(result.filePaths[0], store.dataDir); },
-  readResource: async (_, address) => exportResource(address,store,path.join(root,"dist")),
+  readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
   readingStore: async (_, id, request) => {
@@ -217,7 +217,7 @@ const handlers = {
   },
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
-  vaultSnapshot: () => vaultSnapshot(store),
+  vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
   bibliography: async (_, folder, action, value) => {
     if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
     if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -234,10 +234,16 @@ const handlers = {
   },
   exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : exportBundle(store, payload, result.filePaths[0]); },
   exportConverted: async (_, id, format, source, html, options) => {
-    const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
-    const result = await dialog.showSaveDialog(window, { defaultPath: record.name.replace(/\.[^.]+$/, "." + ext) });
+    const project = id?.folder;
+    if (project !== undefined && (typeof project !== "string" || project !== store.folder)) throw new Error(t("目录已更新，请刷新后重试。"));
+    if (project ? !Array.isArray(source) || !["docx", "pdf"].includes(format) : typeof source !== "string") throw new Error(t("导出格式无效。"));
+    const profile = store.dataDir;
+    const ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
+    const defaultPath = project ? `${path.basename(project)}.${ext}` : store.require(id).name.replace(/\.[^.]+$/, "." + ext);
+    const result = await dialog.showSaveDialog(window, project ? { defaultPath, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : { defaultPath });
     if (result.canceled) return null;
-    return convertExport(store.dataDir, format, source, html, result.filePath, options, async markup => {
+    const destination = project ? await projectDestination(project, result.filePath, ext) : result.filePath;
+    return convertExport(profile, format, source, html, destination, options, async markup => {
       const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, partition: "document-export-" + randomUUID() } });
       try {
         preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !request.url.startsWith("data:") }));

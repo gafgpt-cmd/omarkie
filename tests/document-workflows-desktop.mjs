@@ -1,6 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, writeFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -26,6 +26,8 @@ const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: profil
 const application = await electron.launch({ args: [root, ...headlessArguments], env }), page = await application.firstWindow(), errors = [], outbound = [];
 page.on("pageerror", error => errors.push(error.message));
 page.on("request", request => { if (/^https?:/.test(request.url())) outbound.push(request.url()); });
+const projectRequests = [];
+page.on("request", request => { if (/\/projectExport-[^/]+\.js$/.test(request.url())) projectRequests.push(request.url()); });
 await fullSize(application, page);
 const rich = page.locator('.document-editor:not([hidden]) .rich-document');
 const dialog = page.getByRole("dialog", { name: "Document tools", exact: true });
@@ -91,8 +93,58 @@ try {
   await page.getByRole("button", { name: "cyclic.md", exact: true }).click(); await menu("Properties…");
   await expect(dialog.getByText("Edit this YAML alias in source mode.", { exact: true })).toBeVisible();
   assert.equal(await readFile(path.join(vault, "cyclic.md"), "utf8"), cyclicSource);
+  await close();
+  const project = path.join(scratch, "project"), first = path.join(project, "z", "beginning.md"), second = path.join(project, "a", "ending.md");
+  const opening = "\uFEFF---\r\norder: 20\r\ntitle: Private metadata\r\n---\r\n# Disk opening\r\n\r\n![Opening image](figure.png)\r\n\r\nStart [@reference].\r\n";
+  const ending = "---\norder: 10\n---\n# Closing chapter\n\n![[figure.png|Closing image]]\n\nEnd [@reference].\n";
+  for (const note of [first, second]) await mkdir(path.dirname(note), { recursive: true });
+  const alternatePng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEElEQVQI12P8zwAFTDAGAwATKQEDO7FpHgAAAABJRU5ErkJggg==", "base64");
+  await writeFile(first, opening); await writeFile(second, ending);
+  await writeFile(path.join(path.dirname(first), "figure.png"), png);
+  await writeFile(path.join(path.dirname(second), "figure.png"), alternatePng);
+  await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
+  await application.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, project);
+  await dialog.getByRole("button", { name: "Choose project folder…", exact: true }).click();
+  await expect(dialog.getByTitle(await realpath(project), { exact: true })).toBeVisible();
+  assert.deepEqual(projectRequests, []);
+  await close();
+  await page.getByRole("button", { name: /(?:^|[\\/])beginning\.md$/ }).click();
+  await expect(rich.getByRole("heading", { name: "Disk opening", exact: true })).toBeVisible();
+  await text(); await editor.click(); await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.insertText(opening.slice(1).replaceAll("\r\n", "\n").replace("order: 20", "order: 1").replace("Disk opening", "Draft opening"));
+  await richMode();
+  await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
+  await dialog.getByLabel("Vancouver citations via Pandoc citeproc", { exact: true }).check();
+  await dialog.getByLabel("CSL JSON bibliography", { exact: true }).fill(JSON.stringify([{ id: "reference", type: "article-journal", title: "Combined reference", author: [{ family: "Example" }] }]));
+  const projectDocx = path.join(output, "project.docx"), projectPdf = path.join(output, "project.pdf");
+  const unsafeDestination = path.join(project, "inside.docx");
+  await writeFile(unsafeDestination, "existing asset");
+  await application.evaluate(({ dialog }, destinations) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: destinations.shift() }); }, [unsafeDestination, projectDocx, projectPdf]);
+  await dialog.getByRole("button", { name: "Export project as DOCX", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveText("Choose a destination outside the vault");
+  assert.equal(await readFile(unsafeDestination, "utf8"), "existing asset");
+  for (const format of ["DOCX", "PDF"]) {
+    await dialog.getByRole("button", { name: `Export project as ${format}`, exact: true }).click();
+    await expect(dialog.getByRole("alert")).toHaveText(`${format} exported.`, { timeout: 30000 });
+  }
+  const media = path.join(output, "chapter-media");
+  const docxText = (await exec("pandoc", [projectDocx, "--to=plain", "--extract-media=" + media])).stdout;
+  const projectPdfText = (await exec("pdftotext", [projectPdf, "-"])).stdout;
+  for (const compiled of [docxText, projectPdfText]) {
+    assert.match(compiled, /Example Organization[\s\S]*Draft opening[\s\S]*Closing chapter[\s\S]*Combined reference/);
+    assert.equal(compiled.match(/Combined reference/g)?.length, 1);
+    assert.doesNotMatch(compiled, /Disk opening|Private metadata|@reference/);
+  }
+  const embedded = await Promise.all((await readdir(path.join(media, "media"))).map(name => readFile(path.join(media, "media", name))));
+  assert.equal(embedded.length, 2);
+  assert.deepEqual(embedded.map(bytes => bytes.readUInt32BE(16)).sort((a, b) => a - b), [1, 3]);
+  const pdfImages = (await exec("pdfimages", ["-list", projectPdf])).stdout;
+  assert.match(pdfImages, /\bimage\s+1\s+1\b/); assert.match(pdfImages, /\bimage\s+3\s+2\b/);
+  assert.equal(await readFile(first, "utf8"), opening); assert.equal(await readFile(second, "utf8"), ending);
+  assert.equal(projectRequests.length, 1);
+  await page.screenshot({ path: path.join(qa, "project-export.png") });
   assert.equal(await readFile(file, "utf8"), source); assert.deepEqual(errors, []); assert.deepEqual(outbound, []);
-  console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings preserve exact body and undo", "cyclic YAML properties do not crash", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));
+  console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings preserve exact body and undo", "cyclic YAML properties do not crash", "lazy project export with draft ordering, one bibliography, one letterhead, and chapter-local assets", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));
 } catch (error) {
   await page.screenshot({ path: path.join(qa, "failure.png") });
   await writeFile(path.join(qa, "failure.txt"), String(error) + "\n" + await page.locator("body").innerText());

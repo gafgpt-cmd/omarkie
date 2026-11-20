@@ -123,7 +123,7 @@ final class Workspace {
     }
     return ["newPath": destination.path]
   }
-  func vaultSnapshot(_ store: DocumentStore) throws -> [String: Any] {
+  func vaultSnapshot(_ store: DocumentStore, chaptersOnly: Bool = false) throws -> [String: Any] {
     guard let root = store.folder else { throw NativeFailure("请先打开文件夹") }
     let inventory = try store.scan(), files = inventory["files"] as? [[String: String]] ?? []
     let encodings = Dictionary(store.records.values.compactMap { record in record.path.map { ($0, record.encoding ?? "utf-8") } }, uniquingKeysWith: { first, _ in first })
@@ -138,6 +138,7 @@ final class Workspace {
       let data = try Data(contentsOf: file); total += data.count
       do { let (content, _, _) = try store.decode(data, encoding: data.starts(with: [0xef, 0xbb, 0xbf]) || data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) ? nil : encodings[file.path]); notes.append(["token": token, "relative": relative, "content": content, "path": file.path]) } catch { truncated = true }
     }
+    if chaptersOnly { return ["notes": notes, "assets": assets, "truncated": truncated, "folder": root.path] }
     let media = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"]
     func walk(_ directory: URL, depth: Int) throws {
       for file in try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isHiddenKey]) {

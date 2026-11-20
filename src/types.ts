@@ -58,7 +58,7 @@ export interface Command {
   selection?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
-export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean }
+export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }
 export interface BundlePayload { notes: VaultNote[]; assets: { source: string; relative: string }[]; index: string; log: string }
 export interface ConversionOptions { bibliography?: string; style?: "vancouver"; letterhead?: { name: string; detail: string } }
 export interface PayloadRequest {
@@ -83,7 +83,7 @@ interface BibliographyOperations {
 }
 export interface Host {
   readingStore?: ReadingStore;
-  vaultSnapshot(): Promise<VaultSnapshot>;
+  vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
   bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;
@@ -107,6 +107,7 @@ export interface Host {
   conversionSettings(choose?: boolean): Promise<{ pandoc: string; word: boolean; libreOffice?: string }>;
   importDocument(): Promise<{ html?: string; markdown?: string; name: string } | null>;
   exportConverted(id: string, format: string, source: string, html: string, options?: ConversionOptions): Promise<string | null>;
+  exportConverted(project: { folder: string }, format: "docx" | "pdf", chapters: string[], html: "", options?: ConversionOptions): Promise<string | null>;
   restore(): Promise<Recovery | null>;
   showcase(): Promise<FolderResult & { document: DocumentRecord }>;
   registerDraft(record: DocumentRecord): Promise<unknown>;

@@ -19,6 +19,9 @@ declare module "*shared/frontmatter.mjs" {
   export function makeReady(text: string, name: string): string;
   export function validateOKF(text: string, name?: string, root?: boolean): string[];
 }
+declare module "*shared/project-export.mjs" {
+  export function projectChapters(snapshot: import("./types").VaultSnapshot, drafts: import("./types").DocumentRecord[], t: (key: string, options?: Record<string, unknown>) => string): { token: string; relative: string; body: string }[];
+}
 declare module "*shared/markdown.mjs" {
   export function createMarkdown(options?: import("markdown-it").MarkdownItOptions): import("markdown-it").MarkdownIt;
   export function setSyntaxOptions(md: import("markdown-it").MarkdownIt, options?: Partial<import("./preferences").Preferences>): void;

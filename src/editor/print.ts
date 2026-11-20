@@ -34,9 +34,9 @@ function dataUrl(blob: Blob): Promise<string> {
     const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error(t("无法读取导出资源。"))); reader.readAsDataURL(blob);
   });
 }
-async function resource(url: string) {
+async function resource(url: string, project?: boolean) {
   if (window.desktop?.readResource) {
-    const response = await window.desktop.readResource(url);
+    const response = project ? await window.desktop.readResource(url, true) : await window.desktop.readResource(url);
     if (!response.ok) throw new Error(response.error);
     const { base64, mime } = response.value as { base64: string; mime: string };
     return { text: () => new TextDecoder().decode(Uint8Array.from(atob(base64), character => character.charCodeAt(0))), data: `data:${mime};base64,${base64}` };
@@ -81,11 +81,17 @@ async function diagramPNG(svg: SVGSVGElement) {
 }
 // Convert only on export. The editor's Markdown and undo history remain untouched.
 const same = (a: string, b: string) => { const d = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } }; return a === b || d(a) === d(b); };
-export async function conversionMarkdown(source: string, rendered: HTMLElement) {
+export async function conversionMarkdown(source: string, rendered: HTMLElement, chapterToken?: string) {
   const changes: { from: number; to: number; text: string }[] = [], resources = new Map<string, Promise<string>>();
   async function embed(url: string) {
     let pending = resources.get(url);
     if (!pending) {
+      if (chapterToken) {
+        const address = `omarkie-asset://local/${encodeURIComponent(chapterToken)}/${encodeURIComponent(url)}`;
+        pending = /^data:image\//i.test(url) ? Promise.resolve(url) : resource(address, true).then(value => value.data);
+        resources.set(url, pending);
+        return pending;
+      }
       const address = [...rendered.querySelectorAll<HTMLImageElement>("img")].find(image => {
         try { return image.src.startsWith("omarkie-asset:") ? same(decodeURIComponent(new URL(image.src).pathname.split("/").slice(2).join("/")), url) : image.getAttribute("src") === url; } catch { return false; }
       })?.src;

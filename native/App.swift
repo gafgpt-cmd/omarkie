@@ -14,12 +14,13 @@ final class Resources: NSObject, WKURLSchemeHandler {
     self.store = store
     self.pluginDirectory = canonicalFileURL(pluginDirectory ?? store.dataDirectory).appendingPathComponent("plugins")
   }
-  func read(_ url: URL) throws -> (Data, String) {
+  func read(_ url: URL, project: Bool = false) throws -> (Data, String) {
     let file: URL
+    if project && (url.scheme != "omarkie-asset" || url.host != "local") { throw NativeFailure("导出资源来源无效。") }
     if url.scheme == "omarkie-asset", url.host == "local" {
       let segments = (URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath.split(separator: "/") ?? []).compactMap { String($0).removingPercentEncoding }
       guard segments.count == 2 else { throw NativeFailure("图片引用无效。") }
-      file = try store.asset(segments[0], relative: segments[1])
+      file = try store.asset(segments[0], relative: segments[1], project: project)
     } else if url.scheme == "omarkie", url.host == "app", url.path.hasPrefix("/_plugins/") {
       let name = url.lastPathComponent
       guard url.path == "/_plugins/" + name, name.range(of: "^local-[a-f0-9]{64}\\.mjs$", options: .regularExpression) != nil else { throw NativeFailure("插件资源路径无效。") }
@@ -216,7 +217,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       }
       return
     }
-    if name == "readResource", let address = args.first as? String, let url = URL(string: address), ["http", "https"].contains(url.scheme ?? "") {
+    if name == "readResource", args.count == 1, let address = args.first as? String, let url = URL(string: address), ["http", "https"].contains(url.scheme ?? "") {
       Task { @MainActor in
         do {
           var request = URLRequest(url: url); request.timeoutInterval = 15
@@ -251,22 +252,38 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             DispatchQueue.main.async { self.reply(id, result) }
           }
         } else {
-          let doc = try store.require(arg(args, 0, String.self)), format = try arg(args, 1, String.self), source = try arg(args, 2, String.self), html = try arg(args, 3, String.self)
+          let format = try arg(args, 1, String.self), html = try arg(args, 3, String.self)
+          let project = args.first as? [String: String]
+          let folder = project == nil ? nil : store.folder
+          if let project {
+            guard let folder, project["folder"] == folder.path else { throw NativeFailure("目录已更新，请刷新后重试。") }
+            guard ["docx", "pdf"].contains(format) else { throw NativeFailure("导出格式无效。") }
+          }
+          let doc = project == nil ? (try store.require(arg(args, 0, String.self))) : nil
+          let source = project == nil ? (try arg(args, 2, String.self)) : ""
+          let chapters = project == nil ? nil : (try arg(args, 2, [String].self))
           let ext = ["latex":"tex", "revealjs":"html", "mediawiki":"wiki"][format] ?? format
           #if WEBTEST
           let destination = store.dataDirectory.appendingPathComponent("native-converted." + ext)
           #else
           let panel = NSSavePanel()
-          panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]; panel.nameFieldStringValue = (doc.name as NSString).deletingPathExtension + "." + ext
+          panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]
+          panel.nameFieldStringValue = (folder?.lastPathComponent ?? ((doc?.name ?? "") as NSString).deletingPathExtension) + "." + ext
           guard panel.runModal() == .OK, let destination = panel.url else { reply(id, ["ok": true, "value": NSNull()]); return }
           #endif
-          let directory = store.dataDirectory, working = doc.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? directory
+          if let folder {
+            let parent = canonicalFileURL(destination.deletingLastPathComponent())
+            guard parent.path != folder.path, !contained(folder, parent) else { throw NativeFailure("请选择知识库之外的目标位置") }
+            guard destination.pathExtension.lowercased() == ext else { throw NativeFailure("导出格式无效。") }
+            if (try? destination.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { throw NativeFailure("知识库路径无效") }
+          }
+          let directory = store.dataDirectory, working = doc?.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? directory
           let options = args.count > 4 ? args[4] as? [String: Any] ?? [:] : [:]
           DispatchQueue.global(qos: .userInitiated).async {
             let result: [String: Any]
             do {
               if format == "pdf" {
-                let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options)
+                let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options, chapters: chapters)
                 DispatchQueue.main.async {
                   let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: self.store)
                   self.pdfExporter = exporter
@@ -278,7 +295,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
                 }
                 return
               }
-              try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory, options: options); result = ["ok": true, "value": destination.path]
+              try Interchange.export(format, source: source, html: html, destination: destination, workingDirectory: working, temporaryDirectory: directory, options: options, chapters: chapters); result = ["ok": true, "value": destination.path]
             }
             catch { result = ["ok": false, "error": error.localizedDescription] }
             DispatchQueue.main.async { self.reply(id, result) }
@@ -622,7 +639,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
       return try store.scan(file)
-    case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store)
+    case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)
     case "exportBundle":
       let payload = try arg(args, 0, [String: Any].self)
       let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
@@ -637,7 +654,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     case "reopen": return try jsonValue(store.reopen(arg(args, 0, String.self)))
     case "readResource":
       guard let url = URL(string: try arg(args, 0, String.self)) else { throw NativeFailure("资源引用无效。") }
-      let (data, mime) = try Resources(Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store).read(url)
+      let (data, mime) = try Resources(Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store).read(url, project: args.count > 1 && args[1] as? Bool == true)
       return ["base64": data.base64EncodedString(), "mime": mime]
     case "windowAction":
       let action = try arg(args, 0, String.self)

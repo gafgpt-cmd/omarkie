@@ -17,9 +17,10 @@ const jsonValue = (value: unknown) => { try { return JSON.stringify(value); } ca
 function templates(): Template[] {
   try { const value = JSON.parse(localStorage.getItem("omarkie-templates") || "[]"); return Array.isArray(value) ? value.filter(item => typeof item?.name === "string" && typeof item?.content === "string").slice(0, 50) : []; } catch { return []; }
 }
-export function DocumentTools({ record, documents, files, folder, preferences, initial, request, close, open, change, create, convert }: {
+export function DocumentTools({ record, documents, files, folder, preferences, initial, request, close, open, openFolder, change, create, convert }: {
   record: DocumentRecord; documents: DocumentRecord[]; files: FileEntry[]; folder: string | null; preferences: Preferences; initial: ToolTab; request?: string;
   close(): void; open(token: string, line?: number): Promise<void>;
+  openFolder(): Promise<void>;
   change(change: Change): Promise<void>; create(name: string, content: string): Promise<void>;
   convert(format: string, options: ConversionOptions): Promise<void>;
 }) {
@@ -73,6 +74,12 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
     const current = useCitations && bibliographyDraft === null && vaultBibliography && folder ? (await vaultBibliography(folder, "info")).csl : csl;
     return { ...(useCitations ? { bibliography: current, style: "vancouver" as const } : {}), ...(letterName || letterDetail ? { letterhead: { name: letterName, detail: letterDetail } } : {}) };
   };
+  async function compile(format: "docx" | "pdf") {
+    if (!folder) throw new Error(t("请先打开文件夹"));
+    // Load project assembly only when the user exports a project.
+    const { exportProject } = await import("../editor/projectExport");
+    if (await exportProject(format, folder, documents, await options())) setMessage(t("{{format}} 已导出。", { format: format.toUpperCase() }));
+  }
   const labels: Record<ToolTab, string> = { properties: t("属性"), references: t("链接与标签"), backlinks: t("反向链接"), graph: t("知识库图谱"), okf: t("OKF"), writing: t("写作与导出"), checks: t("知识库维护") };
   const states: Record<string, string> = { resolved: t("已解析"), external: t("外部链接"), invalid: t("链接无效"), escape: t("链接指向知识库之外"), ambiguous: t("有多个同名目标"), missing: t("未找到目标"), "missing-heading": t("未找到标题") };
   const issues: Record<string, string> = { "index-frontmatter": t("index.md 的前置元数据只能包含 okf_version"), "log-frontmatter": t("log.md 不应包含前置元数据"), "log-date": t("log.md 的日期标题必须是 YYYY-MM-DD"), "missing-frontmatter": t("缺少前置元数据"), "missing-type": t("缺少 type 属性"), "okf-delimiter": t("前置元数据结束标记应为 ---") };
@@ -139,6 +146,15 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
       <label>{t("信头详细信息")}<textarea aria-label={t("信头详细信息")} value={letterDetail} onChange={event => void run(() => { localStorage.setItem("omarkie-letter-detail", event.target.value); setLetterDetail(event.target.value); })} maxLength={2000} /></label>
       <button disabled={busy} onClick={() => void run(async () => convert("docx", await options()))}>{t("导出带信头的 DOCX")}</button>
       <button disabled={busy} onClick={() => void run(async () => convert("pdf", await options()))}>{t("导出带信头的 PDF")}</button>
+      {host.native && <>
+        <h3>{t("项目导出")}</h3>
+        <p>{t("将文件夹中的 Markdown 章节编译成一个文档。")}</p>
+        {folder && <p title={folder}>{folder}</p>}
+        <button disabled={busy} onClick={() => void run(openFolder)}>{t("选择项目文件夹…")}</button>
+        {(["docx", "pdf"] as const).map(format => <button key={format} disabled={busy || !folder} onClick={() => void run(() => compile(format))}>
+          {t("导出项目为 {{format}}", { format: format.toUpperCase() })}
+        </button>)}
+      </>}
     </section>}
     {tab === "checks" && <section>
       <p>{t("仅生成报告。不会删除或修改任何文件。")}</p>

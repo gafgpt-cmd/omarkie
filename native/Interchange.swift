@@ -73,9 +73,13 @@ final class Interchange {
     }
     return arguments
   }
-  static func export(_ format: String, source: String, html: String, destination: URL, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any] = [:]) throws {
+  static func export(_ format: String, source: String, html: String, destination: URL, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any] = [:], chapters: [String]? = nil) throws {
     let formats = ["docx", "rtf", "odt", "epub", "latex", "rst", "mediawiki", "textile", "opml", "revealjs", "html5"]
     guard formats.contains(format), source.utf8.count <= DocumentStore.maxBytes, html.utf8.count <= 50 * 1024 * 1024 else { throw NativeFailure("导出格式或内容无效。") }
+    if let chapters {
+      guard ["docx", "html5"].contains(format), !chapters.isEmpty, chapters.count <= 1000,
+        chapters.reduce(0, { $0 + $1.utf8.count }) <= 100 * 1024 * 1024 else { throw NativeFailure("导出格式无效。") }
+    }
     let data: Data
     if let converter = pandoc() {
       let conversion = temporaryDirectory.appendingPathComponent("export-" + UUID().uuidString)
@@ -97,7 +101,7 @@ final class Interchange {
       try Data(lua.utf8).write(to: filter)
       let arguments = try exportOptions(options, directory: conversion)
       var prepared = source
-      if !options.isEmpty {
+      if chapters == nil && !options.isEmpty {
         let expression = try NSRegularExpression(pattern: "\\A\\uFEFF?---[ \\t]*(?:\\r\\n|\\r|\\n)[\\s\\S]*?^(?:---|\\.\\.\\.)[ \\t]*(?:\\r\\n|\\r|\\n|$)", options: [.anchorsMatchLines])
         if let range = expression.firstMatch(in: prepared, range: NSRange(prepared.startIndex..., in: prepared))?.range { prepared = (prepared as NSString).replacingCharacters(in: range, with: "") }
       }
@@ -123,18 +127,34 @@ final class Interchange {
           }
         }
       }
-      _ = try run(converter, arguments: ["--from=markdown+tex_math_dollars+raw_html+mark", "--to=" + format, "--standalone", "--sandbox", "--lua-filter=" + filter.path, "--resource-path=" + destination.deletingLastPathComponent().path + ":" + workingDirectory.path, "--output=" + temp.path] + arguments, input: Data(prepared.utf8), directory: workingDirectory)
+      let inputFormat = "--from=markdown+tex_math_dollars+raw_html+mark"
+      let inputArguments: [String], cwd: URL
+      if let chapters {
+        var files = [String]()
+        let inputs = prepared.isEmpty ? chapters : [prepared] + chapters
+        for (index, chapter) in inputs.enumerated() {
+          let name = "input-\(index).md"
+          try Data(chapter.utf8).write(to: conversion.appendingPathComponent(name))
+          files.append(name)
+        }
+        inputArguments = [inputFormat + "-yaml_metadata_block", "--file-scope"] + files
+        cwd = conversion
+      } else {
+        inputArguments = [inputFormat, "--resource-path=" + destination.deletingLastPathComponent().path + ":" + workingDirectory.path]
+        cwd = workingDirectory
+      }
+      _ = try run(converter, arguments: inputArguments + ["--to=" + format, "--standalone", "--sandbox", "--lua-filter=" + filter.path, "--output=" + temp.path] + arguments, input: chapters == nil ? Data(prepared.utf8) : nil, directory: cwd)
       data = try Data(contentsOf: temp)
-    } else if options.isEmpty && ["docx", "rtf", "odt"].contains(format) {
+    } else if chapters == nil && options.isEmpty && ["docx", "rtf", "odt"].contains(format) {
       data = try run(URL(fileURLWithPath: "/usr/bin/textutil"), arguments: ["-convert", format, "-format", "html", "-stdin", "-stdout"], input: Data((html.contains("charset=") ? html : "<meta charset=\"utf-8\">" + html).utf8), directory: temporaryDirectory)
     } else { throw NativeFailure("此格式需要 Pandoc。请在导入导出设置中选择已安装的 Pandoc。") }
     guard !data.isEmpty, data.count <= 100 * 1024 * 1024 else { throw NativeFailure("转换器没有生成有效文件。") }
     try atomicWrite(destination, data)
   }
-  static func renderedExport(source: String, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any]) throws -> String {
+  static func renderedExport(source: String, workingDirectory: URL, temporaryDirectory: URL, options: [String: Any], chapters: [String]? = nil) throws -> String {
     let file = temporaryDirectory.appendingPathComponent("citation-" + UUID().uuidString + ".html")
     defer { try? FileManager.default.removeItem(at: file) }
-    try export("html5", source: source, html: "", destination: file, workingDirectory: workingDirectory, temporaryDirectory: temporaryDirectory, options: options)
+    try export("html5", source: source, html: "", destination: file, workingDirectory: workingDirectory, temporaryDirectory: temporaryDirectory, options: options, chapters: chapters)
     let html = try String(contentsOf: file, encoding: .utf8)
     let expression = try NSRegularExpression(pattern: "<body[^>]*>([\\s\\S]*)</body>")
     let match = expression.firstMatch(in: html, range: NSRange(html.startIndex..., in: html))

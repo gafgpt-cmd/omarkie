@@ -350,13 +350,19 @@ final class DocumentStore {
     }
     return nil
   }
-  func asset(_ id: String, relative: String) throws -> URL {
-    let record = try require(id)
+  func asset(_ id: String, relative: String, project: Bool = false) throws -> URL {
+    let record = project ? nil : (try require(id))
     let reference = URL(string: relative).flatMap { $0.isFileURL ? $0.path : nil } ?? relative.removingPercentEncoding ?? relative
     guard ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"].contains((reference as NSString).pathExtension.lowercased()), !reference.contains("\0") else { throw NativeFailure("图片路径不可用。") }
-    let parent = record.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? dataDirectory
+    let parent: URL
+    if project {
+      guard let chapter = tokens[id], let folder, ["md", "markdown", "mdown"].contains(chapter.pathExtension.lowercased()),
+        !reference.hasPrefix("/"), !reference.contains(":"), !reference.contains("\\") else { throw NativeFailure("知识库路径无效") }
+      parent = chapter.deletingLastPathComponent()
+      guard contained(folder, parent.appendingPathComponent(reference).standardizedFileURL) else { throw NativeFailure("知识库路径无效") }
+    } else { parent = record?.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? dataDirectory }
     let target: URL
-    if let root = yamlValue("typora-root-url", source: record.content), !root.contains("://") {
+    if let record, let root = yamlValue("typora-root-url", source: record.content), !root.contains("://") {
       let base = root.hasPrefix("/") ? URL(fileURLWithPath: root) : parent.appendingPathComponent(root)
       target = base.appendingPathComponent(reference.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).standardizedFileURL
     } else { target = (reference.hasPrefix("/") ? URL(fileURLWithPath: reference) : parent.appendingPathComponent(reference)).standardizedFileURL }

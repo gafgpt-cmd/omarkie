@@ -118,6 +118,18 @@
 - Pandoc required for document-tool PDF and all citation/letterhead exports. No plain-text or textutil substitute for these.
 - Templates persist locally; using one creates a separate draft.
 
+## Project export
+
+1. File → Document tools → Writing and export → Choose project folder.
+2. Set a numeric YAML `order:` in each chapter, e.g. `order: 10`.
+3. Set the bibliography and letterhead in the same panel. Export project as DOCX or PDF.
+4. Save outside the project folder.
+
+- Includes Markdown notes in subfolders. Lower numbers first; ties and unnumbered notes sort by relative path. Unnumbered notes come last.
+- Uses open drafts, drops each chapter's frontmatter from the output, and leaves source files untouched.
+- Relative images resolve from their chapter, inside the project only. Remote images and symlinks are not read.
+- One [Pandoc](https://pandoc.org/MANUAL.html#option--file-scope) conversion, bibliography and letterhead. Pandoc (GPL-2.0-or-later) is an external executable; no code copied.
+
 ## Reuse
 
 - Markdown parsing: existing markdown-it, MIT.

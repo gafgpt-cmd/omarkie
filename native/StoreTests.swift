@@ -231,6 +231,18 @@ func runStoreTests() throws {
         }
       }
     }
+    let projectDocx = directory.appendingPathComponent("project.docx")
+    let chapters = ["# First chapter\n\nFirst note.[^same]\n\n[^same]: First local footnote.\n", "# Second chapter\n\nSecond note.[^same]\n\n[^same]: Second local footnote.\n"]
+    let letterhead: [String: Any] = ["letterhead": ["name": "Project letterhead", "detail": "Document service"]]
+    try Interchange.export("docx", source: "", html: "", destination: projectDocx, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: letterhead, chapters: chapters)
+    let projectText = String(decoding: try Interchange.run(converter, arguments: [projectDocx.path, "--to=plain"], input: nil, directory: directory), as: UTF8.self)
+    let projectMarkup = try Interchange.renderedExport(source: "", workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: letterhead, chapters: chapters)
+    for output in [projectText, projectMarkup] {
+      let first = output.range(of: "First chapter")?.lowerBound ?? output.endIndex
+      let second = output.range(of: "Second chapter")?.lowerBound ?? output.startIndex
+      try expect(first < second, "native project export keeps chapter order")
+      try expect(output.components(separatedBy: "Project letterhead").count == 2 && output.contains("First local footnote.") && output.contains("Second local footnote."), "native project export adds one letterhead and isolates footnotes by chapter")
+    }
     let letterImage = directory.appendingPathComponent("letter-image.tex")
     let imageSource = "---\rtitle: Metadata sentinel\r---\r![Figure](data:image/png;base64," + png.base64EncodedString() + ")"
     try Interchange.export("latex", source: imageSource, html: "", destination: letterImage, workingDirectory: directory, temporaryDirectory: store.dataDirectory, options: ["letterhead": ["name": "Example Organization", "detail": "Document service"]])

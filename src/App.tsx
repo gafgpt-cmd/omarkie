@@ -652,6 +652,7 @@ export default function App() {
         key={JSON.stringify([tools.id, tools.request, session.folder])} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
         open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
+        openFolder={session.openFolder}
         change={async item => {
           if (readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
           const record = item.token ? await session.openToken(item.token) : session.documents.find(record => record.id === tools.id);
