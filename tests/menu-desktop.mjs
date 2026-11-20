@@ -38,6 +38,18 @@ async function launch() {
   });
 }
 const rich = () => page.locator(".document-editor:not([hidden]) .rich-document");
+// Chromium can drop part of a multi-character keystroke burst in the rich editor; converge on the delivered text before later assertions depend on it.
+async function typeDocument(text, expected = text) {
+  await page.keyboard.type(text);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const landed = await rich().evaluate(element => element.textContent);
+    if (landed.includes(expected)) return;
+    let overlap = 0;
+    for (let length = Math.min(expected.length, landed.length); length > 0; length--) if (landed.slice(-length) === expected.slice(0, length)) { overlap = length; break; }
+    await page.keyboard.type(overlap ? expected.slice(overlap) : text);
+  }
+  throw new Error(`Keystroke burst did not converge to "${expected}"`);
+}
 async function menu(group, name) {
   await page.mouse.move(0, 0);
   const more = page.getByRole("button", { name: t("更多操作"), exact: true });
@@ -334,7 +346,7 @@ try {
     await command("preferences");
     await preferences().getByLabel(t("自动配对括号与引号"), { exact: true }).setChecked(paired, { force: true });
     await preferences().getByRole("button", { name: "Done", exact: true }).click({ force: true });
-    await rich().focus(); await page.keyboard.press("End"); await page.keyboard.type("(");
+    await rich().focus(); await page.keyboard.press("End"); await typeDocument("(", paired ? "()" : "(");
     const text = await sourceText();
     assert.equal(text.includes("()"), paired);
     pass(`Auto-pair: ${paired}`, "Typing creates a closing bracket only when enabled");
@@ -509,14 +521,14 @@ try {
   await expect(autosave).toHaveAttribute("aria-checked", "true");
   await autosave.click({ force: true }); await expect(autosave).toHaveAttribute("aria-checked", "false");
   await page.keyboard.press("Escape");
-  await rich().getByText("Audit text", { exact: true }).click({ force: true }); await page.keyboard.press("End"); await page.keyboard.type(" paused");
+  await rich().getByText("Audit text", { exact: true }).click({ force: true }); await page.keyboard.press("End"); await typeDocument(" paused");
   await page.waitForTimeout(1600);
   assert.equal(await readFile(autosaveFile, "utf8"), "Audit text\n");
   await page.reload(); await expect(rich()).toContainText("paused");
   await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
   await expect(autosave).toHaveAttribute("aria-checked", "false"); await page.keyboard.press("Escape");
   await command("save"); await expect.poll(() => readFile(autosaveFile, "utf8")).toContain("paused");
-  await rich().getByText(/Audit text/).first().click({ force: true }); await page.keyboard.press("End"); await page.keyboard.type(" resumed");
+  await rich().getByText(/Audit text/).first().click({ force: true }); await page.keyboard.press("End"); await typeDocument(" resumed");
   await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
   await autosave.click({ force: true }); await expect(autosave).toHaveAttribute("aria-checked", "true"); await page.keyboard.press("Escape");
   await expect.poll(() => readFile(autosaveFile, "utf8")).toContain("resumed");
@@ -528,7 +540,7 @@ try {
   pass("More > About Omarkie", "More menu opens actual version dialog");
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
     const original = await fixture("Audit text\n");
-    await rich().click({ force: true }); await page.keyboard.press("End"); await page.keyboard.type(" saved");
+    await rich().click({ force: true }); await page.keyboard.press("End"); await typeDocument(" saved");
     await command("save", route);
     await expect.poll(() => readFile(original, "utf8")).toContain("saved");
     const copy = path.join(data, `save-as-${route}.md`);
@@ -539,7 +551,7 @@ try {
     await rich().focus(); await command("new", route);
     await expect(rich()).not.toContainText("saved");
     await expect(page.locator(".document-editor")).toHaveCount(documentCount + 1);
-    await rich().focus(); await page.keyboard.type("New saved");
+    await rich().focus(); await typeDocument("New saved");
     const untitled = path.join(data, `save-new-${route}.md`);
     await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, untitled);
     await command("save", route);
@@ -551,7 +563,7 @@ try {
     pass(`Open: ${route}`, "Selected file is displayed");
   }
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
-    await fixture("Audit text\n"); await rich().click({ force: true }); await page.keyboard.press("End"); await page.keyboard.type(" changed");
+    await fixture("Audit text\n"); await rich().click({ force: true }); await page.keyboard.press("End"); await typeDocument(" changed");
     await command("undo", route); await expect(rich()).not.toContainText("changed");
     await command("redo", route); await expect(rich()).toContainText("changed");
     pass(`Undo and Redo: ${route}`, "Undo removes the edit and Redo restores it");
