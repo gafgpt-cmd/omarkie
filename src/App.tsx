@@ -29,6 +29,8 @@ import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
 const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
+import type { FlashcardPanel } from "./components/Flashcards";
+const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -93,6 +95,7 @@ export default function App() {
     );
   const [cursor, setCursor] = useState({ line: 1, column: 1 }),
     [about, setAbout] = useState(false);
+  const [flashcardPanel, setFlashcardPanel] = useState<(FlashcardPanel & { id: string; path: string; folder: string }) | null>(null);
   const editor = () => editors.current.get(session.activeId);
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
@@ -259,6 +262,13 @@ export default function App() {
   async function importDocument() {
     try { const imported = await host.importDocument(); if (!imported) return; const content = imported.markdown ?? (await import("./editor/clipboard")).htmlToMarkdown(imported.html || ""), record = { id: crypto.randomUUID(), path: null, name: imported.name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }
     catch (e) { session.setMessage((e as Error).message); }
+  }
+  const flashcardsVisible = !!flashcardPanel && flashcardPanel.id === active?.id
+    && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
+  const closeFlashcards = () => setFlashcardPanel(null);
+  function openFlashcards(target?: FlashcardPanel["target"]) {
+    if (window.desktop?.readingStore && active?.path && session.folder)
+      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
@@ -607,6 +617,10 @@ export default function App() {
           </button>
         </div>
       )}
+      {flashcardsVisible && active && flashcardPanel && <Suspense fallback={null}><Flashcards
+        id={active.id} content={active.content} panel={flashcardPanel}
+        close={closeFlashcards}
+      /></Suspense>}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
         key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}

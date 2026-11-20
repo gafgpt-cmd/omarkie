@@ -52,6 +52,18 @@
 - Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
+## Study cards (L5)
+
+- Open a folder and a saved note in the Electron app. Select **Reading Layers → Cards**.
+- **Make cards from highlights and notes** drafts up to 10 per note. Aim for 5–10; fewer distinct sources produce fewer cards.
+- Edit the questions and answers. Save only the selected cards.
+- For a single card, select text in Reading Layers and choose **Make it a card**. Opening the composer saves nothing.
+- **Test me** queues new and due cards across the open folder. Recall before revealing; then rate from 0 to 5.
+- Ratings below 4 repeat in the session. Ratings below 3 restart the [SM-2](https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method) schedule.
+- Cards and ratings stay in `.omarkie/store.jsonl`. The schedule is replayed from ratings. Source Markdown stays untouched.
+- Use **Export notes and cards** in the margin notes panel for a Markdown copy.
+- [Obsidian Spaced Repetition](https://stephenmwangi.com/obsidian-spaced-repetition/flashcards/reviewing/) (MIT): review UI ideas only; no code copied.
+
 ## Bounds
 
 - Selected folder only; no symlink traversal or ancestor-vault grants.
