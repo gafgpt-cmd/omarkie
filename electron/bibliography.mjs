@@ -58,14 +58,6 @@ function exportCSL(entries) {
   return entries.length ? JSON.stringify(entries.map(({ "omarkie-pdf": _attachment, ...entry }) => entry)) : "";
 }
 
-// M9 uses the same vault binding and the same CSL text as document export.
-export async function readVaultBibliography(dataDir, vaultRoot) {
-  if (!vaultRoot) return "";
-  const { raw, source } = await readPreference(preference(dataDir, await realpath(vaultRoot)));
-  const latest = source ? await readExport(source).catch(() => raw) : raw;
-  return latest ? exportCSL(parseCSL(latest, true)) : "";
-}
-
 export class VaultBibliography {
   #state;
   #entries = new Map();
@@ -119,7 +111,7 @@ export class VaultBibliography {
       const title = typeof entry.title === "string" ? entry.title.slice(0, 300) : "";
       const authors = Array.isArray(entry.author) ? entry.author.slice(0, 5).map(author => author?.family || author?.literal).filter(name => typeof name === "string").join(", ").slice(0, 160) : "";
       const paths = state.source && Array.isArray(entry["omarkie-pdf"]) ? entry["omarkie-pdf"].slice(0, 16).filter(pdf => absoluteLocal(pdf) && /\.pdf$/i.test(pdf)) : [];
-      return [entry.id, { id: entry.id, title, authors, terms: `${entry.id} ${title} ${authors}`.toLowerCase(), paths }];
+      return [entry.id, { id: entry.id, title, authors, terms: `${entry.id} ${title} ${authors}`.normalize().toLowerCase(), paths }];
     }));
     if (this.#state?.source !== state.source) {
       this.#stop?.(); this.#stop = undefined;
@@ -158,8 +150,8 @@ export class VaultBibliography {
   }
 
   #suggest(query) {
-    if (typeof query !== "string" || !/^[\w.:+/-]{0,256}$/.test(query)) return [];
-    const term = query.toLowerCase(), first = [], rest = [];
+    if (typeof query !== "string" || query.length > 256 || /[^\p{L}\p{M}\p{N}_.:+/-]/u.test(query)) return [];
+    const term = query.normalize().toLowerCase(), first = [], rest = [];
     for (const entry of this.#entries.values()) {
       const list = entry.id.toLowerCase().startsWith(term) ? first : entry.terms.includes(term) ? rest : null;
       if (list && list.length < 8) list.push({ id: entry.id, title: entry.title, authors: entry.authors });

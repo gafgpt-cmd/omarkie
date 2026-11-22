@@ -20,8 +20,8 @@ final class NativeReadingStore {
   }
 
   private struct Snapshot {
-    var revision: Revision
-    var offset: Int
+    let revision: Revision
+    let offset: Int
     let entries: JSValue
     var indexed = false
   }
@@ -54,6 +54,26 @@ final class NativeReadingStore {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
         continuation.resume(with: Result { try self.operate(scope, request, current) })
+      }
+    }
+  }
+
+  func moveEntries(_ folder: URL?, execute: @escaping () throws -> [String: String]) async throws -> [String: String] {
+    try await withCheckedThrowingContinuation { continuation in
+      queue.async {
+        continuation.resume(with: Result {
+          guard let folder else { return try DispatchQueue.main.sync(execute: execute) }
+          let root = canonicalFileURL(folder)
+          return try self.transaction(root, writing: false, moving: true) { state, append in
+            let change = try DispatchQueue.main.sync(execute: execute)
+            if state != nil, let from = change["fromPath"], let to = change["toPath"], from != to,
+               from.hasPrefix(root.path + "/"), to.hasPrefix(root.path + "/") {
+              let offset = root.path.count + 1
+              try append(["move": ["from": String(from.dropFirst(offset)), "to": String(to.dropFirst(offset))]])
+            }
+            return change
+          }
+        })
       }
     }
   }
@@ -119,59 +139,75 @@ final class NativeReadingStore {
     let item = validated.forProperty("item")!
     let writing = !item.isUndefined
     let empty: Any = exporting ? "\n" : [] as [[String: Any]]
-    var source = stat()
-    guard current(), canonicalFileURL(scope.root).path == scope.root.path, canonicalFileURL(scope.file).path == scope.file.path,
-          lstat(scope.file.path, &source) == 0, (source.st_mode & S_IFMT) == S_IFREG else { throw NativeFailure(Self.unsafe) }
-    let root = open(scope.root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    return try transaction(scope.root, writing: writing) { state, append in
+      var source = stat()
+      guard current(), canonicalFileURL(scope.file).path == scope.file.path,
+            lstat(scope.file.path, &source) == 0, (source.st_mode & S_IFMT) == S_IFREG else { throw NativeFailure(Self.unsafe) }
+      guard let state else { return empty }
+      if writing {
+        guard var value = item.toDictionary() as? [String: Any] else { throw NativeFailure(Self.invalid) }
+        value["document"] = scope.document; value["at"] = timestamp.string(from: Date())
+        try append(["entry": value])
+        return value
+      }
+      let result = try call("query", [state.entries, scope.document, validated])
+      if exporting { return try call("readingMarkdown", [result]).toString() ?? "\n" }
+      return result.toArray() ?? []
+    }
+  }
+
+  private func transaction<T>(_ folder: URL, writing: Bool, moving: Bool = false,
+                              _ run: (Snapshot?, ([String: Any]) throws -> Void) throws -> T) throws -> T {
+    let create = writing || moving
+    let noAppend: ([String: Any]) throws -> Void = { _ in throw NativeFailure(Self.unsafe) }
+    guard canonicalFileURL(folder).path == folder.path else { throw NativeFailure(Self.unsafe) }
+    let root = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard root >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(root) }
-    if writing, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
+    if create, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
     let directory = openat(root, ".omarkie", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    if directory < 0, !writing, errno == ENOENT { return empty }
+    if directory < 0, !create, errno == ENOENT { return try run(nil, noAppend) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
+    let deadline = ProcessInfo.processInfo.systemUptime + 3
+    while mkdirat(directory, "journal.lock", 0o700) != 0 {
+      guard errno == EEXIST, ProcessInfo.processInfo.systemUptime < deadline else { throw NativeFailure(Self.unsafe) }
+      Thread.sleep(forTimeInterval: 0.02)
+    }
+    defer { _ = unlinkat(directory, "journal.lock", AT_REMOVEDIR) }
     let hasIndex = try Self.indexExists(directory)
-    let flags = writing ? O_RDWR | O_APPEND | O_CREAT : O_RDONLY
+    let flags = writing ? O_RDWR | O_APPEND | O_CREAT : moving ? O_RDWR | O_APPEND : O_RDONLY
     let descriptor = openat(directory, "store.jsonl", flags | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
-    if descriptor < 0, !writing, errno == ENOENT { return empty }
+    if descriptor < 0, !writing, errno == ENOENT { return try run(nil, noAppend) }
     guard descriptor >= 0 else { throw NativeFailure(Self.unsafe) }
     let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
-    let revision = try Self.revision(descriptor)
-    var state: Snapshot
-    if let snapshot, snapshot.root == scope.root, snapshot.state.revision == revision {
-      state = snapshot.state
-    } else {
+    func load() throws -> Snapshot {
+      let revision = try Self.revision(descriptor)
+      if let snapshot, snapshot.root == folder, snapshot.state.revision == revision { return snapshot.state }
+      try handle.seek(toOffset: 0)
       let bytes = try handle.readToEnd() ?? Data(), end = bytes.lastIndex(of: 10).map { $0 + 1 } ?? 0
       guard try Self.revision(descriptor) == revision else { throw NativeFailure(Self.unsafe) }
       guard let committed = String(bytes: bytes.prefix(end), encoding: .utf8) else { throw NativeFailure(Self.damaged) }
-      state = Snapshot(revision: revision, offset: end, entries: try call("readJournal", [committed], error: Self.damaged))
+      return Snapshot(revision: revision, offset: end, entries: try call("readJournal", [committed], error: Self.damaged))
     }
-    var entry: [String: Any]?
-    if writing {
-      guard var value = item.toDictionary() as? [String: Any] else { throw NativeFailure(Self.invalid) }
-      value["document"] = scope.document; value["at"] = timestamp.string(from: Date())
-      var bytes = try JSONSerialization.data(withJSONObject: ["v": 1, "entry": value])
+    var state = try load()
+    let result = try run(state) { record in
+      var row = record; row["v"] = 1
+      var bytes = try JSONSerialization.data(withJSONObject: row)
       bytes.append(10)
-      guard current(), try Self.revision(descriptor) == revision else { throw NativeFailure(Self.unsafe) }
-      if revision.size != state.offset { try handle.truncate(atOffset: UInt64(state.offset)) }
+      guard try Self.revision(descriptor) == state.revision else { throw NativeFailure(Self.unsafe) }
+      if state.revision.size != state.offset { try handle.truncate(atOffset: UInt64(state.offset)) }
       try handle.write(contentsOf: bytes)
       try handle.synchronize()
-      state.revision = try Self.revision(descriptor)
-      state.offset += bytes.count
-      try call("indexEntry", [state.entries, value])
-      state.indexed = false
-      entry = value
+      state = try load()
     }
     if !state.indexed || !hasIndex {
       // The journal commit remains valid if the derived cache cannot be written.
       do { try writeIndex(directory, state); state.indexed = true } catch {}
     }
-    snapshot = (scope.root, state)
-    if let entry { return entry }
-    let result = try call("query", [state.entries, scope.document, validated])
-    if exporting { return try call("readingMarkdown", [result]).toString() ?? "\n" }
-    return result.toArray() ?? []
+    snapshot = (folder, state)
+    return result
   }
 
   static func export(_ markdown: String, _ at: URL) throws {

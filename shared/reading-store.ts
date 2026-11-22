@@ -14,11 +14,8 @@ export interface ReadingAnchor extends ReadingTarget {
 
 export type ReadingItem<A = ReadingTarget> = { id: string } & (
   | { type: "note"; body: string; anchor: A }
-  | { type: "highlight"; text: string; anchor?: A }
   | { type: "card"; front: string; back: string; anchor?: A }
   | { type: "answer"; cardId: string; rating: number }
-  | { type: "schedule"; cardId: string; dueAt: string; intervalDays: number; repetitions: number; easeFactor: number }
-  | { type: "payload"; markdown: string; anchor?: A }
 );
 
 export type ReadingEntry = ReadingItem<ReadingAnchor> & { document: string; at: string };

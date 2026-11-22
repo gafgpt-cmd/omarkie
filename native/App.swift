@@ -318,7 +318,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             let answer = try await host.webView.callAsyncJavaScript("return await window.__omarkie.fileOperation('prepare', change)", arguments: ["change": ["removedPath": operation["action"] == "trash" ? operation["path"] ?? "" : ""]], in: nil, contentWorld: .page)
             guard answer as? Bool == true else { throw NativeFailure("文件操作已取消。") }
           }
-          let change = try owner.workspace.execute(operation, store: store)
+          let change: [String: String]
+          if ["rename", "move", "undo"].contains(operation["action"] ?? "") {
+            change = try await owner.readingStore.moveEntries(store.folder) { try self.owner.workspace.execute(operation, store: self.store) }
+          } else {
+            change = try owner.workspace.execute(operation, store: store)
+          }
           try? owner.workspace.updateRecent(change)
           if let from = change["fromPath"], let to = change["toPath"] {
             owner.recentClosedFiles = owner.recentClosedFiles.map { item in (URL(fileURLWithPath: item.url.path == from || item.url.path.hasPrefix(from + "/") ? to + item.url.path.dropFirst(from.count) : item.url.path), item.group) }

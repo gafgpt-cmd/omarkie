@@ -18,11 +18,13 @@ await writeFile(path.join(directory, "session.json"), JSON.stringify({ version: 
   diskHash: createHash("sha256").update(note).digest("hex"), bom: false, encoding: "utf-8", lineEnding: "\r\n",
 }] }));
 const requests = [];
+let pendingResponse;
 const server = createServer(async (request, response) => {
   let form = "";
   for await (const chunk of request.setEncoding("utf8")) form += chunk;
   const body = new URLSearchParams(form), text = body.get("text");
   requests.push([request.method, request.url, text, body.get("language")]);
+  if (pendingResponse) await pendingResponse;
   response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ matches: [{
     offset: text?.indexOf("are"), length: 3, message: "Use a singular verb.", replacements: [{ value: "is" }],
   }] }));
@@ -85,6 +87,28 @@ try {
   const toggle = page.locator(".source-toggle");
   await toggle.click(); await expect(page.locator(".source-surface:not([hidden]) .cm-content")).toBeVisible();
   await expect.poll(marks).toEqual(["are"]);
+  const source = page.locator(".source-surface:not([hidden]) .cm-content");
+  await source.locator(".cm-line").filter({ hasText: "are" }).click();
+  await page.keyboard.press("End"); await page.keyboard.type("x");
+  await expect(page.getByLabel("Grammar findings")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(source.locator(".cm-line").filter({ hasText: "are" })).not.toContainText("x");
+  await expect(page.getByLabel("Grammar findings")).toHaveCount(0);
+  await expect.poll(marks).toEqual([]);
+  let respond;
+  pendingResponse = new Promise(resolve => { respond = resolve; });
+  try {
+    await check.click(); await confirm.getByRole("button", { name: "Send note" }).click();
+    await expect.poll(() => requests.length).toBe(2);
+    await source.locator(".cm-line").filter({ hasText: "are" }).click();
+    await page.keyboard.press("End"); await page.keyboard.type("x");
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(source.locator(".cm-line").filter({ hasText: "are" })).not.toContainText("x");
+  } finally { respond(); pendingResponse = undefined; }
+  await expect(check).toBeEnabled();
+  await expect(page.getByLabel("Grammar findings")).toHaveCount(0);
+  await check.click(); await confirm.getByRole("button", { name: "Send note" }).click();
+  await expect.poll(marks).toEqual(["are"]);
   await toggle.click(); await expect(rich).toBeVisible();
   await expect.poll(marks).toEqual(["are"]);
   const { x, y } = await page.evaluate(() => {
@@ -101,7 +125,7 @@ try {
   await openPreferences(); await enable.uncheck(); await page.keyboard.press("Escape");
   await expect(check).toHaveCount(0);
   await rich.locator("p").filter({ hasText: "are" }).click(); await page.keyboard.type("x");
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 3);
   assert.equal(await readFile(file, "utf8"), note);
   assert.deepEqual(errors, []);
   console.log("PASS: no startup/edit requests; explicit POST; rich/source marks; quick fix and undo");

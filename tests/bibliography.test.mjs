@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtemp, mkdir, realpath, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { VaultBibliography, readVaultBibliography } from "../electron/bibliography.mjs";
+import { VaultBibliography } from "../electron/bibliography.mjs";
 import { citationAt, citationDraft } from "../src/editor/citationSyntax.ts";
 
 const entry = (id, extra) => ({ id, type: "book", title: `Evidence for ${id}`, ...extra });
@@ -11,6 +11,8 @@ const entry = (id, extra) => ({ id, type: "book", title: `Evidence for ${id}`, .
 test("citation replacement preserves neighboring Markdown and ignores literal and link forms", () => {
   assert.deepEqual(citationDraft("Text [@preSuffix], tail", 10), { from: 5, to: 17, at: 10, query: "pre" });
   assert.deepEqual(citationDraft("[@", 2), { from: 0, to: 2, at: 2, query: "" });
+  assert.deepEqual(citationDraft("[@García", 8), { from: 0, to: 8, at: 8, query: "García" });
+  assert.equal(citationAt("[@García]", 5), undefined);
   for (const source of ["\\[@abc]", "[[@abc]]", "[@abc](url)", "[@abc][ref]"]) {
     const at = source.indexOf("@") + 4;
     assert.equal(citationDraft(source, at), undefined, source);
@@ -30,8 +32,10 @@ test("vault access isolates imports and a live export survives malformed and rep
   const first = JSON.stringify([entry("manual")]);
   await library.run("save", first);
   await assert.rejects(library.run("save", JSON.stringify([entry("dupe"), entry("dupe")])));
-  assert.equal(await readVaultBibliography(data, vault), first);
-  assert.equal(await readVaultBibliography(data, other), "");
+  assert.equal((await library.run("info")).csl, first);
+  const isolated = new VaultBibliography(data, other, () => {});
+  t.after(() => isolated.close());
+  assert.equal((await isolated.run("info")).csl, "");
 
   const source = path.join(scratch, "zotero.json"), replacement = path.join(scratch, "new.json");
   const pdf = path.join(scratch, "Evidence Résumé.pdf"), impostor = path.join(scratch, "fake.pdf");
@@ -42,19 +46,23 @@ test("vault access isolates imports and a live export survives malformed and rep
   assert.equal(await library.run("pdf", "zotero"), pdf);
   assert.equal(await library.run("pdf", "not-pdf"), null);
   assert.equal(await library.run("pdf", pdf), null);
-  assert.doesNotMatch(await readVaultBibliography(data, vault), /omarkie-pdf|Résumé/);
+  assert.doesNotMatch((await library.run("info")).csl, /omarkie-pdf|Résumé/);
   async function waitForChange(write) {
-    const signal = new Promise(resolve => { notify = resolve; });
-    await write();
-    await signal;
+    let deadline;
+    const signal = new Promise((resolve, reject) => {
+      notify = resolve;
+      deadline = setTimeout(() => reject(new Error("Zotero change was not observed")), 5000);
+    });
+    try { await Promise.all([write(), signal]); }
+    finally { clearTimeout(deadline); notify = undefined; }
   }
   await waitForChange(() => writeFile(source, "["));
   assert.equal((await library.run("info")).stale, true);
   assert.deepEqual((await library.run("suggest", "zotero")).map(match => match.id), ["zotero"]);
-  const latest = JSON.stringify([entry("replacement", { author: [{ family: "Rivera" }] })]);
+  const latest = JSON.stringify([entry("replacement", { author: [{ family: "García" }], title: "研究方法" })]);
   await writeFile(replacement, latest);
   await waitForChange(() => rename(replacement, source));
-  assert.deepEqual((await library.run("suggest", "riv")).map(match => match.id), ["replacement"]);
+  for (const query of ["Garci\u0301a", "研究", "rep"]) assert.deepEqual((await library.run("suggest", query)).map(match => match.id), ["replacement"]);
   assert.equal((await library.run("info")).stale, false);
   library.close();
   const reopened = new VaultBibliography(data, vault, () => {});
@@ -62,7 +70,7 @@ test("vault access isolates imports and a live export survives malformed and rep
   assert.equal((await reopened.run("info")).csl, latest);
   await reopened.run("disconnect");
   await writeFile(source, "[]");
-  assert.equal(await readVaultBibliography(data, vault), latest);
+  assert.equal((await reopened.run("info")).csl, latest);
   await reopened.run("clear");
-  assert.equal(await readVaultBibliography(data, vault), "");
+  assert.equal((await reopened.run("info")).csl, "");
 });

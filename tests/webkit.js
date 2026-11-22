@@ -87,6 +87,13 @@ try {
   check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
   const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });
   check(!unknown.ok, "native reading store rejects an unregistered document");
+  const vault = (await window.desktop.restore()).value.folder;
+  const renamed = await window.desktop.fileOperation({ action: "rename", path: `${vault}/WebKit-fixture.md`, name: "WebKit-renamed.md" });
+  const movedEntries = await store({ action: "list" });
+  check(renamed.ok && movedEntries.ok && movedEntries.value.length === 3 && movedEntries.value.every(item => item.document === "WebKit-renamed.md"), "native rename carries the note, card and rating");
+  const undone = await window.desktop.fileOperation({ action: "undo" });
+  const restoredEntries = await store({ action: "list" });
+  check(undone.ok && restoredEntries.ok && restoredEntries.value.length === 3 && restoredEntries.value.every(item => item.document === "WebKit-fixture.md"), "native rename undo restores the reading paths");
   const payload = { baseUrl: payloadBaseURL, confirmedOrigin: new URL(payloadBaseURL).origin, model: "native-fixture", source: "Synthetic source paragraph." };
   const rejected = await window.desktop.payloadRequest({ ...payload, confirmedOrigin: "https://example.invalid" });
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");
@@ -104,9 +111,10 @@ try {
   const spoken = await window.desktop.readAloud(text);
   const tooLong = await window.desktop.readAloud(text + "x");
   check(stopped.ok && spoken.ok && !tooLong.ok, "native speech accepts 256,000 UTF-16 units and rejects 256,001");
-  const vault = (await window.desktop.restore()).value.folder;
   const linked = await window.desktop.bibliography(vault, "link");
   const suggestions = await window.desktop.bibliography(vault, "suggest", "wat");
+  const authorSuggestions = await window.desktop.bibliography(vault, "suggest", "Garci\u0301a");
+  check(authorSuggestions.ok && authorSuggestions.value[0]?.id === "watched", "native citation suggestions find Unicode authors");
   const wrongVault = await window.desktop.bibliography(`${vault}/unopened`, "info");
   check(linked.ok && linked.value && suggestions.ok && suggestions.value[0].id === "watched" && !wrongVault.ok, "native bridge authorizes only the open bibliography vault");
   const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver" };

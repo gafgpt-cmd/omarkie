@@ -18,7 +18,7 @@ const item = (id, title, extra) => ({ id, type: "article-journal", title, ...ext
 await Promise.all([
   writeFile(note, original),
   writeFile(manual, JSON.stringify([item("initial", "Imported reference")])),
-  writeFile(zotero, JSON.stringify([item("initial", "Watched reference", { "omarkie-pdf": [pdf] })])),
+  writeFile(zotero, JSON.stringify([item("initial", "Watched reference", { author: [{ family: "García" }], "omarkie-pdf": [pdf] })])),
   writeFile(pdf, "%PDF-1.7\n"),
   writeFile(path.join(profile, "session.json"), JSON.stringify({ version: 1, folder: vault, activeId: "note", documents: [{ id: "note", path: note, name: "note.md", content: original, savedContent: original, diskHash: createHash("sha256").update(original).digest("hex"), encoding: "utf-8", bom: false, lineEnding: "\n" }] })),
 ]);
@@ -70,7 +70,7 @@ try {
   await dismiss();
 
   const richLine = rich.getByText("Rich citation:", { exact: false });
-  await richLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@ini");
+  await richLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@García");
   await expect(suggestions.getByRole("option", { name: /initial.*Watched reference/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(richLine).toContainText("[@initial]");
@@ -97,18 +97,18 @@ try {
   await writeFile(zotero, "[");
   await expect(panel.getByRole("alert")).toContainText("Using the last valid bibliography");
   await expect(bibliography).toHaveValue(/Watched reference/);
-  await writeFile(replacement, JSON.stringify([item("updated", "Live replacement")]));
+  await writeFile(replacement, JSON.stringify([item("updated", "Live replacement 研究方法")]));
   await rename(replacement, zotero);
   await expect(bibliography).toHaveValue(/Live replacement/);
   await expect(panel.getByRole("alert")).toHaveCount(0);
   await dismiss();
   await page.locator(".source-toggle").click();
   const sourceLine = source.getByText("Source citation:", { exact: false });
-  await sourceLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@upd");
-  await expect(sourceLine).toContainText("[@upd");
+  await sourceLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@研究");
+  await expect(sourceLine).toContainText("[@研究");
   await expect(suggestions.getByRole("option", { name: /updated.*Live replacement/ })).toBeVisible();
   await page.keyboard.press("Tab"); await expect(sourceLine).toContainText("[@updated]");
-  await page.keyboard.press("ControlOrMeta+z"); await expect(sourceLine).toContainText("[@upd");
+  await page.keyboard.press("ControlOrMeta+z"); await expect(sourceLine).toContainText("[@研究");
   await expect(sourceLine).not.toContainText("[@updated]");
   assert.deepEqual(requests, []);
   assert.deepEqual(errors, []);

@@ -49,6 +49,7 @@
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** saves a Markdown copy for the open vault. It never overwrites a file.
 - Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
+- If a crash leaves `.omarkie/journal.lock`, close all Omarkie instances before removing that empty lock directory.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
 ## Study cards (L5)

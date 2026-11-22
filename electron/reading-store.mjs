@@ -1,12 +1,13 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { t } from "./i18n.mjs";
 import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 
-const { validate, indexEntry, readJournal, allEntries, query, readingMarkdown } = readingCore(digest);
+const { validate, readJournal, allEntries, query, readingMarkdown } = readingCore(digest);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -48,7 +49,9 @@ async function load(log, handle) {
   const stat = regular(await handle.stat({ bigint: true }));
   const signature = fingerprint(stat), existing = cache.get(log);
   if (signature === existing?.signature) return existing;
-  const bytes = await handle.readFile(), offset = bytes.lastIndexOf(10) + 1;
+  const chunks = [];
+  for await (const chunk of handle.createReadStream({ start: 0, autoClose: false })) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks), offset = bytes.lastIndexOf(10) + 1;
   if (fingerprint(await handle.stat({ bigint: true })) !== signature) throw unsafe();
   let entries;
   try { entries = readJournal(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, offset))); }
@@ -74,40 +77,70 @@ async function writeIndex(root, directory, file, index) {
   }
 }
 
-async function operate({ root, document, current }, request) {
+async function locked(root, create, run) {
+  const directory = path.join(root, ".omarkie"), lock = path.join(directory, "journal.lock");
+  if (!await directoryAt(root, directory, create)) return run(false);
+  const deadline = performance.now() + 3000;
+  for (;;) {
+    try { await mkdir(lock, { mode: 0o700 }); break; }
+    catch (error) { if (error.code !== "EEXIST" || performance.now() >= deadline) throw unsafe(); }
+    await delay(20);
+  }
+  try { return await run(true); } finally { await rmdir(lock); }
+}
+
+async function transaction(root, writing, run, moving = false) {
   const directory = path.join(root, ".omarkie"), log = path.join(directory, "store.jsonl"), file = path.join(directory, "index.json");
+  const metadata = regular(await info(log));
+  if (!metadata && !writing) return run(null);
+  const snapshot = regular(await info(file));
+  const flags = writing ? constants.O_CREAT | constants.O_RDWR | constants.O_APPEND : moving ? constants.O_RDWR | constants.O_APPEND : constants.O_RDONLY;
+  const handle = await open(log, flags | noFollow, 0o600);
+  try {
+    let index = await load(log, handle);
+    const result = await run(index.entries, async record => {
+      const before = regular(await handle.stat({ bigint: true }));
+      if (fingerprint(before) !== index.signature) throw unsafe();
+      if (before.size !== BigInt(index.offset)) await handle.truncate(index.offset);
+      await handle.writeFile(JSON.stringify({ v: 1, ...record }) + "\n");
+      await handle.sync();
+      index = await load(log, handle);
+    });
+    if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
+    return result;
+  } finally { await handle.close(); }
+}
+
+export async function moveReadingEntries(folder, execute) {
+  if (!folder) return execute();
+  const root = await realpath(folder);
+  return locked(root, true, () => transaction(root, false, async (entries, append) => {
+    const change = await execute();
+    if (entries && change.fromPath && within(root, change.fromPath) && within(root, change.toPath)) {
+      const relative = file => path.relative(root, file).split(path.sep).join("/");
+      const from = relative(change.fromPath), to = relative(change.toPath);
+      if (from !== to) await append({ move: { from, to } });
+    }
+    return change;
+  }, true));
+}
+
+async function operate({ root, document, current }, request) {
   let validated;
   try { validated = validate(request); } catch { throw invalid(); }
   const { item } = validated, writing = !!item;
-  if (!current()) throw unsafe();
-  if (!await directoryAt(root, directory, writing)) return [];
-  const metadata = regular(await info(log));
-  if (!metadata && !writing) return [];
-  const snapshot = regular(await info(file));
-  if (!current()) throw unsafe();
-  const flags = writing ? constants.O_CREAT | constants.O_RDWR | constants.O_APPEND : constants.O_RDONLY;
-  const handle = await open(log, flags | noFollow, 0o600);
-  try {
-    const index = await load(log, handle);
-    if (writing) {
-      if (!current()) throw unsafe();
-      const entry = { ...item, document, at: new Date().toISOString() }, row = Buffer.from(JSON.stringify({ v: 1, entry }) + "\n", "utf8");
-      const before = await handle.stat({ bigint: true });
-      if (fingerprint(before) !== index.signature || !current()) throw unsafe();
-      if (before.size !== BigInt(index.offset)) await handle.truncate(index.offset);
-      await handle.writeFile(row);
-      await handle.sync();
-      index.signature = fingerprint(await handle.stat({ bigint: true }));
-      index.offset += row.length;
-      indexEntry(index.entries, entry);
-      index.dirty = true;
-      // A failed cache replacement cannot undo a durable journal append.
-      await writeIndex(root, directory, file, index).catch(() => {});
+  return locked(root, writing, exists => {
+    if (!exists) return [];
+    return transaction(root, writing, async (entries, append) => {
+      const source = path.join(root, document);
+      if (!current() || await realpath(source) !== source || !(await lstat(source)).isFile() || !current()) throw unsafe();
+      if (!entries) return [];
+      if (!item) return query(entries, document, validated);
+      const entry = { ...item, document, at: new Date().toISOString() };
+      await append({ entry });
       return entry;
-    }
-    if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
-    return query(index.entries, document, validated);
-  } finally { await handle.close(); }
+    });
+  });
 }
 
 export async function readingStore(store, id, request) {

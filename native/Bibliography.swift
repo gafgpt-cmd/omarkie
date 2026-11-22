@@ -88,7 +88,7 @@ import Foundation
       let title = String((item["title"] as? String ?? "").prefix(300))
       let authors = String(((item["author"] as? [[String: Any]]) ?? []).prefix(5).compactMap { ($0["family"] ?? $0["literal"]) as? String }.joined(separator: ", ").prefix(160))
       let attachments = state.source == nil ? [] : Array((item["omarkie-pdf"] as? [String] ?? []).prefix(16))
-      return Reference(id: id, title: title, authors: authors, terms: "\(id) \(title) \(authors)".lowercased(), attachments: attachments)
+      return Reference(id: id, title: title, authors: authors, terms: "\(id) \(title) \(authors)".precomposedStringWithCanonicalMapping.lowercased(), attachments: attachments)
     }
     return Vault(file: file, state: state, csl: csl, entries: entries, revision: revision)
   }
@@ -170,8 +170,8 @@ import Foundation
     case "disconnect": try save(State(raw: vault.state.raw), root: root, file: vault.file)
     case "clear": try save(State(), root: root, file: vault.file)
     case "suggest":
-      guard let value, value.range(of: #"\A[A-Za-z0-9_.:+/-]{0,256}\z"#, options: .regularExpression) != nil else { return [] as [[String: String]] }
-      let term = value.lowercased()
+      guard let value, value.utf16.count <= 256, value.range(of: #"[^\p{L}\p{M}\p{N}_.:+/-]"#, options: .regularExpression) == nil else { return [] as [[String: String]] }
+      let term = value.precomposedStringWithCanonicalMapping.lowercased()
       var first = [Reference](), rest = [Reference]()
       for entry in vault.entries {
         if entry.id.lowercased().hasPrefix(term) { first.append(entry); if first.count == 8 { break } }

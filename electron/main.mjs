@@ -289,7 +289,10 @@ const handlers = {
     try {
       if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
       if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
-      const change = await workspace.execute(operation, store, file => shell.trashItem(file)); workspace.apply(change, store);
+      const execute = () => workspace.execute(operation, store, file => shell.trashItem(file));
+      const change = ["rename", "move", "undo"].includes(operation.action)
+        ? await (await import("./reading-store.mjs")).moveReadingEntries(store.folder, execute) : await execute();
+      workspace.apply(change, store);
       await prepareOperation("commit", change); return change;
     } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
   },

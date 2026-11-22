@@ -220,7 +220,13 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       if (!oversizedNotice.current) { oversizedNotice.current = true; callbacks.current.onError(t("文档过大，已切换到源码模式。")); }
       return false;
     }
+    const editRevision = useRef(0);
+    const [grammarRevision, setGrammarRevision] = useState(0);
+    function advanceEditRevision() {
+      setGrammarRevision(++editRevision.current);
+    }
     const publish = () => {
+      advanceEditRevision();
       if (activeMode.current && !richAllowed(model.current!)) setMode(false);
       callbacks.current.onChange(model.current!.toMarkdown());
       if (activeMode.current && citationEnabled.current && root.current?.contains(document.activeElement)) citation.current.update(model.current!.text, model.current!.selection.head);
@@ -678,6 +684,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       )
         return;
       model.current.replaceExternal(record.content, record.lineEnding);
+      advanceEditRevision();
       if (activeMode.current) rich.current?.render(false);
       else syncSource();
       historyState();
@@ -726,6 +733,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
             <GrammarCheck key={JSON.stringify([preferences.grammarUrl, preferences.grammarOrigin])}
               url={preferences.grammarUrl} approvedOrigin={preferences.grammarOrigin}
               content={record.content} mode={readyMode} readOnly={readOnly}
+              revision={grammarRevision} currentRevision={() => editRevision.current}
               snapshot={() => isComposing() ? null : model.current?.text ?? null}
               surface={() => {
                 if (activeMode.current) {

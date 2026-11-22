@@ -1,6 +1,6 @@
 // Also evaluated by the native host in an isolated JavaScriptCore context.
 module.exports = function readingCore(digest) {
-  const kinds = new Set(["note", "highlight", "card", "answer", "schedule", "payload"]);
+  const kinds = new Set(["note", "card", "answer"]);
   const invalid = () => new Error("阅读图层数据无效。");
   const normalize = text => text.normalize("NFC").replace(/\s+/gu, " ").trim();
   const identity = (block, section) => digest(JSON.stringify([block, section]));
@@ -72,8 +72,8 @@ module.exports = function readingCore(digest) {
     if (typeof value !== "string" || !/^[\w.:-]{1,200}$/.test(value)) throw invalid();
     return value;
   }
-  function number(value, min, max, integer = true) {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) throw invalid();
+  function number(value, min, max) {
+    if (!Number.isInteger(value) || value < min || value > max) throw invalid();
     return value;
   }
   function blockAt(value) {
@@ -91,15 +91,8 @@ module.exports = function readingCore(digest) {
     const base = { id: identifier(item.id), type: item.type };
     switch (item.type) {
       case "note": return { ...base, body: text(item.body), anchor: target(item.anchor) };
-      case "highlight": return { ...base, text: text(item.text), ...(item.anchor === undefined ? {} : { anchor: target(item.anchor) }) };
       case "card": return { ...base, front: text(item.front), back: text(item.back), ...(item.anchor === undefined ? {} : { anchor: target(item.anchor) }) };
       case "answer": return { ...base, cardId: identifier(item.cardId), rating: number(item.rating, 0, 5) };
-      case "schedule": {
-        const due = new Date(text(item.dueAt, 50));
-        if (!Number.isFinite(+due)) throw invalid();
-        return { ...base, cardId: identifier(item.cardId), dueAt: due.toISOString(), intervalDays: number(item.intervalDays, 0, 1e8, false), repetitions: number(item.repetitions, 0, 1e8), easeFactor: number(item.easeFactor, 1, 100, false) };
-      }
-      case "payload": return { ...base, markdown: text(item.markdown, 1_000_000), ...(item.anchor === undefined ? {} : { anchor: target(item.anchor) }) };
     }
   }
 
@@ -135,8 +128,22 @@ module.exports = function readingCore(digest) {
     try {
       for (const row of committed.split("\n")) {
         if (!row) continue;
-        const { v, entry } = JSON.parse(row);
-        if (v !== 1 || typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
+        const { v, entry, move } = JSON.parse(row);
+        if (v !== 1) throw invalid();
+        if (move) {
+          const { from, to } = move;
+          const validPath = value => typeof value === "string" && value.split("/").every(part => part && part !== "." && part !== "..");
+          if (!validPath(from) || !validPath(to) || from === to) throw invalid();
+          const under = (file, prefix) => file === prefix || file.startsWith(prefix + "/");
+          const moved = [...entries].filter(([file]) => under(file, from));
+          for (const file of entries.keys()) if (under(file, from) || under(file, to)) entries.delete(file);
+          for (const [file, items] of moved) {
+            const document = to + file.slice(from.length);
+            for (const item of items.values()) indexEntry(entries, { ...item, document });
+          }
+          continue;
+        }
+        if (typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       }
     } catch { throw new Error("阅读记录损坏，未更改原文件。"); }
@@ -158,5 +165,5 @@ module.exports = function readingCore(digest) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, indexEntry, readJournal, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, readJournal, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

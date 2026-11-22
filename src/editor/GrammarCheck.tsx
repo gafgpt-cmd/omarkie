@@ -7,19 +7,21 @@ import type { GrammarMatch } from "../../shared/grammar.mjs";
 import "./grammar.css";
 
 type Surface = { root: HTMLElement; range(from: number, to: number): Range | null };
-type Results = { content: string; text: string; matches: GrammarMatch[] };
+type Check = { revision: number; text: string };
+type Results = Check & { matches: GrammarMatch[] };
 
-export default function GrammarCheck({ url, approvedOrigin = "", content, mode, readOnly, snapshot, surface, apply }: {
+export default function GrammarCheck({ url, approvedOrigin = "", content, mode, readOnly, revision, currentRevision, snapshot, surface, apply }: {
   url?: string; approvedOrigin?: string; content: string; mode: "rich" | "source" | null; readOnly: boolean;
   snapshot(): string | null; surface(): Surface | null;
+  revision: number; currentRevision(): number;
   apply(text: string, match: GrammarMatch, replacement: string): boolean;
 }) {
-  const [confirm, setConfirm] = useState<string | null>(null), [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<Check | null>(null), [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(""), [results, setResults] = useState<Results | null>(null);
   const [selected, setSelected] = useState<{ match: GrammarMatch; rect?: DOMRect } | null>(null);
   const popup = useRef<HTMLDivElement>(null), button = useRef<HTMLButtonElement>(null);
   const current = useRef({ snapshot, surface }); current.current = { snapshot, surface };
-  const active = results?.content === content ? results : null;
+  const active = results?.revision === revision ? results : null;
   const match = active && selected && active.matches.includes(selected.match) ? selected.match : null;
   const endpoint = grammarEndpoint(url ?? grammarDefault);
 
@@ -29,7 +31,7 @@ export default function GrammarCheck({ url, approvedOrigin = "", content, mode, 
     if (!view) return;
     let ranges: { range: Range; match: GrammarMatch }[] = [];
     const update = () => {
-      ranges = current.current.snapshot() === active.text ? active.matches.flatMap(match => {
+      ranges = currentRevision() === active.revision && current.current.snapshot() === active.text ? active.matches.flatMap(match => {
         const range = view.range(match.from, match.to);
         return range ? [{ range, match }] : [];
       }) : [];
@@ -86,19 +88,19 @@ export default function GrammarCheck({ url, approvedOrigin = "", content, mode, 
     const text = snapshot();
     if (!text?.trim()) return;
     if (text.length > grammarTextLimit) { setStatus(t("LanguageTool checks notes up to 20,000 characters.")); return; }
-    setSelected(null); setConfirm(text);
+    setSelected(null); setConfirm({ text, revision: currentRevision() });
   }
 
   async function send() {
     setConfirm(null);
-    const text = confirm;
-    if (!endpoint || !host.checkGrammar || !text || (!endpoint.local && approvedOrigin !== endpoint.origin)) return;
-    if (snapshot() !== text) { setStatus(t("The note changed. Check grammar again.")); return; }
+    if (!endpoint || !host.checkGrammar || !confirm || (!endpoint.local && approvedOrigin !== endpoint.origin)) return;
+    const { text, revision } = confirm;
+    if (currentRevision() !== revision || snapshot() !== text) { setStatus(t("The note changed. Check grammar again.")); return; }
     setBusy(true); setResults(null);
     try {
       const matches = grammarMatches(await host.checkGrammar(endpoint.url, approvedOrigin, text), text);
-      if (current.current.snapshot() === text) setResults({ content, text, matches });
-    } catch { setStatus(t("LanguageTool could not check this note. Check the endpoint and try again.")); }
+      if (currentRevision() === revision && current.current.snapshot() === text) setResults({ revision, text, matches });
+    } catch { if (currentRevision() === revision) setStatus(t("LanguageTool could not check this note. Check the endpoint and try again.")); }
     finally { setBusy(false); }
   }
 
@@ -119,7 +121,7 @@ export default function GrammarCheck({ url, approvedOrigin = "", content, mode, 
       <p>{match.message}</p>
       {match.to > match.from && <del>{active.text.slice(match.from, match.to)}</del>}
       {!readOnly && match.fixes.map(fix => <button key={fix} onClick={() => {
-        if (apply(active.text, match, fix)) { setResults(null); setStatus(""); }
+        if (currentRevision() === active.revision && apply(active.text, match, fix)) { setResults(null); setStatus(""); }
         else setStatus(t("The note changed. Check grammar again."));
         setSelected(null);
       }}>{fix || t("Remove this text")}</button>)}
