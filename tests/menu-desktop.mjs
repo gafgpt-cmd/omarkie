@@ -531,6 +531,7 @@ try {
   await page.reload(); await expect.poll(() => rich().textContent()).toBe("Audit text paused");
   await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
   await expect(autosave).toHaveAttribute("aria-checked", "false"); await page.keyboard.press("Escape");
+  assert.equal(await readFile(autosaveFile, "utf8"), "Audit text\n");
   await command("save"); await expect.poll(() => readFile(autosaveFile, "utf8")).toBe("Audit text paused\n");
   await rich().getByText("Audit text paused", { exact: true }).click({ force: true }); await page.keyboard.press("End"); await typeDocument("Audit text paused", " resumed");
   await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
@@ -542,13 +543,17 @@ try {
   await expect(page.getByRole("dialog")).toContainText(manifest.version);
   await page.getByRole("button", { name: t("关闭关于"), exact: true }).click({ force: true });
   pass("More > About Omarkie", "More menu opens actual version dialog");
+  await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
+  await autosave.click({ force: true }); await expect(autosave).toHaveAttribute("aria-checked", "false"); await page.keyboard.press("Escape");
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
     const original = await fixture("Audit text\n");
     await rich().getByText("Audit text", { exact: true }).click({ force: true }); await page.keyboard.press("End"); await typeDocument("Audit text", " saved");
+    assert.equal(await readFile(original, "utf8"), "Audit text\n");
     await command("save", route);
     await expect.poll(() => readFile(original, "utf8")).toBe("Audit text saved\n");
     const copy = path.join(data, `save-as-${route}.md`);
     await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, copy);
+    await assert.rejects(stat(copy), { code: "ENOENT" });
     await command("saveAs", route);
     await expect.poll(() => readFile(copy, "utf8").catch(() => "")).toBe("Audit text saved\n");
     const documentCount = await page.locator(".document-editor").count();
@@ -561,6 +566,7 @@ try {
     await typeDocument(header, "New saved");
     const untitled = path.join(data, `save-new-${route}.md`);
     await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, untitled);
+    await assert.rejects(stat(untitled), { code: "ENOENT" });
     await command("save", route);
     await expect.poll(() => readFile(untitled, "utf8").catch(() => "")).toBe(`${header}\n\nNew saved`);
     pass(`Save, Save As and New: ${route}`, "Edits and copy reach disk; New preserves generated frontmatter");
@@ -569,6 +575,8 @@ try {
     await expect(rich()).toContainText("saved");
     pass(`Open: ${route}`, "Selected file is displayed");
   }
+  await page.getByRole("button", { name: t("更多操作"), exact: true }).click({ force: true });
+  await autosave.click({ force: true }); await expect(autosave).toHaveAttribute("aria-checked", "true"); await page.keyboard.press("Escape");
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
     await fixture("Audit text\n"); await rich().click({ force: true }); await page.keyboard.press("End"); await page.keyboard.type(" changed");
     await command("undo", route); await expect(rich()).not.toContainText("changed");
