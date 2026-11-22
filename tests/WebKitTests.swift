@@ -116,7 +116,8 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let journal = root.appendingPathComponent(".omarkie/store.jsonl")
     let handle = try FileHandle(forWritingTo: journal)
     try handle.seekToEnd()
-    try handle.write(contentsOf: Data("{\"v\":1,\"intent\":{\"from\":\"a.md\",\"to\":\"b.md\"}}\n".utf8))
+    let fingerprint = "8:\(hashData(Data("Original".utf8)))"
+    try handle.write(contentsOf: Data("{\"v\":1,\"intent\":{\"from\":\"a.md\",\"to\":\"b.md\",\"fingerprint\":\"\(fingerprint)\"}}\n".utf8))
     try handle.close()
     try FileManager.default.moveItem(at: source, to: destination)
     try atomicWrite(source, Data("Replacement".utf8))

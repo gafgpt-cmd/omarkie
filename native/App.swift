@@ -319,10 +319,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             guard answer as? Bool == true else { throw NativeFailure("文件操作已取消。") }
           }
           let change: [String: String]
-          if ["rename", "move", "undo"].contains(operation["action"] ?? "") {
+          if ["rename", "move", "undo", "trash"].contains(operation["action"] ?? "") {
             let folder = operation["action"] == "undo" ? owner.workspace.undo?.folder : store.folder
-            change = try await owner.readingStore.moveEntries(folder) { move in
-              try self.owner.workspace.execute(operation, store: self.store, move: move)
+            let trash = operation["action"] == "trash" ? operation["path"].map { (URL(fileURLWithPath: $0), UUID().uuidString) } : nil
+            let restoring = operation["action"] == "undo" ? owner.workspace.undo?.trashID : nil
+            change = try await owner.readingStore.moveEntries(folder, trash: trash, restoring: restoring) { move in
+              try self.owner.workspace.execute(operation, store: self.store, trashID: trash?.1, move: move)
             }
           } else {
             change = try owner.workspace.execute(operation, store: store)
@@ -640,7 +642,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       }
       var warning = false
       let sessionBytes = try? Data(contentsOf: store.dataDirectory.appendingPathComponent("session.json"))
-      if let sessionBytes, let session = try? JSONDecoder().decode(SessionRecord.self, from: sessionBytes), let folder = session.folder {
+      if let sessionBytes, let session = try? DocumentStore.decodeSession(sessionBytes), let folder = session.folder {
         warning = await NativeReadingStore.recoverVault(canonicalFileURL(URL(fileURLWithPath: folder)))
       }
       if var session = try store.restore(sessionBytes) { session.readingRecoveryWarning = warning; return try jsonValue(session) }

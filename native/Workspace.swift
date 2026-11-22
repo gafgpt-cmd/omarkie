@@ -12,6 +12,7 @@ struct FileUndo {
   let from: URL
   let to: URL
   let folder: URL?
+  var trashID: String? = nil
 }
 func moveExclusive(_ from: URL, _ to: URL) throws {
   guard Darwin.renamex_np(from.path, to.path, UInt32(RENAME_EXCL)) == 0 else {
@@ -70,7 +71,7 @@ final class Workspace {
       !name.contains("/"), !name.contains(":"), !name.contains("\\"), !name.contains("\0") else { throw NativeFailure("名称无效，请使用普通文件名。") }
     return parent.appendingPathComponent(name)
   }
-  func execute(_ operation: [String: String], store: DocumentStore, move: (URL, URL) throws -> Void = moveExclusive) throws -> [String: String] {
+  func execute(_ operation: [String: String], store: DocumentStore, trashID: String? = nil, move: (URL, URL) throws -> Void = moveExclusive) throws -> [String: String] {
     let fm = FileManager.default
     let action = operation["action"] ?? ""
     if action == "undo" {
@@ -87,7 +88,8 @@ final class Workspace {
     if action == "trash" {
       var trashed: NSURL?
       try fm.trashItem(at: source, resultingItemURL: &trashed)
-      if let trashed { undo = FileUndo(from: trashed as URL, to: source, folder: store.folder) }
+      if let trashed { undo = FileUndo(from: trashed as URL, to: source, folder: store.folder, trashID: trashID) }
+      else { undo = nil }
       return ["removedPath": source.path]
     }
     let destination: URL

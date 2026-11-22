@@ -110,7 +110,11 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
   const safe = DOMPurify.sanitize(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll("[style]")) {
-    const declarations = (element.getAttribute("style") || "").split(";").filter(value => /^\s*[a-z][a-z-]*\s*:\s*[\w\s.,#%+!/-]+$/i.test(value));
+    const declarations = (element.getAttribute("style") || "").split(";").filter(value => {
+      const match = /^\s*[a-z][a-z-]*\s*:\s*(.+)$/is.exec(value);
+      if (!match || !/^[\w\s.,#%+!*/()-]+$/.test(match[1])) return false;
+      return [...match[1].matchAll(/([\w-]+)\s*\(/g)].every(([, name]) => /^(?:calc|min|max|clamp|round|mod|rem|abs|sign|rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|linear-gradient|radial-gradient|conic-gradient|translate[xyz3d]*|scale[xyz3d]*|rotate[xyz3d]*|skew[xy]*|matrix(?:3d)?)$/i.test(name));
+    });
     if (declarations.length) element.setAttribute("style", declarations.join(";"));
     else element.removeAttribute("style");
   }

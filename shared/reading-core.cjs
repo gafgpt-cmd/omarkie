@@ -127,7 +127,7 @@ module.exports = function readingCore(digest) {
     items.set(`${entry.type}:${entry.id}`, entry);
   }
 
-  const validPath = value => typeof value === "string" && !/[\0\\]/.test(value) && value.split("/").every(part => part && part !== "." && part !== "..");
+  const validPath = value => typeof value === "string" && !value.includes("\0") && value.split("/").every(part => part && part !== "." && part !== "..");
 
   function checkMove(from, to) {
     if (!validPath(from) || !validPath(to) || from === to) throw invalid();
@@ -150,10 +150,31 @@ module.exports = function readingCore(digest) {
     for (const row of committed.split("\n")) {
       if (!row) continue;
       try {
-        const { v, entry, move, intent, cancel } = JSON.parse(row);
+        const { v, entry, move, intent, cancel, trash, restore } = JSON.parse(row);
         if (v !== 1) throw invalid();
+        if (trash || restore) {
+          const { path, id } = trash ?? restore;
+          if (!validPath(path)) throw invalid();
+          identifier(id);
+          const under = file => file === path || file.startsWith(path + "/");
+          entries.trash ??= new Map();
+          if (trash) {
+            if (entries.trash.has(id)) throw invalid();
+            const detached = [...entries].filter(([file]) => under(file));
+            entries.trash.set(id, detached);
+            for (const [file] of detached) entries.delete(file);
+          } else {
+            const detached = entries.trash.get(id);
+            if (!detached || detached.some(([file]) => !under(file))) throw invalid();
+            for (const [file] of entries) if (under(file)) entries.delete(file);
+            for (const [file, items] of detached) entries.set(file, items);
+            entries.trash.delete(id);
+          }
+          continue;
+        }
         if (intent) {
           checkMove(intent.from, intent.to);
+          if (typeof intent.fingerprint !== "string" || !/^\d+:[a-f0-9]{64}$/.test(intent.fingerprint)) throw invalid();
           if (entries.pending) throw invalid();
           entries.pending = intent;
           continue;
@@ -177,7 +198,7 @@ module.exports = function readingCore(digest) {
           }
           continue;
         }
-        if (!validPath(entry.document) || typeof entry.at !== "string") throw invalid();
+        if (!validPath(entry.document) || typeof entry.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.at) || !Number.isFinite(Date.parse(entry.at)) || new Date(entry.at).toISOString() !== entry.at) throw invalid();
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       } catch { entries.badRows = (entries.badRows ?? 0) + 1; }
     }
@@ -199,5 +220,5 @@ module.exports = function readingCore(digest) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, putDocument, checkMove, readJournal, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, checkMove, validPath, readJournal, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

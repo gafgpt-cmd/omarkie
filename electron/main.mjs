@@ -291,8 +291,8 @@ const handlers = {
       if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
       const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
       const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
-      const change = ["rename", "move", "undo"].includes(operation.action)
-        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute) : await execute();
+      const change = ["rename", "move", "undo", "trash"].includes(operation.action)
+        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
       workspace.apply(change, store);
       await prepareOperation("commit", change); return change;
     } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }

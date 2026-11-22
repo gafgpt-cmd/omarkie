@@ -44,13 +44,8 @@ enum NativeHook {
     let launchError = NativeFailure("无法启动朗读程序：请检查 OMARKIE_TTS。")
     guard let binary = NativeHook.executable(argv[0], environment: environment) else { throw launchError }
     stop()
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("omarkie-speech-" + UUID().uuidString)
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let file = directory.appendingPathComponent("input")
-    try atomicWrite(file, Data(text.utf8))
-    let input = try FileHandle(forReadingFrom: file)
-    defer { try? input.close() }
+    let input = Pipe(), bytes = Data(text.utf8)
+    guard fcntl(input.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) == 0 else { throw launchError }
     let child = Process()
     child.executableURL = binary
     child.arguments = Array(argv.dropFirst())
@@ -59,7 +54,14 @@ enum NativeHook {
     defer { if process === child { process = nil } }
     let status = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Int32, Error>) in
       child.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do { try child.run() } catch { continuation.resume(throwing: launchError) }
+      do {
+        try child.run()
+        let writer = input.fileHandleForWriting
+        DispatchQueue.global(qos: .userInitiated).async {
+          defer { try? writer.close() }
+          try? writer.write(contentsOf: bytes)
+        }
+      } catch { continuation.resume(throwing: launchError) }
     }
     if process === child && status != 0 { throw NativeFailure("朗读程序未能完成播放。") }
   }

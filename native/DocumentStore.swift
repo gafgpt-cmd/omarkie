@@ -303,19 +303,21 @@ final class DocumentStore {
     while closedOrder.count > 20 { closedRecords.removeValue(forKey: closedOrder.removeFirst()) }
     records = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
   }
+  static func decodeSession(_ bytes: Data) throws -> SessionRecord {
+    let session = try JSONDecoder().decode(SessionRecord.self, from: bytes)
+    guard session.version == 1, session.documents.count <= 100 else { throw NativeFailure("恢复数据格式无效。") }
+    guard session.documents.allSatisfy({ $0.content.utf8.count <= Self.maxBytes }) else { throw NativeFailure("恢复文档过大。") }
+    return session
+  }
   func restore(_ saved: Data? = nil) throws -> SessionRecord? {
     let file = dataDirectory.appendingPathComponent("session.json")
     guard saved != nil || FileManager.default.fileExists(atPath: file.path) else { return nil }
     let bytes = try saved ?? Data(contentsOf: file)
     do {
-      var session = try JSONDecoder().decode(SessionRecord.self, from: bytes)
-      guard session.version == 1, session.documents.count <= 100 else {
-        throw NativeFailure("恢复数据格式无效。")
-      }
+      var session = try Self.decodeSession(bytes)
       if let path = session.folder { _ = try? scan(URL(fileURLWithPath: path)) }
       var documents = [DocumentRecord]()
       for var record in session.documents {
-        guard record.content.utf8.count <= Self.maxBytes else { throw NativeFailure("恢复文档过大。") }
         records[record.id] = record
         if record.path != nil, let changed = try check(record.id) {
           if record.content == record.savedContent, let text = changed["content"] as? String,

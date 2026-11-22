@@ -69,28 +69,46 @@ final class NativeReadingStore {
     }
   }
 
-  func moveEntries(_ folder: URL?, execute: @escaping ((URL, URL) throws -> Void) throws -> [String: String]) async throws -> [String: String] {
+  func moveEntries(_ folder: URL?, trash: (URL, String)? = nil, restoring: String? = nil,
+                   execute: @escaping ((URL, URL) throws -> Void) throws -> [String: String]) async throws -> [String: String] {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
         continuation.resume(with: Result {
           guard let folder else { return try DispatchQueue.main.sync { try execute(moveExclusive) } }
           let root = canonicalFileURL(folder)
-          return try self.transaction(root, writing: false, moving: true) { state, append, _ in
+          return try self.transaction(root, writing: false) { state, append, _ in
             try DispatchQueue.main.sync {
-              try execute { source, destination in
+              let offset = root.path.count + 1
+              let relative = { (url: URL) in String(url.standardizedFileURL.path.dropFirst(offset)) }
+              var detached: [String: String]?
+              if state != nil, let (url, id) = trash, contained(root, url) {
+                let file = relative(url)
+                guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
+                detached = ["path": file, "id": id]
+              }
+              let change = try execute { source, destination in
+                if let state, let restoring, contained(root, destination), try self.call("hasTrash", [state.entries, restoring]).toBool() {
+                  let file = relative(destination)
+                  guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
+                  try moveExclusive(source, destination)
+                  try append(["restore": ["path": file, "id": restoring]])
+                  return
+                }
                 guard state != nil, contained(root, source), contained(root, destination) else {
                   try moveExclusive(source, destination); return
                 }
-                let offset = root.path.count + 1
-                let from = String(source.path.dropFirst(offset)), to = String(destination.path.dropFirst(offset))
+                let from = relative(source), to = relative(destination)
                 guard from != to, let state, try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 _ = try self.call("checkMove", [from, to])
                 let move = ["from": from, "to": to]
-                try append(["intent": move])
+                guard let fingerprint = try Self.moveFingerprint(root, from) else { throw NativeFailure(Self.unsafe) }
+                try append(["intent": ["from": from, "to": to, "fingerprint": fingerprint]])
                 do { try moveExclusive(source, destination) }
                 catch { try? append(["cancel": true]); throw error }
                 try? append(["move": move])
               }
+              if let detached { try append(["trash": detached]) }
+              return change
             }
           }
         })
@@ -121,15 +139,42 @@ final class NativeReadingStore {
     (metadata.st_mode & S_IFMT) == S_IFREG && metadata.st_nlink == 1
   }
 
-  private static func existsAt(_ root: URL, _ file: String) throws -> Bool {
+  private static func moveFingerprint(_ root: URL, _ file: String) throws -> String? {
     let target = root.appendingPathComponent(file)
     var metadata = stat()
     if lstat(target.path, &metadata) != 0 {
-      if errno == ENOENT { return false }
+      if errno == ENOENT { return nil }
       throw NativeFailure(unsafe)
     }
     guard canonicalFileURL(target).path == target.path else { throw NativeFailure(unsafe) }
-    return true
+    func hash(_ url: URL, _ metadata: stat) throws -> String {
+      let bytes: Data
+      switch metadata.st_mode & S_IFMT {
+      case S_IFDIR:
+        let names = try FileManager.default.contentsOfDirectory(atPath: url.path).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+        var rows = [String]()
+        for name in names {
+          let child = url.appendingPathComponent(name)
+          var entry = stat()
+          guard lstat(child.path, &entry) == 0 else { throw NativeFailure(unsafe) }
+          rows += [name, try hash(child, entry), ""]
+        }
+        bytes = Data(("directory\0" + rows.joined(separator: "\0")).utf8)
+      case S_IFLNK:
+        bytes = Data(("symlink\0" + (try FileManager.default.destinationOfSymbolicLink(atPath: url.path))).utf8)
+      case S_IFREG:
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw NativeFailure(unsafe) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var current = stat()
+        guard fstat(fd, &current) == 0, current.st_mode & S_IFMT == S_IFREG else { throw NativeFailure(unsafe) }
+        bytes = try handle.readToEnd() ?? Data()
+      default: throw NativeFailure(unsafe)
+      }
+      return "\(bytes.count):\(hashData(bytes))"
+    }
+    return try hash(target, metadata)
   }
 
   private static func revision(_ descriptor: Int32) throws -> Revision {
@@ -188,19 +233,25 @@ final class NativeReadingStore {
     }
   }
 
-  private func transaction<T>(_ folder: URL, writing: Bool, moving: Bool = false,
+  private func transaction<T>(_ folder: URL, writing: Bool,
                               _ run: (Snapshot?, @escaping ([String: Any]) throws -> Void, Bool) throws -> T) throws -> T {
-    let create = writing || moving
     let noAppend: ([String: Any]) throws -> Void = { _ in throw NativeFailure(Self.unsafe) }
     guard canonicalFileURL(folder).path == folder.path else { throw NativeFailure(Self.unsafe) }
     let root = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard root >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(root) }
-    if create, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
+    if writing, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
     let directory = openat(root, ".omarkie", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    if directory < 0, !create, errno == ENOENT { return try run(nil, noAppend, false) }
+    if directory < 0, !writing, errno == ENOENT { return try run(nil, noAppend, false) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
+    if !writing {
+      var metadata = stat()
+      if fstatat(directory, "store.jsonl", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT,
+         fstatat(directory, "journal.lock", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT {
+        return try run(nil, noAppend, false)
+      }
+    }
     let lock = openat(directory, "journal.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
     guard lock >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(lock) }
@@ -244,10 +295,13 @@ final class NativeReadingStore {
     var warning = try call("badRows", [state.entries]).toInt32() > 0
     if warning { NSLog("Reading journal skipped invalid rows.") }
     if let intent = try call("pending", [state.entries]).toDictionary() as? [String: String],
-       let from = intent["from"], let to = intent["to"] {
+       let from = intent["from"], let to = intent["to"], let fingerprint = intent["fingerprint"] {
       do {
-        if try Self.existsAt(folder, to) { try append(["move": ["from": from, "to": to]]) }
-        else { try append(["cancel": true]) }
+        let source = try Self.moveFingerprint(folder, from) == fingerprint, destination = try Self.moveFingerprint(folder, to) == fingerprint
+        if source != destination {
+          if destination { try append(["move": ["from": from, "to": to]]) }
+          else { try append(["cancel": true]) }
+        } else { warning = true; NSLog("Reading move recovery could not identify the original document.") }
       } catch { warning = true; NSLog("Reading move recovery could not confirm the destination.") }
     }
     let result = try run(state, append, warning)

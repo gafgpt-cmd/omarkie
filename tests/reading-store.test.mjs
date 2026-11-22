@@ -9,6 +9,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { moveReadingEntries, readingMarkdown, readingStore } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
 import { Workspace } from "../electron/workspace.mjs";
+import { dueCards } from "../src/flashcards.ts";
 
 const { readingAnchor, resolveReadingAnchors } = readingCore(digest);
 
@@ -81,6 +82,13 @@ function startWorker(t, root, file, code) {
   return child;
 }
 
+function readWorkerEntries(child) {
+  return new Promise(resolve => {
+    const receive = message => { if (Array.isArray(message)) { child.off("message", receive); resolve(message); } };
+    child.on("message", receive);
+  });
+}
+
 test("two warmed processes contend, repair a torn tail and see both commits", { timeout: 10000 }, async t => {
   const { store, source, log, index } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("seed") });
@@ -95,7 +103,7 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
     process.send((await list()).map(item => item.id).sort());
     process.disconnect();
   `));
-  for (const [ids] of await Promise.all(workers.map(child => once(child, "message")))) assert.deepEqual(ids, ["seed"]);
+  for (const ids of await Promise.all(workers.map(readWorkerEntries))) assert.deepEqual(ids, ["seed"]);
   const finished = [];
   const committedMessages = workers.map(child => new Promise(resolve => {
     child.on("message", message => { if (message === "committed") { finished.push(child); resolve(); } });
@@ -115,10 +123,7 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
   const cached = JSON.parse(await readFile(index, "utf8"));
   assert.deepEqual(cached.entries.map(item => item.id).sort(), committed);
   assert.deepEqual((await readingStore(store, source.id, { action: "list" })).map(item => item.id).sort(), committed);
-  const messages = Promise.all(workers.map(child => new Promise(resolve => {
-    const receive = message => { if (Array.isArray(message)) { child.off("message", receive); resolve(message); } };
-    child.on("message", receive);
-  })));
+  const messages = Promise.all(workers.map(readWorkerEntries));
   const exits = Promise.all(workers.map(child => once(child, "exit")));
   workers.forEach(child => child.send("read"));
   assert.deepEqual(await messages, [committed, committed]);
@@ -148,6 +153,7 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
     child.kill("SIGKILL");
     assert.deepEqual(await exit, [null, "SIGKILL"]);
     if (moved) await writeFile(source.path, "Replacement original path");
+    else await writeFile(path.join(store.folder, "renamed.md"), "Unrelated destination");
     const reopened = new DocumentStore(store.folder);
     const scan = await reopened.scan(store.folder);
     assert.equal(scan.readingRecoveryWarning, false);
@@ -160,7 +166,7 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
     if (moved) {
       const replacement = await reopened.open(source.path);
       assert.deepEqual(await readingStore(reopened, replacement.id, { action: "list" }), []);
-    }
+    } else await rm(path.join(store.folder, "renamed.md"));
   }
 });
 
@@ -178,6 +184,50 @@ test("rating belongs to the reviewed card and survives unrelated path reuse", as
   assert.deepEqual((await readingStore(store, other.id, { action: "list", types: ["answer"] })).map(item => item.rating), [5]);
 });
 
+test("ambiguous fingerprints remain pending until one path matches", async t => {
+  const { store, source, other, log } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: note("original") });
+  const intent = { from: "source.md", to: "other.md", fingerprint: `${Buffer.byteLength(body)}:${digest(body)}` };
+  const awaiting = JSON.stringify({ v: 1, intent }) + "\n";
+  await appendFile(log, awaiting);
+  for (const content of [body, "Neither file matches"]) {
+    await writeFile(source.path, content);
+    await writeFile(other.path, content);
+    assert.equal((await new DocumentStore(store.folder).scan(store.folder)).readingRecoveryWarning, true);
+    assert.ok((await readFile(log, "utf8")).endsWith(awaiting));
+  }
+  await writeFile(other.path, body);
+  assert.equal((await new DocumentStore(store.folder).scan(store.folder)).readingRecoveryWarning, false);
+  assert.deepEqual((await readingStore(store, other.id, { action: "list" })).map(item => item.id), ["original"]);
+});
+
+test("unused vault moves stay lazy and Trash hides history from path reuse", async t => {
+  const { store, source, other, sidecar } = await fixture(t);
+  const workspace = new Workspace(store.folder);
+  const original = source.path;
+  const relocate = operation => moveReadingEntries(store.folder, move => workspace.execute(operation, store, undefined, move));
+  workspace.apply(await relocate({ action: "rename", path: original, name: "renamed.md" }), store);
+  await assert.rejects(stat(sidecar), { code: "ENOENT" });
+  await mkdir(sidecar);
+  workspace.apply(await relocate({ action: "undo" }), store);
+  await assert.rejects(stat(path.join(sidecar, "journal.lock")), { code: "ENOENT" });
+  await readingStore(store, source.id, { action: "put", item: note("trashed") });
+  const change = await moveReadingEntries(store.folder, () => workspace.execute({ action: "trash", path: original }, store, file => rm(file)), original);
+  workspace.apply(change, store);
+  await writeFile(original, "Replacement");
+  const replacement = await store.open(original);
+  assert.deepEqual(await readingStore(store, replacement.id, { action: "list" }), []);
+  assert.deepEqual(await readingStore(store, other.id, { action: "list", scope: "vault" }), []);
+});
+
+test("an invalid rating timestamp cannot stop valid cards from being reviewed", async t => {
+  const { store, source, log } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: { id: "valid-card", type: "card", front: "Q", back: "A" } });
+  await appendFile(log, JSON.stringify({ v: 1, entry: { id: "bad-answer", type: "answer", cardId: "valid-card", rating: 5, document: "source.md", at: "not a date" } }) + "\n");
+  const entries = await readingStore(store, source.id, { action: "list" });
+  assert.deepEqual(dueCards(entries, Date.now()).map(item => item.id), ["valid-card"]);
+});
+
 test("bad journal rows are reported and do not hide committed history", async t => {
   const { store, source, log } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("original") });
@@ -191,13 +241,15 @@ test("bad journal rows are reported and do not hide committed history", async t 
   await appendFile(log, JSON.stringify({ v: 1, move: { from: "source.md", to: "other.md" } }) + "\n");
   assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => item.id), ["original", "next"]);
   if (process.platform !== "win32") {
-    const unsupported = path.join(store.folder, "literal\\slash.md");
-    await writeFile(unsupported, body);
+    const literal = path.join(store.folder, "literal\\slash.md");
+    await writeFile(literal, body);
+    const original = await store.open(literal);
+    await readingStore(store, original.id, { action: "put", item: { id: "literal-card", type: "card", front: "Q", back: "A" } });
+    await readingStore(store, source.id, { action: "put", owner: "literal\\slash.md", item: { id: "literal-rating", type: "answer", cardId: "literal-card", rating: 5 } });
     const workspace = new Workspace(store.folder);
-    const bytes = await readFile(log);
-    await assert.rejects(moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: unsupported, name: "clean.md" }, store, undefined, move)), /invalid|无效/i);
-    assert.equal(await readFile(unsupported, "utf8"), body);
-    assert.deepEqual(await readFile(log), bytes);
+    const change = await moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: literal, name: "clean.md" }, store, undefined, move));
+    workspace.apply(change, store);
+    assert.deepEqual((await readingStore(store, original.id, { action: "list" })).map(item => [item.id, item.document]), [["literal-card", "clean.md"], ["literal-rating", "clean.md"]]);
   }
 });
 
