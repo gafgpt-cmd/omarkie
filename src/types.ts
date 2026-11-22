@@ -1,6 +1,7 @@
 import type { ReadingStore } from "../shared/reading-store.ts";
 
 export interface DocumentRecord {
+  readingRecoveryWarning?: boolean;
   id: string;
   path: string | null;
   name: string;

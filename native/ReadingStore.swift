@@ -36,16 +36,21 @@ final class NativeReadingStore {
     return formatter
   }()
   private static let unsafe = "阅读数据路径不安全。"
-  private static let damaged = "阅读记录损坏，未更改原文件。"
   private static let invalid = "阅读图层数据无效。"
 
   init(_ script: URL) { self.script = script }
 
-  static func recoverVault(_ root: URL) -> Bool {
+  static func recoverVault(_ root: URL) async -> Bool {
     let script = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
-    do { return try NativeReadingStore(script).transaction(root, writing: false) { _, _, warning in warning } }
-    catch { NSLog("Reading journal recovery could not open the journal."); return true }
+    return await Task.detached {
+      do { return try NativeReadingStore(script).transaction(root, writing: false) { _, _, warning in warning } }
+      catch { NSLog("Reading journal recovery could not open the journal."); return true }
+    }.value
   }
+
+  #if WEBTEST
+  var onContention: (() -> Void)?
+  #endif
 
   static func scope(_ store: DocumentStore, _ id: String) throws -> Scope {
     guard let path = try store.require(id).path, let folder = store.folder else {
@@ -79,9 +84,11 @@ final class NativeReadingStore {
                 let offset = root.path.count + 1
                 let from = String(source.path.dropFirst(offset)), to = String(destination.path.dropFirst(offset))
                 guard from != to, let state, try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
+                _ = try self.call("checkMove", [from, to])
                 let move = ["from": from, "to": to]
                 try append(["intent": move])
-                try moveExclusive(source, destination)
+                do { try moveExclusive(source, destination) }
+                catch { try? append(["cancel": true]); throw error }
                 try? append(["move": move])
               }
             }
@@ -103,10 +110,10 @@ final class NativeReadingStore {
     return result
   }
 
-  private func call(_ name: String, _ args: [Any], error: String = NativeReadingStore.invalid) throws -> JSValue {
+  private func call(_ name: String, _ args: [Any]) throws -> JSValue {
     let core = try logic()
     core.context.exception = nil
-    guard let value = core.invokeMethod(name, withArguments: args), core.context.exception == nil else { throw NativeFailure(error) }
+    guard let value = core.invokeMethod(name, withArguments: args), core.context.exception == nil else { throw NativeFailure(Self.invalid) }
     return value
   }
 
@@ -201,6 +208,9 @@ final class NativeReadingStore {
     let deadline = ProcessInfo.processInfo.systemUptime + 3
     while flock(lock, LOCK_EX | LOCK_NB) != 0 {
       guard (errno == EWOULDBLOCK || errno == EINTR), ProcessInfo.processInfo.systemUptime < deadline else { throw NativeFailure(Self.unsafe) }
+      #if WEBTEST
+      if errno == EWOULDBLOCK { onContention?() }
+      #endif
       Thread.sleep(forTimeInterval: 0.02)
     }
     let hasIndex = try Self.indexExists(directory)
@@ -216,8 +226,9 @@ final class NativeReadingStore {
       try handle.seek(toOffset: 0)
       let bytes = try handle.readToEnd() ?? Data(), end = bytes.lastIndex(of: 10).map { $0 + 1 } ?? 0
       guard try Self.revision(descriptor) == revision else { throw NativeFailure(Self.unsafe) }
-      guard let committed = String(bytes: bytes.prefix(end), encoding: .utf8) else { throw NativeFailure(Self.damaged) }
-      return Snapshot(revision: revision, offset: end, entries: try call("readJournal", [committed], error: Self.damaged))
+      let prefix = bytes.prefix(end)
+      let committed = String(bytes: prefix, encoding: .utf8) ?? prefix.split(separator: 10).map { String(bytes: $0, encoding: .utf8) ?? "!" }.joined(separator: "\n")
+      return Snapshot(revision: revision, offset: end, entries: try call("readJournal", [committed]))
     }
     var state = try load()
     func append(_ record: [String: Any]) throws {
@@ -230,16 +241,14 @@ final class NativeReadingStore {
       try handle.synchronize()
       state = try load()
     }
-    var warning = false
+    var warning = try call("badRows", [state.entries]).toInt32() > 0
+    if warning { NSLog("Reading journal skipped invalid rows.") }
     if let intent = try call("pending", [state.entries]).toDictionary() as? [String: String],
        let from = intent["from"], let to = intent["to"] {
       do {
-        let source = try Self.existsAt(folder, from), destination = try Self.existsAt(folder, to)
-        warning = source == destination
-        if !source && destination { try append(["move": ["from": from, "to": to]]) }
+        if try Self.existsAt(folder, to) { try append(["move": ["from": from, "to": to]]) }
         else { try append(["cancel": true]) }
-      } catch { warning = true }
-      if warning { NSLog("Reading move recovery could not confirm the destination.") }
+      } catch { warning = true; NSLog("Reading move recovery could not confirm the destination.") }
     }
     let result = try run(state, append, warning)
     if !state.indexed || !hasIndex {

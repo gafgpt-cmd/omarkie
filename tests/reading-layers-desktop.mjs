@@ -10,7 +10,14 @@ import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 const home = await mkdtemp(path.join(os.tmpdir(), "omarkie-reading-layers-"));
 const vault = path.join(home, "vault"), file = path.join(vault, "reading.md"), sidecar = path.join(vault, ".omarkie");
 const body = "This paragraph uses distinct words to preserve its identity through small spelling edits.";
-const original = `# Reading\r\n\r\n## Section\r\n\r\n${body}\r\n\r\n![Remote sample](https://example.invalid/remote.png)\r\n\r\n![Local sample](figure.svg)\r\n`;
+let sends = 0, cssRequests = 0;
+const server = createServer((request, response) => {
+  if (request.url === "/css-image") cssRequests++; else sends++;
+  response.writeHead(500).end();
+});
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+const origin = `http://127.0.0.1:${server.address().port}`;
+const original = `# Reading\r\n\r\n## Section\r\n\r\n${body}\r\n\r\n![Remote sample](https://example.invalid/remote.png)\r\n\r\n![Local sample](figure.svg)\r\n\r\n<div style='background-image: image-set("${origin}/css-image" 1x)'>Offline style fixture</div>\r\n`;
 await mkdir(vault);
 await writeFile(file, original, "utf8");
 await writeFile(path.join(vault, "figure.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="32"><rect width="48" height="32" fill="teal"/></svg>', "utf8");
@@ -20,10 +27,6 @@ const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, 
 delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 let app, page;
 const errors = [], requested = [];
-let sends = 0;
-const server = createServer((_, response) => { sends++; response.writeHead(500).end(); });
-await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-const origin = `http://127.0.0.1:${server.address().port}`;
 async function launch() {
   app = await electron.launch({ args: [process.cwd(), ...headlessArguments], env });
   page = await app.firstWindow();
@@ -180,6 +183,7 @@ try {
   await expect(page.locator(".layers-orphans")).toContainText("Source selection note");
   assert.deepEqual(errors, []);
   assert.deepEqual(requested.filter(url => /^(https?|wss?):/i.test(url)), []);
+  assert.equal(cssRequests, 0);
   assert.equal(sends, 0);
   console.log("PASS: shared selection note, offline follow-up and card; lazy layers, persisted anchors, Markdown export and orphan tray");
 } finally {

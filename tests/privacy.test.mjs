@@ -6,6 +6,18 @@ for (const key of ["window", "document", "Node", "HTMLElement", "Element", "DOMP
 const { renderMarkdown, setMarkdownOptions } = await import("../src/editor/markdown.ts");
 const { defaultPreferences } = await import("../src/preferences.ts");
 
+test("offline HTML drops CSS image sources but preserves explicit sizing", () => {
+  const source = `<div><style>.picture { background: url(https://tracker.example/style) }</style><img src="local.png" style='width: 180px; background-image: image-set("https://tracker.example/set" 1x); cursor: u\\72l(https://tracker.example/cursor), auto'></div>`;
+  const parsed = document.createElement("template");
+  setMarkdownOptions(defaultPreferences);
+  parsed.innerHTML = renderMarkdown(source, "doc");
+  const image = parsed.content.querySelector("img");
+  assert.equal(image.style.width, "180px");
+  assert.equal(image.getAttribute("style").trim(), "width: 180px");
+  assert.equal(parsed.content.querySelector("style"), null);
+  assert.doesNotMatch(parsed.innerHTML, /tracker\.example/);
+});
+
 test("remote images stay blocked unless the user enables them", () => {
   const source = "![pixel](https://tracker.example/p.gif)";
   assert.equal(defaultPreferences.remoteImages, false);

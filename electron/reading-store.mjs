@@ -8,7 +8,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, readJournal, pending, allEntries, query, readingMarkdown } = readingCore(digest);
+const { validate, putDocument, checkMove, readJournal, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -54,9 +54,17 @@ async function load(log, handle) {
   for await (const chunk of handle.createReadStream({ start: 0, autoClose: false })) chunks.push(chunk);
   const bytes = Buffer.concat(chunks), offset = bytes.lastIndexOf(10) + 1;
   if (fingerprint(await handle.stat({ bigint: true })) !== signature) throw unsafe();
-  let entries;
-  try { entries = readJournal(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, offset))); }
-  catch { throw new Error(t("阅读记录损坏，未更改原文件。")); }
+  const committed = bytes.subarray(0, offset), decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  let text;
+  try { text = decoder.decode(committed); }
+  catch {
+    const rows = [];
+    for (let start = 0, end; (end = committed.indexOf(10, start)) >= 0; start = end + 1) {
+      try { rows.push(decoder.decode(committed.subarray(start, end))); } catch { rows.push("!"); }
+    }
+    text = rows.join("\n");
+  }
+  const entries = readJournal(text);
   const index = { signature, offset, entries, dirty: !!offset };
   cache.set(log, index);
   return index;
@@ -114,6 +122,7 @@ async function locked(root, create, run) {
   for (;;) {
     const release = await acquire(lock);
     if (release) { try { return await run(true); } finally { await release(); } }
+    if (process.env.NODE_TEST_CONTEXT && process.send) process.send("journal-lock-contended");
     if (performance.now() >= deadline) throw unsafe();
     await delay(20);
   }
@@ -146,15 +155,13 @@ async function transaction(root, writing, run) {
       index = await load(log, handle);
     };
     const intent = pending(index.entries);
-    let notice = false;
+    let notice = badRows(index.entries) > 0;
+    if (notice) console.warn("Reading journal skipped invalid rows.");
     if (intent) {
       const { from, to } = intent;
       try {
-        const source = await existsAt(root, from), destination = await existsAt(root, to);
-        notice = source === destination;
-        await append(!source && destination ? { move: { from, to } } : { cancel: true });
-      } catch { notice = true; }
-      if (notice) console.warn("Reading move recovery could not confirm the destination.");
+        await append(await existsAt(root, to) ? { move: { from, to } } : { cancel: true });
+      } catch { notice = true; console.warn("Reading move recovery could not confirm the destination."); }
     }
     const result = await run(index.entries, append, notice);
     if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
@@ -174,9 +181,11 @@ export async function moveReadingEntries(folder, execute) {
     if (entries && within(root, source) && within(root, destination)) {
       const relative = file => path.relative(root, file).split(path.sep).join("/");
       const from = relative(source), to = relative(destination);
-      if (pending(entries) || from === to) throw unsafe();
+      if (pending(entries)) throw unsafe();
+      try { checkMove(from, to); } catch { throw invalid(); }
       await append({ intent: { from, to } });
-      await moveExclusive(source, destination);
+      try { await moveExclusive(source, destination); }
+      catch (error) { await append({ cancel: true }).catch(() => {}); throw error; }
       await append({ move: { from, to } }).catch(() => {});
     } else await moveExclusive(source, destination);
   })));

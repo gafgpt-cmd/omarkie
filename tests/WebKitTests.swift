@@ -81,6 +81,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           Task { @MainActor in
             do {
               try await self.checkLearningPersistence()
+              try await self.checkInterruptedMove()
               try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
               exit(0)
@@ -101,6 +102,31 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
       guard PDFDocument(data: bytes)?.string?.contains("Renderer fixture") == true else { throw NativeFailure("PDF resource fixture did not render.") }
       withExtendedLifetime(exporter) {}
+    }
+  }
+  @MainActor func checkInterruptedMove() async throws {
+    let root = owner.directory.appendingPathComponent("interrupted-vault")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    let source = root.appendingPathComponent("a.md"), destination = root.appendingPathComponent("b.md")
+    try atomicWrite(source, Data("Original".utf8))
+    let script = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+    let reading = NativeReadingStore(script)
+    let scope = NativeReadingStore.Scope(root: root, file: source, document: "a.md")
+    _ = try await reading.perform(scope, ["action": "put", "item": ["type": "card", "id": "original-card", "front": "Q", "back": "A"]])
+    let journal = root.appendingPathComponent(".omarkie/store.jsonl")
+    let handle = try FileHandle(forWritingTo: journal)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data("{\"v\":1,\"intent\":{\"from\":\"a.md\",\"to\":\"b.md\"}}\n".utf8))
+    try handle.close()
+    try FileManager.default.moveItem(at: source, to: destination)
+    try atomicWrite(source, Data("Replacement".utf8))
+    guard !(await NativeReadingStore.recoverVault(root)) else { throw NativeFailure("Interrupted move produced a recovery warning.") }
+    try atomicWrite(destination, Data("Saved before first journal read".utf8))
+    let moved = NativeReadingStore.Scope(root: root, file: destination, document: "b.md")
+    let original = try await reading.perform(moved, ["action": "list"]) as? [[String: Any]]
+    let replacement = try await reading.perform(scope, ["action": "list"]) as? [[String: Any]]
+    guard original?.first?["id"] as? String == "original-card", replacement?.isEmpty == true else {
+      throw NativeFailure("Interrupted move assigned the card to the replacement.")
     }
   }
   @MainActor func checkLearningPersistence() async throws {
@@ -136,10 +162,13 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
     try await waitFor("held")
     let store = reopened
+    store.onContention = { try? atomicWrite(coordination.appendingPathComponent("contended"), Data()) }
+    let journal = scope.root.appendingPathComponent(".omarkie/store.jsonl")
+    let before = try Data(contentsOf: journal)
     let put = Task { try await store.perform(scope, ["action": "put", "item": ["id": "parallel-a", "type": "card", "front": "A", "back": "1"]]) }
-    try await Task.sleep(nanoseconds: 80_000_000)
+    try await waitFor("contended")
     let indexFile = scope.root.appendingPathComponent(".omarkie/index.json")
-    guard !((try String(contentsOf: indexFile, encoding: .utf8)).contains("parallel-a")) else { throw NativeFailure("Native append escaped the worker lock.") }
+    guard try Data(contentsOf: journal) == before else { throw NativeFailure("Native append escaped the worker lock.") }
     try atomicWrite(coordination.appendingPathComponent("release"), Data())
     _ = try await put.value
     try await waitFor("written")

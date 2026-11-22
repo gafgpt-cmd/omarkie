@@ -401,8 +401,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       }
       return
     }
-    do {
-      let value = try handle(name, args)
+    Task { @MainActor in do {
+      let value = try await handle(name, args)
       reply(id, ["ok": true, "value": value ?? NSNull()])
     } catch let error as NativeFailure where error.code == "CANCELLED" {
       reply(id, ["ok": true, "value": NSNull()])
@@ -413,7 +413,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           "ok": false, "error": error.localizedDescription,
           "code": (error as? NativeFailure)?.code ?? "DOCUMENT_ERROR",
         ])
-    }
+    } }
   }
   @MainActor func learningTool(_ name: String, _ args: [Any]) async throws -> Any? {
     if name == "readAloud" {
@@ -523,10 +523,17 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       else if !manager.fileExists(atPath: to.path) { try manager.copyItem(at: from, to: to) }
     }
   }
-  static func openShowcase(_ store: DocumentStore, names: [String]) throws -> ([String: Any], [DocumentRecord]) {
+  @MainActor func scanVault(_ folder: URL) async throws -> [String: Any] {
+    let root = canonicalFileURL(folder)
+    let warning = root != store.folder ? await NativeReadingStore.recoverVault(root) : false
+    var result = try store.scan(root)
+    result["readingRecoveryWarning"] = warning
+    return result
+  }
+  @MainActor func openShowcase(names: [String]) async throws -> ([String: Any], [DocumentRecord]) {
     let folder = store.dataDirectory.appendingPathComponent("Showcase")
-    try copyMissing(from: Bundle.main.resourceURL!.appendingPathComponent("showcase"), to: folder)
-    return (try store.scan(folder), try names.map { try store.open(folder.appendingPathComponent($0)) })
+    try Self.copyMissing(from: Bundle.main.resourceURL!.appendingPathComponent("showcase"), to: folder)
+    return (try await scanVault(folder), try names.map { try store.open(folder.appendingPathComponent($0)) })
   }
   static func openEncoded(_ file: URL, store: DocumentStore) throws -> DocumentRecord {
     do { return try store.open(file) }
@@ -566,7 +573,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     alert.addButton(withTitle: yes)
     return alert.runModal() == .alertSecondButtonReturn
   }
-  func handle(_ name: String, _ args: [Any]) throws -> Any? {
+  @MainActor func handle(_ name: String, _ args: [Any]) async throws -> Any? {
     switch name {
     case "background": return try Interchange.background(owner.directory)
     case "clearBackground": try Interchange.clearBackground(owner.directory); return nil
@@ -616,7 +623,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       if action == "open" {
         guard let item = owner.workspace.recent().first(where: { $0.path == path }) else { throw NativeFailure("最近项目已移除。") }
         let url = URL(fileURLWithPath: path)
-        if item.folder { try owner.workspace.remember(url, folder: true); return try store.scan(url) }
+        if item.folder { try owner.workspace.remember(url, folder: true); return try await scanVault(url) }
         let record = try Self.openEncoded(url, store: store); try owner.workspace.remember(url, folder: false)
         return try jsonValue(record)
       }
@@ -626,17 +633,22 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       NSWorkspace.shared.activateFileViewerSelecting([target]); return nil
     case "restore":
       if var seed {
-        if let folder = seed.folder { seed.readingRecoveryWarning = (try? store.scan(URL(fileURLWithPath: folder)))?["readingRecoveryWarning"] as? Bool }
+        if let folder = seed.folder { seed.readingRecoveryWarning = (try? await scanVault(URL(fileURLWithPath: folder)))?["readingRecoveryWarning"] as? Bool }
         for record in seed.documents { store.records[record.id] = record }
         store.activeId = seed.activeId
         return try jsonValue(seed)
       }
-      if let session = try store.restore() { return try jsonValue(session) }
-      let (scanned, records) = try Self.openShowcase(store, names: Self.showcaseDocuments)
+      var warning = false
+      let sessionBytes = try? Data(contentsOf: store.dataDirectory.appendingPathComponent("session.json"))
+      if let sessionBytes, let session = try? JSONDecoder().decode(SessionRecord.self, from: sessionBytes), let folder = session.folder {
+        warning = await NativeReadingStore.recoverVault(canonicalFileURL(URL(fileURLWithPath: folder)))
+      }
+      if var session = try store.restore(sessionBytes) { session.readingRecoveryWarning = warning; return try jsonValue(session) }
+      let (scanned, records) = try await openShowcase(names: Self.showcaseDocuments)
       return try jsonValue(
         SessionRecord(documents: records, activeId: records.first?.id, folder: store.folder?.path, readingRecoveryWarning: scanned["readingRecoveryWarning"] as? Bool))
     case "showcase":
-      let (scanned, records) = try Self.openShowcase(store, names: [Self.showcaseDocuments[0]])
+      let (scanned, records) = try await openShowcase(names: [Self.showcaseDocuments[0]])
       var result = scanned
       result["document"] = try jsonValue(records[0])
       return result
@@ -647,13 +659,18 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       return try jsonValue(store.draft(record))
     case "open":
       guard let file = chooseFile(false) else { return nil }
+      var warning = false
+      if store.folder == nil { warning = try await scanVault(file.deletingLastPathComponent())["readingRecoveryWarning"] as? Bool == true }
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
-      if store.folder == nil { _ = try store.scan(file.deletingLastPathComponent()) }
+      if warning, var result = try jsonValue(record) as? [String: Any] {
+        result["readingRecoveryWarning"] = true
+        return result
+      }
       return try jsonValue(record)
     case "openFolder":
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
-      let result = try store.scan(file)
+      let result = try await scanVault(file)
       Task { @MainActor in self.owner.releaseBibliographies() }
       return result
     case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)

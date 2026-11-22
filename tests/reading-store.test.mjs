@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { appendFile, link, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { setTimeout as delay } from "node:timers/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -89,7 +88,6 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
     const go = once(process, "message");
     process.send((await list()).map(item => item.id));
     await go;
-    process.send("writing");
     await readingStore(store, note.id, {action:"put", item:{type:"card", id:${JSON.stringify(id)}, front:"Q", back:"A"}});
     const read = once(process, "message");
     process.send("committed");
@@ -104,10 +102,11 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
   }));
   await moveReadingEntries(store.folder, async () => {
     await appendFile(log, '{"torn":');
+    const before = await readFile(log);
     const starting = Promise.all(workers.map(child => once(child, "message")));
     workers.forEach(child => child.send("go"));
-    assert.deepEqual((await starting).map(([message]) => message), ["writing", "writing"]);
-    await delay(80);
+    assert.deepEqual((await starting).map(([message]) => message), ["journal-lock-contended", "journal-lock-contended"]);
+    assert.deepEqual(await readFile(log), before);
     assert.equal(finished.length, 0);
   });
   await Promise.all(committedMessages);
@@ -116,16 +115,20 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
   const cached = JSON.parse(await readFile(index, "utf8"));
   assert.deepEqual(cached.entries.map(item => item.id).sort(), committed);
   assert.deepEqual((await readingStore(store, source.id, { action: "list" })).map(item => item.id).sort(), committed);
-  const messages = Promise.all(workers.map(child => once(child, "message")));
+  const messages = Promise.all(workers.map(child => new Promise(resolve => {
+    const receive = message => { if (Array.isArray(message)) { child.off("message", receive); resolve(message); } };
+    child.on("message", receive);
+  })));
   const exits = Promise.all(workers.map(child => once(child, "exit")));
   workers.forEach(child => child.send("read"));
-  assert.deepEqual((await messages).map(([message]) => message), [committed, committed]);
+  assert.deepEqual(await messages, [committed, committed]);
   assert.deepEqual(await exits, [[0, null], [0, null]]);
 });
 
 test("reopening recovers both sides of an interrupted rename and releases the lock", { timeout: 10000 }, async t => {
   const { store, source, log } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("seed") });
+  await readingStore(store, source.id, { action: "put", item: { id: "card", type: "card", front: "Q", back: "A" } });
   for (const moved of [false, true]) {
     const child = startWorker(t, store.folder, source.path, `
       const handle = await open(file, "r");
@@ -144,6 +147,7 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
     const exit = once(child, "exit");
     child.kill("SIGKILL");
     assert.deepEqual(await exit, [null, "SIGKILL"]);
+    if (moved) await writeFile(source.path, "Replacement original path");
     const reopened = new DocumentStore(store.folder);
     const scan = await reopened.scan(store.folder);
     assert.equal(scan.readingRecoveryWarning, false);
@@ -152,7 +156,11 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
     const name = moved ? "renamed.md" : "source.md";
     const record = await reopened.open(path.join(store.folder, name));
     await reopened.save(record.id, "Saved before opening Reading Layers");
-    assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), [["seed", name]]);
+    assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), [["seed", name], ["card", name]]);
+    if (moved) {
+      const replacement = await reopened.open(source.path);
+      assert.deepEqual(await readingStore(reopened, replacement.id, { action: "list" }), []);
+    }
   }
 });
 
@@ -170,17 +178,27 @@ test("rating belongs to the reviewed card and survives unrelated path reuse", as
   assert.deepEqual((await readingStore(store, other.id, { action: "list", types: ["answer"] })).map(item => item.rating), [5]);
 });
 
-test("ambiguous recovery keeps entries and permits subsequent journal writes", async t => {
+test("bad journal rows are reported and do not hide committed history", async t => {
   const { store, source, log } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("original") });
-  await appendFile(log, JSON.stringify({ v: 1, intent: { from: "source.md", to: "other.md" } }) + "\n");
+  await appendFile(log, JSON.stringify({ v: 1, intent: { from: "source.md", to: "../other.md" } }) + "\n");
+  await appendFile(log, Buffer.from([0xff, 10]));
   const reopened = new DocumentStore(store.folder);
   assert.equal((await reopened.scan(store.folder)).readingRecoveryWarning, true);
   const record = await reopened.open(source.path);
   await readingStore(reopened, record.id, { action: "put", item: note("next") });
   assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => item.id), ["original", "next"]);
   await appendFile(log, JSON.stringify({ v: 1, move: { from: "source.md", to: "other.md" } }) + "\n");
-  await assert.rejects(readingStore(reopened, record.id, { action: "list" }), /damaged|损坏/);
+  assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => item.id), ["original", "next"]);
+  if (process.platform !== "win32") {
+    const unsupported = path.join(store.folder, "literal\\slash.md");
+    await writeFile(unsupported, body);
+    const workspace = new Workspace(store.folder);
+    const bytes = await readFile(log);
+    await assert.rejects(moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: unsupported, name: "clean.md" }, store, undefined, move)), /invalid|无效/i);
+    assert.equal(await readFile(unsupported, "utf8"), body);
+    assert.deepEqual(await readFile(log), bytes);
+  }
 });
 
 test("the last card slot is exclusive and existing cards remain editable", async t => {
@@ -233,8 +251,11 @@ test("vault journal serializes writers, compacts updates and rebuilds after a to
   assert.match(readingMarkdown(items), /Question\?[\s\S]*Answer/);
   assert.equal(await readFile(source.path, "utf8"), body);
   await appendFile(log, "damaged\n", "utf8");
-  await assert.rejects(put(note("do-not-write")), /damaged|损坏/);
+  assert.deepEqual(await get(source.id, "vault"), items);
   assert.equal(await readFile(log, "utf8"), recovered + "damaged\n");
+  await put(note("after-damage"));
+  assert.deepEqual((await get(source.id, "vault")).map(item => item.id).sort(), [...items.map(item => item.id), "after-damage"].sort());
+  assert.ok((await readFile(log, "utf8")).startsWith(recovered + "damaged\n"));
 });
 
 test("sidecar refuses external documents, unsafe links and malformed writes", async t => {

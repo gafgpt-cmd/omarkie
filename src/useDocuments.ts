@@ -199,6 +199,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
   }, [ready]);
   async function add(record: DocumentRecord | null) {
     if (!record) return;
+    if (record.readingRecoveryWarning) setMessage(t("Could not confirm reading history recovery."));
     const existing = current.current.documents.find(
       (item) =>
         item.id === record.id || (record.path && item.path === record.path),
@@ -209,7 +210,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     }
     setDocuments((records) => [...records, record]);
     setActiveId(record.id);
-    if (record.controlCharacters) setMessage(t("“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。", { name: record.name, count: record.controlCharacters }));
+    if (!record.readingRecoveryWarning && record.controlCharacters) setMessage(t("“{{name}}”含有 {{count}} 个控制字符，显示为 ␇ 等符号，保存时原样保留。", { name: record.name, count: record.controlCharacters }));
     return record;
   }
   async function create(draft?: { name: string; body: string }) {

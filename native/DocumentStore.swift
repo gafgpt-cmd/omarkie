@@ -224,7 +224,6 @@ final class DocumentStore {
   }
   func scan(_ directory: URL? = nil) throws -> [String: Any] {
     guard let root = directory.map(canonicalFileURL) ?? folder else { return ["folder": NSNull(), "files": [], "truncated": false, "skipped": 0] }
-    let readingRecoveryWarning = root != folder && NativeReadingStore.recoverVault(root)
     var nextTokens = [String: URL](), files = [[String: String]]()
     var truncated = false, skipped = 0
     let typeKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
@@ -270,7 +269,7 @@ final class DocumentStore {
     // Commit only after the root is readable, preserving the previous file tree on failure.
     folder = root
     tokens = nextTokens
-    return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped, "readingRecoveryWarning": readingRecoveryWarning]
+    return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped]
   }
 
   func persist(_ incoming: SessionRecord) throws {
@@ -304,18 +303,16 @@ final class DocumentStore {
     while closedOrder.count > 20 { closedRecords.removeValue(forKey: closedOrder.removeFirst()) }
     records = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
   }
-  func restore() throws -> SessionRecord? {
+  func restore(_ saved: Data? = nil) throws -> SessionRecord? {
     let file = dataDirectory.appendingPathComponent("session.json")
-    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let bytes = try Data(contentsOf: file)
+    guard saved != nil || FileManager.default.fileExists(atPath: file.path) else { return nil }
+    let bytes = try saved ?? Data(contentsOf: file)
     do {
       var session = try JSONDecoder().decode(SessionRecord.self, from: bytes)
       guard session.version == 1, session.documents.count <= 100 else {
         throw NativeFailure("恢复数据格式无效。")
       }
-      if let path = session.folder {
-        session.readingRecoveryWarning = (try? scan(URL(fileURLWithPath: path)))?["readingRecoveryWarning"] as? Bool
-      }
+      if let path = session.folder { _ = try? scan(URL(fileURLWithPath: path)) }
       var documents = [DocumentRecord]()
       for var record in session.documents {
         guard record.content.utf8.count <= Self.maxBytes else { throw NativeFailure("恢复文档过大。") }
