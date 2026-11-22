@@ -154,7 +154,7 @@ final class Workspace {
   }
   func workflowFile(_ root: URL, relative: String) throws -> URL {
     guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains(":"), !relative.contains("\\"), !relative.contains("\0"), !relative.split(separator: "/").contains(where: { $0.hasPrefix(".") && $0 != ".assets" }) else { throw NativeFailure("知识库路径无效") }
-    let file = root.appendingPathComponent(relative).standardizedFileURL
+    let file = root.appendingPathComponent(relative)
     guard contained(root, file), file.path == canonicalFileURL(file).path else { throw NativeFailure("知识库路径无效") }
     return file
   }

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, mkdir, realpath, rename } from "node:fs/p
 import path from "node:path";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
-import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
@@ -17,7 +17,7 @@ const errors = [],
 let application, currentPage;
 async function launch() {
   application = await electron.launch({
-    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: headlessArguments } : { args: [root, ...headlessArguments] }),
+    ...(process.env.OMARKIE_EXECUTABLE ? { executablePath: process.env.OMARKIE_EXECUTABLE, args: packagedScreenshotArguments } : { args: [root, ...headlessArguments] }),
     env, timeout: 30000,
   });
   const page = await application.firstWindow({ timeout: 20000 });

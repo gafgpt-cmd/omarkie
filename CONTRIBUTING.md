@@ -20,7 +20,7 @@ Use Node.js 26 and npm. Linux and Windows use Electron; macOS needs macOS 14+ an
 - `npm run verify` requires Pandoc 3, LibreOffice, Playwright Chromium and Poppler's `pdftotext` on PATH.
 - Linux also needs `flock`, Xvfb and xauth for the command below.
 - Missing Chromium libraries: `npx playwright install --with-deps chromium`.
-- CI uses GitHub-hosted Ubuntu with these dependencies and the latest digest-verified Pandoc; converters are mandatory via `OMARKIE_REQUIRE_CONVERTERS=1`.
+- The Linux CI job uses GitHub-hosted Ubuntu with these dependencies and the latest digest-verified Pandoc; converters are mandatory via `OMARKIE_REQUIRE_CONVERTERS=1`.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
@@ -50,6 +50,10 @@ npm run verify
 Includes the production build, unit tests, browser startup and Electron compatibility suites.
 Desktop checks cover shared undo, photo previews, reading tools, document workflows, packaged citations and collision-safe file operations.
 Strict timing stays separate; see [performance targets](README.md#performance-targets).
+
+[CI](.github/workflows/ci.yml) runs the Linux checks on pull requests and pushes to `main`.
+Pull requests also run `npm run test:native` on macOS to compile the native app and run its tests; this does not build or test the installer.
+Platform package checks run in the [release workflow](#publish-a-release).
 
 Linux CI-equivalent invocation:
 

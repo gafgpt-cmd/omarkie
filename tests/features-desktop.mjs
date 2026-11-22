@@ -26,6 +26,16 @@ const rich = page.locator(".document-editor:not([hidden]) .rich-document"), sour
 async function mode(rendered) { const button = page.locator(".source-toggle"); if (((await button.getAttribute("aria-pressed")) === "true") === rendered) await button.click(); await expect(rendered ? rich : source).toBeVisible(); }
 // Linux and Windows use the pcKey shortcuts from shared/commands.json.
 const quickOpen = process.platform === "darwin" ? "Meta+Shift+o" : "Control+p";
+async function openQuick(query) {
+  await page.keyboard.press(quickOpen);
+  const quick = page.getByRole("dialog", { name: "快速打开", exact: true });
+  const input = quick.getByRole("combobox");
+  await expect(input).toBeFocused();
+  await input.fill(query);
+  await expect(quick.getByRole("option", { selected: true })).toBeVisible();
+  await input.press("Enter");
+  await expect(quick).toHaveCount(0);
+}
 async function menu(label) { await page.getByRole("button", { name: "更多操作" }).click(); await page.getByRole("menuitem", { name: label, exact: true }).click(); }
 async function text() { await mode(false); return (await source.locator(".cm-line").allTextContents()).join("\n"); }
 try {
@@ -75,13 +85,13 @@ try {
   await saved(original);
   passed.push("rich and source edits share ordered undo and redo across repeated mode changes");
   await page.keyboard.press("ControlOrMeta+Shift+z"); await saved(richEdit);
-  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("另一页"); await page.keyboard.press("Enter");
+  await openQuick("另一页");
   await expect(rich.getByRole("heading", { name: "另一页", exact: true })).toBeVisible();
-  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("功能"); await page.keyboard.press("Enter");
+  await openQuick("功能");
   await expect(rich.getByRole("heading", { name: "功能验收", exact: true })).toBeVisible();
   await page.keyboard.press("ControlOrMeta+z"); await saved(original);
   passed.push("visiting another note retains the original note's undo history");
-  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("混合"); await page.keyboard.press("Enter");
+  await openQuick("混合");
   await expect(rich.getByRole("heading", { name: "Mixed", exact: true })).toBeVisible();
   await mode(false); await source.press(process.platform === "darwin" ? "Meta+ArrowUp" : "Control+Home");
   await page.keyboard.insertText("<!-- prefix -->\n");
@@ -91,8 +101,10 @@ try {
   await mode(true); await page.keyboard.press("ControlOrMeta+z"); await mixedSaved(mixedOriginal);
   await page.keyboard.press("ControlOrMeta+Shift+z"); await mixedSaved(mixedEdited);
   await mode(false); await source.press("ControlOrMeta+z"); await mixedSaved(mixedOriginal);
-  await page.getByRole("button", { name: "关闭 混合换行.md", exact: true }).click();
-  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("功能"); await page.keyboard.press("Enter");
+  const closeMixed = page.getByRole("button", { name: "关闭 混合换行.md", exact: true });
+  await closeMixed.click();
+  await expect(closeMixed).toHaveCount(0);
+  await openQuick("功能");
   passed.push("source editing and cross-view undo preserve every mixed line ending on disk");
   await mode(true); await rich.locator("p").filter({ hasText: "普通文字。" }).click();
   await page.keyboard.press("ControlOrMeta+2");
@@ -134,13 +146,10 @@ try {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   passed.push("preferences change rendering without changing source and apply font/theme live; Warm Paper brings its serif back; a chosen theme survives reload over Omarchy");
   const currentText = await text(); assert.ok(currentText.includes("==高亮==")); await mode(true);
-  await page.keyboard.press(quickOpen);
-  const quick = page.getByRole("dialog", { name: "快速打开", exact: true });
-  await expect(quick.getByRole("combobox")).toBeFocused();
-  await quick.getByRole("combobox").fill("功能"); await page.keyboard.press("Enter");
-  await expect(quick).toHaveCount(0); await expect(rich).toBeVisible();
+  await openQuick("功能");
+  await expect(rich).toBeVisible();
   passed.push("quick open supports immediate typing and keyboard selection");
-  await page.keyboard.press(quickOpen); await page.getByRole("combobox").fill("另一页"); await page.keyboard.press("Enter");
+  await openQuick("另一页");
   await expect(page.getByRole("heading", { name: "另一页", exact: true })).toBeVisible();
   await page.keyboard.press(process.platform === "darwin" ? "Meta+Control+3" : "Control+Shift+3");
   await expect(page.getByRole("tree", { name: "文件树", exact: true })).toBeVisible();

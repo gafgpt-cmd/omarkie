@@ -2,6 +2,9 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 export const headlessArguments = process.platform === "linux" ? [`--ozone-platform=${process.env.OMARKIE_TEST_DISPLAY ? "x11" : "headless"}`] : [];
+
+// Playwright injects CDPScreenshotNewSurface through its electron loader only when launching the repository app; packaged-payload launches via executablePath miss it, so pass it explicitly there. As a plain command-line argument on repository launches it broke menu-desktop under headless ozone (the second menu-bar group never expanded), so repository launches rely on Playwright's injection instead. The packaged-payload screenshot hang reproduced locally without it; with it ime-desktop passes unchanged against the packaged payload and captures the evidence screenshot. The tagged-run ime-desktop timeout was stuck at 'waiting for fonts to load', so the mechanism connecting this flag to that stall is unproven.
+export const packagedScreenshotArguments = process.platform === "linux" ? [...headlessArguments, "--enable-features=CDPScreenshotNewSurface"] : headlessArguments;
 export async function isolatedEnvironment(environment) {
   if (process.platform !== "linux") return environment;
   const directory = environment.OMARKIE_DATA_DIR;

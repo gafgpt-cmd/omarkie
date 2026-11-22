@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { installPlugin } from "../electron/plugins.mjs";
-import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
 
 const data=await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-"));
 const qa=process.env.OMARKIE_QA_DIR || path.join(data,"evidence"); await mkdir(qa,{recursive:true});
@@ -26,7 +26,7 @@ await installPlugin(pluginFile,profile);
 const env=await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:profile,OMARKIE_LANGUAGE:'zh'}); delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
 let app,page; const checks=[],errors=[];
 try {
-  app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:headlessArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
+  app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message)); await fullSize(app,page);
   console.log('IME: launched');
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();

@@ -243,7 +243,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
               if format == "pdf" {
                 let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options)
                 DispatchQueue.main.async {
-                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store)
+                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: self.store)
                   self.pdfExporter = exporter
                   exporter.export(markup) { result in
                     do { try atomicWrite(destination, try result.get()); self.reply(id, ["ok": true, "value": destination.path]) }
