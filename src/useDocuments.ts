@@ -31,6 +31,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     setMessage(error instanceof Error ? error.message : String(error));
   function reportFolderScan(result: FolderResult) {
     const notices = [];
+    if (result.readingRecoveryWarning) notices.push(t("Could not confirm reading history recovery."));
     if (result.truncated) notices.push(t("目录显示前 1000 项，或最多 8 层子目录。"));
     if (result.skipped) notices.push(t("已跳过 {{count}} 个暂时无法读取的文件或子目录。", { count: result.skipped }));
     if (notices.length) setMessage(notices.join(" "));
@@ -49,7 +50,8 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
             : records[0]?.id || "",
         );
         setFolder(session?.folder || null);
-        if (session?.restoreError) setMessage(session.restoreError);
+        const warnings = [session?.restoreError, session?.readingRecoveryWarning && t("Could not confirm reading history recovery.")].filter(Boolean);
+        if (warnings.length) setMessage(warnings.join(" "));
         setReady(true);
         await Promise.all([
           session?.folder ? host.scan().then(scanned => {

@@ -47,6 +47,7 @@
   "阅读图层数据无效。": "Dades de capes no vàlides.",
   "阅读数据路径不安全。": "El camí de les dades de lectura no és segur.",
   "阅读记录损坏，未更改原文件。": "El registre de lectura està malmès. El fitxer original no s’ha modificat.",
+  "Could not confirm reading history recovery.": "No s’ha pogut confirmar la recuperació de l’historial de lectura.",
   "阅读笔记.md": "Notes de lectura.md",
   "无法导出。请选择新的文件名。": "No s’ha pogut exportar. Tria un nom de fitxer nou.",
   "请先打开文件夹并保存文档。": "Obre una carpeta i desa el document primer.",

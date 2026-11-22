@@ -216,6 +216,7 @@ export class DocumentStore {
   async scanFolder(folder = this.folder) {
     if (!folder) return { folder: null, files: [], truncated: false, skipped: 0 };
     const root = await realpath(folder), tokens = new Map(), files = [];
+    const readingRecoveryWarning = root !== this.folder && await (await import("./reading-store.mjs")).recoverReadingVault(root);
     let truncated = false, skipped = 0;
     const walk = async (directory, depth) => {
       let entries;
@@ -260,7 +261,7 @@ export class DocumentStore {
     // A failed root scan must retain the last usable folder and token grants.
     this.folder = root;
     this.fileTokens = tokens;
-    return { folder: root, files, truncated, skipped };
+    return { folder: root, files, truncated, skipped, readingRecoveryWarning };
   }
   async openToken(token) {
     const file = this.fileTokens.get(token);
@@ -337,6 +338,10 @@ export class DocumentStore {
       if (session.version !== 1 || !Array.isArray(session.documents))
         return null;
       const documents = [];
+      let readingRecoveryWarning = false;
+      if (session.folder) {
+        try { ({ readingRecoveryWarning } = await this.scan(session.folder)); } catch {}
+      }
       for (const record of session.documents) {
         if (typeof record.id !== "string" || typeof record.content !== "string")
           continue;
@@ -356,12 +361,7 @@ export class DocumentStore {
         this.records.set(record.id, record);
         documents.push(record);
       }
-      if (session.folder) {
-        try {
-          await this.scan(session.folder);
-        } catch {}
-      }
-      return { documents, activeId: session.activeId, folder: this.folder };
+      return { documents, activeId: session.activeId, folder: this.folder, readingRecoveryWarning };
     } catch (e) {
       if (e.code === "ENOENT") return null;
       const original = await readFile(path.join(this.dataDir, "session.json"));

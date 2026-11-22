@@ -81,6 +81,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           Task { @MainActor in
             do {
               try await self.checkLearningPersistence()
+              try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
               exit(0)
             } catch { self.fail(error) }
@@ -88,6 +89,19 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         } catch { self.fail(error) }
       }
     } catch { fail(error) }
+  }
+  @MainActor func checkOfflinePDF() async throws {
+    guard let origin = ProcessInfo.processInfo.environment["OMARKIE_TEST_GRAMMAR"] else { throw NativeFailure("Missing PDF fixture origin.") }
+    for offline in [false, true] {
+      let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: host.store, offline: offline)
+      let route = offline ? "project-export-media-blocked" : "project-export-media-control"
+      let html = "<!doctype html><article class=print-document><h1>Renderer fixture</h1><img src='\(origin)/\(route)'></article>"
+      let bytes: Data = try await withCheckedThrowingContinuation { continuation in
+        exporter.export(html) { continuation.resume(with: $0) }
+      }
+      guard PDFDocument(data: bytes)?.string?.contains("Renderer fixture") == true else { throw NativeFailure("PDF resource fixture did not render.") }
+      withExtendedLifetime(exporter) {}
+    }
   }
   @MainActor func checkLearningPersistence() async throws {
     let scope = try NativeReadingStore.scope(host.store, "webkit-fixture")
@@ -106,18 +120,41 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
-    let live = owner.readingStore
-    _ = try await live.perform(scope, ["action": "list"])
-    async let first = reopened.perform(scope, ["action": "put", "item": ["id": "parallel-a", "type": "card", "front": "A", "back": "1"]])
-    async let second = live.perform(scope, ["action": "put", "item": ["id": "parallel-b", "type": "card", "front": "B", "back": "2"]])
-    _ = try await (first, second)
-    let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
-    for store in [live, reopened] {
-      let entries = try await store.perform(scope, ["action": "list"]) as? [[String: Any]]
-      guard entries?.count == expected.count, Set(entries?.compactMap { $0["id"] as? String } ?? []) == expected else {
-        throw NativeFailure("Concurrent native writers disagree on the committed entries.")
+    let coordination = owner.directory.appendingPathComponent("journal-test")
+    try FileManager.default.createDirectory(at: coordination, withIntermediateDirectories: false)
+    let child = Process()
+    child.executableURL = Bundle.main.executableURL
+    child.arguments = ["--reading-worker", scope.root.path, scope.file.path, coordination.path]
+    try child.run()
+    defer { if child.isRunning { child.terminate() } }
+    func waitFor(_ file: String) async throws {
+      let deadline = ContinuousClock.now + .seconds(2)
+      while !FileManager.default.fileExists(atPath: coordination.appendingPathComponent(file).path) {
+        guard child.isRunning, ContinuousClock.now < deadline else { throw NativeFailure("Reading worker did not signal \(file).") }
+        try await Task.sleep(nanoseconds: 10_000_000)
       }
     }
+    try await waitFor("held")
+    let store = reopened
+    let put = Task { try await store.perform(scope, ["action": "put", "item": ["id": "parallel-a", "type": "card", "front": "A", "back": "1"]]) }
+    try await Task.sleep(nanoseconds: 80_000_000)
+    let indexFile = scope.root.appendingPathComponent(".omarkie/index.json")
+    guard !((try String(contentsOf: indexFile, encoding: .utf8)).contains("parallel-a")) else { throw NativeFailure("Native append escaped the worker lock.") }
+    try atomicWrite(coordination.appendingPathComponent("release"), Data())
+    _ = try await put.value
+    try await waitFor("written")
+    try atomicWrite(coordination.appendingPathComponent("read"), Data())
+    try await waitFor("ids.json")
+    let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    let local = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let remote = try JSONDecoder().decode([String].self, from: Data(contentsOf: coordination.appendingPathComponent("ids.json")))
+    let index = try JSONSerialization.jsonObject(with: Data(contentsOf: indexFile)) as? [String: Any]
+    let indexed = index?["entries"] as? [[String: Any]] ?? []
+    for ids in [local.compactMap { $0["id"] as? String }, remote, indexed.compactMap { $0["id"] as? String }] {
+      guard ids.count == expected.count, Set(ids) == expected else { throw NativeFailure("Concurrent native writers disagree on commits.") }
+    }
+    child.waitUntilExit()
+    guard child.terminationStatus == 0 else { throw NativeFailure("Native reading worker failed.") }
     print("PASS: native journal replay, Markdown export and exclusive destination")
   }
   @MainActor func checkReaderPersistence() async throws {
@@ -174,8 +211,39 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
   }
 }
 @main struct WebKitTestMain {
+  static func readingWorker(_ args: [String]) async throws {
+    let root = URL(fileURLWithPath: args[2]), file = URL(fileURLWithPath: args[3]), coordination = URL(fileURLWithPath: args[4])
+    let scope = NativeReadingStore.Scope(root: root, file: file, document: file.lastPathComponent)
+    let store = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
+    _ = try await store.perform(scope, ["action": "list"])
+    _ = try await store.moveEntries(root) { _ in
+      try atomicWrite(coordination.appendingPathComponent("held"), Data())
+      let deadline = ContinuousClock.now + .seconds(2)
+      while !FileManager.default.fileExists(atPath: coordination.appendingPathComponent("release").path) {
+        guard ContinuousClock.now < deadline else { throw NativeFailure("Reading lock was not released by the test.") }
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      return [:]
+    }
+    _ = try await store.perform(scope, ["action": "put", "item": ["id": "parallel-b", "type": "card", "front": "B", "back": "2"]])
+    try atomicWrite(coordination.appendingPathComponent("written"), Data())
+    let deadline = ContinuousClock.now + .seconds(2)
+    while !FileManager.default.fileExists(atPath: coordination.appendingPathComponent("read").path) {
+      guard ContinuousClock.now < deadline else { throw NativeFailure("Reading worker did not receive the list signal.") }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    let entries = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    try atomicWrite(coordination.appendingPathComponent("ids.json"), JSONEncoder().encode(entries.compactMap { $0["id"] as? String }))
+  }
   static func main() {
     setbuf(stdout, nil)
+    if CommandLine.arguments.count == 5, CommandLine.arguments[1] == "--reading-worker" {
+      Task {
+        do { try await readingWorker(CommandLine.arguments); exit(0) }
+        catch { fputs("\(error)\n", stderr); exit(1) }
+      }
+      dispatchMain()
+    }
     let app = NSApplication.shared
     let delegate = WebKitTests()
     app.delegate = delegate

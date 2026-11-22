@@ -317,7 +317,7 @@ const handlers = {
     let result = restored;
     if (!result) {
       const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
-      result = { documents, activeId: documents[0].id, folder: folder.folder };
+      result = { documents, activeId: documents[0].id, folder: folder.folder, readingRecoveryWarning: folder.readingRecoveryWarning };
     }
     return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },

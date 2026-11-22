@@ -82,7 +82,7 @@ try {
   const orphan = await store({ action: "resolve", blocks: [] });
   check(fuzzy.ok && fuzzy.value[0].line === 11 && orphan.ok && orphan.value[0].line === null, "native fuzzy reattachment and orphaning share the journal");
   const card = await store({ action: "put", item: { type: "card", id: "native-card", front: "Synthetic question", back: "Synthetic answer" } });
-  const answer = await store({ action: "put", item: { type: "answer", id: "native-answer", cardId: "native-card", rating: 5 } });
+  const answer = await store({ action: "put", owner: "WebKit-fixture.md", item: { type: "answer", id: "native-answer", cardId: "native-card", rating: 5 } });
   const review = await store({ action: "list", scope: "vault", types: ["card", "answer"] });
   check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
   const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });

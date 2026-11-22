@@ -41,6 +41,12 @@ final class NativeReadingStore {
 
   init(_ script: URL) { self.script = script }
 
+  static func recoverVault(_ root: URL) -> Bool {
+    let script = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+    do { return try NativeReadingStore(script).transaction(root, writing: false) { _, _, warning in warning } }
+    catch { NSLog("Reading journal recovery could not open the journal."); return true }
+  }
+
   static func scope(_ store: DocumentStore, _ id: String) throws -> Scope {
     guard let path = try store.require(id).path, let folder = store.folder else {
       throw NativeFailure("请先打开文件夹并保存文档。")
@@ -64,7 +70,7 @@ final class NativeReadingStore {
         continuation.resume(with: Result {
           guard let folder else { return try DispatchQueue.main.sync { try execute(moveExclusive) } }
           let root = canonicalFileURL(folder)
-          return try self.transaction(root, writing: false, moving: true) { state, append in
+          return try self.transaction(root, writing: false, moving: true) { state, append, _ in
             try DispatchQueue.main.sync {
               try execute { source, destination in
                 guard state != nil, contained(root, source), contained(root, destination) else {
@@ -72,9 +78,9 @@ final class NativeReadingStore {
                 }
                 let offset = root.path.count + 1
                 let from = String(source.path.dropFirst(offset)), to = String(destination.path.dropFirst(offset))
-                guard from != to, let marker = Self.identity(root, from) else { throw NativeFailure(Self.unsafe) }
+                guard from != to, let state, try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 let move = ["from": from, "to": to]
-                try append(["intent": ["from": from, "to": to, "identity": marker]])
+                try append(["intent": move])
                 try moveExclusive(source, destination)
                 try? append(["move": move])
               }
@@ -108,11 +114,15 @@ final class NativeReadingStore {
     (metadata.st_mode & S_IFMT) == S_IFREG && metadata.st_nlink == 1
   }
 
-  private static func identity(_ root: URL, _ file: String) -> String? {
+  private static func existsAt(_ root: URL, _ file: String) throws -> Bool {
     let target = root.appendingPathComponent(file)
     var metadata = stat()
-    guard canonicalFileURL(target).path == target.path, lstat(target.path, &metadata) == 0 else { return nil }
-    return "\(UInt32(bitPattern: metadata.st_dev)):\(metadata.st_ino)"
+    if lstat(target.path, &metadata) != 0 {
+      if errno == ENOENT { return false }
+      throw NativeFailure(unsafe)
+    }
+    guard canonicalFileURL(target).path == target.path else { throw NativeFailure(unsafe) }
+    return true
   }
 
   private static func revision(_ descriptor: Int32) throws -> Revision {
@@ -153,15 +163,15 @@ final class NativeReadingStore {
     let item = validated.forProperty("item")!
     let writing = !item.isUndefined
     let empty: Any = exporting ? "\n" : [] as [[String: Any]]
-    return try transaction(scope.root, writing: writing) { state, append in
+    return try transaction(scope.root, writing: writing) { state, append, _ in
       var source = stat()
       guard current(), canonicalFileURL(scope.file).path == scope.file.path,
             lstat(scope.file.path, &source) == 0, (source.st_mode & S_IFMT) == S_IFREG else { throw NativeFailure(Self.unsafe) }
       guard let state else { return empty }
       if writing {
-        _ = try call("checkPut", [state.entries, scope.document, item])
+        let document = try call("putDocument", [state.entries, scope.document, item, validated.forProperty("owner")!]).toString()
         guard var value = item.toDictionary() as? [String: Any] else { throw NativeFailure(Self.invalid) }
-        value["document"] = scope.document; value["at"] = timestamp.string(from: Date())
+        value["document"] = document; value["at"] = timestamp.string(from: Date())
         try append(["entry": value])
         return value
       }
@@ -172,7 +182,7 @@ final class NativeReadingStore {
   }
 
   private func transaction<T>(_ folder: URL, writing: Bool, moving: Bool = false,
-                              _ run: (Snapshot?, @escaping ([String: Any]) throws -> Void) throws -> T) throws -> T {
+                              _ run: (Snapshot?, @escaping ([String: Any]) throws -> Void, Bool) throws -> T) throws -> T {
     let create = writing || moving
     let noAppend: ([String: Any]) throws -> Void = { _ in throw NativeFailure(Self.unsafe) }
     guard canonicalFileURL(folder).path == folder.path else { throw NativeFailure(Self.unsafe) }
@@ -181,7 +191,7 @@ final class NativeReadingStore {
     defer { _ = close(root) }
     if create, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
     let directory = openat(root, ".omarkie", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    if directory < 0, !create, errno == ENOENT { return try run(nil, noAppend) }
+    if directory < 0, !create, errno == ENOENT { return try run(nil, noAppend, false) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
     let lock = openat(directory, "journal.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
@@ -196,7 +206,7 @@ final class NativeReadingStore {
     let hasIndex = try Self.indexExists(directory)
     let flags = O_RDWR | O_APPEND | (writing ? O_CREAT : 0)
     let descriptor = openat(directory, "store.jsonl", flags | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
-    if descriptor < 0, !writing, errno == ENOENT { return try run(nil, noAppend) }
+    if descriptor < 0, !writing, errno == ENOENT { return try run(nil, noAppend, false) }
     guard descriptor >= 0 else { throw NativeFailure(Self.unsafe) }
     let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
     defer { try? handle.close() }
@@ -220,13 +230,18 @@ final class NativeReadingStore {
       try handle.synchronize()
       state = try load()
     }
+    var warning = false
     if let intent = try call("pending", [state.entries]).toDictionary() as? [String: String],
-       let from = intent["from"], let to = intent["to"], let identity = intent["identity"] {
-      if Self.identity(folder, from) == identity { try append(["cancel": true]) }
-      else if Self.identity(folder, to) == identity { try append(["move": ["from": from, "to": to]]) }
-      else { throw NativeFailure(Self.unsafe) }
+       let from = intent["from"], let to = intent["to"] {
+      do {
+        let source = try Self.existsAt(folder, from), destination = try Self.existsAt(folder, to)
+        warning = source == destination
+        if !source && destination { try append(["move": ["from": from, "to": to]]) }
+        else { try append(["cancel": true]) }
+      } catch { warning = true }
+      if warning { NSLog("Reading move recovery could not confirm the destination.") }
     }
-    let result = try run(state, append)
+    let result = try run(state, append, warning)
     if !state.indexed || !hasIndex {
       // The journal commit remains valid if the derived cache cannot be written.
       do { try writeIndex(directory, state); state.indexed = true } catch {}

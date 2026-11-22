@@ -83,7 +83,7 @@ export default function Flashcards({ id, content, panel, close }: {
 
   async function rate(rating: RecallRating) {
     if (!card || !session?.revealed) return;
-    await store(id, { action: "put", item: { type: "answer", id: crypto.randomUUID(), cardId: card.id, rating } });
+    await store(id, { action: "put", owner: card.document, item: { type: "answer", id: crypto.randomUUID(), cardId: card.id, rating } });
     const remaining = session.queue.slice(1);
     if (rating < 4) remaining.push(card);
     setSession({ queue: remaining, revealed: false, rated: session.rated + 1 });

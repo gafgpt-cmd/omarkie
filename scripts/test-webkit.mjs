@@ -10,7 +10,7 @@ const payloadRequests = [];
 const projectMediaRequests = [];
 const grammarRequests = [];
 const server = createServer(async (request, response) => {
-  if (request.url === "/project-export-media") {
+  if (request.url?.startsWith("/project-export-media")) {
     projectMediaRequests.push(request.url);
     response.writeHead(404).end();
     return;
@@ -119,7 +119,7 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
-  assert.deepEqual(projectMediaRequests, [], "native project PDF sends no requests for embedded remote media");
+  assert.deepEqual(projectMediaRequests, ["/project-export-media-control"], "only the unrestricted native PDF renderer loads the fixture");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
   assert.deepEqual(payloadRequests.map(body => [body.model, body.max_tokens, body.max_completion_tokens, body.messages.slice(1).map(message => message.content)]), [
     ["native-fixture", 768, undefined, ["Synthetic source paragraph."]],

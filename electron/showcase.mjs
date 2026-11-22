@@ -29,6 +29,7 @@ export async function copyShowcase(source, target) {
 export async function openShowcase(store, source, folder, names = showcaseDocuments) {
   await copyShowcase(source, folder);
   const documents = [];
+  const scanned = await store.scan(folder);
   for (const name of names) documents.push(await store.open(path.join(folder, name)));
-  return { documents, folder: await store.scan(folder) };
+  return { documents, folder: scanned };
 }

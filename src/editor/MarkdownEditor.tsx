@@ -461,6 +461,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                   sourceComposing.current = false;
                   doc.endComposition();
                   publish();
+                  if (citationEnabled.current && source.current?.hasFocus) citation.current.update(doc.text, doc.selection.head);
                   compositionFinished();
                 }, 0);
                 return false;

@@ -28,12 +28,14 @@ export interface PathChange { fromPath?: string; toPath?: string; removedPath?: 
 export interface SearchMatch { token: string; path: string; name: string; line: number; column: number; length: number; preview: string }
 export interface SearchResult { matches: SearchMatch[]; truncated: boolean; skipped: number }
 export interface FolderResult {
+  readingRecoveryWarning?: boolean;
   folder: string | null;
   files: FileEntry[];
   truncated: boolean;
   skipped?: number;
 }
 export interface Recovery {
+  readingRecoveryWarning?: boolean;
   documents: DocumentRecord[];
   activeId?: string;
   folder?: string | null;

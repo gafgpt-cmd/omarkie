@@ -47,6 +47,7 @@
   "阅读图层数据无效。": "Date nevalide pentru straturile de lectură.",
   "阅读数据路径不安全。": "Calea datelor de lectură nu este sigură.",
   "阅读记录损坏，未更改原文件。": "Jurnalul de lectură este deteriorat. Fișierul original nu a fost modificat.",
+  "Could not confirm reading history recovery.": "Nu s-a putut confirma recuperarea istoricului de lectură.",
   "阅读笔记.md": "Notițe de lectură.md",
   "无法导出。请选择新的文件名。": "Exportul a eșuat. Alege un nume de fișier nou.",
   "请先打开文件夹并保存文档。": "Mai întâi deschide un dosar și salvează documentul.",

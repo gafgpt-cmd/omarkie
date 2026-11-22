@@ -48,11 +48,15 @@ export function dueCards(entries: readonly ReadingEntry[], now: number): StoredC
   // One durable answer event per rating. Replay avoids a second, partially committed schedule write.
   const answers = entries.filter(entry => entry.type === "answer").sort((a, b) => a.at.localeCompare(b.at));
   const schedules = new Map<string, ReviewSchedule>();
-  for (const answer of answers) schedules.set(answer.cardId, scheduleReview(schedules.get(answer.cardId), answer.rating as RecallRating, answer.at));
+  const key = (document: string, id: string) => JSON.stringify([document, id]);
+  for (const answer of answers) {
+    const card = key(answer.document, answer.cardId);
+    schedules.set(card, scheduleReview(schedules.get(card), answer.rating as RecallRating, answer.at));
+  }
   const due: { card: StoredCard; at: number }[] = [];
   for (const entry of entries) {
     if (entry.type !== "card") continue;
-    const schedule = schedules.get(entry.id);
+    const schedule = schedules.get(key(entry.document, entry.id));
     const at = schedule ? Date.parse(schedule.dueAt) : now;
     if (at <= now) due.push({ card: entry, at });
   }

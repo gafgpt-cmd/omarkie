@@ -30,6 +30,7 @@ struct SessionRecord: Codable {
   var activeId: String?
   var folder: String?
   var restoreError: String?
+  var readingRecoveryWarning: Bool?
 }
 func hashData(_ data: Data) -> String {
   SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -223,6 +224,7 @@ final class DocumentStore {
   }
   func scan(_ directory: URL? = nil) throws -> [String: Any] {
     guard let root = directory.map(canonicalFileURL) ?? folder else { return ["folder": NSNull(), "files": [], "truncated": false, "skipped": 0] }
+    let readingRecoveryWarning = root != folder && NativeReadingStore.recoverVault(root)
     var nextTokens = [String: URL](), files = [[String: String]]()
     var truncated = false, skipped = 0
     let typeKeys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey]
@@ -268,7 +270,7 @@ final class DocumentStore {
     // Commit only after the root is readable, preserving the previous file tree on failure.
     folder = root
     tokens = nextTokens
-    return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped]
+    return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped, "readingRecoveryWarning": readingRecoveryWarning]
   }
 
   func persist(_ incoming: SessionRecord) throws {
@@ -311,6 +313,9 @@ final class DocumentStore {
       guard session.version == 1, session.documents.count <= 100 else {
         throw NativeFailure("恢复数据格式无效。")
       }
+      if let path = session.folder {
+        session.readingRecoveryWarning = (try? scan(URL(fileURLWithPath: path)))?["readingRecoveryWarning"] as? Bool
+      }
       var documents = [DocumentRecord]()
       for var record in session.documents {
         guard record.content.utf8.count <= Self.maxBytes else { throw NativeFailure("恢复文档过大。") }
@@ -330,7 +335,6 @@ final class DocumentStore {
       }
       session.documents = documents
       activeId = session.activeId
-      if let path = session.folder { _ = try? scan(URL(fileURLWithPath: path)) }
       session.folder = folder?.path
       return session
     } catch {

@@ -6,7 +6,7 @@ import { dueCards, sourceDraft, suggestCards } from "../src/flashcards.ts";
 const start = "2026-02-20T10:30:00.000Z";
 const anchor = (quote, block = `The answer is ${quote}.`) => ({ quote, block, headings: ["Facts"], line: 3, hash: `hash-${quote}` });
 const card = (id, quote = id) => ({ id, type: "card", front: "Question", back: quote, anchor: anchor(quote), document: "facts.md", at: start });
-const answer = (cardId, at, rating) => ({ id: `${cardId}-${at}`, type: "answer", cardId, at, rating, document: "started-review-here.md" });
+const answer = (cardId, at, rating) => ({ id: `${cardId}-${at}`, type: "answer", cardId, at, rating, document: "facts.md" });
 
 const fallback = () => "What was highlighted?";
 
@@ -41,7 +41,7 @@ test("SM-2 schedules 1 and 6 days, rounds mature intervals up and restarts after
 test("replay restores due cards across files and does not advance same-session recall drills", () => {
   const again = "2026-02-20T10:31:00.000Z";
   const due = "2026-02-21T10:30:00.000Z";
-  const entries = [card("new"), answer("review", again, 5), card("review"), answer("review", start, 3), card("future"), answer("future", again, 4)];
+  const entries = [card("new"), { ...answer("new", again, 5), document: "another.md" }, answer("review", again, 5), card("review"), answer("review", start, 3), card("future"), answer("future", again, 4)];
   assert.deepEqual(dueCards(entries, Date.parse(again)).map(item => item.id), ["new"]);
   assert.deepEqual(dueCards(entries, Date.parse(due)).map(item => item.id), ["new", "review"]);
   assert.deepEqual(dueCards(entries, Date.parse("2026-02-22T10:30:00.000Z")).map(item => item.id), ["review", "future", "new"]);

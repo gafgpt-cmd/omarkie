@@ -66,7 +66,7 @@ test("rename, folder move and undo transfer reading history without sharing it w
 function startWorker(t, root, file, code) {
   const worker = `
     import { once } from "node:events";
-    import { appendFile, rename, stat } from "node:fs/promises";
+    import { open } from "node:fs/promises";
     import path from "node:path";
     import { moveReadingEntries, readingStore } from ${JSON.stringify(new URL("../electron/reading-store.mjs", import.meta.url).href)};
     import { DocumentStore } from ${JSON.stringify(new URL("../electron/store.mjs", import.meta.url).href)};
@@ -124,29 +124,63 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
 });
 
 test("reopening recovers both sides of an interrupted rename and releases the lock", { timeout: 10000 }, async t => {
-  const { store, source } = await fixture(t);
+  const { store, source, log } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("seed") });
   for (const moved of [false, true]) {
     const child = startWorker(t, store.folder, source.path, `
-      await moveReadingEntries(root, async () => {
-        const metadata = await stat(file, { bigint: true });
-        const intent = { from: "source.md", to: "renamed.md", identity: metadata.dev + ":" + metadata.ino };
-        await appendFile(path.join(root, ".omarkie", "store.jsonl"), JSON.stringify({ v: 1, intent }) + "\\n", { flush: true });
-        if (${moved}) await rename(file, path.join(root, "renamed.md"));
-        process.send("interrupted");
-        await once(process, "message");
-      });
+      const handle = await open(file, "r");
+      const prototype = Object.getPrototypeOf(handle), write = prototype.writeFile;
+      await handle.close();
+      const pause = async () => { process.send("interrupted"); await once(process, "message"); };
+      prototype.writeFile = async function(bytes, ...args) {
+        const row = typeof bytes === "string" ? JSON.parse(bytes) : {};
+        if (${moved} && row.move) await pause();
+        await write.call(this, bytes, ...args);
+        if (!${moved} && row.intent) { await this.sync(); await pause(); }
+      };
+      await moveReadingEntries(root, move => move(file, path.join(root, "renamed.md")));
     `);
     assert.equal((await once(child, "message"))[0], "interrupted");
     const exit = once(child, "exit");
     child.kill("SIGKILL");
     assert.deepEqual(await exit, [null, "SIGKILL"]);
     const reopened = new DocumentStore(store.folder);
-    reopened.folder = store.folder;
+    const scan = await reopened.scan(store.folder);
+    assert.equal(scan.readingRecoveryWarning, false);
+    const resolution = JSON.parse((await readFile(log, "utf8")).trimEnd().split("\n").at(-1));
+    assert.deepEqual(resolution, moved ? { v: 1, move: { from: "source.md", to: "renamed.md" } } : { v: 1, cancel: true });
     const name = moved ? "renamed.md" : "source.md";
     const record = await reopened.open(path.join(store.folder, name));
+    await reopened.save(record.id, "Saved before opening Reading Layers");
     assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), [["seed", name]]);
   }
+});
+
+test("rating belongs to the reviewed card and survives unrelated path reuse", async t => {
+  const { store, source, other } = await fixture(t);
+  for (const record of [source, other]) await readingStore(store, record.id, { action: "put", item: { type: "card", id: "same", front: "Q", back: "A" } });
+  const put = owner => readingStore(store, source.id, { action: "put", owner, item: { type: "answer", id: "rating", cardId: "same", rating: 5 } });
+  await assert.rejects(put("missing.md"));
+  assert.equal((await put("other.md")).document, "other.md");
+  assert.deepEqual((await readingStore(store, source.id, { action: "list", types: ["answer"] })), []);
+  const workspace = new Workspace(store.folder), reused = path.join(store.folder, "reused.md");
+  await writeFile(reused, "Other content");
+  await moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: source.path, name: "moved.md" }, store, undefined, move));
+  await moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: reused, name: "source.md" }, store, undefined, move));
+  assert.deepEqual((await readingStore(store, other.id, { action: "list", types: ["answer"] })).map(item => item.rating), [5]);
+});
+
+test("ambiguous recovery keeps entries and permits subsequent journal writes", async t => {
+  const { store, source, log } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: note("original") });
+  await appendFile(log, JSON.stringify({ v: 1, intent: { from: "source.md", to: "other.md" } }) + "\n");
+  const reopened = new DocumentStore(store.folder);
+  assert.equal((await reopened.scan(store.folder)).readingRecoveryWarning, true);
+  const record = await reopened.open(source.path);
+  await readingStore(reopened, record.id, { action: "put", item: note("next") });
+  assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => item.id), ["original", "next"]);
+  await appendFile(log, JSON.stringify({ v: 1, move: { from: "source.md", to: "other.md" } }) + "\n");
+  await assert.rejects(readingStore(reopened, record.id, { action: "list" }), /damaged|损坏/);
 });
 
 test("the last card slot is exclusive and existing cards remain editable", async t => {

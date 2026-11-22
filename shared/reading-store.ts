@@ -27,7 +27,7 @@ export interface ReadingLocation {
 
 export interface ReadingRequests {
   list: { scope?: "document" | "vault"; types?: readonly ReadingItem["type"][] };
-  put: { item: ReadingItem };
+  put: { item: ReadingItem; owner?: string };
   resolve: { blocks: readonly ReadingBlock[] };
   export: { defaultName?: string };
 }

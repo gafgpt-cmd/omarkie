@@ -104,7 +104,10 @@ try {
   await dismiss();
   await page.locator(".source-toggle").click();
   const sourceLine = source.getByText("Source citation:", { exact: false });
-  await sourceLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@研究");
+  await sourceLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Input.imeSetComposition", { text: "yanjiu", selectionStart: 6, selectionEnd: 6 });
+  await cdp.send("Input.insertText", { text: "研究" });
   await expect(sourceLine).toContainText("[@研究");
   await expect(suggestions.getByRole("option", { name: /updated.*Live replacement/ })).toBeVisible();
   await page.keyboard.press("Tab"); await expect(sourceLine).toContainText("[@updated]");

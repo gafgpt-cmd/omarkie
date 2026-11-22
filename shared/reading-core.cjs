@@ -98,7 +98,11 @@ module.exports = function readingCore(digest) {
 
   function validate(request) {
     if (!request || typeof request !== "object") throw invalid();
-    if (request.action === "put") return { item: itemAt(request.item) };
+    if (request.action === "put") {
+      const item = itemAt(request.item);
+      if (item.type === "answer" && !validPath(request.owner)) throw invalid();
+      return { item, owner: request.owner };
+    }
     if (request.action === "resolve") {
       if (!Array.isArray(request.blocks) || request.blocks.length > 250_000) throw invalid();
       let size = 0;
@@ -123,10 +127,17 @@ module.exports = function readingCore(digest) {
     items.set(`${entry.type}:${entry.id}`, entry);
   }
 
-  function checkPut(entries, document, item) {
-    if (item.type !== "card") return;
+  const validPath = value => typeof value === "string" && !/[\0\\]/.test(value) && value.split("/").every(part => part && part !== "." && part !== "..");
+
+  function putDocument(entries, document, item, owner) {
+    if (item.type === "answer") {
+      if (!entries.get(owner)?.has(`card:${item.cardId}`)) throw invalid();
+      return owner;
+    }
+    if (item.type !== "card") return document;
     const items = entries.get(document);
     if (items && !items.has(`card:${item.id}`) && [...items.values()].filter(entry => entry.type === "card").length >= 10) throw invalid();
+    return document;
   }
 
   function readJournal(committed) {
@@ -136,9 +147,8 @@ module.exports = function readingCore(digest) {
         if (!row) continue;
         const { v, entry, move, intent, cancel } = JSON.parse(row);
         if (v !== 1) throw invalid();
-        const validPath = value => typeof value === "string" && !value.includes("\0") && value.split("/").every(part => part && part !== "." && part !== "..");
         if (intent) {
-          if (entries.pending || !validPath(intent.from) || !validPath(intent.to) || intent.from === intent.to || !/^\d+:\d+$/.test(intent.identity)) throw invalid();
+          if (entries.pending || !validPath(intent.from) || !validPath(intent.to) || intent.from === intent.to) throw invalid();
           entries.pending = intent;
           continue;
         }
@@ -150,7 +160,7 @@ module.exports = function readingCore(digest) {
         if (move) {
           const { from, to } = move;
           if (!validPath(from) || !validPath(to) || from === to) throw invalid();
-          if (entries.pending && (entries.pending.from !== from || entries.pending.to !== to)) throw invalid();
+          if (entries.pending?.from !== from || entries.pending?.to !== to) throw invalid();
           delete entries.pending;
           const under = (file, prefix) => file === prefix || file.startsWith(prefix + "/");
           const moved = [...entries].filter(([file]) => under(file, from));
@@ -161,7 +171,7 @@ module.exports = function readingCore(digest) {
           }
           continue;
         }
-        if (entries.pending || typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
+        if (typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       }
     } catch { throw new Error("阅读记录损坏，未更改原文件。"); }
@@ -183,5 +193,5 @@ module.exports = function readingCore(digest) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, checkPut, readJournal, pending: entries => entries.pending ?? null, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, readJournal, pending: entries => entries.pending ?? null, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

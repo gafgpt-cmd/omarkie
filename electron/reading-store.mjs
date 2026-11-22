@@ -8,7 +8,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, checkPut, readJournal, pending, allEntries, query, readingMarkdown } = readingCore(digest);
+const { validate, putDocument, readJournal, pending, allEntries, query, readingMarkdown } = readingCore(digest);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -119,11 +119,13 @@ async function locked(root, create, run) {
   }
 }
 
-async function identity(root, file) {
+async function existsAt(root, file) {
   const target = path.join(root, file);
   if (!within(root, target)) throw unsafe();
   const metadata = await lstat(target, { bigint: true }).catch(missing);
-  return metadata && !metadata.isSymbolicLink() && await realpath(target) === target ? `${metadata.dev}:${metadata.ino}` : null;
+  if (!metadata) return false;
+  if (metadata.isSymbolicLink() || await realpath(target) !== target) throw unsafe();
+  return true;
 }
 
 async function transaction(root, writing, run) {
@@ -144,16 +146,25 @@ async function transaction(root, writing, run) {
       index = await load(log, handle);
     };
     const intent = pending(index.entries);
+    let notice = false;
     if (intent) {
       const { from, to } = intent;
-      if (await identity(root, from) === intent.identity) await append({ cancel: true });
-      else if (await identity(root, to) === intent.identity) await append({ move: { from, to } });
-      else throw unsafe();
+      try {
+        const source = await existsAt(root, from), destination = await existsAt(root, to);
+        notice = source === destination;
+        await append(!source && destination ? { move: { from, to } } : { cancel: true });
+      } catch { notice = true; }
+      if (notice) console.warn("Reading move recovery could not confirm the destination.");
     }
-    const result = await run(index.entries, append);
+    const result = await run(index.entries, append, notice);
     if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
     return result;
   } finally { await handle.close(); }
+}
+
+export async function recoverReadingVault(root) {
+  try { return await locked(root, false, exists => exists && transaction(root, false, (_, __, notice) => !!notice)); }
+  catch (error) { console.warn("Reading journal recovery:", error.code ?? error.name); return true; }
 }
 
 export async function moveReadingEntries(folder, execute) {
@@ -162,9 +173,9 @@ export async function moveReadingEntries(folder, execute) {
   return locked(root, true, () => transaction(root, false, (entries, append) => execute(async (source, destination) => {
     if (entries && within(root, source) && within(root, destination)) {
       const relative = file => path.relative(root, file).split(path.sep).join("/");
-      const from = relative(source), to = relative(destination), marker = await identity(root, from);
-      if (!marker || from === to) throw unsafe();
-      await append({ intent: { from, to, identity: marker } });
+      const from = relative(source), to = relative(destination);
+      if (pending(entries) || from === to) throw unsafe();
+      await append({ intent: { from, to } });
       await moveExclusive(source, destination);
       await append({ move: { from, to } }).catch(() => {});
     } else await moveExclusive(source, destination);
@@ -182,8 +193,7 @@ async function operate({ root, document, current }, request) {
       if (!current() || await realpath(source) !== source || !(await lstat(source)).isFile() || !current()) throw unsafe();
       if (!entries) return [];
       if (!item) return query(entries, document, validated);
-      checkPut(entries, document, item);
-      const entry = { ...item, document, at: new Date().toISOString() };
+      const entry = { ...item, document: putDocument(entries, document, item, validated.owner), at: new Date().toISOString() };
       await append({ entry });
       return entry;
     });

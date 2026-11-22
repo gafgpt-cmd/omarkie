@@ -523,10 +523,10 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       else if !manager.fileExists(atPath: to.path) { try manager.copyItem(at: from, to: to) }
     }
   }
-  static func openShowcase(_ store: DocumentStore, names: [String]) throws -> (URL, [DocumentRecord]) {
+  static func openShowcase(_ store: DocumentStore, names: [String]) throws -> ([String: Any], [DocumentRecord]) {
     let folder = store.dataDirectory.appendingPathComponent("Showcase")
     try copyMissing(from: Bundle.main.resourceURL!.appendingPathComponent("showcase"), to: folder)
-    return (folder, try names.map { try store.open(folder.appendingPathComponent($0)) })
+    return (try store.scan(folder), try names.map { try store.open(folder.appendingPathComponent($0)) })
   }
   static func openEncoded(_ file: URL, store: DocumentStore) throws -> DocumentRecord {
     do { return try store.open(file) }
@@ -625,20 +625,19 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       let target = try owner.workspace.authorize(arg(args, 0, String.self), store: store)
       NSWorkspace.shared.activateFileViewerSelecting([target]); return nil
     case "restore":
-      if let seed {
+      if var seed {
+        if let folder = seed.folder { seed.readingRecoveryWarning = (try? store.scan(URL(fileURLWithPath: folder)))?["readingRecoveryWarning"] as? Bool }
         for record in seed.documents { store.records[record.id] = record }
         store.activeId = seed.activeId
-        if let folder = seed.folder { _ = try? store.scan(URL(fileURLWithPath: folder)) }
         return try jsonValue(seed)
       }
       if let session = try store.restore() { return try jsonValue(session) }
-      let (folder, records) = try Self.openShowcase(store, names: Self.showcaseDocuments)
-      _ = try store.scan(folder)
+      let (scanned, records) = try Self.openShowcase(store, names: Self.showcaseDocuments)
       return try jsonValue(
-        SessionRecord(documents: records, activeId: records.first?.id, folder: folder.path))
+        SessionRecord(documents: records, activeId: records.first?.id, folder: store.folder?.path, readingRecoveryWarning: scanned["readingRecoveryWarning"] as? Bool))
     case "showcase":
-      let (folder, records) = try Self.openShowcase(store, names: [Self.showcaseDocuments[0]])
-      var result = try store.scan(folder)
+      let (scanned, records) = try Self.openShowcase(store, names: [Self.showcaseDocuments[0]])
+      var result = scanned
       result["document"] = try jsonValue(records[0])
       return result
     case "registerDraft":
