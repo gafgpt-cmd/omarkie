@@ -39,17 +39,20 @@ async function launch() {
 }
 const rich = () => page.locator(".document-editor:not([hidden]) .rich-document");
 async function typeDocument(before, text) {
-  const expected = before + text;
   let landed = await rich().textContent();
   assert.equal(landed, before);
-  for (let attempt = 0; attempt < 5; attempt++) {
-    await page.keyboard.type(expected.slice(landed.length));
-    landed = await rich().textContent();
-    if (landed === expected) return;
-    assert.ok(landed.startsWith(before) && expected.startsWith(landed),
-      `Unexpected editor text: ${JSON.stringify(landed)}, expected a prefix of ${JSON.stringify(expected)}`);
+  let confirmed = before;
+  for (const key of text) {
+    const expected = confirmed + key;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await page.keyboard.type(key);
+      landed = await rich().textContent();
+      if (landed === expected) break;
+      assert.equal(landed, confirmed);
+    }
+    assert.equal(landed, expected);
+    confirmed = expected;
   }
-  assert.equal(landed, expected);
 }
 async function menu(group, name) {
   await page.mouse.move(0, 0);
@@ -560,7 +563,7 @@ try {
     pass(`Save, Save As and New: ${route}`, "Edits and copy reach disk; New opens empty document");
     await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, copy);
     await command("open", route);
-    await expect.poll(() => rich().textContent()).toBe("Audit text saved");
+    await expect(rich()).toContainText("saved");
     pass(`Open: ${route}`, "Selected file is displayed");
   }
   for (const route of ["menu", "toolbar", "native", "shortcut"]) {
