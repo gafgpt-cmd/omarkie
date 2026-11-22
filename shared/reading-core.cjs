@@ -38,8 +38,8 @@ module.exports = function readingCore(digest) {
       if (!text) continue;
       const section = sectionKey(headings), candidates = sections.get(section);
       if (candidates) {
-        const hash = identity(text, section), sameBlock = hashes.get(hash);
-        if (sameBlock) sameBlock.push(line); else hashes.set(hash, [line]);
+        const hash = identity(text, section);
+        hashes.set(hash, hashes.has(hash) ? null : line);
         candidates.push({ text, line });
       }
       // An unchanged block can survive a renamed heading, but never guess between copies.
@@ -47,9 +47,8 @@ module.exports = function readingCore(digest) {
       byText.set(text, found === undefined ? line : null);
     }
     return notes.map(({ id, anchor }) => {
-      const exact = hashes.get(anchor.hash);
       let line = null;
-      if (exact) line = exact.length === 1 ? exact[0] : exact.includes(anchor.line) ? anchor.line : null;
+      if (hashes.has(anchor.hash)) line = hashes.get(anchor.hash);
       else if (byText.has(anchor.block)) line = byText.get(anchor.block);
       else {
         const counts = grams(anchor.block);

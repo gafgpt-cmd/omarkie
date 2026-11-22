@@ -75,6 +75,7 @@ try {
   await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
   await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
   await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
+  await cp("shared/tts-limit.json", path.join(resources, "tts-limit.json"));
   await cp("tests/fixtures/plugin-package", path.join(resources, "Plugin-package-fixture"), {recursive:true});
   await cp("tests/webkit.js", path.join(resources, "web-tests.js"));
   await writeFile(
@@ -121,7 +122,7 @@ try {
     ["POST", "/v2/check", "A😀 + &?", "auto"],
     ["POST", "/redirect/v2/check", "A😀 + &?", "auto"],
   ]);
-  assert.equal(await readFile(path.join(directory, "spoken.txt"), "utf8"), "Native café $(literal) speech.");
+  assert.equal(await readFile(path.join(directory, "spoken.txt"), "utf8"), "Native café $(literal) speech.😀".padEnd(256_000, "x"));
   console.log("PASS: native grammar loopback and redirect refusal; synthetic speech receives literal UTF-8 stdin");
   if (process.env.OMARKIE_QA_DIR) {
     await mkdir(process.env.OMARKIE_QA_DIR, { recursive: true });

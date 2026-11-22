@@ -46,4 +46,7 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: Install Pandoc
+        run: brew install pandoc
       - run: npm run test:native
+      - run: npm run test:webkit

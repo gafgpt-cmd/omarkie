@@ -412,7 +412,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard let value = args.first, value is NSNull || value is String else { throw NativeFailure("没有可朗读的文字。") }
       if value is NSNull { owner.speech?.stop() }
       else {
-        if owner.speech == nil { owner.speech = NativeSpeech() }
+        if owner.speech == nil { owner.speech = try NativeSpeech() }
         try await owner.speech?.read(value as? String)
       }
       return nil

@@ -19,6 +19,14 @@ enum NativeHook {
 
 @MainActor final class NativeSpeech {
   private var process: Process?
+  private let textLimit: Int
+
+  init() throws {
+    guard let url = Bundle.main.url(forResource: "tts-limit", withExtension: "json") else {
+      throw NativeFailure("朗读设置无效：请检查 OMARKIE_TTS。")
+    }
+    textLimit = try JSONDecoder().decode(Int.self, from: Data(contentsOf: url))
+  }
 
   func stop() {
     if let process, process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
@@ -27,7 +35,7 @@ enum NativeHook {
 
   func read(_ text: String?, environment: [String: String] = ProcessInfo.processInfo.environment) async throws {
     guard let text else { stop(); return }
-    guard text.utf16.count <= 20_000 else { throw NativeFailure("朗读文字过长，请选择较短的段落。") }
+    guard text.utf16.count <= textLimit else { throw NativeFailure("朗读文字过长，请选择较短的段落。") }
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw NativeFailure("没有可朗读的文字。") }
     guard let configured = environment["OMARKIE_TTS"]?.trimmingCharacters(in: .whitespacesAndNewlines), !configured.isEmpty else {
       throw NativeFailure("未配置朗读：请设置 OMARKIE_TTS。")

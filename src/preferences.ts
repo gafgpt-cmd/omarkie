@@ -1,7 +1,7 @@
 import { language } from "./i18n.ts";
 import { backgroundDefaults } from "./background.ts";
 import { defaultFonts, fontIds, type FontPreferences } from "./fonts.ts";
-export const standaloneImageScales = [1, 1.5, 2, 3, 4] as const;
+export const standaloneImageScales = [1, 1.5, 2] as const;
 export interface Preferences extends FontPreferences {
   imageUploader: string; imageAutoUpload: boolean;
   remoteImages: boolean; imageFolder: string; imagePrefix: boolean; imageEscape: boolean;

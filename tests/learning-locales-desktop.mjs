@@ -7,7 +7,17 @@ import { _electron as electron, expect } from "playwright/test";
 import { languages } from "../shared/languages.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
+const origin = "http://127.0.0.1:11434";
+const payloadConsent = {
+  en: [`Sends the selected text to ${origin}.`, `Sends this note’s text to ${origin}.`, "Do not send identifiable medical data. Even a local server can forward requests."],
+  es: [`Envía el texto seleccionado a ${origin}.`, `Envía el texto de esta nota a ${origin}.`, "No envíes datos médicos identificables. Incluso un servidor local puede reenviar solicitudes."],
+  ca: [`Envia el text seleccionat a ${origin}.`, `Envia el text d’aquesta nota a ${origin}.`, "No enviïs dades mèdiques identificables. Fins i tot un servidor local pot reenviar sol·licituds."],
+  ro: [`Trimite textul selectat către ${origin}.`, `Trimite textul notei către ${origin}.`, "Nu trimite date medicale identificabile. Chiar și un server local poate redirecționa cereri."],
+  zh: [`将选中的文字发送至 ${origin}。`, `将本笔记的文字发送至 ${origin}。`, "请勿发送可识别身份的医疗数据。本地服务器也可能转发请求。"],
+};
+
 for (const [language] of languages) {
+  const [selectionNotice, noteNotice, medicalWarning] = payloadConsent[language];
   const catalog = JSON.parse(await readFile(new URL(`../shared/locales/${language}.json`, import.meta.url)));
   function label(key, args = {}) {
     assert.ok(Object.hasOwn(catalog, key) && catalog[key].trim(), `${language}: untranslated learning key ${key}`);
@@ -66,15 +76,21 @@ for (const [language] of languages) {
     await preferences.getByLabel(label("Enable on-demand grammar checks")).check();
     await expect(preferences.getByLabel(label("LanguageTool check URL"))).toHaveValue("http://127.0.0.1:8081/v2/check");
     await page.keyboard.press("Escape");
+    const panel = page.getByRole("complementary", { name: label("Payload"), exact: true });
+    const checkConsent = async notice => {
+      await expect(panel.getByText(notice, { exact: true })).toBeVisible();
+      await expect(panel.getByText(medicalWarning, { exact: true })).toBeVisible();
+    };
+    await button(page, "Payload").click();
+    await checkConsent(noteNotice);
+    await button(panel, "Close Payload").click();
     await rich.getByText(excerpt, { exact: true }).selectText();
     await page.keyboard.press("Alt+Enter");
     const selection = page.getByRole("dialog", { name: label("选区操作"), exact: true });
     await expect(button(selection, "给自己写笔记")).toBeEnabled();
     await expect(button(selection, "制作卡片")).toBeEnabled();
     await button(selection, "询问选中内容").click();
-    const panel = page.getByRole("complementary", { name: label("Payload"), exact: true });
-    await expect(panel).toContainText(label("Sends the selected text to {{origin}}.", { origin: "http://127.0.0.1:11434" }));
-    await expect(panel).toContainText(label("Do not send identifiable medical data. Even a local server can forward requests."));
+    await checkConsent(selectionNotice);
     await expect(panel.getByLabel(label("Ask one question about this text"))).toBeVisible();
     await expect(button(panel, "Send question")).toBeDisabled();
     await button(panel, "Close Payload").click();

@@ -100,9 +100,10 @@ try {
   const insecure = await window.desktop.checkGrammar("http://example.invalid/v2/check", "", "Never send.");
   check(grammar.ok && grammar.value.matches[0].message === "Synthetic finding" && !redirected.ok && !insecure.ok, "native Grammar uses bounded approved transport without redirects");
   const stopped = await window.desktop.readAloud(null);
-  const spoken = await window.desktop.readAloud("Native café $(literal) speech.");
-  const tooLong = await window.desktop.readAloud("x".repeat(20001));
-  check(stopped.ok && spoken.ok && !tooLong.ok, "native speech is explicit, literal and bounded");
+  const text = "Native café $(literal) speech.😀".padEnd(256_000, "x");
+  const spoken = await window.desktop.readAloud(text);
+  const tooLong = await window.desktop.readAloud(text + "x");
+  check(stopped.ok && spoken.ok && !tooLong.ok, "native speech accepts 256,000 UTF-16 units and rejects 256,001");
   const vault = (await window.desktop.restore()).value.folder;
   const linked = await window.desktop.bibliography(vault, "link");
   const suggestions = await window.desktop.bibliography(vault, "suggest", "wat");

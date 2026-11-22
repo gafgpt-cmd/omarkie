@@ -88,13 +88,14 @@ try {
     await page.keyboard.press("ControlOrMeta+,");
     const preferences = page.getByRole("dialog", { name: "Preferences", exact: true });
     const scale = preferences.getByRole("combobox", { name: "Standalone image scale limit" });
+    await expect(scale.getByRole("option")).toHaveCount(3);
     await expect(scale).toHaveValue(from); await scale.selectOption(to);
     await preferences.getByRole("button", { name: "Done", exact: true }).click();
   }
-  await setScale("2", "3");
-  await expect.poll(() => display(figure("Standalone"))).toEqual([288, 144]);
+  await setScale("2", "1.5");
+  await expect.poll(() => display(figure("Standalone"))).toEqual([144, 72]);
   await expect.poll(() => display(figure("Sized Markdown"))).toEqual([240, 120]);
-  await setScale("3", "1");
+  await setScale("1.5", "1");
   await expect.poll(() => display(figure("Standalone"))).toEqual([96, 48]);
   await page.reload();
   await expect.poll(() => display(figure("Standalone"))).toEqual([96, 48]);

@@ -1,1 +1,1 @@
-export const ttsTextLimit = 256_000;
+export { default as ttsTextLimit } from "./tts-limit.json" with { type: "json" };

@@ -36,6 +36,9 @@ test("anchors follow normalization, movement and minor edits without guessing un
   assert.equal(resolve([block(body, 9, ["Moved"])]), 9);
   assert.equal(resolve([block("No original material here.", 4)]), null);
   assert.equal(resolve([block(body, 7), block(body, 9)]), null);
+  assert.equal(resolve([block(body, 4), block(body, 5)]), null);
+  assert.equal(resolve([block(body, 4, ["Renamed"]), block(body, 5, ["Renamed"])]), null);
+  assert.equal(resolve([block(body, 4, ["Elsewhere"]), block(body, 5)]), 5);
   const almost = body.replace("spelling", "speling");
   assert.equal(resolve([block(almost, 8), block(almost, 9), block(almost, 10)]), null);
 });
