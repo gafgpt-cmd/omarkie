@@ -53,8 +53,8 @@ export function useCitationPicker(folder: string | undefined, editor: () => Edit
     const latest = editable && context?.caret != null ? citationDraft(context.text, context.caret) : undefined;
     close();
     if (!context || latest?.from !== draft.from || context.excluded(latest.from)) return false;
-    const query = latest.query.toLowerCase();
-    if (![option.id, option.title, option.authors].some(value => value.toLowerCase().includes(query))) return false;
+    const query = latest.query.normalize().toLowerCase();
+    if (![option.id, option.title, option.authors].some(value => value.normalize().toLowerCase().includes(query))) return false;
     context.insert(latest.from, latest.to, `[@${option.id}]`);
     return true;
   }

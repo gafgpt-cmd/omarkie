@@ -5,9 +5,11 @@ import WebKit
 final class PDFExporter: NSObject, WKNavigationDelegate {
   private let view: WKWebView
   private let window: NSWindow
+  private let offline: Bool
   private var completion: ((Result<Data, Error>) -> Void)?
   private var options = [String: Any]()
-  init(resources: URL, store: DocumentStore) {
+  init(resources: URL, store: DocumentStore, offline: Bool = false) {
+    self.offline = offline
     let configuration = WKWebViewConfiguration()
     let handler = Resources(resources, store: store)
     configuration.setURLSchemeHandler(handler, forURLScheme: "omarkie")
@@ -27,7 +29,15 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     let height = options["paper"] as? String == "letter" ? 792.0 : 841.89
     let margin = max(18, min(100, options["margin"] as? Double ?? 36))
     view.frame.size = NSSize(width: width - 2 * margin, height: height - 2 * margin)
-    view.loadHTMLString(html, baseURL: URL(string: "omarkie://app/"))
+    if offline {
+      let rules = #"[{"trigger":{"url-filter":".*"},"action":{"type":"block"}},{"trigger":{"url-filter":"^(omarkie|omarkie-asset|data|blob|about):"},"action":{"type":"ignore-previous-rules"}}]"#
+      WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-export", encodedContentRuleList: rules) { [weak self] list, error in
+        guard let self, self.completion != nil else { return }
+        guard let list else { self.finish(.failure(error ?? NativeFailure("无法限制导出资源。"))); return }
+        self.view.configuration.userContentController.add(list)
+        self.view.loadHTMLString(html, baseURL: URL(string: "omarkie://app/"))
+      }
+    } else { view.loadHTMLString(html, baseURL: URL(string: "omarkie://app/")) }
     DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
       self?.finish(.failure(NativeFailure("PDF 导出超时，请缩小文档后重试。")))
     }

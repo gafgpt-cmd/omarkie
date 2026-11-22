@@ -11,6 +11,12 @@ struct RecentEntry: Codable {
 struct FileUndo {
   let from: URL
   let to: URL
+  let folder: URL?
+}
+func moveExclusive(_ from: URL, _ to: URL) throws {
+  guard Darwin.renamex_np(from.path, to.path, UInt32(RENAME_EXCL)) == 0 else {
+    throw NativeFailure(errno == EEXIST ? "目标已存在，未覆盖任何文件。" : "文件操作无效。")
+  }
 }
 final class Workspace {
   let directory: URL
@@ -64,19 +70,14 @@ final class Workspace {
       !name.contains("/"), !name.contains(":"), !name.contains("\\"), !name.contains("\0") else { throw NativeFailure("名称无效，请使用普通文件名。") }
     return parent.appendingPathComponent(name)
   }
-  private func moveExclusive(_ from: URL, _ to: URL) throws {
-    guard Darwin.renamex_np(from.path, to.path, UInt32(RENAME_EXCL)) == 0 else {
-      throw NativeFailure(errno == EEXIST ? "目标已存在，未覆盖任何文件。" : "文件操作无效。")
-    }
-  }
-  func execute(_ operation: [String: String], store: DocumentStore) throws -> [String: String] {
+  func execute(_ operation: [String: String], store: DocumentStore, move: (URL, URL) throws -> Void = moveExclusive) throws -> [String: String] {
     let fm = FileManager.default
     let action = operation["action"] ?? ""
     if action == "undo" {
       guard let item = undo else { throw NativeFailure("没有可撤销的文件操作。") }
       guard !fm.fileExists(atPath: item.to.path) else { throw NativeFailure("原位置已被占用，未覆盖任何文件。") }
       // Only restore the exact item retained by the last successful move or Trash operation.
-      try moveExclusive(item.from, item.to)
+      try move(item.from, item.to)
       undo = nil
       return ["fromPath": item.from.path, "toPath": item.to.path]
     }
@@ -86,7 +87,7 @@ final class Workspace {
     if action == "trash" {
       var trashed: NSURL?
       try fm.trashItem(at: source, resultingItemURL: &trashed)
-      if let trashed { undo = FileUndo(from: trashed as URL, to: source) }
+      if let trashed { undo = FileUndo(from: trashed as URL, to: source, folder: store.folder) }
       return ["removedPath": source.path]
     }
     let destination: URL
@@ -117,8 +118,8 @@ final class Workspace {
       // The latest in-memory draft is the duplicate's content, without saving over the original.
       if let encoded { try atomicWrite(destination, encoded) }
     } else {
-      try moveExclusive(source, destination)
-      undo = FileUndo(from: destination, to: source)
+      try move(source, destination)
+      undo = FileUndo(from: destination, to: source, folder: store.folder)
       return ["fromPath": source.path, "toPath": destination.path]
     }
     return ["newPath": destination.path]

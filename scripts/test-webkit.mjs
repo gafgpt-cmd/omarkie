@@ -7,8 +7,14 @@ import assert from "node:assert/strict";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-"));
 const uploads = [];
 const payloadRequests = [];
+const projectMediaRequests = [];
 const grammarRequests = [];
 const server = createServer(async (request, response) => {
+  if (request.url === "/project-export-media") {
+    projectMediaRequests.push(request.url);
+    response.writeHead(404).end();
+    return;
+  }
   if (request.url?.endsWith("/v2/check")) {
     let body = ""; for await (const chunk of request) body += chunk;
     const form = new URLSearchParams(body);
@@ -19,9 +25,10 @@ const server = createServer(async (request, response) => {
   }
   if (request.url === "/payload/v1/chat/completions") {
     let body = ""; for await (const chunk of request) body += chunk;
-    payloadRequests.push(JSON.parse(body));
+    const payload = JSON.parse(body);
+    payloadRequests.push(payload);
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: "Synthetic payload reply." } }] }));
+    response.end(JSON.stringify({ choices: [{ message: { content: payload.messages.length === 3 ? "Synthetic follow-up answer." : "Synthetic summary." } }] }));
     return;
   }
   try { let body = ""; for await (const chunk of request) body += chunk; const value = JSON.parse(body); assert.equal(request.method, "POST"); assert.equal(value.list.length, 1); const file = value.list[0]; assert.match(file, /fixture-[A-Fa-f0-9-]+\.png$/); const bytes = await readFile(file); assert.deepEqual([...bytes.subarray(0, 8)], [137,80,78,71,13,10,26,10]); uploads.push({ bytes: bytes.length }); response.writeHead(200, {"Content-Type":"application/json"}); response.end(JSON.stringify({success:true,result:["https://images.example.invalid/owned-fixture.png"]})); }
@@ -112,6 +119,7 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
+  assert.deepEqual(projectMediaRequests, [], "native project PDF sends no requests for embedded remote media");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
   assert.deepEqual(payloadRequests.map(body => [body.model, body.max_tokens, body.max_completion_tokens, body.messages.slice(1).map(message => message.content)]), [
     ["native-fixture", 768, undefined, ["Synthetic source paragraph."]],

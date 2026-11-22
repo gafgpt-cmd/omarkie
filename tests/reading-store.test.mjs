@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { appendFile, link, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -33,7 +34,8 @@ test("rename, folder move and undo transfer reading history without sharing it w
   const { source, store } = await fixture(t);
   const workspace = new Workspace(store.folder);
   const change = async operation => {
-    const result = await moveReadingEntries(store.folder, () => workspace.execute(operation, store));
+    const root = operation.action === "undo" ? workspace.undo?.folder : store.folder;
+    const result = await moveReadingEntries(root, move => workspace.execute(operation, store, undefined, move));
     workspace.apply(result, store);
     return result;
   };
@@ -43,7 +45,11 @@ test("rename, folder move and undo transfer reading history without sharing it w
   await readingStore(store, source.id, { action: "put", item: { id: "card", type: "card", front: "Q", back: "A" } });
   await change({ action: "rename", path: original, name: "renamed.md" });
   assert.deepEqual((await list(source.id)).map(item => item.document), ["renamed.md", "renamed.md"]);
+  const firstVault = store.folder;
+  store.folder = path.join(path.dirname(firstVault), "second-vault");
+  await mkdir(store.folder);
   await change({ action: "undo" });
+  store.folder = firstVault;
   assert.deepEqual((await list(source.id)).map(item => item.document), ["source.md", "source.md"]);
   const folder = path.join(store.folder, "chapter"), destination = path.join(store.folder, "parts");
   await mkdir(folder); await mkdir(destination);
@@ -57,25 +63,99 @@ test("rename, folder move and undo transfer reading history without sharing it w
   assert.deepEqual((await list(source.id)).map(item => item.document), ["chapter/source.md", "chapter/source.md"]);
 });
 
-test("two processes append after torn-tail recovery without losing entries", async t => {
-  const { store, source, log, index } = await fixture(t);
-  await readingStore(store, source.id, { action: "put", item: note("seed") });
-  await appendFile(log, '{"torn":');
+function startWorker(t, root, file, code) {
   const worker = `
-    import { readingStore } from ${JSON.stringify(new URL("../electron/reading-store.mjs", import.meta.url).href)};
+    import { once } from "node:events";
+    import { appendFile, rename, stat } from "node:fs/promises";
+    import path from "node:path";
+    import { moveReadingEntries, readingStore } from ${JSON.stringify(new URL("../electron/reading-store.mjs", import.meta.url).href)};
     import { DocumentStore } from ${JSON.stringify(new URL("../electron/store.mjs", import.meta.url).href)};
-    const [root, file, id] = process.argv.slice(1);
+    const [root, file] = process.argv.slice(1);
     const store = new DocumentStore(root);
     store.folder = root;
     const note = await store.open(file);
-    await readingStore(store, note.id, {action:"put", item:{type:"card", id, front:"Q", back:"A"}});
+    const list = () => readingStore(store, note.id, {action:"list"});
+    ${code}
   `;
-  await Promise.all(["first", "second"].map(id => promisify(execFile)(process.execPath, ["--input-type=module", "-e", worker, store.folder, source.path, id])));
+  const child = spawn(process.execPath, ["--input-type=module", "-e", worker, root, file], { stdio: ["ignore", "inherit", "inherit", "ipc"] });
+  t.after(() => { if (child.exitCode === null && child.signalCode === null) child.kill(); });
+  return child;
+}
+
+test("two warmed processes contend, repair a torn tail and see both commits", { timeout: 10000 }, async t => {
+  const { store, source, log, index } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: note("seed") });
+  const workers = ["first", "second"].map(id => startWorker(t, store.folder, source.path, `
+    const go = once(process, "message");
+    process.send((await list()).map(item => item.id));
+    await go;
+    process.send("writing");
+    await readingStore(store, note.id, {action:"put", item:{type:"card", id:${JSON.stringify(id)}, front:"Q", back:"A"}});
+    const read = once(process, "message");
+    process.send("committed");
+    await read;
+    process.send((await list()).map(item => item.id).sort());
+    process.disconnect();
+  `));
+  for (const [ids] of await Promise.all(workers.map(child => once(child, "message")))) assert.deepEqual(ids, ["seed"]);
+  const finished = [];
+  const committedMessages = workers.map(child => new Promise(resolve => {
+    child.on("message", message => { if (message === "committed") { finished.push(child); resolve(); } });
+  }));
+  await moveReadingEntries(store.folder, async () => {
+    await appendFile(log, '{"torn":');
+    const starting = Promise.all(workers.map(child => once(child, "message")));
+    workers.forEach(child => child.send("go"));
+    assert.deepEqual((await starting).map(([message]) => message), ["writing", "writing"]);
+    await delay(80);
+    assert.equal(finished.length, 0);
+  });
+  await Promise.all(committedMessages);
   const committed = (await readFile(log, "utf8")).trimEnd().split("\n").map(line => JSON.parse(line).entry.id).sort();
   assert.deepEqual(committed, ["first", "second", "seed"].sort());
   const cached = JSON.parse(await readFile(index, "utf8"));
   assert.deepEqual(cached.entries.map(item => item.id).sort(), committed);
   assert.deepEqual((await readingStore(store, source.id, { action: "list" })).map(item => item.id).sort(), committed);
+  const messages = Promise.all(workers.map(child => once(child, "message")));
+  const exits = Promise.all(workers.map(child => once(child, "exit")));
+  workers.forEach(child => child.send("read"));
+  assert.deepEqual((await messages).map(([message]) => message), [committed, committed]);
+  assert.deepEqual(await exits, [[0, null], [0, null]]);
+});
+
+test("reopening recovers both sides of an interrupted rename and releases the lock", { timeout: 10000 }, async t => {
+  const { store, source } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: note("seed") });
+  for (const moved of [false, true]) {
+    const child = startWorker(t, store.folder, source.path, `
+      await moveReadingEntries(root, async () => {
+        const metadata = await stat(file, { bigint: true });
+        const intent = { from: "source.md", to: "renamed.md", identity: metadata.dev + ":" + metadata.ino };
+        await appendFile(path.join(root, ".omarkie", "store.jsonl"), JSON.stringify({ v: 1, intent }) + "\\n", { flush: true });
+        if (${moved}) await rename(file, path.join(root, "renamed.md"));
+        process.send("interrupted");
+        await once(process, "message");
+      });
+    `);
+    assert.equal((await once(child, "message"))[0], "interrupted");
+    const exit = once(child, "exit");
+    child.kill("SIGKILL");
+    assert.deepEqual(await exit, [null, "SIGKILL"]);
+    const reopened = new DocumentStore(store.folder);
+    reopened.folder = store.folder;
+    const name = moved ? "renamed.md" : "source.md";
+    const record = await reopened.open(path.join(store.folder, name));
+    assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), [["seed", name]]);
+  }
+});
+
+test("the last card slot is exclusive and existing cards remain editable", async t => {
+  const { store, source } = await fixture(t);
+  const put = id => readingStore(store, source.id, { action: "put", item: { id, type: "card", front: "Q", back: "A" } });
+  for (let i = 0; i < 9; i++) await put(`card-${i}`);
+  assert.deepEqual((await Promise.allSettled([put("first"), put("second")])).map(result => result.status).sort(), ["fulfilled", "rejected"]);
+  await put("card-0");
+  assert.equal((await readingStore(store, source.id, { action: "list" })).length, 10);
 });
 
 test("anchors follow normalization, movement and minor edits without guessing unrelated text", () => {

@@ -1,13 +1,14 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, rmdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { t } from "./i18n.mjs";
 import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
+import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, readJournal, allEntries, query, readingMarkdown } = readingCore(digest);
+const { validate, checkPut, readJournal, pending, allEntries, query, readingMarkdown } = readingCore(digest);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -77,35 +78,79 @@ async function writeIndex(root, directory, file, index) {
   }
 }
 
+let lockAPI;
+async function acquire(lock) {
+  lockAPI ??= import("koffi").then(({ default: koffi }) => {
+    if (process.platform !== "win32") {
+      const flock = koffi.load(null).func("int flock(int fd, int operation)");
+      return async lock => {
+        const handle = await open(lock, constants.O_CREAT | constants.O_RDWR | noFollow, 0o600);
+        try {
+          regular(await handle.stat());
+          if (flock(handle.fd, 6) === 0) return () => handle.close();
+          if (![4, 11, 35].includes(koffi.errno())) throw unsafe();
+        } catch (error) { await handle.close(); throw error; }
+        await handle.close();
+      };
+    }
+    const dll = koffi.load("kernel32.dll");
+    const create = dll.func("intptr_t __stdcall CreateFileW(str16, uint32, uint32, void *, uint32, uint32, void *)");
+    const lastError = dll.func("uint32 __stdcall GetLastError()");
+    const close = dll.func("int __stdcall CloseHandle(intptr_t)");
+    return async lock => {
+      regular(await info(lock));
+      const handle = create(path.toNamespacedPath(lock), 0x40000000, 0, null, 4, 0x00200080, null);
+      if (handle !== -1 && handle !== -1n) return () => close(handle);
+      if (lastError() !== 32) throw unsafe();
+    };
+  });
+  return (await lockAPI)(lock);
+}
+
 async function locked(root, create, run) {
   const directory = path.join(root, ".omarkie"), lock = path.join(directory, "journal.lock");
   if (!await directoryAt(root, directory, create)) return run(false);
   const deadline = performance.now() + 3000;
   for (;;) {
-    try { await mkdir(lock, { mode: 0o700 }); break; }
-    catch (error) { if (error.code !== "EEXIST" || performance.now() >= deadline) throw unsafe(); }
+    const release = await acquire(lock);
+    if (release) { try { return await run(true); } finally { await release(); } }
+    if (performance.now() >= deadline) throw unsafe();
     await delay(20);
   }
-  try { return await run(true); } finally { await rmdir(lock); }
 }
 
-async function transaction(root, writing, run, moving = false) {
+async function identity(root, file) {
+  const target = path.join(root, file);
+  if (!within(root, target)) throw unsafe();
+  const metadata = await lstat(target, { bigint: true }).catch(missing);
+  return metadata && !metadata.isSymbolicLink() && await realpath(target) === target ? `${metadata.dev}:${metadata.ino}` : null;
+}
+
+async function transaction(root, writing, run) {
   const directory = path.join(root, ".omarkie"), log = path.join(directory, "store.jsonl"), file = path.join(directory, "index.json");
   const metadata = regular(await info(log));
   if (!metadata && !writing) return run(null);
   const snapshot = regular(await info(file));
-  const flags = writing ? constants.O_CREAT | constants.O_RDWR | constants.O_APPEND : moving ? constants.O_RDWR | constants.O_APPEND : constants.O_RDONLY;
+  const flags = (writing ? constants.O_CREAT : 0) | constants.O_RDWR | constants.O_APPEND;
   const handle = await open(log, flags | noFollow, 0o600);
   try {
     let index = await load(log, handle);
-    const result = await run(index.entries, async record => {
+    const append = async record => {
       const before = regular(await handle.stat({ bigint: true }));
       if (fingerprint(before) !== index.signature) throw unsafe();
       if (before.size !== BigInt(index.offset)) await handle.truncate(index.offset);
       await handle.writeFile(JSON.stringify({ v: 1, ...record }) + "\n");
       await handle.sync();
       index = await load(log, handle);
-    });
+    };
+    const intent = pending(index.entries);
+    if (intent) {
+      const { from, to } = intent;
+      if (await identity(root, from) === intent.identity) await append({ cancel: true });
+      else if (await identity(root, to) === intent.identity) await append({ move: { from, to } });
+      else throw unsafe();
+    }
+    const result = await run(index.entries, append);
     if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
     return result;
   } finally { await handle.close(); }
@@ -114,15 +159,16 @@ async function transaction(root, writing, run, moving = false) {
 export async function moveReadingEntries(folder, execute) {
   if (!folder) return execute();
   const root = await realpath(folder);
-  return locked(root, true, () => transaction(root, false, async (entries, append) => {
-    const change = await execute();
-    if (entries && change.fromPath && within(root, change.fromPath) && within(root, change.toPath)) {
+  return locked(root, true, () => transaction(root, false, (entries, append) => execute(async (source, destination) => {
+    if (entries && within(root, source) && within(root, destination)) {
       const relative = file => path.relative(root, file).split(path.sep).join("/");
-      const from = relative(change.fromPath), to = relative(change.toPath);
-      if (from !== to) await append({ move: { from, to } });
-    }
-    return change;
-  }, true));
+      const from = relative(source), to = relative(destination), marker = await identity(root, from);
+      if (!marker || from === to) throw unsafe();
+      await append({ intent: { from, to, identity: marker } });
+      await moveExclusive(source, destination);
+      await append({ move: { from, to } }).catch(() => {});
+    } else await moveExclusive(source, destination);
+  })));
 }
 
 async function operate({ root, document, current }, request) {
@@ -136,6 +182,7 @@ async function operate({ root, document, current }, request) {
       if (!current() || await realpath(source) !== source || !(await lstat(source)).isFile() || !current()) throw unsafe();
       if (!entries) return [];
       if (!item) return query(entries, document, validated);
+      checkPut(entries, document, item);
       const entry = { ...item, document, at: new Date().toISOString() };
       await append({ entry });
       return entry;

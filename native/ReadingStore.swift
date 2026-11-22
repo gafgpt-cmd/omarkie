@@ -58,20 +58,27 @@ final class NativeReadingStore {
     }
   }
 
-  func moveEntries(_ folder: URL?, execute: @escaping () throws -> [String: String]) async throws -> [String: String] {
+  func moveEntries(_ folder: URL?, execute: @escaping ((URL, URL) throws -> Void) throws -> [String: String]) async throws -> [String: String] {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
         continuation.resume(with: Result {
-          guard let folder else { return try DispatchQueue.main.sync(execute: execute) }
+          guard let folder else { return try DispatchQueue.main.sync { try execute(moveExclusive) } }
           let root = canonicalFileURL(folder)
           return try self.transaction(root, writing: false, moving: true) { state, append in
-            let change = try DispatchQueue.main.sync(execute: execute)
-            if state != nil, let from = change["fromPath"], let to = change["toPath"], from != to,
-               from.hasPrefix(root.path + "/"), to.hasPrefix(root.path + "/") {
-              let offset = root.path.count + 1
-              try append(["move": ["from": String(from.dropFirst(offset)), "to": String(to.dropFirst(offset))]])
+            try DispatchQueue.main.sync {
+              try execute { source, destination in
+                guard state != nil, contained(root, source), contained(root, destination) else {
+                  try moveExclusive(source, destination); return
+                }
+                let offset = root.path.count + 1
+                let from = String(source.path.dropFirst(offset)), to = String(destination.path.dropFirst(offset))
+                guard from != to, let marker = Self.identity(root, from) else { throw NativeFailure(Self.unsafe) }
+                let move = ["from": from, "to": to]
+                try append(["intent": ["from": from, "to": to, "identity": marker]])
+                try moveExclusive(source, destination)
+                try? append(["move": move])
+              }
             }
-            return change
           }
         })
       }
@@ -99,6 +106,13 @@ final class NativeReadingStore {
 
   private static func regular(_ metadata: stat) -> Bool {
     (metadata.st_mode & S_IFMT) == S_IFREG && metadata.st_nlink == 1
+  }
+
+  private static func identity(_ root: URL, _ file: String) -> String? {
+    let target = root.appendingPathComponent(file)
+    var metadata = stat()
+    guard canonicalFileURL(target).path == target.path, lstat(target.path, &metadata) == 0 else { return nil }
+    return "\(UInt32(bitPattern: metadata.st_dev)):\(metadata.st_ino)"
   }
 
   private static func revision(_ descriptor: Int32) throws -> Revision {
@@ -145,6 +159,7 @@ final class NativeReadingStore {
             lstat(scope.file.path, &source) == 0, (source.st_mode & S_IFMT) == S_IFREG else { throw NativeFailure(Self.unsafe) }
       guard let state else { return empty }
       if writing {
+        _ = try call("checkPut", [state.entries, scope.document, item])
         guard var value = item.toDictionary() as? [String: Any] else { throw NativeFailure(Self.invalid) }
         value["document"] = scope.document; value["at"] = timestamp.string(from: Date())
         try append(["entry": value])
@@ -157,7 +172,7 @@ final class NativeReadingStore {
   }
 
   private func transaction<T>(_ folder: URL, writing: Bool, moving: Bool = false,
-                              _ run: (Snapshot?, ([String: Any]) throws -> Void) throws -> T) throws -> T {
+                              _ run: (Snapshot?, @escaping ([String: Any]) throws -> Void) throws -> T) throws -> T {
     let create = writing || moving
     let noAppend: ([String: Any]) throws -> Void = { _ in throw NativeFailure(Self.unsafe) }
     guard canonicalFileURL(folder).path == folder.path else { throw NativeFailure(Self.unsafe) }
@@ -169,14 +184,17 @@ final class NativeReadingStore {
     if directory < 0, !create, errno == ENOENT { return try run(nil, noAppend) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
+    let lock = openat(directory, "journal.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
+    guard lock >= 0 else { throw NativeFailure(Self.unsafe) }
+    defer { _ = close(lock) }
+    _ = try Self.revision(lock)
     let deadline = ProcessInfo.processInfo.systemUptime + 3
-    while mkdirat(directory, "journal.lock", 0o700) != 0 {
-      guard errno == EEXIST, ProcessInfo.processInfo.systemUptime < deadline else { throw NativeFailure(Self.unsafe) }
+    while flock(lock, LOCK_EX | LOCK_NB) != 0 {
+      guard (errno == EWOULDBLOCK || errno == EINTR), ProcessInfo.processInfo.systemUptime < deadline else { throw NativeFailure(Self.unsafe) }
       Thread.sleep(forTimeInterval: 0.02)
     }
-    defer { _ = unlinkat(directory, "journal.lock", AT_REMOVEDIR) }
     let hasIndex = try Self.indexExists(directory)
-    let flags = writing ? O_RDWR | O_APPEND | O_CREAT : moving ? O_RDWR | O_APPEND : O_RDONLY
+    let flags = O_RDWR | O_APPEND | (writing ? O_CREAT : 0)
     let descriptor = openat(directory, "store.jsonl", flags | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
     if descriptor < 0, !writing, errno == ENOENT { return try run(nil, noAppend) }
     guard descriptor >= 0 else { throw NativeFailure(Self.unsafe) }
@@ -192,7 +210,7 @@ final class NativeReadingStore {
       return Snapshot(revision: revision, offset: end, entries: try call("readJournal", [committed], error: Self.damaged))
     }
     var state = try load()
-    let result = try run(state) { record in
+    func append(_ record: [String: Any]) throws {
       var row = record; row["v"] = 1
       var bytes = try JSONSerialization.data(withJSONObject: row)
       bytes.append(10)
@@ -202,6 +220,13 @@ final class NativeReadingStore {
       try handle.synchronize()
       state = try load()
     }
+    if let intent = try call("pending", [state.entries]).toDictionary() as? [String: String],
+       let from = intent["from"], let to = intent["to"], let identity = intent["identity"] {
+      if Self.identity(folder, from) == identity { try append(["cancel": true]) }
+      else if Self.identity(folder, to) == identity { try append(["move": ["from": from, "to": to]]) }
+      else { throw NativeFailure(Self.unsafe) }
+    }
+    let result = try run(state, append)
     if !state.indexed || !hasIndex {
       // The journal commit remains valid if the derived cache cannot be written.
       do { try writeIndex(directory, state); state.indexed = true } catch {}

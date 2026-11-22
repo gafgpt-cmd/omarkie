@@ -281,7 +281,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
               if format == "pdf" {
                 let markup = try Interchange.renderedExport(source: source, workingDirectory: working, temporaryDirectory: directory, options: options, chapters: chapters)
                 DispatchQueue.main.async {
-                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: self.store)
+                  let exporter = PDFExporter(resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: self.store, offline: chapters != nil)
                   self.pdfExporter = exporter
                   exporter.export(markup) { result in
                     do { try atomicWrite(destination, try result.get()); self.reply(id, ["ok": true, "value": destination.path]) }
@@ -320,7 +320,10 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           }
           let change: [String: String]
           if ["rename", "move", "undo"].contains(operation["action"] ?? "") {
-            change = try await owner.readingStore.moveEntries(store.folder) { try self.owner.workspace.execute(operation, store: self.store) }
+            let folder = operation["action"] == "undo" ? owner.workspace.undo?.folder : store.folder
+            change = try await owner.readingStore.moveEntries(folder) { move in
+              try self.owner.workspace.execute(operation, store: self.store, move: move)
+            }
           } else {
             change = try owner.workspace.execute(operation, store: store)
           }
@@ -433,7 +436,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         #else
           let panel = NSOpenPanel()
           panel.allowedContentTypes = [.json]
-          panel.title = "关联 Zotero 自动导出"
           guard panel.runModal() == .OK, let file = panel.url else { return false }
           value = file.path
         #endif

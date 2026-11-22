@@ -70,7 +70,7 @@ try {
   await dismiss();
 
   const richLine = rich.getByText("Rich citation:", { exact: false });
-  await richLine.click(); await page.keyboard.press("End"); await page.keyboard.type("[@García");
+  await richLine.click(); await page.keyboard.press("End"); await page.keyboard.insertText("[@Garci\u0301a");
   await expect(suggestions.getByRole("option", { name: /initial.*Watched reference/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(richLine).toContainText("[@initial]");

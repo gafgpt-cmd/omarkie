@@ -123,17 +123,35 @@ module.exports = function readingCore(digest) {
     items.set(`${entry.type}:${entry.id}`, entry);
   }
 
+  function checkPut(entries, document, item) {
+    if (item.type !== "card") return;
+    const items = entries.get(document);
+    if (items && !items.has(`card:${item.id}`) && [...items.values()].filter(entry => entry.type === "card").length >= 10) throw invalid();
+  }
+
   function readJournal(committed) {
     const entries = new Map();
     try {
       for (const row of committed.split("\n")) {
         if (!row) continue;
-        const { v, entry, move } = JSON.parse(row);
+        const { v, entry, move, intent, cancel } = JSON.parse(row);
         if (v !== 1) throw invalid();
+        const validPath = value => typeof value === "string" && !value.includes("\0") && value.split("/").every(part => part && part !== "." && part !== "..");
+        if (intent) {
+          if (entries.pending || !validPath(intent.from) || !validPath(intent.to) || intent.from === intent.to || !/^\d+:\d+$/.test(intent.identity)) throw invalid();
+          entries.pending = intent;
+          continue;
+        }
+        if (cancel === true) {
+          if (!entries.pending) throw invalid();
+          delete entries.pending;
+          continue;
+        }
         if (move) {
           const { from, to } = move;
-          const validPath = value => typeof value === "string" && value.split("/").every(part => part && part !== "." && part !== "..");
           if (!validPath(from) || !validPath(to) || from === to) throw invalid();
+          if (entries.pending && (entries.pending.from !== from || entries.pending.to !== to)) throw invalid();
+          delete entries.pending;
           const under = (file, prefix) => file === prefix || file.startsWith(prefix + "/");
           const moved = [...entries].filter(([file]) => under(file, from));
           for (const file of entries.keys()) if (under(file, from) || under(file, to)) entries.delete(file);
@@ -143,7 +161,7 @@ module.exports = function readingCore(digest) {
           }
           continue;
         }
-        if (typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
+        if (entries.pending || typeof entry.document !== "string" || typeof entry.at !== "string") throw invalid();
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       }
     } catch { throw new Error("阅读记录损坏，未更改原文件。"); }
@@ -165,5 +183,5 @@ module.exports = function readingCore(digest) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, readJournal, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, checkPut, readJournal, pending: entries => entries.pending ?? null, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

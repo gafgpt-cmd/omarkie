@@ -99,7 +99,7 @@ try {
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");
   const summary = await window.desktop.payloadRequest(payload);
   const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
-  check(summary.ok && followUp.ok && summary.value === "Synthetic payload reply." && followUp.value === summary.value, "native Payload reaches only the explicit fixture endpoint");
+  check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");
   const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
   check(sizes.ok && sizes.value["Background-fixture.png"]?.join("x") === "1x1" && Object.keys(sizes.value).length === 1, "native original dimensions are scoped to owned images");
   const grammar = await window.desktop.checkGrammar(`${grammarOrigin}/v2/check`, "", "A😀 + &?");
@@ -121,7 +121,8 @@ try {
   const chapters = ["# First native chapter\n\nSource [@watched].\n", "# Second native chapter\n\nAgain [@watched].\n"];
   const outside = await window.desktop.exportConverted({ folder: `${vault}/unknown` }, "docx", chapters, "", citeOptions);
   const projectDocx = await window.desktop.exportConverted({ folder: vault }, "docx", chapters, "", citeOptions);
-  const projectPdf = await window.desktop.exportConverted({ folder: vault }, "pdf", chapters, "", citeOptions);
+  const media = `<video preload="auto" src="${grammarOrigin}/project-export-media"></video>`;
+  const projectPdf = await window.desktop.exportConverted({ folder: vault }, "pdf", [chapters[0] + "\n" + media, chapters[1]], "", citeOptions);
   check(!outside.ok && projectDocx.ok && projectPdf.ok, "native bridge rejects unknown vaults and exports cited project DOCX and PDF");
   check(
     location.protocol === "omarkie:" && window.desktop !== undefined,

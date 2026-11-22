@@ -106,6 +106,18 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
+    let live = owner.readingStore
+    _ = try await live.perform(scope, ["action": "list"])
+    async let first = reopened.perform(scope, ["action": "put", "item": ["id": "parallel-a", "type": "card", "front": "A", "back": "1"]])
+    async let second = live.perform(scope, ["action": "put", "item": ["id": "parallel-b", "type": "card", "front": "B", "back": "2"]])
+    _ = try await (first, second)
+    let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    for store in [live, reopened] {
+      let entries = try await store.perform(scope, ["action": "list"]) as? [[String: Any]]
+      guard entries?.count == expected.count, Set(entries?.compactMap { $0["id"] as? String } ?? []) == expected else {
+        throw NativeFailure("Concurrent native writers disagree on the committed entries.")
+      }
+    }
     print("PASS: native journal replay, Markdown export and exclusive destination")
   }
   @MainActor func checkReaderPersistence() async throws {

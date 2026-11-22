@@ -55,7 +55,6 @@ export interface Command {
   document?: DocumentRecord;
   anchor?: string;
   line?: number;
-  selection?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }
