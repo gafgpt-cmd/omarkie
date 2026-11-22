@@ -555,12 +555,15 @@ try {
     await rich().focus(); await command("new", route);
     await expect(rich()).not.toContainText("saved");
     await expect(page.locator(".document-editor")).toHaveCount(documentCount + 1);
-    await rich().focus(); await typeDocument("", "New saved");
+    const header = await rich().locator(".md-frontmatter code").textContent();
+    assert.match(header, /^---\n[\s\S]+\n---$/);
+    await rich().locator('[data-kind="empty"]').last().click({ force: true });
+    await typeDocument(header, "New saved");
     const untitled = path.join(data, `save-new-${route}.md`);
     await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, untitled);
     await command("save", route);
-    await expect.poll(() => readFile(untitled, "utf8").catch(() => "")).toBe("New saved");
-    pass(`Save, Save As and New: ${route}`, "Edits and copy reach disk; New opens empty document");
+    await expect.poll(() => readFile(untitled, "utf8").catch(() => "")).toBe(`${header}\n\nNew saved`);
+    pass(`Save, Save As and New: ${route}`, "Edits and copy reach disk; New preserves generated frontmatter");
     await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, copy);
     await command("open", route);
     await expect(rich()).toContainText("saved");

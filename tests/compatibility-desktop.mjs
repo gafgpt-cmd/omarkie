@@ -8,7 +8,7 @@ import {createServer} from 'node:http';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {pandocPath,libreOfficePath} from '../electron/interchange.mjs';
-import {fullSize,headlessArguments,isolatedEnvironment} from './desktop-window.mjs';
+import {fullSize,headlessArguments,isolatedEnvironment,packagedScreenshotArguments} from './desktop-window.mjs';
 const exec = promisify(execFile), pandoc = await pandocPath(), office = await libreOfficePath();
 assert.ok(pandoc && office,'Install Pandoc and LibreOffice for actual conversion acceptance');
 await mkdir("test-results", {recursive:true});
@@ -26,7 +26,7 @@ const server = createServer((request,response)=>{response.writeHead(200,{'conten
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 let application,page; const checks=[],errors=[];
 try {
-  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:headlessArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
+  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});
@@ -71,7 +71,7 @@ try {
   checks.push('Installed host copies local/HTTP images, rewrites paths, moves originals to Trash and renders new destinations');
   await page.screenshot({path:path.join(qa,'compatibility.png')});
   await application.close(); application=null;
-  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[savedDoc,...headlessArguments]} : {args:[process.cwd(),savedDoc,...headlessArguments]}),env,timeout:30000});
+  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[savedDoc,...packagedScreenshotArguments]} : {args:[process.cwd(),savedDoc,...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
   const reopened = page.locator('.document-editor:not([hidden]) .rich-document');
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
 
 const data = await mkdtemp(path.join(os.tmpdir(), "omarkie-parity-"));
 const qa = process.env.OMARKIE_QA_DIR || path.join(data, "evidence");
@@ -16,7 +16,7 @@ delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
 let application,page;
 const errors = [], checks = [];
 try {
-  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:headlessArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
+  application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on("pageerror",error => errors.push(error.message));
   await fullSize(application, page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
