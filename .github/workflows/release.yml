@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
+    paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "packaging/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       tag:
@@ -25,7 +25,7 @@ env:
 
 jobs:
   arch:
-    runs-on: ubuntu-22.04
+    runs-on: ubicloud-standard-4-ubuntu-2204
     timeout-minutes: 30
     container: archlinux:base-devel
     steps:
@@ -40,14 +40,20 @@ jobs:
         run: |
           useradd --create-home builder
           chown -R builder: "$GITHUB_WORKSPACE"
-          su builder -c "cd '$GITHUB_WORKSPACE' && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && node --test tests/arch-launcher.test.mjs tests/arch-electron.test.mjs && OMARKIE_ELECTRON=electron\$(node -p 'require(\"./package.json\").devDependencies.electron.split(\".\")[0]') npm run package:arch"
-      - name: Lint and install it; pacman must pull in the Electron runtime
+          su builder -c "cd '$GITHUB_WORKSPACE' && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && node --test tests/arch-launcher.test.mjs tests/arch-electron.test.mjs && npm run package:arch"
+      - name: Verify installation and reuse of Obsidian's Electron
         run: |
           namcap release/arch/*.pkg.tar.zst
+          pacman -S --noconfirm --needed obsidian
+          before=$(pacman -Qq | grep -Ex 'electron([0-9]+)?')
           pacman -U --noconfirm release/arch/*.pkg.tar.zst
-          electron=$(pacman -Qi omarkie | sed -n 's/^Depends On *: \(electron[0-9]*\).*/\1/p')
-          pacman -Qi "$electron" > /dev/null
-          test -x /usr/bin/omarkie
+          test "$before" = "$(pacman -Qq | grep -Ex 'electron([0-9]+)?')"
+          electron=$(LC_ALL=C pacman -Qi obsidian | grep '^Depends On ' | grep -Eo '\belectron[0-9]+\b')
+          test -x "/usr/bin/$electron"
+          probe=$(mktemp -d)
+          printf '#!/usr/bin/bash\nprintf "%%s\\n" "$@"\n' > "$probe/$electron"
+          chmod +x "$probe/$electron"
+          test "$(PATH="$probe:$PATH" omarkie)" = /usr/lib/omarkie/app.asar
           grep -qx 'Exec=omarkie %F' /usr/share/applications/omarkie.desktop
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -58,7 +64,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubicloud-standard-4-ubuntu-2204
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -214,7 +220,7 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     needs: [macos, windows, linux, arch]
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-4-ubuntu-2204
     permissions:
       contents: write
     env:

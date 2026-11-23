@@ -1,4 +1,4 @@
-# Built by scripts/package-arch.mjs, which fills in the version and Electron series.
+# Built by scripts/package-arch.mjs, which fills in the package metadata.
 pkgname=omarkie
 pkgver=@PKGVER@
 pkgrel=1
@@ -6,8 +6,9 @@ pkgdesc="@DESCRIPTION@"
 arch=('any')
 url="https://github.com/gafgpt-cmd/omarkie"
 license=('MIT')
-depends=('@ELECTRON@' 'hicolor-icon-theme' 'xdg-utils')
-optdepends=('noto-fonts-emoji: color emoji'
+depends=('bash' 'hicolor-icon-theme' 'xdg-utils')
+optdepends=('obsidian: reuse its electronNN runtime (Electron 43 or newer)'
+            'noto-fonts-emoji: color emoji'
             'ttf-jetbrains-mono-nerd: the Omarchy monospace font'
             'pandoc: import and export DOCX, ODT, EPUB and more'
             'libreoffice-fresh: import legacy DOC and RTF'

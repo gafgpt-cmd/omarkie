@@ -1,12 +1,53 @@
 #!/usr/bin/bash
-# Runs Omarkie on Arch's shared Electron. pacman installs it as a dependency; if it was
-# removed afterwards, say so loudly and offer the install instead of failing silently.
+# Reuse Arch's shared Electron without making pacman install another series.
 set -euo pipefail
 
-electron=@ELECTRON@
+minimum_electron=43
 app=/usr/lib/omarkie/app.asar
 
-if ! command -v "$electron" >/dev/null 2>&1; then
+obsidian_electron() {
+  local info line dependency
+  local -a dependencies
+  info=$(LC_ALL=C pacman "$1" obsidian 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    [[ $line =~ ^Depends[[:space:]]On[[:space:]]*:[[:space:]]*(.*)$ ]] || continue
+    read -ra dependencies <<< "${BASH_REMATCH[1]}"
+    for dependency in "${dependencies[@]}"; do
+      dependency=${dependency%%[<>=]*}
+      if [[ $dependency =~ ^electron([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] >= minimum_electron )); then
+        printf '%s\n' "$dependency"
+        return
+      fi
+    done
+    return 1
+  done <<< "$info"
+  return 1
+}
+
+electron=$(obsidian_electron -Qi) || electron=
+if [[ -z $electron ]] || ! command -v "$electron" >/dev/null 2>&1; then
+  electron=
+  newest=$((minimum_electron - 1))
+  installed=$(pacman -Qq 2>/dev/null) || installed=
+  while IFS= read -r package; do
+    if [[ $package =~ ^electron([1-9][0-9]*)$ ]] && (( BASH_REMATCH[1] > newest )) &&
+        command -v "$package" >/dev/null 2>&1; then
+      newest=${BASH_REMATCH[1]}
+      electron=$package
+    fi
+  done <<< "$installed"
+fi
+
+if [[ -z $electron ]]; then
+  if ! electron=$(obsidian_electron -Si); then
+    message="Omarkie cannot start: Electron $minimum_electron or newer is required. pacman has no supported Electron series for Obsidian."
+    printf '%s\n' "$message" >&2
+    if [[ ! -t 0 || ! -t 2 ]] && command -v notify-send >/dev/null 2>&1; then
+      notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$message" || true
+    fi
+    exit 1
+  fi
+
   message="Omarkie cannot start: the $electron package is not installed."
   printf '\n\033[1;31m%s\033[0m\nInstall it with: sudo pacman -S --needed %s\n\n' "$message" "$electron" >&2
   if [[ -t 0 && -t 2 ]]; then
