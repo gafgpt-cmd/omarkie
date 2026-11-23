@@ -626,9 +626,9 @@ export default function App() {
         >
           {countUnit === "characters" ? t("{{count}} 字", { count: selection ? selectionCharacters : characters }) : t("{{count}} 词", { count: selection ? documentStatistics(selection, selection, preferences.readingSpeed).words : wholeStatistics?.words || 0 })}{selection && t("（选中）")}{exporting && t(" · 正在导出…")}
         </button>
-        {window.desktop?.readingStore && active && <button type="button" aria-label={t("阅读图层")} title={t("阅读图层")}
+        {window.desktop?.readingStore && active && <button type="button" data-testid="reading-layers-toggle" aria-label={t("阅读图层")} title={t("阅读图层")}
           aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => readingVisible ? closeReading() : setReadingOpen(true)}><Layers size={15} /></button>}
-        {active && <button aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
+        {active && <button data-testid="text-encoding" aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
       </footer>
       {focus && (
         <button className="leave-focus" onClick={() => setFocus(false)}>

@@ -124,6 +124,11 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     #endif
     let content = WKUserContentController()
     content.add(self, name: "omarkie")
+    #if WEBTEST
+      if ProcessInfo.processInfo.environment["OMARKIE_TEST_LANGUAGE"] == "en" {
+        content.addUserScript(WKUserScript(source: "localStorage.setItem('omarkie-language', 'en')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+      }
+    #endif
     let script = try! String(
       contentsOf: Bundle.main.resourceURL!.appendingPathComponent("bridge.js"), encoding: .utf8)
     content.addUserScript(
@@ -164,11 +169,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         guard let self else { return }
         guard let list else {
           let key = "Could not enable offline reader protection."
-          let supported = ["en", "es", "ca", "ro", "zh"]
-          let locale = Locale.preferredLanguages.compactMap { $0.lowercased().split(separator: "-").first.map(String.init) }.first { supported.contains($0) } ?? "en"
-          let catalog = Bundle.main.url(forResource: locale, withExtension: "json", subdirectory: "locales")
-            .flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }
-          let alert = NSAlert(); alert.messageText = catalog?[key] ?? key
+          let alert = NSAlert(); alert.messageText = Self.localized(key)
           alert.beginSheetModal(for: self.window)
           return
         }
@@ -646,6 +647,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       if args.first as? Bool != true { content.add(offlineRules) }
       return true
     case "ready":
+      let locale = (try? await webView.callAsyncJavaScript("return document.documentElement.lang", arguments: [:], in: nil, contentWorld: .page)) as? String
+      if window.isKeyWindow { buildMenu(locale: locale) }
       rendererReady = true
       let queued = pendingCommands; pendingCommands.removeAll()
       for item in queued { deliver(item) }; return nil
@@ -909,7 +912,14 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     _ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
     initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void
   ) { completionHandler(confirm(message, detail: "", yes: "确定")) }
-  func buildMenu() {
+  static func localized(_ key: String, locale: String? = nil) -> String {
+    let supported = ["en", "es", "ca", "ro", "zh"]
+    let selected = locale.flatMap { supported.contains($0) ? $0 : nil } ?? Locale.preferredLanguages.compactMap { $0.lowercased().split(whereSeparator: { "-_.".contains($0) }).first.map(String.init) }.first { supported.contains($0) } ?? "en"
+    let catalog = Bundle.main.url(forResource: selected, withExtension: "json", subdirectory: "locales")
+      .flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }
+    return catalog?[key] ?? key
+  }
+  func buildMenu(locale: String? = nil) {
     let main = NSMenu()
     NSApp.mainMenu = main
     func group(_ title: String) -> NSMenu {
@@ -926,7 +936,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if key.hasPrefix("F"), let number = Int(key.dropFirst()), (1...20).contains(number) { key = String(UnicodeScalar(0xF703 + number)!) }
         if key == "Backspace" { key = "\u{8}" }
         let item = NSMenuItem(
-          title: command.label, action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
+          title: ["clean-converted", "collect-reading"].contains(command.action) ? Self.localized(command.label, locale: locale) : command.label,
+          action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
         if command.selector == nil { item.target = owner }
         item.representedObject = command.action
         item.keyEquivalentModifierMask = []

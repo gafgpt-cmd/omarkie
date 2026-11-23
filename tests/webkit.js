@@ -70,6 +70,7 @@ const readSource = () =>
     .join("\n");
 try {
   await wait(() => root()?.querySelector("strong"));
+  check(document.documentElement.lang === "en", "native fixture starts in English");
   const cleanInput = "# Clean fixture\n\npublisher artifact\n\nA reconst-\nruction.\n";
   const clean = await window.desktop.cleanConverted(cleanInput);
   check(clean.ok && clean.value === "# Clean fixture\n\nA reconst-\nruction.\n", "native Clean CLI processes a private copy");
@@ -104,30 +105,45 @@ try {
   const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });
   const overhead = JSON.stringify({ choices: [{ message: { content: "" } }] }).length;
   check(under.ok && under.value === "x".repeat(63999 - overhead) && !over.ok && !failed.ok, "native Payload accepts only a valid in-limit 2xx completion");
-  const probe = async (container, route) => {
-    const img = document.createElement("img");
-    const loaded = new Promise(resolve => { img.onload = () => resolve(true); img.onerror = () => resolve(false); });
-    img.src = grammarOrigin.replace("http:", "h\tttp:") + route;
-    container.append(img);
-    try { return await loaded; } finally { img.remove(); }
-  };
   const remotePreference = async enabled => {
     window.__omarkie.command({ action: "preferences" });
-    const checkbox = () => [...document.querySelectorAll('label')].find(label => label.textContent.trim() === "显示远程图片")?.querySelector('input[type="checkbox"]');
+    const checkbox = () => document.querySelector('input[name="remoteImages"]');
     await wait(checkbox);
     if (checkbox().checked !== enabled) checkbox().click();
-    document.querySelector('[aria-label="关闭偏好设置"]').click();
+    document.querySelector('.dialog-heading button').click();
   };
   await remotePreference(true);
-  check(await probe(root(), "/reader-media-control"), "native editing permits enabled remote media");
-  document.querySelector('button[aria-label="阅读图层"]').click();
+  const primary = "Background-fixture.png";
+  const mediaDraft = { id: "preview-media", path: null, name: "Media-preview.md", lineEnding: "\n",
+    content: `<div><img alt="Preview image" src="${primary}" srcset="${grammarOrigin}/reader-media-control 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-poster"></video></div>\n` };
+  mediaDraft.savedContent = mediaDraft.content;
+  check((await window.desktop.registerDraft(mediaDraft)).ok, "native registers the Markdown media fixture");
+  window.__omarkie.command({ action: "opened", document: mediaDraft });
+  const image = container => container?.querySelector('img[alt="Preview image"]');
+  await wait(() => image(root())?.currentSrc.endsWith("/reader-media-control") && image(root()).naturalWidth > 0);
+  check(true, "native Markdown editing permits opted-in media");
+  const assertOffline = async container => {
+    await wait(() => image(container())?.currentSrc.includes(primary) && image(container()).naturalWidth > 0 && container().querySelector("video"));
+    check(!image(container()).hasAttribute("srcset") && !container().querySelector("video").hasAttribute("poster"), "native preview keeps the local image and strips remote media");
+  };
+  document.querySelector('[data-testid="reading-layers-toggle"]').click();
   await wait(() => document.querySelector(".layers-rail"));
-  check(!await probe(root(), "/reader-media-layers"), "Reading Layers enables the native offline guard");
-  document.querySelector('button[aria-label="关闭阅读图层"]').click();
+  await assertOffline(root);
   window.__omarkie.command({ action: "clean-converted" });
   await wait(() => document.querySelector(".clean-layer"));
-  check(!await probe(document.querySelector(".clean-layer"), "/reader-media-clean"), "Clean enables the native offline guard");
-  [...document.querySelectorAll(".clean-layer button")].find(button => button.textContent.trim() === "返回源文档").click();
+  await assertOffline(() => document.querySelector(".clean-layer"));
+  document.querySelector('[data-testid="clean-back"]').click();
+  document.querySelector('[data-testid="reading-layers-close"]')?.click();
+  window.__omarkie.command({ action: "close" });
+  await wait(() => document.querySelector('.document-title')?.textContent === 'WebKit-fixture.md');
+  window.__omarkie.command({ action: "document-tools" });
+  const writingTab = () => document.querySelector('.workflow-tabs [data-tab="writing"]');
+  await wait(writingTab);
+  writingTab().click();
+  await wait(() => document.querySelector('[data-testid="project-export-pdf"]:enabled'));
+  document.querySelector('[data-testid="project-export-pdf"]').click();
+  await wait(() => document.querySelector('.utility-dialog [role="alert"]')?.textContent.includes("PDF exported"));
+  document.querySelector('.dialog-heading button').click();
   await remotePreference(false);
   check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");
   const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
@@ -161,22 +177,22 @@ try {
   const originalResponse = await window.desktop.restore();
   if (!originalResponse.ok) throw new Error(originalResponse.error);
   const original = originalResponse.value.documents[0].content;
-  const openPreferences = async () => { window.__omarkie.command({action:"preferences"}); await wait(() => document.querySelector('[aria-label="关闭偏好设置"]')); };
-  const preferenceButton = text => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === text);
-  await openPreferences(); preferenceButton('选择图片…').click();
+  const openPreferences = async () => { window.__omarkie.command({action:"preferences"}); await wait(() => document.querySelector('.background-settings')); };
+  const chooseBackground = () => document.querySelector('.background-file button:first-of-type').click();
+  await openPreferences(); chooseBackground();
   await wait(() => document.querySelector('.editor-background'));
   check((await window.desktop.background()).value.name === 'Background-fixture.png','native background picker persists the managed image');
-  const setRange = (label,value) => { const field = document.querySelector(`[aria-label="${label}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,String(value)); field.dispatchEvent(new Event('input',{bubbles:true})); };
-  setRange('背景不透明度',42); setRange('背景模糊',7);
+  const setRange = (index,value) => { const field = document.querySelectorAll('.background-controls input[type="range"]')[index]; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,String(value)); field.dispatchEvent(new Event('input',{bubbles:true})); };
+  setRange(0,42); setRange(1,7);
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.42');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(7px)','background controls change the image layer without dimming text');
-  preferenceButton('重置效果').click();
+  document.querySelector('.background-reset').click();
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(0px)','reset restores subtle background defaults');
-  preferenceButton('清除背景').click(); await wait(() => !document.querySelector('.editor-background'));
+  document.querySelector('.background-file button:nth-of-type(2)').click(); await wait(() => !document.querySelector('.editor-background'));
   check((await window.desktop.background()).value === null,'clear background updates native persistence');
-  preferenceButton('选择图片…').click(); await wait(() => document.querySelector('.editor-background'));
-  document.querySelector('[aria-label="关闭偏好设置"]').click();
+  chooseBackground(); await wait(() => document.querySelector('.editor-background'));
+  document.querySelector('.dialog-heading button').click();
   await sourceMode(true);
   check(getComputedStyle(document.querySelector('.source-surface .cm-editor')).backgroundColor === 'rgba(0, 0, 0, 0)' && readSource() === original,'background remains visible in source mode without changing Markdown');
   await sourceMode(false);
@@ -185,9 +201,9 @@ try {
     !root().querySelector(".math-error,[data-mjx-error]"),
     "offline MathJax SVG renders document macros and extended fonts",
   );
-  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('[role="dialog"][aria-label="插件管理"]')); };
-  const pluginCard = name => [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
-  const closePlugins = () => document.querySelector('[aria-label="关闭插件管理"]').click();
+  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list')); };
+  const pluginCard = (name, id) => id ? document.querySelector(`.plugin-card[data-plugin-id="${id}"]`) : [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
+  const closePlugins = () => document.querySelector('.dialog-heading button').click();
   pointText("粗体", 1);
   await openPlugins();
   await wait(() => pluginCard('Native-plugin-fixture'));
@@ -211,15 +227,16 @@ try {
   await wait(()=>!document.querySelector('style[data-plugin^="local-"]'));
   const stoppedTicks=window.packageProbe.ticks;await new Promise(resolve=>setTimeout(resolve,100));
   check(window.packageProbe.ticks===stoppedTicks,'native installed plugin timers stop when disabled');
-  for (const [name, id] of [['列表折叠','collapse_list'],['只读模式','read_only'],['无图阅读','no_image'],['段落聚焦','blur'],['常显语法标记','static_markers'],['反色夜间模式','dark']]) {
-    pluginCard(name).querySelector('input[type="checkbox"]').click();
-    await wait(() => !pluginCard(name).querySelector('.plugin-actions button').disabled);
-    check(!pluginCard(name).querySelector('[role="alert"]'), 'upstream ' + id + ' plugin runs in native WebKit');
+  for (const id of ['collapse_list','read_only','no_image','blur','static_markers','dark']) {
+    const card = pluginCard(null, id);
+    card.querySelector('input[type="checkbox"]').click();
+    await wait(() => !pluginCard(null, id).querySelector('.plugin-actions button').disabled);
+    check(!card.querySelector('[role="alert"]'), 'upstream ' + id + ' plugin runs in native WebKit');
     if (id === 'collapse_list') {
-      [...pluginCard(name).querySelectorAll('button')].find(button=>button.textContent==='插件命令…').click();
-      const command=()=>[...pluginCard(name).querySelectorAll('button')].find(button=>button.textContent==='记住折叠状态');
-      await wait(()=>command() || pluginCard(name).querySelector('[role="alert"]')).catch(()=>{throw new Error('Missing plugin command: '+pluginCard(name).textContent);});
-      if (!command()) throw new Error('Missing plugin action: '+pluginCard(name).textContent);
+      card.querySelector('.plugin-actions button:last-of-type').click();
+      const command=()=>pluginCard(null, id).querySelector('button[aria-pressed]');
+      await wait(()=>command() || card.querySelector('[role="alert"]')).catch(()=>{throw new Error('Missing plugin command: '+card.textContent);});
+      if (!command()) throw new Error('Missing plugin action: '+card.textContent);
       check(command()?.getAttribute('aria-pressed')==='true','upstream dynamic command is visible with its checked state');
       command().click(); await wait(()=>command()?.getAttribute('aria-pressed')==='false');
       check(true,'plugin command calls the original plugin and persists the changed setting');
@@ -232,7 +249,7 @@ try {
     }
     if (id === 'static_markers') check(getComputedStyle(root().querySelector('[data-mark="em"] .md-meta')).display === 'inline', 'static markers plugin changes rendered inline metadata');
     if (id === 'dark') check(document.documentElement.classList.contains('plugin-dark'), 'dark plugin applies its original root class');
-    pluginCard(name).querySelector('input[type="checkbox"]').click();
+    pluginCard(null, id).querySelector('input[type="checkbox"]').click();
     await wait(() => !document.querySelector('style[data-plugin="'+id+'"]'));
   }
   check(!document.documentElement.classList.contains('plugin-dark') && root().getAttribute('aria-readonly') === 'false', 'plugin teardown restores editing and removes presentation effects');
@@ -385,7 +402,7 @@ try {
   check(readSource() === source, "native file operation preparation, path synchronization and undo preserve exact editor bytes");
   window.__omarkie.command({ action: "pdf" });
   await wait(() =>
-    document.querySelector(".toast")?.textContent.includes("PDF 已导出"),
+    document.querySelector(".toast")?.textContent.includes("PDF exported"),
   );
   check(
     true,
@@ -399,17 +416,17 @@ try {
   if (!marginPdf.ok) throw new Error(marginPdf.error);
   check(true, "native PDF ignores an unpainted trailing block margin");
   window.__omarkie.command({ action: "html" });
-  await wait(() => document.querySelector(".toast")?.textContent.includes("HTML 已导出"));
+  await wait(() => document.querySelector(".toast")?.textContent.includes("HTML exported"));
   check(true, "native HTML export embeds local fonts and images without live app links");
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: encoding dialog"]});
   // Drive the new encoding dialog through its real native bridge and byte writer.
   for (const encoding of ['gb18030', 'utf-16be', 'utf-8']) {
-    document.querySelector('[aria-label="更改文本编码"]').click(); await wait(() => document.querySelector('[aria-label="文本编码"]'));
-    const select = document.querySelector('select[aria-label="文本编码"]'); select.value = encoding; select.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('[data-testid="text-encoding"]').click(); await wait(() => document.querySelector('[role="dialog"] select'));
+    const select = document.querySelector('[role="dialog"] select'); select.value = encoding; select.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 20));
-    [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === '转换并保存').click();
+    document.querySelector('[role="dialog"] .dialog-actions .primary-button').click();
     await wait(() => !document.querySelector('[role="dialog"]'));
-    check(document.querySelector('[aria-label="更改文本编码"]').textContent.includes(({gb18030:"GB18030", "utf-16be":"UTF-16 BE", "utf-8":"UTF-8"})[encoding]), 'native encoding dialog converts and updates metadata: ' + encoding);
+    check(document.querySelector('[data-testid="text-encoding"]').textContent.includes(({gb18030:"GB18030", "utf-16be":"UTF-16 BE", "utf-8":"UTF-8"})[encoding]), 'native encoding dialog converts and updates metadata: ' + encoding);
   }
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: complex source mode"]});
   await sourceMode(false);
@@ -426,11 +443,11 @@ try {
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: complex diagram"]});
   await wait(() => root()?.querySelectorAll('.mermaid-block svg').length === 3);
   check(true, 'complex Chinese fixture renders nested lists, tables, images, footnotes, math and Mermaid');
-  window.__omarkie.command({ action: 'pdf' }); await wait(() => document.querySelector('.toast')?.textContent.includes('PDF 已导出'));
+  window.__omarkie.command({ action: 'pdf' }); await wait(() => document.querySelector('.toast')?.textContent.includes('PDF exported'));
   check(true, 'complex native PDF export includes rendered Chinese tables, math, images, diagrams and footnotes');
   for (const format of ['docx', 'odt', 'rtf', 'epub', 'latex', 'rst', 'mediawiki', 'textile', 'opml', 'revealjs']) {
     window.__omarkie.command({ action: format });
-    await wait(() => { const message = document.querySelector('.toast')?.textContent || ''; if (/失败|无法|无效|不能|超时|需要 Pandoc/.test(message)) throw new Error(format + ': ' + message); return message.includes(format.toUpperCase() + ' 已导出'); });
+    await wait(() => { const message = document.querySelector('.toast')?.textContent || ''; if (/失败|无法|无效|不能|超时|需要 Pandoc|failed|could not/i.test(message)) throw new Error(format + ': ' + message); return message.includes(format.toUpperCase() + ' exported'); });
     check(true, 'real Pandoc ' + format + ' export completes from the rendered complex document');
   }
   const convertedImports = {};

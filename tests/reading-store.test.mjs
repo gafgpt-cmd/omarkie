@@ -121,8 +121,7 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
   await Promise.all(committedMessages);
   const committed = (await readFile(log, "utf8")).trimEnd().split("\n").map(line => JSON.parse(line).entry.id).sort();
   assert.deepEqual(committed, ["first", "second", "seed"].sort());
-  const cached = JSON.parse(await readFile(index, "utf8"));
-  assert.deepEqual(cached.entries.map(item => item.id).sort(), committed);
+  await assert.rejects(stat(index), { code: "ENOENT" });
   assert.deepEqual((await readingStore(store, source.id, { action: "list" })).map(item => item.id).sort(), committed);
   const messages = Promise.all(workers.map(readWorkerEntries));
   const exits = Promise.all(workers.map(child => once(child, "exit")));
@@ -380,9 +379,9 @@ test("vault journal serializes writers, compacts updates and rebuilds after a to
   const journal = await readFile(log, "utf8");
   assert.equal(journal.trimEnd().split("\n").length, 3);
   await appendFile(log, '{"v":1,"entry":{"body":"torn', "utf8");
-  await writeFile(index, "torn index", "utf8");
+  await mkdir(index);
   assert.deepEqual((await get()).map(item => item.id).sort(), ["card", "first"]);
-  assert.equal(JSON.parse(await readFile(index, "utf8")).entries.length, 3);
+  assert.ok((await stat(index)).isDirectory());
   await put({ ...note("first"), body: "Updated" });
   const recovered = await readFile(log, "utf8");
   assert.ok(recovered.startsWith(journal));

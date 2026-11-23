@@ -97,7 +97,8 @@ try {
   await close();
   const project = path.join(scratch, "project"), first = path.join(project, "z", "beginning.md"), second = path.join(project, "a", "ending.md");
   const opening = "\uFEFF---\r\norder: 20\r\ntitle: Private metadata\r\n---\r\n# Disk opening\r\n\r\n![Opening image](figure.png)\r\n\r\nStart [@reference].\r\n";
-  const ending = "---\norder: 10\n---\n# Closing chapter\n\n![[figure.png|Closing image]]\n\nEnd [@reference].\n";
+  const ending = "---\norder: 10\n---\n# Closing chapter\n\n![[figure.png|Closing image]]\n\n<div class=\"mermaid-block\"><video poster=\"https://export-fixture.invalid/blocked.png\"></video></div>\n\n```mermaid\ngraph TD\n  A --> B\n```\n\nEnd [@reference].\n";
+  await page.route("https://export-fixture.invalid/**", route => route.abort());
   for (const note of [first, second]) await mkdir(path.dirname(note), { recursive: true });
   const alternatePng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEElEQVQI12P8zwAFTDAGAwATKQEDO7FpHgAAAABJRU5ErkJggg==", "base64");
   await writeFile(first, opening); await writeFile(second, ending);
@@ -116,6 +117,9 @@ try {
   await expect(dialog.getByTitle(await realpath(project), { exact: true })).toBeVisible();
   assert.deepEqual(projectRequests, []);
   await close();
+  await page.keyboard.press("ControlOrMeta+,");
+  await page.locator('input[name="remoteImages"]').check();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /(?:^|[\\/])beginning\.md$/ }).click();
   await expect(rich.getByRole("heading", { name: "Disk opening", exact: true })).toBeVisible();
   await text(); await editor.click(); await page.keyboard.press("ControlOrMeta+a");
@@ -153,8 +157,8 @@ try {
     assert.doesNotMatch(compiled, /Disk opening|Private metadata|@reference/);
   }
   const embedded = await Promise.all((await readdir(path.join(media, "media"))).map(name => readFile(path.join(media, "media", name))));
-  assert.equal(embedded.length, 2);
-  assert.deepEqual(embedded.map(bytes => bytes.readUInt32BE(16)).sort((a, b) => a - b), [1, 3]);
+  assert.equal(embedded.length, 3);
+  assert.deepEqual(embedded.map(bytes => bytes.readUInt32BE(16)).sort((a, b) => a - b).slice(0, 2), [1, 3]);
   const pdfImages = (await exec("pdfimages", ["-list", projectPdf])).stdout;
   assert.match(pdfImages, /\bimage\s+1\s+1\b/); assert.match(pdfImages, /\bimage\s+3\s+2\b/);
   assert.equal(await readFile(first, "utf8"), opening); assert.equal(await readFile(second, "utf8"), ending);

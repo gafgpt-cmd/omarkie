@@ -84,7 +84,7 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
   const states: Record<string, string> = { resolved: t("已解析"), external: t("外部链接"), invalid: t("链接无效"), escape: t("链接指向知识库之外"), ambiguous: t("有多个同名目标"), missing: t("未找到目标"), "missing-heading": t("未找到标题") };
   const issues: Record<string, string> = { "index-frontmatter": t("index.md 的前置元数据只能包含 okf_version"), "log-frontmatter": t("log.md 不应包含前置元数据"), "log-date": t("log.md 的日期标题必须是 YYYY-MM-DD"), "missing-frontmatter": t("缺少前置元数据"), "missing-type": t("缺少 type 属性"), "okf-delimiter": t("前置元数据结束标记应为 ---") };
   return <Dialog title={t("文档工具")} close={close}>
-    <nav className="workflow-tabs" aria-label={t("文档工具")}>{(["properties", "references", "backlinks", "graph", "okf", "writing", "checks"] as ToolTab[]).map(value => <button key={value} aria-pressed={tab === value} disabled={busy} onClick={() => { setTab(value); setPreview([]); setReport([]); }}>{labels[value]}</button>)}</nav>
+    <nav className="workflow-tabs" aria-label={t("文档工具")}>{(["properties", "references", "backlinks", "graph", "okf", "writing", "checks"] as ToolTab[]).map(value => <button key={value} data-tab={value} aria-pressed={tab === value} disabled={busy} onClick={() => { setTab(value); setPreview([]); setReport([]); }}>{labels[value]}</button>)}</nav>
     {message && <p role="alert">{message}</p>}
     {busy && <p role="status">{t("处理中…")}</p>}
     {snapshot?.truncated && <p role="alert">{t("清点不完整，请缩小文件夹范围后再转换或导出。")}</p>}
@@ -151,7 +151,7 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
         <p>{t("将文件夹中的 Markdown 章节编译成一个文档。")}</p>
         {folder && <p title={folder}>{folder}</p>}
         <button disabled={busy} onClick={() => void run(openFolder)}>{t("选择项目文件夹…")}</button>
-        {(["docx", "pdf"] as const).map(format => <button key={format} disabled={busy || !folder} onClick={() => void run(() => compile(format))}>
+        {(["docx", "pdf"] as const).map(format => <button key={format} data-testid={`project-export-${format}`} disabled={busy || !folder} onClick={() => void run(() => compile(format))}>
           {t("导出项目为 {{format}}", { format: format.toUpperCase() })}
         </button>)}
       </>}

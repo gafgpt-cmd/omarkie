@@ -123,7 +123,7 @@ export default function ReadingLayers({ id, content, saved, state, change, edito
   ] as const;
   return <>
     <aside className="layers-rail" aria-label={t("阅读图层")}>
-      <header><h2><Layers size={16} />{t("阅读图层")}</h2><button type="button" aria-label={t("关闭阅读图层")} onClick={close}><X size={16} /></button></header>
+      <header><h2><Layers size={16} />{t("阅读图层")}</h2><button type="button" data-testid="reading-layers-close" aria-label={t("关闭阅读图层")} onClick={close}><X size={16} /></button></header>
       <ul>
         {rows.map(({ layer, code, label, available }) => {
           const on = visible(layer), active = state.active === layer, eyeLabel = on ? t("隐藏{{layer}}", { layer: label }) : t("显示{{layer}}", { layer: label });

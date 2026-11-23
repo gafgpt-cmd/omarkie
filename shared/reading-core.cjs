@@ -241,5 +241,5 @@ module.exports = function readingCore(digest, translate = message => message) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

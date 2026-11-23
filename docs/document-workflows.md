@@ -48,7 +48,7 @@
 - Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** saves a Markdown copy for the open vault. It never overwrites a file.
-- Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
+- Back up `.omarkie/store.jsonl` with the vault. The reading index is built in memory.
 - Use one Omarkie process when first enabling reading history in a vault.
 - Trash and Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes.
 - Tracked notes that become unreadable during a move may retain history at the old path.

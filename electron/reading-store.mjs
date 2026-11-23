@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -8,7 +8,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest, t);
+const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, query, readingMarkdown } = readingCore(digest, t);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -65,25 +65,9 @@ async function load(log, handle) {
     text = rows.join("\n");
   }
   const entries = readJournal(text);
-  const index = { signature, offset, entries, dirty: !!offset };
+  const index = { signature, offset, entries };
   cache.set(log, index);
   return index;
-}
-async function writeIndex(root, directory, file, index) {
-  const temporary = path.join(directory, `.index.${randomUUID()}.tmp`);
-  let created = false;
-  try {
-    const out = await open(temporary, "wx", 0o600);
-    created = true;
-    try { await out.writeFile(JSON.stringify({ v: 1, bytes: index.offset, entries: allEntries(index.entries) }) + "\n", "utf8"); await out.sync(); }
-    finally { await out.close(); }
-    await directoryAt(root, directory);
-    regular(await info(file));
-    await rename(temporary, file);
-    index.dirty = false;
-  } finally {
-    if (created) await unlink(temporary).catch(missing);
-  }
 }
 
 let lockAPI;
@@ -165,10 +149,9 @@ async function moveFingerprint(root, prefix, files, skipMissing = false) {
 }
 
 async function transaction(root, writing, run) {
-  const directory = path.join(root, ".omarkie"), log = path.join(directory, "store.jsonl"), file = path.join(directory, "index.json");
+  const log = path.join(root, ".omarkie", "store.jsonl");
   const metadata = regular(await info(log));
   if (!metadata && !writing) return run(null);
-  const snapshot = regular(await info(file));
   const flags = (writing ? constants.O_CREAT : 0) | constants.O_RDWR | constants.O_APPEND;
   const handle = await open(log, flags | noFollow, 0o600);
   try {
@@ -184,7 +167,7 @@ async function transaction(root, writing, run) {
       const offset = index.offset + Buffer.byteLength(row) + 1;
       if (after.size !== BigInt(offset)) { index = await load(log, handle); return; }
       applyRow(index.entries, row);
-      index = { signature: fingerprint(after), offset, entries: index.entries, dirty: true };
+      index = { signature: fingerprint(after), offset, entries: index.entries };
       cache.set(log, index);
     };
     const intent = pending(index.entries);
@@ -198,9 +181,7 @@ async function transaction(root, writing, run) {
         else { notice = true; console.warn("Reading move recovery could not identify the original document."); }
       } catch { notice = true; console.warn("Reading move recovery could not confirm the destination."); }
     }
-    const result = await run(index.entries, append, notice);
-    if (index.dirty || !snapshot) await writeIndex(root, directory, file, index).catch(() => {});
-    return result;
+    return await run(index.entries, append, notice);
   } finally { await handle.close(); }
 }
 

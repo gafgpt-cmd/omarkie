@@ -24,7 +24,6 @@ final class NativeReadingStore {
     let revision: Revision
     let offset: Int
     let entries: JSValue
-    var indexed = false
   }
 
   private let queue = DispatchQueue(label: "org.omarkie.reading-store")
@@ -214,31 +213,6 @@ final class NativeReadingStore {
     return Revision(metadata)
   }
 
-  private static func indexExists(_ directory: Int32) throws -> Bool {
-    var metadata = stat()
-    if fstatat(directory, "index.json", &metadata, AT_SYMLINK_NOFOLLOW) == 0 {
-      guard regular(metadata) else { throw NativeFailure(unsafe) }
-      return true
-    }
-    guard errno == ENOENT else { throw NativeFailure(unsafe) }
-    return false
-  }
-
-  private func writeIndex(_ directory: Int32, _ state: Snapshot) throws {
-    let entries = try call("allEntries", [state.entries]).toArray() ?? []
-    var bytes = try JSONSerialization.data(withJSONObject: ["v": 1, "bytes": state.offset, "entries": entries])
-    bytes.append(10)
-    let temporary = ".index.\(UUID().uuidString).tmp"
-    let descriptor = openat(directory, temporary, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0o600)
-    guard descriptor >= 0 else { throw NativeFailure(Self.unsafe) }
-    let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-    defer { try? file.close(); _ = unlinkat(directory, temporary, 0) }
-    try file.write(contentsOf: bytes)
-    try file.synchronize()
-    _ = try Self.indexExists(directory)
-    guard renameat(directory, temporary, directory, "index.json") == 0 else { throw NativeFailure(Self.unsafe) }
-  }
-
   private func operate(_ scope: Scope, _ incoming: [String: Any], _ current: () -> Bool) throws -> Any {
     let exporting = incoming["action"] as? String == "export"
     let request = exporting ? ["action": "list", "scope": "vault", "types": ["note", "card"]] : incoming
@@ -295,7 +269,6 @@ final class NativeReadingStore {
       #endif
       Thread.sleep(forTimeInterval: 0.02)
     }
-    let hasIndex = try Self.indexExists(directory)
     let flags = O_RDWR | O_APPEND | (writing ? O_CREAT : 0)
     let descriptor = openat(directory, "store.jsonl", flags | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
     if descriptor < 0, !writing, errno == ENOENT { return try run(nil, noAppend, false) }
@@ -348,10 +321,6 @@ final class NativeReadingStore {
       } catch { warning = true; NSLog("Reading move recovery could not confirm the destination.") }
     }
     let result = try run(state, append, warning)
-    if !state.indexed || !hasIndex {
-      // The journal commit remains valid if the derived cache cannot be written.
-      do { try writeIndex(directory, state); state.indexed = true } catch {}
-    }
     snapshot = (folder, state)
     return result
   }

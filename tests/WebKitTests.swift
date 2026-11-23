@@ -14,6 +14,10 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       let source =
         "# WebKit 验收\n\n普通 **粗体** 与 *斜体*。\n\n- [ ] 任务\n\n| 名称 | 内容 |\n| --- | --- |\n| A | B |\n\n```javascript\nconst count = 1;\n```\n\n$$\n\\newcommand{\\myvalue}{x+1}\n$$\n\n$$\n\\myvalue + \\mathbb{R}\n$$\n"
       try atomicWrite(file, Data(source.utf8))
+      if let origin = ProcessInfo.processInfo.environment["OMARKIE_TEST_GRAMMAR"] {
+        let chapter = "# Diagram chapter\n\n<div class=\"mermaid-block\"><video poster=\"\(origin)/reader-media-project\"></video></div>\n\n```mermaid\ngraph TD\n A --> B\n```\n"
+        try atomicWrite(directory.appendingPathComponent("Diagram-chapter.md"), Data(chapter.utf8))
+      }
       let store = DocumentStore(directory)
       let plugin = directory.appendingPathComponent("Native-plugin-fixture.js")
       try atomicWrite(plugin, Data("class NativePlugin extends BasePlugin { style() { return '#write { --plugin-fixture: loaded; }' }; call() { this.utils.insertText('插件') } }; module.exports = {plugin: NativePlugin};".utf8))
@@ -27,6 +31,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
       host.show(hidden: true)
+      host.buildMenu(locale: "es")
+      let nativeItems = NSApp.mainMenu?.items.flatMap { $0.submenu?.items ?? [] } ?? []
+      guard nativeItems.first(where: { $0.representedObject as? String == "clean-converted" })?.title == "Limpiar texto convertido…",
+            nativeItems.first(where: { $0.representedObject as? String == "collect-reading" })?.title == "Recopilar resaltados y avisos" else {
+        throw NativeFailure("Native File menu learning labels did not localize.")
+      }
       host.webView.navigationDelegate = self
       DispatchQueue.main.asyncAfter(deadline: .now() + 180) {
         fputs("WebKit test timed out\n", stderr)
@@ -244,9 +254,10 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
     let local = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
     let remote = try JSONDecoder().decode([String].self, from: Data(contentsOf: coordination.appendingPathComponent("ids.json")))
-    let index = try JSONSerialization.jsonObject(with: Data(contentsOf: indexFile)) as? [String: Any]
-    let indexed = index?["entries"] as? [[String: Any]] ?? []
-    for ids in [local.compactMap { $0["id"] as? String }, remote, indexed.compactMap { $0["id"] as? String }] {
+    guard !FileManager.default.fileExists(atPath: indexFile.path) else { throw NativeFailure("Reading index must stay in memory.") }
+    let fresh = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
+    let replayed = try await fresh.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    for ids in [local.compactMap { $0["id"] as? String }, remote, replayed.compactMap { $0["id"] as? String }] {
       guard ids.count == expected.count, Set(ids) == expected else { throw NativeFailure("Concurrent native writers disagree on commits.") }
     }
     child.waitUntilExit()

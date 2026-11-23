@@ -56,7 +56,7 @@ export function CleanLayer({ record, current, editor, canBake, close }: {
   return <section className="clean-layer" aria-label={t("清理图层预览")} onKeyDown={event => { if (event.key === "Escape" && !baking) close(); }}>
     <div className="clean-layer-bar">
       <strong>{t("清理图层预览")}</strong>
-      <button ref={back} type="button" onClick={close} disabled={baking}>{t("返回源文档")}</button>
+      <button ref={back} type="button" data-testid="clean-back" onClick={close} disabled={baking}>{t("返回源文档")}</button>
       <button type="button" onClick={() => setChanges(value => !value)} disabled={!changed} aria-pressed={changes}>{t("查看差异")}</button>
       <button type="button" onClick={() => void apply()} disabled={!changed || !canBake || baking}>{t("应用到源文档")}</button>
     </div>

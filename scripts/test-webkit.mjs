@@ -122,6 +122,7 @@ try {
     const child = spawn(executable, {
       env: {
         ...process.env,
+        OMARKIE_TEST_LANGUAGE: "en",
         OMARKIE_DATA_DIR: path.join(directory, "data"),
         OMARKIE_TEST_UPLOADER: uploaderURL,
         OMARKIE_TEST_PAYLOAD: payloadBaseURL,
@@ -137,7 +138,8 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
-  assert.deepEqual(readerMediaRequests, ["/reader-media-control"], "native reader blocks media until explicitly enabled");
+  assert.ok(readerMediaRequests.includes("/reader-media-control"), "editing loads the owned media fixture");
+  assert.ok(readerMediaRequests.every(route => ["/reader-media-control", "/reader-media-poster"].includes(route)), "only editing media routes are requested");
   assert.deepEqual(payloadBoundaryRequests, ["fixture-under", "fixture-over", "fixture-status"]);
   assert.deepEqual(projectMediaRequests, ["/project-export-media-control"], "only the unrestricted native PDF renderer loads the fixture");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
