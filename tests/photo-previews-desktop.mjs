@@ -116,5 +116,58 @@ try {
   const embedded = /src="data:image\/jpeg;base64,([^"]+)"/.exec(html);
   assert.ok(embedded); assert.deepEqual(Buffer.from(embedded[1], "base64"), original);
   assert.deepEqual(await readFile(photo), original);
-  console.log("PASS: cold original, warm WebP, EXIF, reading width and scale limits, explicit and inline sizes, source and export");
+
+  const small = await readFile(path.join(root, "small.jpg"));
+  for (const name of ["held", "cancelled", "ready"]) await writeFile(path.join(root, `${name}.jpg`), small);
+  const readyBytes = await app.evaluate(async ({ net, session }, encoded) => {
+    const require = process.getBuiltinModule("module").createRequire(process.cwd() + "/package.json");
+    const assert = require("node:assert/strict");
+    const { DocumentStore } = require("./electron/store.mjs");
+    const asset = DocumentStore.prototype.asset, fetch = net.fetch;
+    const lookup = Promise.withResolvers(), missingStarted = Promise.withResolvers();
+    const heldStarted = Promise.withResolvers();
+    const opened = [];
+    DocumentStore.prototype.asset = async function (...args) {
+      if (args[1] === "missing.jpg") { missingStarted.resolve(); await lookup.promise; }
+      return asset.apply(this, args);
+    };
+    net.fetch = (url, ...args) => {
+      const name = new URL(url).pathname.split("/").pop();
+      if (["held.jpg", "cancelled.jpg", "ready.jpg"].includes(name)) opened.push(name);
+      if (name === "held.jpg") return Promise.resolve(new Response(new ReadableStream({ start: heldStarted.resolve })));
+      return fetch.call(net, url, ...args);
+    };
+    const request = (name, signal = AbortSignal.timeout(10_000)) => session.defaultSession.fetch(`omarkie-asset://local/photo/${name}.jpg?preview=800`, { signal });
+    const cancel = new AbortController();
+    try {
+      const missing = request("missing");
+      await Promise.race([missingStarted.promise, missing.then(() => assert.fail("missing lookup did not block"))]);
+      const first = await request("held");
+      const firstBody = first.arrayBuffer();
+      const held = await Promise.race([heldStarted.promise, firstBody.then(() => assert.fail("held body finished early"))]);
+      const abandoned = await request("cancelled", AbortSignal.any([cancel.signal, AbortSignal.timeout(10_000)]));
+      const surviving = await request("ready");
+      assert.deepEqual(opened, ["held.jpg"], "waiting responses do not open files");
+      const cancelledBody = assert.rejects(abandoned.arrayBuffer());
+      cancel.abort();
+      await cancelledBody;
+      held.enqueue(Buffer.from(encoded, "base64"));
+      held.close();
+      assert.equal(Buffer.from(await firstBody).toString("base64"), encoded);
+      const bytes = Buffer.from(await surviving.arrayBuffer()).toString("base64");
+      assert.deepEqual(opened, ["held.jpg", "ready.jpg"], "cancelled waiter never opens its file");
+      assert.equal(bytes, encoded, "ready JPEG arrives while missing lookup is held");
+      lookup.resolve();
+      assert.equal((await missing).status, 404);
+      return bytes;
+    } finally {
+      cancel.abort();
+      lookup.resolve();
+      net.fetch = fetch;
+      DocumentStore.prototype.asset = asset;
+    }
+  }, small.toString("base64"));
+  const { info } = await sharp(Buffer.from(readyBytes, "base64")).raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual([info.width, info.height], [96, 48], "ready JPEG decodes");
+  console.log("PASS: cold queue, warm WebP, EXIF, reading width and scale limits, explicit and inline sizes, source and export");
 } finally { await app.close(); }
