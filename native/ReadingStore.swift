@@ -324,7 +324,12 @@ final class NativeReadingStore {
       if state.revision.size != state.offset { try handle.truncate(atOffset: UInt64(state.offset)) }
       try handle.write(contentsOf: bytes)
       try handle.synchronize()
-      state = try load()
+      let revision = try Self.revision(descriptor), offset = state.offset + bytes.count
+      if revision.size != offset { state = try load() }
+      else {
+        _ = try call("applyRow", [state.entries, String(decoding: bytes.dropLast(), as: UTF8.self)])
+        state = Snapshot(revision: revision, offset: offset, entries: state.entries)
+      }
       #if WEBTEST
       if record["intent"] != nil { afterMoveIntent?() }
       #endif

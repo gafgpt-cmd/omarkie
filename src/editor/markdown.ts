@@ -76,11 +76,11 @@ export function localImageSources(text: string) {
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
 function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string) {
-  source = normalizedURL(source);
+  const classified = normalizedURL(source);
   if (remoteURL(source) && !allowRemoteImages)
     return `<span class="remote-image">${alt}${t("（远程图片：{{source}}）", { source: md.utils.escapeHtml(source) })}</span>`;
-  const url = remoteURL(source) || /^data:image\/(?:png|jpeg|gif|webp);/i.test(source)
-    ? source
+  const url = remoteURL(classified) || /^data:image\/(?:png|jpeg|gif|webp);/i.test(classified)
+    ? classified
     : documentId
       ? `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`
       : "";
@@ -121,9 +121,9 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     else element.removeAttribute("style");
   }
   for (const image of template.content.querySelectorAll("img")) {
-    const source = normalizedURL(image.getAttribute("src") || "");
+    const source = image.getAttribute("src") || "";
     if (remoteURL(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
-    if (documentId && source && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(source)) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
+    if (documentId && source && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(normalizedURL(source))) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
     if (standalone === true && !image.classList.contains("md-standalone") &&
         !image.hasAttribute("width") && !image.hasAttribute("height") &&
@@ -167,7 +167,7 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.setAttribute("loading", "lazy");
   }
   for (const media of template.content.querySelectorAll("video,audio,source")) {
-    const source = normalizedURL(media.getAttribute("src") || ""); if (source && documentId && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(source)) media.setAttribute("src", `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
+    const source = media.getAttribute("src") || ""; if (source && documentId && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(normalizedURL(source))) media.setAttribute("src", `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
   }
   return template.innerHTML;
 }

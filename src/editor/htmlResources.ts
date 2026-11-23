@@ -8,8 +8,8 @@ const allowedURI = /^(?:(?:(?:f|ht)tps?|mailto|tel|callto|sms|cid|xmpp|omarkie-a
 export function safeDocumentHtml(html: string, documentId?: string, block = true) {
   const template = document.createElement("template"); template.innerHTML = html;
   if (documentId) for (const element of template.content.querySelectorAll("img,video,audio,source")) {
-    const source = normalizedURL(element.getAttribute("src") || "");
-    if (source && !remoteURL(source) && (!/^[a-z][a-z\d+.-]*:/i.test(source) || /^file:/i.test(source) || /^[a-z]:[\\/]/i.test(source))) {
+    const source = element.getAttribute("src") || "", classified = normalizedURL(source);
+    if (source && !remoteURL(classified) && (!/^[a-z][a-z\d+.-]*:/i.test(classified) || /^file:/i.test(classified) || /^[a-z]:[\\/]/i.test(classified))) {
       element.setAttribute("src",`omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
     }
   }

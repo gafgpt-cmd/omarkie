@@ -104,16 +104,31 @@ try {
   const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });
   const overhead = JSON.stringify({ choices: [{ message: { content: "" } }] }).length;
   check(under.ok && under.value === "x".repeat(63999 - overhead) && !over.ok && !failed.ok, "native Payload accepts only a valid in-limit 2xx completion");
-  const probe = async route => {
+  const probe = async (container, route) => {
     const img = document.createElement("img");
     const loaded = new Promise(resolve => { img.onload = () => resolve(true); img.onerror = () => resolve(false); });
     img.src = grammarOrigin.replace("http:", "h\tttp:") + route;
-    document.body.append(img);
+    container.append(img);
     try { return await loaded; } finally { img.remove(); }
   };
-  check(!await probe("/reader-media-blocked"), "native reader refuses normalized remote media by default");
-  check((await window.desktop.setRemoteImages(true)).ok && await probe("/reader-media-control"), "native reader permits opted-in media");
-  check((await window.desktop.setRemoteImages(false)).ok && !await probe("/reader-media-blocked-again"), "native reader restores the offline guard");
+  const remotePreference = async enabled => {
+    window.__omarkie.command({ action: "preferences" });
+    const checkbox = () => [...document.querySelectorAll('label')].find(label => label.textContent.trim() === "显示远程图片")?.querySelector('input[type="checkbox"]');
+    await wait(checkbox);
+    if (checkbox().checked !== enabled) checkbox().click();
+    document.querySelector('[aria-label="关闭偏好设置"]').click();
+  };
+  await remotePreference(true);
+  check(await probe(root(), "/reader-media-control"), "native editing permits enabled remote media");
+  document.querySelector('button[aria-label="阅读图层"]').click();
+  await wait(() => document.querySelector(".layers-rail"));
+  check(!await probe(root(), "/reader-media-layers"), "Reading Layers enables the native offline guard");
+  document.querySelector('button[aria-label="关闭阅读图层"]').click();
+  window.__omarkie.command({ action: "clean-converted" });
+  await wait(() => document.querySelector(".clean-layer"));
+  check(!await probe(document.querySelector(".clean-layer"), "/reader-media-clean"), "Clean enables the native offline guard");
+  [...document.querySelectorAll(".clean-layer button")].find(button => button.textContent.trim() === "返回源文档").click();
+  await remotePreference(false);
   check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");
   const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
   check(sizes.ok && sizes.value["Background-fixture.png"]?.join("x") === "1x1" && Object.keys(sizes.value).length === 1, "native original dimensions are scoped to owned images");

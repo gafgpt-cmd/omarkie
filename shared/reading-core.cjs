@@ -160,6 +160,12 @@ module.exports = function readingCore(digest, translate = message => message) {
     const entries = new Map();
     for (const row of committed.split("\n")) {
       if (!row) continue;
+      applyRow(entries, row);
+    }
+    return entries;
+  }
+
+  function applyRow(entries, row) {
       try {
         const { v, entry, move, intent, cancel, trash, restore } = JSON.parse(row);
         if (v !== 1) throw invalid();
@@ -181,7 +187,7 @@ module.exports = function readingCore(digest, translate = message => message) {
             for (const [file, items] of detached) entries.set(file, items);
             entries.trash.delete(id);
           }
-          continue;
+          return;
         }
         if (intent) {
           checkMove(intent.from, intent.to);
@@ -191,12 +197,12 @@ module.exports = function readingCore(digest, translate = message => message) {
           }
           if (entries.pending) throw invalid();
           entries.pending = intent;
-          continue;
+          return;
         }
         if (cancel === true) {
           if (!entries.pending) throw invalid();
           delete entries.pending;
-          continue;
+          return;
         }
         if (move) {
           const { from, to } = move;
@@ -212,14 +218,12 @@ module.exports = function readingCore(digest, translate = message => message) {
             const document = to + file.slice(from.length);
             for (const item of items.values()) indexEntry(entries, { ...item, document });
           }
-          continue;
+          return;
         }
         if (!validPath(entry.document) || typeof entry.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.at) || !Number.isFinite(Date.parse(entry.at)) || new Date(entry.at).toISOString() !== entry.at) throw invalid();
         checkPending(entries, entry.document);
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       } catch { entries.badRows = (entries.badRows ?? 0) + 1; }
-    }
-    return entries;
   }
 
   const allEntries = entries => Array.from(entries.values()).flatMap(items => [...items.values()]);
@@ -237,5 +241,5 @@ module.exports = function readingCore(digest, translate = message => message) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

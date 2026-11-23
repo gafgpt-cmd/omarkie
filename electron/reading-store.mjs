@@ -8,7 +8,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest, t);
+const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest, t);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -177,9 +177,15 @@ async function transaction(root, writing, run) {
       const before = regular(await handle.stat({ bigint: true }));
       if (fingerprint(before) !== index.signature) throw unsafe();
       if (before.size !== BigInt(index.offset)) await handle.truncate(index.offset);
-      await handle.writeFile(JSON.stringify({ v: 1, ...record }) + "\n");
+      const row = JSON.stringify({ v: 1, ...record });
+      await handle.writeFile(row + "\n");
       await handle.sync();
-      index = await load(log, handle);
+      const after = regular(await handle.stat({ bigint: true }));
+      const offset = index.offset + Buffer.byteLength(row) + 1;
+      if (after.size !== BigInt(offset)) { index = await load(log, handle); return; }
+      applyRow(index.entries, row);
+      index = { signature: fingerprint(after), offset, entries: index.entries, dirty: true };
+      cache.set(log, index);
     };
     const intent = pending(index.entries);
     let notice = badRows(index.entries) > 0;

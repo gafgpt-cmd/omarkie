@@ -159,16 +159,16 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       window.makeKeyAndOrderFront(nil)
       NSApp.activate(ignoringOtherApps: true)
     }
-    let block = #"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#
-    let local = ["omarkie", "omarkie-asset", "data", "blob", "about"].map { scheme in
-      #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"ignore-previous-rules"}}"#
-    }
-    let rules = "[" + ([block] + local).joined(separator: ",") + "]"
-    WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-reader", encodedContentRuleList: rules) { [weak self] list, _ in
+    WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-reader", encodedContentRuleList: PDFExporter.offlinePolicy) { [weak self] list, _ in
       DispatchQueue.main.async {
         guard let self else { return }
         guard let list else {
-          let alert = NSAlert(); alert.messageText = "Could not enable offline reader protection."
+          let key = "Could not enable offline reader protection."
+          let supported = ["en", "es", "ca", "ro", "zh"]
+          let locale = Locale.preferredLanguages.compactMap { $0.lowercased().split(separator: "-").first.map(String.init) }.first { supported.contains($0) } ?? "en"
+          let catalog = Bundle.main.url(forResource: locale, withExtension: "json", subdirectory: "locales")
+            .flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }
+          let alert = NSAlert(); alert.messageText = catalog?[key] ?? key
           alert.beginSheetModal(for: self.window)
           return
         }

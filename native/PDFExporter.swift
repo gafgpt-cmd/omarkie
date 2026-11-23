@@ -3,6 +3,13 @@ import CoreGraphics
 import WebKit
 
 final class PDFExporter: NSObject, WKNavigationDelegate {
+  static let offlinePolicy: String = {
+    let block = #"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#
+    let local = ["omarkie", "omarkie-asset", "data", "blob", "about"].map { scheme in
+      #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"ignore-previous-rules"}}"#
+    }
+    return "[" + ([block] + local).joined(separator: ",") + "]"
+  }()
   private let view: WKWebView
   private let window: NSWindow
   private let offline: Bool
@@ -30,12 +37,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     let margin = max(18, min(100, options["margin"] as? Double ?? 36))
     view.frame.size = NSSize(width: width - 2 * margin, height: height - 2 * margin)
     if offline {
-      let block = #"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#
-      let allowed = ["omarkie", "omarkie-asset", "data", "blob", "about"].map { scheme in
-        #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"ignore-previous-rules"}}"#
-      }
-      let rules = "[" + ([block] + allowed).joined(separator: ",") + "]"
-      WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-export", encodedContentRuleList: rules) { [weak self] list, error in
+      WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-export", encodedContentRuleList: Self.offlinePolicy) { [weak self] list, error in
         guard let self, self.completion != nil else { return }
         guard let list else { self.finish(.failure(error ?? NativeFailure("无法限制导出资源。"))); return }
         self.view.configuration.userContentController.add(list)

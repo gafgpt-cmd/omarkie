@@ -26,11 +26,13 @@ test("offline HTML drops CSS image sources but preserves explicit sizing", () =>
 
 test("offline HTML classifies URLs after browser whitespace normalization", () => {
   setMarkdownOptions(defaultPreferences);
-  const fixture = '<div><img src="h&#9;ttp://tracker.example/a" srcset="local.png 1x, ht&#13;tp://tracker.example/b 2x"><video src="local.mp4" poster="h&#10;ttp://tracker.example/c"></video><input type="image" src="&#1;http://tracker.example/d"><svg><image href="h&#9;ttp://tracker.example/e"/></svg></div>';
+  const fixture = '<div><img src="h&#9;ttp://tracker.example/a"><img src="a&#9;b.png" srcset="local.png 1x, ht&#13;tp://tracker.example/b 2x"><video src="a&#9;b.mp4" poster="h&#10;ttp://tracker.example/c"></video><input type="image" src="&#1;http://tracker.example/d"><svg><image href="h&#9;ttp://tracker.example/e"/></svg></div>';
   const parsed = document.createElement("template");
   parsed.innerHTML = renderMarkdown(fixture, "doc");
-  assert.equal(parsed.content.querySelector("img")?.getAttribute("src") ?? null, null);
-  assert.equal(parsed.content.querySelector("img")?.getAttribute("srcset") ?? null, null);
+  assert.equal(parsed.content.querySelectorAll("img").length, 1);
+  assert.equal(parsed.content.querySelector("img").getAttribute("src"), "omarkie-asset://local/doc/a%09b.png");
+  assert.equal(parsed.content.querySelector("img").getAttribute("srcset"), null);
+  assert.equal(parsed.content.querySelector("video").getAttribute("src"), "omarkie-asset://local/doc/a%09b.mp4");
   assert.equal(parsed.content.querySelector("video").hasAttribute("poster"), false);
   for (const image of parsed.content.querySelectorAll("input, svg image")) assert.equal(image.getAttribute("src") ?? image.getAttribute("href"), null);
 });
