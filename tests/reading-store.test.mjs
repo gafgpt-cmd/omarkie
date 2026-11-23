@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import readingCore from "../shared/reading-core.cjs";
-import { moveReadingEntries, readingMarkdown, readingStore } from "../electron/reading-store.mjs";
+import { moveReadingEntries, readingMarkdown, readingStore, recoverReadingVault } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
 import { Workspace } from "../electron/workspace.mjs";
 import { t as translate } from "../electron/i18n.mjs";
@@ -120,7 +120,7 @@ test("first journal writers wait for an in-flight move in a never-used vault", {
   assert.deepEqual(items.map(item => [item.id, item.document]).sort(), [["first", "other.md"], ["renamed", "renamed.md"], ["second", "other.md"]]);
 });
 
-test("file operations below a read-only unused vault root need no journal", {
+for (const existingSidecar of [false, true]) test(`file operations need no journal with a read-only ${existingSidecar ? "empty sidecar" : "unused vault root"}`, {
   skip: process.platform === "win32" || process.getuid() === 0,
 }, async t => {
   const { store, sidecar } = await fixture(t);
@@ -136,7 +136,9 @@ test("file operations below a read-only unused vault root need no journal", {
     const result = await moveReadingEntries(root, move => workspace.execute(operation, store, file => rename(file, trashed), move), trash);
     workspace.apply(result, store);
   };
-  await chmod(root, 0o500);
+  if (existingSidecar) await mkdir(sidecar);
+  const protectedDirectory = existingSidecar ? sidecar : root;
+  await chmod(protectedDirectory, 0o500);
   try {
     await assert.rejects(readingStore(store, noteRecord.id, { action: "put", item: note("blocked") }), { code: "EACCES" });
     await change({ action: "rename", path: original, name: "renamed.md" });
@@ -148,8 +150,9 @@ test("file operations below a read-only unused vault root need no journal", {
     await change({ action: "trash", path: renamed });
     await assert.rejects(stat(renamed), { code: "ENOENT" });
     assert.equal(await readFile(trashed, "utf8"), body);
-    await assert.rejects(stat(sidecar), { code: "ENOENT" });
-  } finally { await chmod(root, 0o700); }
+    await assert.rejects(stat(path.join(sidecar, "store.jsonl")), { code: "ENOENT" });
+    await assert.rejects(stat(path.join(sidecar, "journal.lock")), { code: "ENOENT" });
+  } finally { await chmod(protectedDirectory, 0o700); }
 });
 
 test("two warmed processes contend, repair a torn tail and see both commits", { timeout: 10000 }, async t => {
@@ -388,6 +391,23 @@ test("Trash hides history before moving the file and only keeps it if Trash fail
   const journal = await readFile(log, "utf8");
   const { trash: { id } } = journal.trimEnd().split("\n").map(JSON.parse).filter(row => row.trash).at(-1);
   assert.equal(hasTrash(readJournal(journal), id), false, "successful Electron Trash cannot be restored from the journal");
+});
+
+test("vault recovery completes an Electron Trash purge after an append failure", async t => {
+  const { store, source, log } = await fixture(t);
+  await readingStore(store, source.id, { action: "put", item: note("trashed") });
+  const workspace = new Workspace(store.folder), original = source.path;
+  const change = await moveReadingEntries(store.folder, () => workspace.execute({ action: "trash", path: original }, store, async file => {
+    await rename(file, path.join(path.dirname(store.folder), "trashed.md"));
+    await appendFile(log, "torn");
+  }), original);
+  workspace.apply(change, store);
+  const before = await readFile(log, "utf8");
+  const { trash: { id } } = before.split("\n").filter(row => row.endsWith("}")).map(JSON.parse).find(row => row.trash);
+  assert.equal(hasTrash(readJournal(before), id), true);
+  assert.equal(await recoverReadingVault(store.folder), false);
+  assert.equal(hasTrash(readJournal(await readFile(log, "utf8")), id), false);
+  await assert.rejects(stat(original), { code: "ENOENT" });
 });
 
 test("an invalid rating timestamp cannot stop valid cards from being reviewed", async t => {

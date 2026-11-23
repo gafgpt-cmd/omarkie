@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, realpath, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
@@ -8,7 +8,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, query, readingMarkdown } = readingCore(digest, t);
+const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, hasTrash, query, readingMarkdown } = readingCore(digest, t);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -17,6 +17,9 @@ const invalid = () => new Error(t("阅读图层数据无效。"));
 const unsafe = () => new Error(t("阅读数据路径不安全。"));
 const missing = error => { if (error.code !== "ENOENT") throw error; return null; };
 const info = file => lstat(file).catch(missing);
+const absent = error => error.code === "ENOTDIR" ? null : missing(error);
+const denied = error => ["EACCES", "EPERM", "EROFS"].includes(error.code);
+const purgeMarker = /^purge-([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i;
 const within = (root, file) => {
   const relative = path.relative(root, file);
   return !!relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
@@ -36,7 +39,7 @@ async function directoryAt(root, directory, create = false) {
     try { await mkdir(directory, { mode: 0o700 }); }
     catch (error) {
       if (error.code !== "EEXIST") {
-        if (create !== "move" || !["EACCES", "EPERM", "EROFS"].includes(error.code)) throw error;
+        if (create !== "move" || !denied(error)) throw error;
         metadata = await info(directory);
         if (!metadata) return false;
       }
@@ -100,7 +103,9 @@ async function acquire(lock) {
       regular(await info(lock));
       const handle = create(path.toNamespacedPath(lock), 0x40000000, 0, null, 4, 0x00200080, null);
       if (handle !== -1 && handle !== -1n) return () => close(handle);
-      if (lastError() !== 32) throw unsafe();
+      const code = lastError();
+      if ([5, 19].includes(code)) throw Object.assign(unsafe(), { code: "EACCES" });
+      if (code !== 32) throw unsafe();
     };
   });
   return (await lockAPI)(lock);
@@ -109,10 +114,16 @@ async function acquire(lock) {
 async function locked(root, create, run) {
   const directory = path.join(root, ".omarkie"), lock = path.join(directory, "journal.lock");
   if (!await directoryAt(root, directory, create)) return run(false);
-  if (!create && !await info(path.join(directory, "store.jsonl")) && !await info(lock)) return run(false);
+  const uninitialized = async () => !await info(path.join(directory, "store.jsonl")) && !await info(lock);
+  if (!create && await uninitialized()) return run(false);
   const deadline = performance.now() + 3000;
   for (;;) {
-    const release = await acquire(lock);
+    let release;
+    try { release = await acquire(lock); }
+    catch (error) {
+      if (create === "move" && denied(error) && await uninitialized()) return run(false);
+      throw error;
+    }
     if (release) { try { return await run(true); } finally { await release(); } }
     if (process.env.NODE_TEST_CONTEXT && process.send) process.send("journal-lock-contended");
     if (performance.now() >= deadline) throw unsafe();
@@ -125,8 +136,8 @@ async function moveFingerprint(root, prefix, files, skipMissing = false) {
   if (!files.length && !skipMissing) {
     const target = path.join(root, prefix);
     if (!within(root, target) || process.platform === "win32" && prefix.includes("\\")) return null;
-    const metadata = await lstat(target, { bigint: true }).catch(missing);
-    if ((!metadata?.isFile() && !metadata?.isDirectory()) || await realpath(target) !== target) return null;
+    const metadata = await lstat(target, { bigint: true }).catch(absent);
+    if ((!metadata?.isFile() && !metadata?.isDirectory()) || await realpath(target).catch(absent) !== target) return null;
     return { fingerprint: `0:${digest(`${metadata.dev}:${metadata.ino}`)}`, files };
   }
   for (const suffix of files) {
@@ -134,10 +145,9 @@ async function moveFingerprint(root, prefix, files, skipMissing = false) {
     if (process.platform === "win32" && file.includes("\\")) throw unsafe();
     const target = path.join(root, file);
     if (!within(root, target)) throw unsafe();
-    const metadata = await lstat(target).catch(error => error.code === "ENOTDIR" ? null : missing(error));
-    if (!metadata) { if (skipMissing) continue; return null; }
-    if (!metadata.isFile() || await realpath(target) !== target) { if (skipMissing) continue; return null; }
-    const handle = await open(target, constants.O_RDONLY | noFollow).catch(missing);
+    const metadata = await lstat(target).catch(absent);
+    if (!metadata?.isFile() || await realpath(target).catch(absent) !== target) { if (skipMissing) continue; return null; }
+    const handle = await open(target, constants.O_RDONLY | noFollow).catch(absent);
     if (!handle) { if (skipMissing) continue; return null; }
     let size = 0;
     const hash = createHash("sha256");
@@ -187,6 +197,15 @@ async function transaction(root, writing, run) {
         else { notice = true; console.warn("Reading move recovery could not identify the original document."); }
       } catch { notice = true; console.warn("Reading move recovery could not confirm the destination."); }
     }
+    const names = await readdir(path.dirname(log)).catch(() => { notice = true; return []; });
+    for (const name of names) {
+      const id = purgeMarker.exec(name)?.[1];
+      if (!id) continue;
+      try {
+        if (hasTrash(index.entries, id)) await append({ purgeTrash: id });
+        await unlink(path.join(path.dirname(log), name));
+      } catch { notice = true; }
+    }
     return await run(index.entries, append, notice);
   } finally { await handle.close(); }
 }
@@ -235,7 +254,13 @@ export async function moveReadingEntries(folder, execute, trashPath) {
       if (trashed) await append({ restore: trashed });
       throw error;
     }
-    if (trashed) await append({ purgeTrash: trashed.id }).catch(error => console.warn("Reading Trash cleanup:", error.code ?? error.name));
+    if (trashed) {
+      try { await append({ purgeTrash: trashed.id }); }
+      catch {
+        const marker = await open(path.join(root, ".omarkie", `purge-${trashed.id}`), "wx", 0o600);
+        await marker.close();
+      }
+    }
     return change;
   })));
 }

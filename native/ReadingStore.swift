@@ -146,7 +146,16 @@ final class NativeReadingStore {
           try self.transaction(root, writing: false) { state, append, _ in
             if let state, try self.call("hasTrash", [state.entries, id]).toBool() { try append(["purgeTrash": id]) }
           }
-        } catch { NSLog("Reading Trash cleanup could not update the journal.") }
+        } catch {
+          let directory = root.appendingPathComponent(".omarkie")
+          let fd = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+          guard fd >= 0 else { NSLog("Reading Trash cleanup could not record the pending purge."); return }
+          defer { _ = close(fd) }
+          guard UUID(uuidString: id) != nil else { return }
+          let marker = openat(fd, "purge-" + id, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+          if marker >= 0 { _ = close(marker) }
+          else if errno != EEXIST { NSLog("Reading Trash cleanup could not record the pending purge.") }
+        }
       }
     }
   }
@@ -267,14 +276,16 @@ final class NativeReadingStore {
     if directory < 0, !requireDirectory, errno == ENOENT { return try run(nil, noAppend, false) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
-    if !needsLock {
+    func uninitialized() -> Bool {
       var metadata = stat()
-      if fstatat(directory, "store.jsonl", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT,
-         fstatat(directory, "journal.lock", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT {
-        return try run(nil, noAppend, false)
-      }
+      return fstatat(directory, "store.jsonl", &metadata, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT
+          && fstatat(directory, "journal.lock", &metadata, AT_SYMLINK_NOFOLLOW) != 0 && errno == ENOENT
     }
+    if !needsLock, uninitialized() { return try run(nil, noAppend, false) }
     let lock = openat(directory, "journal.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o600)
+    if lock < 0, lockForMove, !writing, [EACCES, EPERM, EROFS].contains(errno), uninitialized() {
+      return try run(nil, noAppend, false)
+    }
     guard lock >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(lock) }
     _ = try Self.revision(lock)
@@ -337,6 +348,16 @@ final class NativeReadingStore {
         } else { warning = true; NSLog("Reading move recovery could not identify the original document.") }
       } catch { warning = true; NSLog("Reading move recovery could not confirm the destination.") }
     }
+    do {
+      for name in try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent(".omarkie").path) where name.hasPrefix("purge-") {
+        let id = String(name.dropFirst(6))
+        guard UUID(uuidString: id) != nil else { continue }
+        do {
+          if try call("hasTrash", [state.entries, id]).toBool() { try append(["purgeTrash": id]) }
+          if unlinkat(directory, name, 0) != 0, errno != ENOENT { warning = true }
+        } catch { warning = true }
+      }
+    } catch { warning = true }
     let result = try run(state, append, warning)
     snapshot = (folder, state)
     return result
