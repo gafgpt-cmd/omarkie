@@ -916,6 +916,19 @@ try {
     pass(`${action}: ${route}`, `Visible text size ${expected}px`);
   }
   assert.equal(await sourceText(), workflowSource);
+  await command("clean-converted");
+  const cleanPreview = page.getByRole("region", { name: "Clean layer preview", exact: true });
+  await expect(cleanPreview).toBeVisible();
+  await cleanPreview.getByTestId("clean-back").click();
+  await expect(cleanPreview).toBeHidden();
+  assert.equal(await sourceText(), workflowSource);
+  pass("Clean converted text: menu", "Preview opens and closes without editing source");
+  const collectorFile = await fixture("# Collector fixture\n\nA ==selected finding== in the note.\n");
+  await command("collect-reading");
+  await expect(rich().getByRole("heading", { name: "Reading summary", exact: true })).toBeVisible();
+  await expect(rich()).toContainText("selected finding");
+  assert.equal(await readFile(collectorFile, "utf8"), "# Collector fixture\n\nA ==selected finding== in the note.\n");
+  pass("Collect highlights and callouts: menu", "Summary contains the highlight; original file is unchanged");
   for (const [code, title] of [["es", "Preferencias"], ["ca", "Preferències"], ["ro", "Preferințe"], ["zh", "偏好设置"], ["en", "Preferences"]]) {
     await rich().focus(); await command("preferences", "shortcut");
     await page.getByRole("dialog").getByRole("combobox").first().selectOption(code);

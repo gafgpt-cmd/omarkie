@@ -139,8 +139,8 @@ final class NativeReadingStore {
     if let core { return core }
     guard let context = JSContext() else { throw NativeFailure(Self.invalid) }
     let source = try String(contentsOf: script, encoding: .utf8)
-    let digest: @convention(block) (String) -> String = { hashData(Data($0.utf8)) }
-    context.setObject(digest, forKeyedSubscript: "digest" as NSString)
+    let digest: @convention(block) (NSString) -> NSString = { hashData(Data(($0 as String).utf8)) as NSString }
+    context.setObject(unsafeBitCast(digest, to: AnyObject.self), forKeyedSubscript: "digest" as NSString)
     guard let result = context.evaluateScript("var module = {};\n" + source + "\nmodule.exports(digest);"),
           result.isObject, context.exception == nil else { throw NativeFailure(Self.invalid) }
     core = result

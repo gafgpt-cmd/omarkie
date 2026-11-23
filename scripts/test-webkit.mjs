@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, mkdir, cp, writeFile, rm, readFile, readdir } from "node:fs/promises";
+import { mkdtemp, mkdir, cp, writeFile, rm, readFile, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
-const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-"));
+const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-")));
 const uploads = [];
 const payloadRequests = [];
 const payloadBoundaryRequests = [];

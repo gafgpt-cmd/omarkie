@@ -78,7 +78,8 @@ try {
   const store = request => window.desktop.readingStore(documentId, request);
   const block = { block: "This anchored sentence has enough words to survive a spelling edit.", headings: ["Synthetic fixture"], line: 4 };
   const note = await store({ action: "put", item: { type: "note", id: "native-note", body: "Native margin note.", anchor: { ...block, quote: "anchored sentence" } } });
-  check(note.ok && note.value.anchor.hash.length === 64 && note.value.document === "WebKit-fixture.md", "native bridge creates a scoped and hashed margin note");
+  if (!note.ok) throw new Error(`Native margin note write failed: ${note.error}`);
+  check(note.value.anchor.hash === "4c1f7343f2c05c4dca5e59fb2d75e1a0ef372c737c897f79419debe437aea2c0" && note.value.document === "WebKit-fixture.md", "native bridge creates a scoped and hashed margin note");
   const fuzzy = await store({ action: "resolve", blocks: [{ ...block, line: 11, block: block.block.replace("spelling", "speling") }] });
   const orphan = await store({ action: "resolve", blocks: [] });
   check(fuzzy.ok && fuzzy.value[0].line === 11 && orphan.ok && orphan.value[0].line === null, "native fuzzy reattachment and orphaning share the journal");
