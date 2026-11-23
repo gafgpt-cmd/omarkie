@@ -44,7 +44,7 @@ jobs:
       - name: Verify installation and reuse of Obsidian's Electron
         run: |
           namcap release/arch/*.pkg.tar.zst
-          pacman -S --noconfirm --needed obsidian
+          pacman -S --noconfirm --needed obsidian xorg-server-xvfb xorg-xauth xdotool
           before=$(pacman -Qq | grep -Ex 'electron([0-9]+)?')
           pacman -U --noconfirm release/arch/*.pkg.tar.zst
           test "$before" = "$(pacman -Qq | grep -Ex 'electron([0-9]+)?')"
@@ -55,6 +55,15 @@ jobs:
           chmod +x "$probe/$electron"
           test "$(PATH="$probe:$PATH" omarkie)" = /usr/lib/omarkie/app.asar
           grep -qx 'Exec=omarkie %F' /usr/share/applications/omarkie.desktop
+      - name: Start the installed package on Obsidian's Electron
+        run: |
+          su builder -c 'xvfb-run -a bash -ec '\''
+            omarkie &
+            app=$!
+            trap "kill $app 2>/dev/null || true" EXIT
+            timeout 30s xdotool search --sync --onlyvisible --all --pid "$app" --name "^Omarkie$"
+            kill -0 "$app"
+          '\'''
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: arch-packages
@@ -243,7 +252,7 @@ jobs:
           cd release-assets
           cat SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
-      - name: Publish all three platforms together
+      - name: Publish desktop packages, including the lightweight Arch build
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft > "$RUNNER_TEMP/release-draft.txt"; then

@@ -6,9 +6,8 @@ minimum_electron=43
 app=/usr/lib/omarkie/app.asar
 
 obsidian_electron() {
-  local info line dependency
+  local info=$1 line dependency
   local -a dependencies
-  info=$(LC_ALL=C pacman "$1" obsidian 2>/dev/null) || return 1
   while IFS= read -r line; do
     [[ $line =~ ^Depends[[:space:]]On[[:space:]]*:[[:space:]]*(.*)$ ]] || continue
     read -ra dependencies <<< "${BASH_REMATCH[1]}"
@@ -24,9 +23,10 @@ obsidian_electron() {
   return 1
 }
 
-electron=$(obsidian_electron -Qi) || electron=
-if [[ -z $electron ]] || ! command -v "$electron" >/dev/null 2>&1; then
-  electron=
+electron=
+if info=$(LC_ALL=C pacman -Qi obsidian 2>/dev/null); then
+  electron=$(obsidian_electron "$info") || electron=
+else
   newest=$((minimum_electron - 1))
   installed=$(pacman -Qq 2>/dev/null) || installed=
   while IFS= read -r package; do
@@ -36,35 +36,38 @@ if [[ -z $electron ]] || ! command -v "$electron" >/dev/null 2>&1; then
       electron=$package
     fi
   done <<< "$installed"
+  if [[ -z $electron ]] && info=$(LC_ALL=C pacman -Si obsidian 2>/dev/null); then
+    electron=$(obsidian_electron "$info") || electron=
+  fi
 fi
 
 if [[ -z $electron ]]; then
-  if ! electron=$(obsidian_electron -Si); then
-    message="Omarkie cannot start: Electron $minimum_electron or newer is required. pacman has no supported Electron series for Obsidian."
-    printf '%s\n' "$message" >&2
-    if [[ ! -t 0 || ! -t 2 ]] && command -v notify-send >/dev/null 2>&1; then
-      notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$message" || true
-    fi
-    exit 1
+  message="Omarkie cannot start: Electron $minimum_electron or newer is required. pacman has no supported Electron series for Obsidian."
+  printf '%s\n' "$message" >&2
+  if [[ ! -t 0 || ! -t 2 ]] && command -v notify-send >/dev/null 2>&1; then
+    notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$message" || true
   fi
+  exit 1
+fi
 
-  message="Omarkie cannot start: the $electron package is not installed."
-  printf '\n\033[1;31m%s\033[0m\nInstall it with: sudo pacman -S --needed %s\n\n' "$message" "$electron" >&2
+if ! command -v "$electron" >/dev/null 2>&1; then
+  message="Omarkie cannot start: the $electron executable is missing."
+  printf '\n\033[1;31m%s\033[0m\nInstall it with: sudo pacman -S %s\n\n' "$message" "$electron" >&2
   if [[ -t 0 && -t 2 ]]; then
-    sudo pacman -S --needed "$electron"
+    sudo pacman -S "$electron"
   else
     terminal=false
-    notice="The $electron package is missing. Install it with: sudo pacman -S --needed $electron"
+    notice="The $electron executable is missing. Install it with: sudo pacman -S $electron"
     if command -v xdg-terminal-exec >/dev/null 2>&1; then
       terminal=true
-      notice="The $electron package is missing. A terminal is opening to install it."
+      notice="The $electron executable is missing. A terminal is opening to install it."
     fi
     if command -v notify-send >/dev/null 2>&1; then
       notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$notice" || true
     fi
     if $terminal; then
       relaunch=$(printf '%q ' omarkie "$@")
-      exec xdg-terminal-exec bash -c "if sudo pacman -S --needed $electron; then setsid -f $relaunch </dev/null >/dev/null 2>&1; else read -rp 'Installation failed. Press Enter to close.'; fi"
+      exec xdg-terminal-exec bash -c "if sudo pacman -S $electron && command -v $electron >/dev/null 2>&1; then setsid -f $relaunch </dev/null >/dev/null 2>&1; else read -rp 'Installation failed. Press Enter to close.'; fi"
     fi
     exit 1
   fi
