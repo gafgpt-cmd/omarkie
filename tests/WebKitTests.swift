@@ -31,7 +31,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       try atomicWrite(plugin, Data("class NativePlugin extends BasePlugin { style() { return '#write { --plugin-fixture: loaded; }' }; call() { this.utils.insertText('插件') } }; module.exports = {plugin: NativePlugin};".utf8))
       _ = try Interchange.installPlugin(plugin, directory: directory)
       _ = try Interchange.installPlugin(Bundle.main.resourceURL!.appendingPathComponent("Plugin-package-fixture"), directory: directory)
-      try atomicWrite(directory.appendingPathComponent("Background-fixture.png"),Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=")!)
+      try atomicWrite(directory.appendingPathComponent("Background-fixture.png"),Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC")!)
       try atomicWrite(directory.appendingPathComponent("native-zotero.json"), Data("[{\"id\":\"watched\",\"type\":\"book\",\"title\":\"Watched native reference\",\"author\":[{\"family\":\"García\"}]}]".utf8))
       let record = try store.open(file, id: "webkit-fixture")
       host = NativeWindowHost(

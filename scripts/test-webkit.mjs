@@ -23,7 +23,7 @@ const server = createServer(async (request, response) => {
       }
     }
     readerMediaRequests.push(request.url);
-    response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64"));
+    response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC", "base64"));
     readerMediaArrivals.emit(request.url);
     return;
   }

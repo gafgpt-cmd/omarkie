@@ -7,9 +7,13 @@ export function sanitizeDocumentMedia(html: string, config: Config) {
   if (!mediaPurifier) {
     mediaPurifier = createDOMPurify(window);
     mediaPurifier.addHook("uponSanitizeAttribute", (node, attribute) => {
-      if (attribute.attrName === "src" && node.namespaceURI === "http://www.w3.org/1999/xhtml" &&
-          /^(?:img|video|audio|source)$/.test(node.localName) &&
-          /^(?:blob:|data:(?:image|video|audio)\/|omarkie(?:-asset)?:)/i.test(normalizedURL(attribute.attrValue))) {
+      const source = attribute.attrName === "src" && /^(?:img|video|audio|source)$/.test(node.localName);
+      const poster = attribute.attrName === "poster" && node.localName === "video";
+      const candidates = attribute.attrName === "srcset" && /^(?:img|source)$/.test(node.localName);
+      const url = normalizedURL(attribute.attrValue);
+      if (node.namespaceURI === "http://www.w3.org/1999/xhtml" &&
+          ((source && /^data:(?:video|audio)\//i.test(url)) ||
+           ((source || poster || candidates) && /^(?:blob:|data:image\/|omarkie(?:-asset)?:)/i.test(url)))) {
         attribute.forceKeepAttr = true;
       }
     });

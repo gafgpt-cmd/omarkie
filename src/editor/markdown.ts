@@ -125,6 +125,18 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
     : `<span class="wiki-embed">${name}</span>`;
 };
+function imageCandidates(value: string, documentId?: string) {
+  const tokens = /[\t\n\f\r ,]*([^\t\n\f\r ]+)(?:(?<=,)|([\t\n\f\r ]+(?:\([^)]*\)|[^,(])*)(?:,|$)|$)/gy;
+  const candidates: string[] = [];
+  for (const [, raw, suffix] of value.matchAll(tokens)) {
+    const source = raw.replace(/,+$/, ""), descriptor = suffix?.trim() || "";
+    if (!source || (descriptor && !/^(?:\d+[wh]|(?:\d+(?:\.\d+)?|\.\d+)x)(?:[\t\n\f\r ]+\d+h)?$/.test(descriptor))) continue;
+    if (!allowRemoteImages && remoteURL(source)) continue;
+    const url = mediaURL(source, documentId) || source;
+    candidates.push(descriptor ? `${url} ${descriptor}` : url);
+  }
+  return candidates.join(", ");
+}
 function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
   const safe = sanitizeDocumentMedia(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
@@ -139,9 +151,20 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     if (declarations.length) element.setAttribute("style", declarations.join(";"));
     else element.removeAttribute("style");
   }
+  for (const element of template.content.querySelectorAll("img[srcset],source[srcset]")) {
+    const candidates = imageCandidates(element.getAttribute("srcset") || "", documentId);
+    if (candidates) element.setAttribute("srcset", candidates);
+    else element.removeAttribute("srcset");
+  }
   for (const image of template.content.querySelectorAll("img")) {
     const source = image.getAttribute("src") || "";
-    if (remoteURL(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
+    if (remoteURL(source) && !allowRemoteImages) {
+      if (!image.hasAttribute("srcset") && !image.parentElement?.matches("picture:has(source[srcset])")) {
+        image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue;
+      }
+      image.removeAttribute("src");
+      continue;
+    }
     const url = mediaURL(source, documentId);
     if (url && url !== source) image.setAttribute("src", url);
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
@@ -172,15 +195,25 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     if (bundled) image.src = bundled;
   }
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll<Element>("[srcset],[poster],[style],[background],input[src],image")) {
-    if ((element.getAttribute("srcset") || "").split(",").some(remoteURL)) element.removeAttribute("srcset");
     for (const attribute of ["poster", "background", ...(element.localName === "input" ? ["src"] : []), ...(element.localName === "image" ? ["href", "xlink:href"] : [])])
       if (remoteURL(element.getAttribute(attribute) || "")) element.removeAttribute(attribute);
   }
-  if (!allowRemoteImages) for (const media of template.content.querySelectorAll("video,audio,iframe,source,track")) {
-    const source = [media, ...media.querySelectorAll("source,track")].map(item => normalizedURL(item.getAttribute("src") || "")).find(remoteURL);
-    if (source === undefined) continue;
-    const placeholder = document.createElement("span"); placeholder.className = "remote-image"; placeholder.textContent = t("（远程图片：{{source}}）", { source: source.trim() }).trim();
-    media.replaceWith(placeholder);
+  if (!allowRemoteImages) for (const media of template.content.querySelectorAll("video,audio,iframe,source[src],track[src]")) {
+    if (!template.content.contains(media)) continue;
+    const items = [media, ...media.querySelectorAll("source[src],track[src]")];
+    const remote = items.filter(item => remoteURL(item.getAttribute("src") || ""));
+    if (!remote.length) continue;
+    if (media.hasAttribute("poster") || items.some(item => !remote.includes(item) && item.hasAttribute("src"))) {
+      for (const item of remote) if (item === media) item.removeAttribute("src"); else item.remove();
+    } else {
+      const source = normalizedURL(remote[0].getAttribute("src") || "");
+      const placeholder = document.createElement("span"); placeholder.className = "remote-image"; placeholder.textContent = t("（远程图片：{{source}}）", { source }).trim();
+      if (media.matches("source,track")) media.remove(); else media.replaceWith(placeholder);
+    }
+  }
+  for (const video of template.content.querySelectorAll("video[poster]")) {
+    const url = mediaURL(video.getAttribute("poster") || "", documentId);
+    if (url) video.setAttribute("poster", url);
   }
   for (const frame of template.content.querySelectorAll("iframe")) {
     if (!/^https:\/\//i.test(normalizedURL(frame.getAttribute("src") || ""))) { frame.remove(); continue; }

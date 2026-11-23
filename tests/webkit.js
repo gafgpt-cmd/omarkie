@@ -116,7 +116,7 @@ try {
   };
   await remotePreference(true);
   const image = (container, alt) => container?.querySelector(`img[alt="${alt}"]`);
-  const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=";
+  const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC";
   const blobURL = URL.createObjectURL(new Blob([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], { type: "image/png" }));
   const dataURL = `data:image/png;base64,${pixel}`;
   const mediaFiles = await window.desktop.scan();
@@ -142,7 +142,7 @@ try {
     if (!opened.ok) throw new Error(`${phase}: could not open media fixture: ${opened.error}`);
     const record = opened.value;
     const asset = name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
-    const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
+    const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x, fallback.svg 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><video poster="${blobURL}"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
     window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
@@ -161,7 +161,8 @@ try {
       return decoded(image(preview, alt), url, width, height);
     }, `${phase}: ${alt} did not decode in preview`);
     const preview = container(), video = preview.querySelector("video"), fallback = image(preview, "Preview image");
-    check(!fallback.hasAttribute("srcset") && video && !video.hasAttribute("poster"), `${phase}: preview keeps the local image and strips remote media`);
+    check(fallback.getAttribute("srcset") === `${asset("fallback.svg")} 1x` && video && !video.hasAttribute("poster"), `${phase}: preview keeps the local candidate and strips remote media`);
+    check(preview.querySelectorAll("video")[1]?.getAttribute("poster") === blobURL, `${phase}: preview keeps the local video poster`);
     check([null, "11"].includes(fallback.getAttribute("width")) && [null, "17"].includes(fallback.getAttribute("height")), `${phase}: remote candidate dimensions do not size the local fallback`);
     check(!await probe(phase, "offline-probe", preview), `${phase}: native policy blocks remote preview requests`);
   };
@@ -407,7 +408,7 @@ try {
   await sourceMode(false);
   const png = Uint8Array.from(
     atob(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=",
+      pixel,
     ),
     (char) => char.charCodeAt(0),
   );
