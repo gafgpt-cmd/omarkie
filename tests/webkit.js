@@ -148,21 +148,11 @@ try {
     const route = `/reader-media-${phase}-control`;
     const record = await openMediaToken(phase);
     const asset = assetFor(record);
-    if (phase === "reading") {
-      const stale = await window.desktop.persist(initialSession);
-      if (!stale.ok) throw new Error(`Could not persist the preceding tab snapshot: ${stale.error}`);
-      const local = await window.desktop.readResource(asset("local.svg"));
-      check(local.ok && local.value.mime === "image/svg+xml", "native asset grant survives a session snapshot taken before the note opened");
-    }
+    if (phase === "reading") check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x, fallback.svg 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><video poster="${blobURL}"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
     window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
-    if (phase === "reading") {
-      check(!await probe(phase, "editor-blocked", root()), "native offline editor blocks the loopback image");
-      await remotePreference(true);
-    }
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
-    if (phase === "reading") check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
     return record;
   };
@@ -188,6 +178,17 @@ try {
     await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media note did not close`);
     check(!(await window.desktop.readResource(asset("local.svg"))).ok, `${phase}: closing the tab revokes its asset grant`);
   };
+  const offlineRecord = await openMediaToken("reading");
+  const offlineAsset = assetFor(offlineRecord);
+  const stale = await window.desktop.persist(initialSession);
+  if (!stale.ok) throw new Error(`Could not persist the preceding tab snapshot: ${stale.error}`);
+  const local = await window.desktop.readResource(offlineAsset("local.svg"));
+  check(local.ok && local.value.mime === "image/svg+xml", "native asset grant survives a session snapshot taken before the note opened");
+  window.__omarkie.command({ action: "opened", document: offlineRecord });
+  await wait(() => decoded(image(root(), "Local image"), offlineAsset("local.svg"), 11, 17), "offline editor did not decode the saved note's local image");
+  check(!await probe("reading", "editor-blocked", root()), "native offline editor blocks the loopback image");
+  await closeMedia("offline reading", offlineAsset);
+  await remotePreference(true);
   const readingRecord = await openMedia("reading");
   const readingAsset = assetFor(readingRecord);
   const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
