@@ -29,7 +29,7 @@ export interface ReadingRequests {
   list: { scope?: "document" | "vault"; types?: readonly ReadingItem["type"][] };
   put: { item: ReadingItem; owner?: string };
   resolve: { blocks: readonly ReadingBlock[] };
-  export: { defaultName?: string };
+  export: { action: "export" };
 }
 
 export interface ReadingResults {

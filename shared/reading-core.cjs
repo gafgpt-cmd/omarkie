@@ -203,10 +203,10 @@ module.exports = function readingCore(digest, translate = message => message) {
           const moved = (entries.pending.files ?? [""]).map(suffix => suffix ? `${from}/${suffix}` : from)
             .filter(file => entries.has(file)).map(file => [file, entries.get(file)]);
           delete entries.pending;
+          for (const file of entries.keys()) if (under(file, to)) entries.delete(file);
           for (const [file] of moved) entries.delete(file);
           for (const [file, items] of moved) {
             const document = to + file.slice(from.length);
-            entries.delete(document);
             for (const item of items.values()) indexEntry(entries, { ...item, document });
           }
           continue;

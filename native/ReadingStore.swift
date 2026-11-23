@@ -107,11 +107,19 @@ final class NativeReadingStore {
                 _ = try self.call("checkPending", [state.entries, from, true])
                 _ = try self.call("checkPending", [state.entries, to, true])
                 let files = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
-                if files.isEmpty { try moveExclusive(source, destination); return }
-                guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 let move = ["from": from, "to": to]
-                guard let evidence = try Self.moveFingerprint(root, from, files, skipMissing: true) else { throw NativeFailure(Self.unsafe) }
-                if evidence.files.isEmpty { try moveExclusive(source, destination); return }
+                let evidence = files.isEmpty ? (fingerprint: "", files: [String]()) : try Self.moveFingerprint(root, from, files, skipMissing: true)
+                guard let evidence else { throw NativeFailure(Self.unsafe) }
+                if evidence.files.isEmpty {
+                  let destinationHistory = try self.call("tracked", [state.entries, to]).toArray() ?? []
+                  if destinationHistory.isEmpty { try moveExclusive(source, destination); return }
+                  let detached = ["path": to, "id": UUID().uuidString]
+                  try append(["trash": detached])
+                  do { try moveExclusive(source, destination) }
+                  catch { try append(["restore": detached]); throw error }
+                  return
+                }
+                guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 try append(["intent": ["from": from, "to": to, "fingerprint": evidence.fingerprint, "files": evidence.files] as [String: Any]])
                 do { try moveExclusive(source, destination) }
                 catch { try? append(["cancel": true]); throw error }

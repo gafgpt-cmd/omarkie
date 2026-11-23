@@ -477,11 +477,11 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       }
       guard request["action"] as? String == "export" else { return result }
       guard let markdown = result as? String else { throw NativeFailure("无法导出。请选择新的文件名。") }
-      let suggestion = request["defaultName"] as? String ?? ""
-      let name = suggestion.utf8.count <= 240 && suggestion.hasSuffix(".md") && !suggestion.contains("/") && !suggestion.contains("\0") ? suggestion : "阅读笔记.md"
+      let locale = (try? await webView.callAsyncJavaScript("return document.documentElement.lang", arguments: [:], in: nil, contentWorld: .page)) as? String
+      let names = ["en": "Reading notes.md", "es": "Notas de lectura.md", "ca": "Notes de lectura.md", "ro": "Notițe de lectură.md", "zh": "阅读笔记.md"]
       let panel = NSSavePanel()
       panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-      panel.nameFieldStringValue = name
+      panel.nameFieldStringValue = names[locale ?? ""] ?? "阅读笔记.md"
       guard panel.runModal() == .OK, let destination = panel.url else { return false }
       do { try NativeReadingStore.export(markdown, destination) }
       catch { throw NativeFailure("无法导出。请选择新的文件名。") }

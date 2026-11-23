@@ -35,7 +35,7 @@ export default function MarginNotes({ id, enabled, content, revision, store, edi
 
   async function exportNotes() {
     setExporting(true);
-    try { await store(id, { action: "export", defaultName: t("阅读笔记.md") }); }
+    try { await store(id, { action: "export" }); }
     catch (error) { setError((error as Error).message); }
     finally { setExporting(false); }
   }

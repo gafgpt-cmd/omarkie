@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { _electron as electron, expect } from "playwright/test";
 import { languages } from "../shared/languages.mjs";
+import { learningLabels, localeOrder } from "./fixtures/learning-labels.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 const origin = "http://127.0.0.1:11434";
@@ -25,10 +26,10 @@ const payloadConsent = {
 
 for (const [language] of languages) {
   const [selectionNotice, noteNotice, medicalWarning] = payloadConsent[language];
-  const catalog = JSON.parse(await readFile(new URL(`../shared/locales/${language}.json`, import.meta.url)));
   function label(key, args = {}) {
-    assert.ok(Object.hasOwn(catalog, key) && catalog[key].trim(), `${language}: untranslated learning key ${key}`);
-    return catalog[key].replace(/{{(\w+)}}/g, (_, name) => {
+    const expected = learningLabels[key]?.[localeOrder.indexOf(language)];
+    assert.ok(expected, `${language}: missing expected label ${key}`);
+    return expected.replace(/{{(\w+)}}/g, (_, name) => {
       assert.ok(Object.hasOwn(args, name), `${language}: missing interpolation ${name}`);
       return args[name];
     });
@@ -127,6 +128,6 @@ for (const [language] of languages) {
     await page.getByRole("menuitem", { name: label("Collect highlights and callouts"), exact: true }).click();
     await expect(rich.getByRole("heading", { name: label("Reading summary"), exact: true })).toBeVisible();
     assert.equal(await readFile(file, "utf8"), content);
-    console.log(`PASS: ${language} learning and reader controls resolve directly in their catalog and render in the desktop UI`);
+    console.log(`PASS: ${language} learning and reader controls match expected public labels`);
   } finally { await application.close(); }
 }

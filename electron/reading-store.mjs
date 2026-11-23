@@ -209,11 +209,16 @@ export async function moveReadingEntries(folder, execute, trashPath) {
       try { checkMove(from, to); } catch { throw invalid(); }
       checkPending(entries, from, true); checkPending(entries, to, true);
       const files = tracked(entries, from);
-      if (!files.length) return moveExclusive(source, destination);
-      if (pending(entries)) throw unsafe();
-      const evidence = await moveFingerprint(root, from, files, true);
+      const evidence = files.length ? await moveFingerprint(root, from, files, true) : { files: [] };
       if (!evidence) throw unsafe();
-      if (!evidence.files.length) return moveExclusive(source, destination);
+      if (!evidence.files.length) {
+        if (!tracked(entries, to).length) return moveExclusive(source, destination);
+        const detached = { path: to, id: randomUUID() };
+        await append({ trash: detached });
+        try { return await moveExclusive(source, destination); }
+        catch (error) { await append({ restore: detached }); throw error; }
+      }
+      if (pending(entries)) throw unsafe();
       await append({ intent: { from, to, ...evidence } });
       try { await moveExclusive(source, destination); }
       catch (error) { await append({ cancel: true }).catch(() => {}); throw error; }

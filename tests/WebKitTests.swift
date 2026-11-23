@@ -138,13 +138,21 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       _ = try await reading.perform(child, ["action": "put", "item": ["type": "card", "id": name, "front": "Q", "back": "A"]])
     }
     try FileManager.default.removeItem(at: chapter.appendingPathComponent("missing.md"))
+    try atomicWrite(chapter.appendingPathComponent("incoming.md"), Data("Incoming without history".utf8))
+    try FileManager.default.createDirectory(at: renamed, withIntermediateDirectories: false)
+    let stale = renamed.appendingPathComponent("incoming.md")
+    try atomicWrite(stale, Data("Deleted destination note".utf8))
+    let staleScope = NativeReadingStore.Scope(root: root, file: stale, document: "renamed/incoming.md")
+    _ = try await reading.perform(staleScope, ["action": "put", "item": ["type": "card", "id": "stale", "front": "Q", "back": "A"]])
+    try FileManager.default.removeItem(at: renamed)
     _ = try await reading.moveEntries(root) { move in
       try move(chapter, renamed)
       return [:]
     }
     let entries = try await reading.perform(moved, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     guard entries.first(where: { $0["id"] as? String == "present" })?["document"] as? String == "renamed/present.md",
-          entries.first(where: { $0["id"] as? String == "missing" })?["document"] as? String == "chapter/missing.md" else {
+          entries.first(where: { $0["id"] as? String == "missing" })?["document"] as? String == "chapter/missing.md",
+          !entries.contains(where: { $0["id"] as? String == "stale" }) else {
       throw NativeFailure("Folder rename moved history for a missing descendant.")
     }
   }
