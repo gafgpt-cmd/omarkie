@@ -92,7 +92,7 @@ async function measure(kind, file, title) {
         await new Promise(resolve => setTimeout(resolve, Math.max(0, attached + 3000 - performance.now())));
         return [...document.querySelectorAll(`${editor} img`)].filter(image => image.complete && image.naturalWidth > 0).length;
       }, { editor, attached: result.attached });
-      return { firstPhoto: result.firstPhoto, decoded: { width: result.width, height: result.height }, loadedAfter3s };
+      return { firstPhoto: result.firstPhoto, naturalSize: { width: result.width, height: result.height }, loadedAfter3s };
     }
     if (kind === "big") {
       await page.locator(editor).focus();
@@ -123,7 +123,7 @@ try {
     results.metrics[metric] = { value, budget, pass: value <= budget };
   }
   console.table(Object.entries(results.metrics).map(([metric, { value, budget, pass }]) => ({ metric, "value (ms)": Number(value.toFixed(1)), "budget (ms)": budget, result: pass ? "PASS" : "FAIL" })));
-  console.table(results.samples.map(({ decoded, loadedAfter3s }, run) => ({ run: run + 1, decoded: `${decoded.width}x${decoded.height}`, loadedAfter3s })));
+  console.table(results.samples.map(({ naturalSize, loadedAfter3s }, run) => ({ run: run + 1, naturalSize: `${naturalSize.width}x${naturalSize.height}`, loadedAfter3s })));
   if (Object.values(results.metrics).some(metric => !metric.pass)) process.exitCode = 1;
 } catch (error) {
   results.error = String(error); process.exitCode = 1; console.error(error);

@@ -12,7 +12,7 @@ import {
 } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
+import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
@@ -489,16 +489,61 @@ app
     });
     const photoPreviews = new PhotoPreviews(path.join(store.dataDir, "photo-previews"),
       (file, width) => chromiumPreview(window.webContents, file, width), file => shell.trashItem(file));
+    // Cold preview requests carry whole JPEGs. Give the first body a head start
+    // without making later requests depend on an abandoned or stalled response.
+    let previewTail = Promise.resolve();
+    function reservePreview(signal) {
+      const turn = previewTail;
+      let release;
+      const sent = new Promise(resolve => { release = resolve; });
+      previewTail = turn.then(() => {
+        if (signal.aborted) return;
+        let timeout;
+        const deadline = new Promise(resolve => { timeout = setTimeout(resolve, 1500); });
+        return Promise.race([sent, deadline]).finally(() => clearTimeout(timeout));
+      });
+      return { turn, release };
+    }
     protocol.handle("omarkie-asset", async (request) => {
       try {
-        const url = new URL(request.url);
+        const url = new URL(request.url), width = Number(url.searchParams.get("preview"));
         const [id, ...rest] = url.pathname.slice(1).split("/");
         const file = await store.asset(
           decodeURIComponent(id),
           decodeURIComponent(rest.join("/")),
         );
-        const served = await photoPreviews.get(file, Number(url.searchParams.get("preview")));
-        const response = await net.fetch(pathToFileURL(served).href);
+        const served = await photoPreviews.get(file, width);
+        const source = pathToFileURL(served).href;
+        if (served === file && /\.jpe?g$/i.test(file) && previewWidths.includes(width)) {
+          const { size } = await stat(file);
+          const abort = new AbortController(), { signal } = abort;
+          const { turn, release } = reservePreview(signal);
+          let reader;
+          const body = new ReadableStream({
+            async pull(controller) {
+              try {
+                if (!reader) {
+                  await turn;
+                  if (signal.aborted) return;
+                  const response = await net.fetch(source, { signal });
+                  if (!response.ok || !response.body) throw new Error("Image unavailable");
+                  reader = response.body.getReader();
+                }
+                const { done, value } = await reader.read();
+                if (signal.aborted) return;
+                if (!done) { controller.enqueue(value); return; }
+                controller.close();
+                release();
+              } catch (error) {
+                controller.error(error);
+                release();
+              }
+            },
+            cancel() { abort.abort(); release(); },
+          }, { highWaterMark: 0 });
+          return new Response(body, { headers: { "Content-Type": "image/jpeg", "Content-Length": String(size), "Cache-Control": "no-store" } });
+        }
+        const response = await net.fetch(source);
         if (!url.searchParams.has("preview") || served !== file) return response;
         // The original stands in until the preview exists; keep Chromium from reusing it for this preview URL.
         const headers = new Headers(response.headers); headers.set("Cache-Control", "no-store");

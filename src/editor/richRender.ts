@@ -324,6 +324,10 @@ function tokenInlineHtml(
     return raw.slice(from, to);
   };
   const text = (value: string) => {
+    if (!/[&\\\x00-\x1f]/.test(value) && raw.startsWith(value, cursor)) {
+      cursor += value.length;
+      return escapeHtml(value);
+    }
     let decoded = "",
       html = "",
       attempts = 0;
