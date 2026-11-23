@@ -274,8 +274,8 @@ try {
   setRange(0,42); setRange(1,7);
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.42');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(7px)','background controls change the image layer without dimming text');
-  document.querySelector('.background-reset').click();
-  await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18');
+  document.querySelector('.background-settings .background-reset').click();
+  await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18', 'Background reset did not restore default opacity');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(0px)','reset restores subtle background defaults');
   document.querySelector('.background-file button:nth-of-type(2)').click(); await wait(() => !document.querySelector('.editor-background'));
   check((await window.desktop.background()).value === null,'clear background updates native persistence');
