@@ -463,22 +463,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           let uiPDF = CGPDFDocument(uiURL as CFURL) else {
       throw NativeFailure("Native UI project PDF lost the diagram chapter.")
     }
-    var imageCount = 0
+    var diagramSizes = Set<String>()
     for number in 1...uiPDF.numberOfPages {
-      var resources: CGPDFDictionaryRef?, objects: CGPDFDictionaryRef?
-      guard let page = uiPDF.page(at: number)?.dictionary,
-            CGPDFDictionaryGetDictionary(page, "Resources", &resources), let resources,
-            CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { continue }
-      CGPDFDictionaryApplyFunction(objects, { _, object, context in
-        var stream: CGPDFStreamRef?, subtype: UnsafePointer<CChar>?
-        guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
-              let dictionary = CGPDFStreamGetDictionary(stream),
-              CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype,
-              String(cString: subtype) == "Image" else { return }
-        context?.assumingMemoryBound(to: Int.self).pointee += 1
-      }, &imageCount)
+      guard let page = uiPDF.page(at: number)?.dictionary else { continue }
+      withUnsafeMutablePointer(to: &diagramSizes) { Self.collectDiagramSizes(page, $0) }
     }
-    guard imageCount == 2 else { throw NativeFailure("Native UI project PDF did not rasterize both diagrams.") }
+    guard diagramSizes.count == 2 else { throw NativeFailure("Native UI project PDF did not rasterize both diagrams: \(diagramSizes.sorted()).") }
     let docxURL = output.appendingPathComponent("native-project.docx")
     let pdfURL = output.appendingPathComponent("native-project.pdf")
     guard let converter = Interchange.pandoc(),
@@ -507,6 +497,28 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     try atomicWrite(export, Data("[{\"id\":\"closed\",\"type\":\"book\",\"title\":\"Closed vault must not refresh\"}]".utf8))
     try await Task.sleep(nanoseconds: 1_600_000_000)
     guard try Data(contentsOf: cached) == before else { throw NativeFailure("Zotero refreshed after the last window left its vault.") }
+  }
+  private static func collectDiagramSizes(_ owner: CGPDFDictionaryRef, _ context: UnsafeMutableRawPointer) {
+    var resources: CGPDFDictionaryRef?, objects: CGPDFDictionaryRef?
+    guard CGPDFDictionaryGetDictionary(owner, "Resources", &resources), let resources,
+          CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { return }
+    CGPDFDictionaryApplyFunction(objects, { _, object, context in
+      var stream: CGPDFStreamRef?, subtype: UnsafePointer<CChar>?
+      guard let context, CGPDFObjectGetValue(object, .stream, &stream), let stream,
+            let dictionary = CGPDFStreamGetDictionary(stream),
+            CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return }
+      switch String(cString: subtype) {
+      case "Form": WebKitTests.collectDiagramSizes(dictionary, context)
+      case "Image":
+        var width: CGPDFInteger = 0, height: CGPDFInteger = 0
+        // Ignore the vault's 11 × 17 SVG; the two Mermaid fixtures have different raster sizes.
+        if CGPDFDictionaryGetInteger(dictionary, "Width", &width),
+           CGPDFDictionaryGetInteger(dictionary, "Height", &height), width > 17, height > 17 {
+          context.assumingMemoryBound(to: Set<String>.self).pointee.insert("\(width)x\(height)")
+        }
+      default: break
+      }
+    }, context)
   }
   func fail(_ error: Error) {
     fputs("\(error)\n", stderr)
