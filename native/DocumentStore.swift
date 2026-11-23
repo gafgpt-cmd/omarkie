@@ -82,6 +82,7 @@ final class DocumentStore {
   var activeId: String?
   var closedRecords = [String: DocumentRecord]()
   private var closedOrder = [String]()
+  private var pendingSessionOpens = Set<String>()
   static let maxBytes = 20 * 1024 * 1024
   init(_ directory: URL) { dataDirectory = directory }
   func require(_ id: String) throws -> DocumentRecord {
@@ -135,25 +136,31 @@ final class DocumentStore {
     let bytes = try Data(contentsOf: resolved)
     let (text, bom, detected) = try decode(bytes, encoding: encoding)
     let record = DocumentRecord(
-      id: id ?? records.values.first(where: { $0.path == resolved.path })?.id ?? UUID().uuidString,
+      id: id ?? UUID().uuidString,
       path: resolved.path, name: resolved.lastPathComponent, content: text, savedContent: text,
       diskHash: hashData(bytes), lineEnding: text.contains("\r\n") ? "\r\n" : "\n", conflict: false,
       bom: bom, encoding: detected)
-    records[record.id] = record
+    if records.updateValue(record, forKey: record.id) == nil { pendingSessionOpens.insert(record.id) }
     return record
   }
   func draft(_ record: DocumentRecord) throws -> DocumentRecord {
     guard record.path == nil, records[record.id]?.path == nil,
       record.content.utf8.count <= Self.maxBytes
     else { throw NativeFailure("草稿格式无效。") }
-    records[record.id] = record
+    if records.updateValue(record, forKey: record.id) == nil { pendingSessionOpens.insert(record.id) }
     return record
   }
   func reopen(_ id: String) throws -> DocumentRecord {
     guard let record = closedRecords[id] else { throw NativeFailure("最近关闭的文档已不可用。") }
     var stored = record
     stored.content = stored.savedContent
-    let reopened = try record.path.map { try open(URL(fileURLWithPath: $0), id: id, encoding: record.encoding) } ?? draft(stored)
+    let reopened: DocumentRecord
+    if let path = record.path {
+      let file = canonicalFileURL(URL(fileURLWithPath: path))
+      reopened = try records.values.first(where: { $0.path == file.path }) ?? open(file, id: id, encoding: record.encoding)
+    } else {
+      reopened = try draft(stored)
+    }
     closedRecords.removeValue(forKey: id); closedOrder.removeAll { $0 == id }
     return reopened
   }
@@ -270,6 +277,13 @@ final class DocumentStore {
     folder = root
     tokens = nextTokens
     return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped]
+  }
+
+  func persistRendererSession(_ incoming: SessionRecord, closedId: String?) throws {
+    var unlistedOpens = pendingSessionOpens.subtracting(incoming.documents.map(\.id))
+    if let closedId { unlistedOpens.remove(closedId) }
+    try persist(incoming, preserving: unlistedOpens)
+    pendingSessionOpens = unlistedOpens.intersection(records.keys)
   }
 
   func persist(_ incoming: SessionRecord, preserving unlistedOpens: Set<String> = []) throws {

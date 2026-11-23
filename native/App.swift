@@ -115,7 +115,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var tabGroupID: String?
   var rendererReady = false
   var pendingCommands = [[String: Any]]()
-  private var pendingSessionOpens = Set<String>()
   var titleObservation: NSKeyValueObservation?
   private var offlineRules: WKContentRuleList?
   private var rendererLocale: String?
@@ -672,7 +671,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         let url = URL(fileURLWithPath: path)
         if item.folder { try owner.workspace.remember(url, folder: true); return try await scanVault(url) }
         let record = try Self.openEncoded(url, store: store); try owner.workspace.remember(url, folder: false)
-        pendingSessionOpens.insert(record.id)
         return try jsonValue(record)
       }
       return try jsonValue(owner.workspace.recentAction(action, path: path))
@@ -712,7 +710,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       var warning = false
       if store.folder == nil { warning = try await scanVault(file.deletingLastPathComponent())["readingRecoveryWarning"] as? Bool == true }
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
-      pendingSessionOpens.insert(record.id)
       if warning, var result = try jsonValue(record) as? [String: Any] {
         result["readingRecoveryWarning"] = true
         return result
@@ -733,12 +730,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       let token = try arg(args, 0, String.self)
       guard let file = store.tokens[token] else { throw NativeFailure("目录已更新，请刷新后重试。") }
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
-      pendingSessionOpens.insert(record.id)
       return try jsonValue(record)
-    case "reopen":
-      let record = try store.reopen(arg(args, 0, String.self))
-      pendingSessionOpens.insert(record.id)
-      return try jsonValue(record)
+    case "reopen": return try jsonValue(store.reopen(arg(args, 0, String.self)))
     case "imageSizes":
       let id = try arg(args, 0, String.self), sources = try arg(args, 1, [String].self)
       _ = try store.require(id)
@@ -821,11 +814,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       json["version"] = 1
       let incoming = try JSONDecoder().decode(
         SessionRecord.self, from: JSONSerialization.data(withJSONObject: json))
-      // A debounced snapshot can predate an open. Keep its asset grant until the renderer sees or closes it.
-      var unlistedOpens = pendingSessionOpens.subtracting(incoming.documents.map(\.id))
-      if let closed = value["closedId"] as? String { unlistedOpens.remove(closed) }
-      try store.persist(incoming, preserving: unlistedOpens)
-      pendingSessionOpens = unlistedOpens.intersection(store.records.keys)
+      try store.persistRendererSession(incoming, closedId: value["closedId"] as? String)
       return nil
     case "check": return try store.check(arg(args, 0, String.self))
     case "reload":

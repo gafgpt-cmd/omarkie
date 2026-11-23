@@ -148,6 +148,8 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
+  assert.deepEqual(readerMediaRequests.filter(route => route.startsWith("/reader-media-reading-editor-")),
+    ["/reader-media-reading-editor-allowed"], "only the opted-in editor probe reaches the server");
   let next = 0;
   for (const phase of ["reading", "clean"]) {
     const prefix = `/reader-media-${phase}-`;
@@ -155,7 +157,9 @@ try {
     assert.ok(start > next, `${phase}: missing editing requests or offline boundary`);
     const editing = readerMediaRequests.slice(next, start);
     assert.ok([`${prefix}control`, `${prefix}poster`].every(route => editing.includes(route)), `${phase}: editing loads the owned image and poster before preview`);
-    assert.ok(editing.every(route => [`${prefix}control`, `${prefix}poster`].includes(route)), `${phase}: unexpected request before preview: ${editing.join(", ")}`);
+    const allowed = [`${prefix}control`, `${prefix}poster`];
+    if (phase === "reading") allowed.push(`${prefix}editor-allowed`);
+    assert.ok(editing.every(route => allowed.includes(route)), `${phase}: unexpected request before preview: ${editing.join(", ")}`);
     next = start + 1;
   }
   assert.deepEqual(readerMediaRequests.slice(next), [], "Clean preview and project preparation never request remote fixture media");

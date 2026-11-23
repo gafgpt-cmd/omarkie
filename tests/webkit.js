@@ -121,8 +121,6 @@ try {
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC";
   const blobURL = URL.createObjectURL(new Blob([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], { type: "image/png" }));
   const dataURL = `data:image/png;base64,${pixel}`;
-  const mediaFiles = await window.desktop.scan();
-  if (!mediaFiles.ok) throw new Error(mediaFiles.error);
   const decoded = (img, url, width, height) => img?.currentSrc === url && img.naturalWidth === width && img.naturalHeight === height;
   const probe = async (phase, name, container) => {
     const img = new Image();
@@ -136,14 +134,20 @@ try {
       return loaded;
     } finally { img.remove(); }
   };
-  const openMedia = async phase => {
-    const route = `/reader-media-${phase}-control`;
-    const file = mediaFiles.value.files.find(file => file.relative === `preview-media/Media-${phase}.md`);
+  const assetFor = record => name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+  const openMediaToken = async phase => {
+    const scanned = await window.desktop.scan();
+    if (!scanned.ok) throw new Error(scanned.error);
+    const file = scanned.value.files.find(file => file.relative === `preview-media/Media-${phase}.md`);
     if (!file) throw new Error(`${phase}: missing saved vault note`);
     const opened = await window.desktop.openToken(file.token);
     if (!opened.ok) throw new Error(`${phase}: could not open media fixture: ${opened.error}`);
-    const record = opened.value;
-    const asset = name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+    return opened.value;
+  };
+  const openMedia = async phase => {
+    const route = `/reader-media-${phase}-control`;
+    const record = await openMediaToken(phase);
+    const asset = assetFor(record);
     if (phase === "reading") {
       const stale = await window.desktop.persist(initialSession);
       if (!stale.ok) throw new Error(`Could not persist the preceding tab snapshot: ${stale.error}`);
@@ -154,12 +158,14 @@ try {
     window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
     if (phase === "reading") {
+      check(!await probe(phase, "editor-blocked", root()), "native offline editor blocks the loopback image");
       await window.desktop.setRemoteImages(true);
       await remotePreference(true);
+      check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     }
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
     check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
-    return asset;
+    return record;
   };
   const assertOffline = async (phase, container, asset) => {
     for (const [alt, url, width, height] of [
@@ -183,7 +189,8 @@ try {
     await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media note did not close`);
     check(!(await window.desktop.readResource(asset("local.svg"))).ok, `${phase}: closing the tab revokes its asset grant`);
   };
-  const readingAsset = await openMedia("reading");
+  const readingRecord = await openMedia("reading");
+  const readingAsset = assetFor(readingRecord);
   const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
   readingToggle.click();
   await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
@@ -192,7 +199,16 @@ try {
   const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
   readingClose.click();
   await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
-  const cleanAsset = await openMedia("clean");
+  const reopenedFromTree = await openMediaToken("reading");
+  check(reopenedFromTree.id !== readingRecord.id, "file tree open issues a fresh grant after close");
+  window.__omarkie.command({ action: "opened", document: reopenedFromTree });
+  await wait(() => decoded(image(root(), "Local image"), assetFor(reopenedFromTree)("local.svg"), 11, 17), "file tree open did not decode the local image");
+  const reopenedFromHistory = await window.desktop.reopen(readingRecord.id);
+  await closeMedia("reopened reading", assetFor(reopenedFromTree));
+  check(reopenedFromHistory.ok && reopenedFromHistory.value.id === reopenedFromTree.id &&
+    !(await window.desktop.readResource(readingAsset("local.svg"))).ok,
+    "reopen reuses the live tab and closing it leaves neither grant readable");
+  const cleanAsset = assetFor(await openMedia("clean"));
   window.__omarkie.command({ action: "clean-converted" });
   const cleanLayer = () => document.querySelector(".clean-layer");
   await wait(cleanLayer, "Clean preview did not open");

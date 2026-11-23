@@ -101,12 +101,31 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
               try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
               try await self.checkMenuLocale()
+              try await self.checkShowcaseGrant()
               exit(0)
             } catch { self.fail(error) }
           }
         } catch { self.fail(error) }
       }
     } catch { fail(error) }
+  }
+  @MainActor func checkShowcaseGrant() async throws {
+    _ = try await host.webView.callAsyncJavaScript("""
+      const snapshot = await window.desktop.restore();
+      if (!snapshot.ok) throw new Error(snapshot.error);
+      const showcase = await window.desktop.showcase();
+      if (!showcase.ok) throw new Error(showcase.error);
+      const { id, name } = showcase.value.document;
+      if (name !== "travel-journal.md" || snapshot.value.documents.some(record => record.id === id)) {
+        throw new Error("Expected Showcase to open a new travel journal tab");
+      }
+      const stale = await window.desktop.persist(snapshot.value);
+      if (!stale.ok) throw new Error(stale.error);
+      const asset = `omarkie-asset://local/${encodeURIComponent(id)}/images/coast-sunrise.jpg`;
+      const local = await window.desktop.readResource(asset);
+      if (!local.ok || local.value.mime !== "image/jpeg") throw new Error("Stale snapshot revoked the Showcase image grant");
+      """, arguments: [:], in: nil, contentWorld: .page)
+    print("PASS: stale snapshot preserves the Showcase image grant")
   }
   @MainActor func checkMenuLocale() async throws {
     func waitFor(_ predicate: () -> Bool) async throws {
