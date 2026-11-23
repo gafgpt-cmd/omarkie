@@ -134,7 +134,7 @@ try {
       return loaded;
     } finally { img.remove(); }
   };
-  const assetFor = record => name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+  const assetFor = record => name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${encodeURIComponent(name)}`;
   const openMediaToken = async phase => {
     const scanned = await window.desktop.scan();
     if (!scanned.ok) throw new Error(scanned.error);
@@ -159,11 +159,10 @@ try {
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
     if (phase === "reading") {
       check(!await probe(phase, "editor-blocked", root()), "native offline editor blocks the loopback image");
-      await window.desktop.setRemoteImages(true);
       await remotePreference(true);
-      check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     }
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
+    if (phase === "reading") check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
     return record;
   };

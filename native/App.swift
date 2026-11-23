@@ -671,7 +671,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         let url = URL(fileURLWithPath: path)
         if item.folder { try owner.workspace.remember(url, folder: true); return try await scanVault(url) }
         let record = try Self.openEncoded(url, store: store); try owner.workspace.remember(url, folder: false)
-        return try jsonValue(record)
+        return store.protectOpenedNotes([record], returning: try jsonValue(record))
       }
       return try jsonValue(owner.workspace.recentAction(action, path: path))
     case "reveal":
@@ -693,13 +693,13 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       defer { if previous != store.folder { owner.releaseBibliographies() } }
       if var session = try store.restore(sessionBytes) { session.readingRecoveryWarning = warning; return try jsonValue(session) }
       let (scanned, records) = try await openShowcase(names: Self.showcaseDocuments)
-      return try jsonValue(
-        SessionRecord(documents: records, activeId: records.first?.id, folder: store.folder?.path, readingRecoveryWarning: scanned["readingRecoveryWarning"] as? Bool))
+      let session = SessionRecord(documents: records, activeId: records.first?.id, folder: store.folder?.path, readingRecoveryWarning: scanned["readingRecoveryWarning"] as? Bool)
+      return store.protectOpenedNotes(records, returning: try jsonValue(session))
     case "showcase":
       let (scanned, records) = try await openShowcase(names: [Self.showcaseDocuments[0]])
       var result = scanned
       result["document"] = try jsonValue(records[0])
-      return result
+      return store.protectOpenedNotes(records, returning: result)
     case "registerDraft":
       let value = try arg(args, 0, [String: Any].self)
       let record = try JSONDecoder().decode(
@@ -710,11 +710,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       var warning = false
       if store.folder == nil { warning = try await scanVault(file.deletingLastPathComponent())["readingRecoveryWarning"] as? Bool == true }
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
-      if warning, var result = try jsonValue(record) as? [String: Any] {
+      let reply = try jsonValue(record)
+      if warning, var result = reply as? [String: Any] {
         result["readingRecoveryWarning"] = true
-        return result
+        return store.protectOpenedNotes([record], returning: result)
       }
-      return try jsonValue(record)
+      return store.protectOpenedNotes([record], returning: reply)
     case "openFolder":
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
@@ -730,8 +731,10 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       let token = try arg(args, 0, String.self)
       guard let file = store.tokens[token] else { throw NativeFailure("目录已更新，请刷新后重试。") }
       let record = try Self.openEncoded(file, store: store); try owner.workspace.remember(file, folder: false)
-      return try jsonValue(record)
-    case "reopen": return try jsonValue(store.reopen(arg(args, 0, String.self)))
+      return store.protectOpenedNotes([record], returning: try jsonValue(record))
+    case "reopen":
+      let record = try store.reopen(arg(args, 0, String.self))
+      return store.protectOpenedNotes([record], returning: try jsonValue(record))
     case "imageSizes":
       let id = try arg(args, 0, String.self), sources = try arg(args, 1, [String].self)
       _ = try store.require(id)

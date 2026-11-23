@@ -140,14 +140,14 @@ final class DocumentStore {
       path: resolved.path, name: resolved.lastPathComponent, content: text, savedContent: text,
       diskHash: hashData(bytes), lineEnding: text.contains("\r\n") ? "\r\n" : "\n", conflict: false,
       bom: bom, encoding: detected)
-    if records.updateValue(record, forKey: record.id) == nil { pendingSessionOpens.insert(record.id) }
+    records[record.id] = record
     return record
   }
   func draft(_ record: DocumentRecord) throws -> DocumentRecord {
     guard record.path == nil, records[record.id]?.path == nil,
       record.content.utf8.count <= Self.maxBytes
     else { throw NativeFailure("草稿格式无效。") }
-    if records.updateValue(record, forKey: record.id) == nil { pendingSessionOpens.insert(record.id) }
+    records[record.id] = record
     return record
   }
   func reopen(_ id: String) throws -> DocumentRecord {
@@ -277,6 +277,11 @@ final class DocumentStore {
     folder = root
     tokens = nextTokens
     return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped]
+  }
+
+  func protectOpenedNotes(_ records: [DocumentRecord], returning reply: Any) -> Any {
+    pendingSessionOpens.formUnion(records.filter { $0.path != nil }.map(\.id))
+    return reply
   }
 
   func persistRendererSession(_ incoming: SessionRecord, closedId: String?) throws {

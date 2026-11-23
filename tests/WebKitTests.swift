@@ -121,7 +121,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
       const stale = await window.desktop.persist(snapshot.value);
       if (!stale.ok) throw new Error(stale.error);
-      const asset = `omarkie-asset://local/${encodeURIComponent(id)}/images/coast-sunrise.jpg`;
+      const asset = `omarkie-asset://local/${encodeURIComponent(id)}/${encodeURIComponent("images/coast-sunrise.jpg")}`;
       const local = await window.desktop.readResource(asset);
       if (!local.ok || local.value.mime !== "image/jpeg") throw new Error("Stale snapshot revoked the Showcase image grant");
       """, arguments: [:], in: nil, contentWorld: .page)
