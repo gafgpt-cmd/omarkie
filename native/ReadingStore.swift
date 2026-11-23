@@ -85,7 +85,7 @@ final class NativeReadingStore {
         continuation.resume(with: Result {
           guard let folder else { return try execute(moveExclusive) }
           let root = canonicalFileURL(folder)
-          return try self.transaction(root, writing: false) { state, append, _ in
+          return try self.transaction(root, writing: false, lockForMove: true) { state, append, _ in
               var detached: [String: String]?
               if let state, let (url, id) = trash, let file = Self.relativePath(root, url) {
                 guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
@@ -116,7 +116,9 @@ final class NativeReadingStore {
                   return lstat(child.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFREG && canonicalFileURL(child).path == child.path
                 }
                 let move = ["from": from, "to": to]
-                guard var evidence = try Self.moveFingerprint(root, from, files, skipMissing: true) else { throw NativeFailure(Self.unsafe) }
+                guard var evidence = try? Self.moveFingerprint(root, from, files, skipMissing: true) else {
+                  throw NativeFailure("Cannot move a tracked note that is unreadable.", "LEARNING_ERROR")
+                }
                 if evidence.files.isEmpty {
                   guard !collisions.isEmpty, let identity = try Self.moveFingerprint(root, from, []) else { try moveExclusive(source, destination); return }
                   evidence = identity
@@ -132,6 +134,19 @@ final class NativeReadingStore {
               }
           }
         })
+      }
+    }
+  }
+
+  func discardTrash(_ root: URL, _ id: String) async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      queue.async {
+        defer { continuation.resume() }
+        do {
+          try self.transaction(root, writing: false) { state, append, _ in
+            if let state, try self.call("hasTrash", [state.entries, id]).toBool() { try append(["purgeTrash": id]) }
+          }
+        } catch { NSLog("Reading Trash cleanup could not update the journal.") }
       }
     }
   }
@@ -176,7 +191,6 @@ final class NativeReadingStore {
     var rows = [String]()
     var measured = [String]()
     for suffix in files {
-      do {
       let target = root.appendingPathComponent(suffix.isEmpty ? prefix : prefix + "/" + suffix)
       guard canonicalFileURL(target).path == target.path else { if skipMissing { continue }; return nil }
       let fd = open(target.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
@@ -184,15 +198,13 @@ final class NativeReadingStore {
         if skipMissing { continue }
         return nil
       }
-      if fd < 0, skipMissing { continue }
-      if fd < 0, errno == ELOOP { return nil }
+      if fd < 0, errno == ELOOP { if skipMissing { continue }; return nil }
       guard fd >= 0 else { throw NativeFailure(unsafe) }
       let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
       defer { try? handle.close() }
       var metadata = stat()
       guard fstat(fd, &metadata) == 0 else { throw NativeFailure(unsafe) }
-      if skipMissing && metadata.st_mode & S_IFMT != S_IFREG { continue }
-      guard metadata.st_mode & S_IFMT == S_IFREG else { return nil }
+      guard metadata.st_mode & S_IFMT == S_IFREG else { if skipMissing { continue }; return nil }
       var hash = SHA256(), size = 0
       while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
         size += chunk.count
@@ -201,7 +213,6 @@ final class NativeReadingStore {
       let marker = "\(size):" + hash.finalize().map { String(format: "%02x", $0) }.joined()
       measured.append(suffix)
       rows += [suffix, marker]
-      } catch { if !skipMissing { throw error } }
     }
     if measured == [""] { return (rows[1], measured) }
     let bytes = Data(rows.joined(separator: "\0").utf8)
@@ -239,19 +250,20 @@ final class NativeReadingStore {
     }
   }
 
-  private func transaction<T>(_ folder: URL, writing: Bool,
+  private func transaction<T>(_ folder: URL, writing: Bool, lockForMove: Bool = false,
                               _ run: (Snapshot?, @escaping ([String: Any]) throws -> Void, Bool) throws -> T) throws -> T {
     let noAppend: ([String: Any]) throws -> Void = { _ in throw NativeFailure(Self.unsafe) }
     guard canonicalFileURL(folder).path == folder.path else { throw NativeFailure(Self.unsafe) }
     let root = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard root >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(root) }
-    if writing, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
+    let needsLock = writing || lockForMove
+    if needsLock, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
     let directory = openat(root, ".omarkie", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    if directory < 0, !writing, errno == ENOENT { return try run(nil, noAppend, false) }
+    if directory < 0, !needsLock, errno == ENOENT { return try run(nil, noAppend, false) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
-    if !writing {
+    if !needsLock {
       var metadata = stat()
       if fstatat(directory, "store.jsonl", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT,
          fstatat(directory, "journal.lock", &metadata, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT {

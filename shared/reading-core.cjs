@@ -167,8 +167,13 @@ module.exports = function readingCore(digest, translate = message => message) {
 
   function applyRow(entries, row) {
       try {
-        const { v, entry, move, intent, cancel, trash, restore } = JSON.parse(row);
+        const { v, entry, move, intent, cancel, trash, restore, purgeTrash } = JSON.parse(row);
         if (v !== 1) throw invalid();
+        if (purgeTrash !== undefined) {
+          const id = identifier(purgeTrash);
+          entries.trash?.delete(id);
+          return;
+        }
         if (trash || restore) {
           const { path, id } = trash ?? restore;
           if (!validPath(path)) throw invalid();

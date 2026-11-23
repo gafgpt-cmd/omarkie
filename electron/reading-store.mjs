@@ -123,25 +123,24 @@ async function moveFingerprint(root, prefix, files, skipMissing = false) {
     return { fingerprint: `0:${digest(`${metadata.dev}:${metadata.ino}`)}`, files };
   }
   for (const suffix of files) {
-    try {
     const file = suffix ? `${prefix}/${suffix}` : prefix;
     if (process.platform === "win32" && file.includes("\\")) throw unsafe();
     const target = path.join(root, file);
     if (!within(root, target)) throw unsafe();
     const metadata = await lstat(target).catch(error => error.code === "ENOTDIR" ? null : missing(error));
-    if (!metadata?.isFile() || await realpath(target) !== target) { if (skipMissing) continue; return null; }
+    if (!metadata) { if (skipMissing) continue; return null; }
+    if (!metadata.isFile() || await realpath(target) !== target) { if (skipMissing) continue; return null; }
     const handle = await open(target, constants.O_RDONLY | noFollow).catch(missing);
     if (!handle) { if (skipMissing) continue; return null; }
     let size = 0;
     const hash = createHash("sha256");
     try {
-      if (!(await handle.stat()).isFile()) { if (skipMissing) continue; return null; }
+      if (!(await handle.stat()).isFile()) return null;
       for await (const chunk of handle.createReadStream({ autoClose: false })) { size += chunk.length; hash.update(chunk); }
     } finally { await handle.close(); }
     const marker = `${size}:${hash.digest("hex")}`;
     measured.push(suffix);
     rows.push(suffix, marker);
-    } catch (error) { if (!skipMissing) throw error; }
   }
   if (measured.length === 1 && measured[0] === "") return { fingerprint: rows[1], files: measured };
   const bytes = Buffer.from(rows.join("\0"));
@@ -194,18 +193,20 @@ export async function moveReadingEntries(folder, execute, trashPath) {
   if (!folder) return execute();
   const root = await realpath(folder);
   const relative = file => path.relative(root, file).split(path.sep).join("/");
-  return queued(root, () => locked(root, false, exists => !exists ? execute() : transaction(root, false, async (entries, append) => {
+  return queued(root, () => locked(root, true, () => transaction(root, false, async (entries, append) => {
     const trashed = entries && trashPath && within(root, trashPath) ? { path: relative(trashPath), id: randomUUID() } : null;
     if (trashed && !validPath(trashed.path)) throw invalid();
     if (trashed) { checkPending(entries, trashed.path, true); await append({ trash: trashed }); }
-    try { return await execute(async (source, destination) => {
+    let change;
+    try { change = await execute(async (source, destination) => {
     if (entries && within(root, source) && within(root, destination)) {
       const from = relative(source), to = relative(destination);
       try { checkMove(from, to); } catch { throw invalid(); }
       checkPending(entries, from, true); checkPending(entries, to, true);
       const files = tracked(entries, from);
-      let evidence = await moveFingerprint(root, from, files, true);
-      if (!evidence) throw unsafe();
+      let evidence;
+      try { evidence = await moveFingerprint(root, from, files, true); } catch {}
+      if (!evidence) throw new Error(t("Cannot move a tracked note that is unreadable."));
       const collisions = [];
       for (const suffix of tracked(entries, to)) {
         const candidate = suffix ? path.join(source, suffix) : source;
@@ -227,6 +228,8 @@ export async function moveReadingEntries(folder, execute, trashPath) {
       if (trashed) await append({ restore: trashed });
       throw error;
     }
+    if (trashed) await append({ purgeTrash: trashed.id }).catch(error => console.warn("Reading Trash cleanup:", error.code ?? error.name));
+    return change;
   })));
 }
 

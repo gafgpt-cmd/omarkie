@@ -48,9 +48,10 @@
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
 - Back up `.omarkie/store.jsonl` with the vault. The reading index is built in memory.
-- Use one Omarkie process when first enabling reading history in a vault.
-- Trash and macOS Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes. Electron cannot undo Trash in Omarkie.
-- Tracked notes that become unreadable during a move may retain history at the old path.
+- The first reading write and vault file moves share a lock across Omarkie processes. Opening a vault does not create a journal.
+- Trash and macOS Undo Trash update the journal before moving the file. A crash between those steps can leave the file and history out of sync.
+- Trashed history stops being restorable in Omarkie immediately on Electron, or when macOS replaces the Trash undo or quits. The append-only journal retains previous rows.
+- A move is refused if a tracked note cannot be read. Missing notes retain their history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
 ### Preview media

@@ -343,15 +343,22 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           }
           let change: [String: String]
           if ["rename", "move", "undo", "trash"].contains(operation["action"] ?? "") {
-            let folder = operation["action"] == "undo" ? owner.workspace.undo?.folder : store.folder
+            let previousUndo = owner.workspace.undo
+            let folder = operation["action"] == "undo" ? previousUndo?.folder : store.folder
             let trash = operation["action"] == "trash" ? (try owner.workspace.authorize(operation["path"] ?? folder?.path ?? "", store: store), UUID().uuidString) : nil
-            let restoring = operation["action"] == "undo" ? owner.workspace.undo?.trashID : nil
+            let restoring = operation["action"] == "undo" ? previousUndo?.trashID : nil
             let workspace = owner.workspace
             let snapshot = DocumentStore(store.dataDirectory)
             snapshot.folder = store.folder
             snapshot.records = store.records
             change = try await owner.readingStore.moveEntries(folder, trash: trash, restoring: restoring) { move in
               try workspace.execute(operation, store: snapshot, trashID: trash?.1, move: move)
+            }
+            if let id = previousUndo?.trashID, let root = previousUndo?.folder, id != workspace.undo?.trashID {
+              await owner.readingStore.discardTrash(root, id)
+            }
+            if let (_, id) = trash, let folder, id != workspace.undo?.trashID {
+              await owner.readingStore.discardTrash(folder, id)
             }
           } else {
             change = try owner.workspace.execute(operation, store: store)
@@ -374,6 +381,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           _ = try? await host.webView.callAsyncJavaScript("return await window.__omarkie.fileOperation('release', {})", arguments: [:], in: nil, contentWorld: .page)
         }
         owner.fileOperationRunning = false
+        if owner.terminating && owner.hosts.isEmpty { owner.finishTermination() }
         reply(id, outcome)
       }
       return
@@ -681,6 +689,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       if let sessionBytes, let session = try? DocumentStore.decodeSession(sessionBytes), let folder = session.folder {
         warning = await NativeReadingStore.recoverVault(canonicalFileURL(URL(fileURLWithPath: folder)))
       }
+      let previous = store.folder
+      defer { if previous != store.folder { owner.releaseBibliographies() } }
       if var session = try store.restore(sessionBytes) { session.readingRecoveryWarning = warning; return try jsonValue(session) }
       let (scanned, records) = try await openShowcase(names: Self.showcaseDocuments)
       return try jsonValue(
@@ -1068,12 +1078,22 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     if !hasVisibleWindows { newWindow() }
     return true
   }
-  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    if hosts.isEmpty { return .terminateNow }
+  @MainActor func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    if hosts.isEmpty && !fileOperationRunning && workspace.undo?.trashID == nil { return .terminateNow }
     if terminating { return .terminateLater }
     terminating = true
-    for host in hosts { host.send("quit") }
+    if hosts.isEmpty { finishTermination() }
+    else { for host in hosts { host.send("quit") } }
     return .terminateLater
+  }
+  @MainActor fileprivate func finishTermination() {
+    guard !fileOperationRunning else { return }
+    Task { @MainActor in
+      if let item = workspace.undo, let root = item.folder, let id = item.trashID {
+        await readingStore.discardTrash(root, id)
+      }
+      if terminating { NSApp.reply(toApplicationShouldTerminate: true) }
+    }
   }
   func newWindow(tab: Bool = false) {
     let previous = tab ? current : nil
@@ -1144,7 +1164,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     hosts.removeAll(where: { $0 === host })
     if hosts.isEmpty { speech?.stop() }
     releaseBibliographies()
-    if terminating && hosts.isEmpty { NSApp.reply(toApplicationShouldTerminate: true) }
+    if terminating && hosts.isEmpty { finishTermination() }
   }
   func cancelTermination() {
     if terminating {

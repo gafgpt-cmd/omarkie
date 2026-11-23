@@ -339,10 +339,9 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let updated: [[String: Any]] = [["id": "new", "type": "book", "title": "Updated native reference", "omarkie-pdf": [attachment.path]]]
     try atomicWrite(export, try JSONSerialization.data(withJSONObject: updated))
     try await waitForInfo(false, title: "Updated native reference")
-    let reopened = NativeBibliographies(directory) { _ in }
-    guard let live = try reopened.perform(root, "info") as? [String: Any], live["stale"] as? Bool == false,
+    guard let live = try bibliography.perform(root, "info") as? [String: Any], live["stale"] as? Bool == false,
           let csl = live["csl"] as? String, csl.contains("Updated native reference"), !csl.contains(attachment.path),
-          try reopened.perform(root, "open", "new") as? String == canonicalFileURL(attachment).path else {
+          try bibliography.perform(root, "open", "new") as? String == canonicalFileURL(attachment).path else {
       throw NativeFailure("Native Zotero replacement, CSL isolation or PDF resolution failed.")
     }
     let options: [String: Any] = ["bibliography": csl, "style": "vancouver"]
@@ -388,7 +387,16 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     print("PASS: native Zotero stale/live state, PDF resolution, chapter order and one citeproc bibliography")
     let cached = directory.appendingPathComponent("bibliographies/" + hashData(Data(root.utf8)) + ".json")
     let before = try Data(contentsOf: cached)
+    let restoring = NativeWindowHost(owner: owner, directory: output.appendingPathComponent("restore-window"))
+    _ = try await restoring.scanVault(directory)
+    owner.hosts.append(restoring)
+    defer { owner.hosts.removeAll { $0 === restoring } }
     _ = try await host.openShowcase(names: [])
+    guard let nextVault = host.store.folder else { throw NativeFailure("Missing destination vault.") }
+    try atomicWrite(restoring.store.dataDirectory.appendingPathComponent("session.json"),
+                    JSONEncoder().encode(SessionRecord(documents: [], folder: nextVault.path)))
+    _ = try await restoring.handle("restore", [])
+    guard restoring.store.folder == nextVault else { throw NativeFailure("Renderer session restore did not switch vaults.") }
     try atomicWrite(export, Data("[{\"id\":\"closed\",\"type\":\"book\",\"title\":\"Closed vault must not refresh\"}]".utf8))
     try await Task.sleep(nanoseconds: 1_600_000_000)
     guard try Data(contentsOf: cached) == before else { throw NativeFailure("Zotero refreshed after the last window left its vault.") }

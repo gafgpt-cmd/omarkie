@@ -29,13 +29,15 @@ test('diagram export recognizes spaced and nested fences without consuming surro
     ['mermaid', 'graph LR\nStart --> Finish\n', '> ', second],
   ]);
 });
-test('raster conversion keeps the diagram and following paragraph in one quote', async () => {
-  const source = '> Before\n>\n> ``` mermaid\n> graph TD\n> A --> B\n> ```\n> After\n';
+test('raster conversion keeps diagrams separate from adjacent paragraphs in quotes and list items', async () => {
+  const source = '> Before quote\n> ``` mermaid\n> graph TD\n> A --> B\n> ```\n> After quote\n\n- Before list\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n  After list\n';
   const root = document.createElement('article');
   root.innerHTML = renderMarkdown(source, 'fixture');
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  Object.defineProperty(svg, 'viewBox', { value: { baseVal: { width: 20, height: 30 } } });
-  root.querySelector('.mermaid-block').replaceChildren(svg);
+  for (const diagram of root.querySelectorAll('.mermaid-block')) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    Object.defineProperty(svg, 'viewBox', { value: { baseVal: { width: 20, height: 30 } } });
+    diagram.replaceChildren(svg);
+  }
   const canvas = dom.window.HTMLCanvasElement.prototype;
   const { getContext, toDataURL } = canvas;
   const { Image, XMLSerializer } = globalThis;
@@ -46,11 +48,11 @@ test('raster conversion keeps the diagram and following paragraph in one quote',
   try {
     const output = document.createElement('article');
     output.innerHTML = renderMarkdown(await conversionMarkdown(source, root), 'fixture');
-    assert.equal(output.children.length, 1);
-    assert.equal(output.firstElementChild.tagName, 'BLOCKQUOTE');
-    const quote = output.firstElementChild;
-    assert.deepEqual([...quote.querySelectorAll('p')].map(p => p.textContent.trim()), ['Before', '', 'After']);
-    assert.equal(quote.querySelector('img')?.getAttribute('src'), png);
+    assert.deepEqual([...output.children].map(node => node.tagName), ['BLOCKQUOTE', 'UL']);
+    for (const [container, label] of [[output.querySelector('blockquote'), 'quote'], [output.querySelector('li'), 'list']]) {
+      assert.deepEqual([...container.children].map(p => p.textContent.trim()), [`Before ${label}`, '', `After ${label}`]);
+      assert.equal(container.querySelector('img')?.getAttribute('src'), png);
+    }
   } finally {
     Object.assign(canvas, { getContext, toDataURL });
     Object.assign(globalThis, { Image, XMLSerializer });
