@@ -1,74 +1,115 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-// Runs the real /usr/bin/omarkie launcher against stub programs; every stub logs how it was called.
+// Run the shipped launcher against an isolated pacman database and runtime executables.
 const linux = process.platform === "linux";
-async function sandbox(electron) {
+async function sandbox({ local = "", installed = [], sync = "electron47" } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-launcher-")), log = path.join(root, "calls.log");
-  const stub = async (name, body = "") => { const file = path.join(root, name); await writeFile(file, `#!/usr/bin/bash\nprintf '%s %s\\n' ${JSON.stringify(name)} "$*" >> ${JSON.stringify(log)}\n${body}`); await chmod(file, 0o755); };
+  const executable = async (name, body) => { const file = path.join(root, name); await writeFile(file, `#!/usr/bin/bash\n${body}`, { mode: 0o755 }); };
+  const stub = (name, body = "") => executable(name, `printf '%s %s\\n' ${JSON.stringify(name)} "$*" >> ${JSON.stringify(log)}\n${body}`);
+  await executable("pacman", `case "$*" in
+    "-Qi obsidian") ${local ? `printf 'Depends On      : bash  %s\\n' '${local}'` : "exit 1"} ;;
+    "-Qq") printf '%s\\n' ${installed.join(" ")} ;;
+    "-Si obsidian") ${sync ? `printf 'Depends On      : bash  %s\\n' '${sync}'` : "exit 1"} ;;
+    "-S electron43") printf 'install electron43\\n' >> ${JSON.stringify(log)}; exec /usr/bin/mv "$HOME/electron43-ready" "$HOME/electron43" ;;
+    *) exit 1 ;;
+  esac`);
   const launcher = path.join(root, "omarkie");
-  await writeFile(launcher, (await readFile(new URL("../packaging/arch/omarkie", import.meta.url), "utf8")).replaceAll("@ELECTRON@", electron), { mode: 0o755 });
-  const run = (args = [], extra = {}) => spawnSync("bash", [launcher, ...args], { env: { PATH: `${root}:/usr/bin:/bin`, HOME: root }, encoding: "utf8", ...extra });
-  return { root, stub, run, calls: async () => (await readFile(log, "utf8").catch(() => "")).trim().split("\n").filter(Boolean), done: () => rm(root, { recursive: true, force: true }) };
+  await writeFile(launcher, await readFile(new URL("../packaging/arch/omarkie", import.meta.url)), { mode: 0o755 });
+  const run = (args = []) => spawnSync(launcher, args, { env: { PATH: root, HOME: root }, encoding: "utf8", timeout: 5000 });
+  return { root, executable, stub, run, calls: async () => (await readFile(log, "utf8").catch(() => "")).trim().split("\n").filter(Boolean), done: () => rm(root, { recursive: true, force: true }) };
 }
 
-test("launcher hands the app and the user's files to the shared Electron", { skip: !linux }, async () => {
-  const box = await sandbox("electron-stub-present");
+test("launcher prefers Obsidian's installed Electron over a newer series", { skip: !linux }, async () => {
+  const box = await sandbox({ local: "electron43>=43.8", installed: ["electron39", "electron43", "electron44"] });
   try {
-    await box.stub("electron-stub-present");
+    for (const series of ["electron39", "electron43", "electron44"]) await box.stub(series);
     const result = box.run(["notes/My file.md"]);
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(await box.calls(), ["electron-stub-present /usr/lib/omarkie/app.asar notes/My file.md"]);
+    assert.deepEqual(await box.calls(), ["electron43 /usr/lib/omarkie/app.asar notes/My file.md"]);
   } finally { await box.done(); }
 });
 
-test("launched from the desktop without Electron: loud error, critical notification, terminal that installs it", { skip: !linux }, async () => {
-  const box = await sandbox("electron-stub-missing");
+test("without installed Obsidian the newest supported, runnable series wins", { skip: !linux }, async () => {
+  const box = await sandbox({ installed: ["electron", "electron100", "electron39", "electron43", "electron49", "electron102"] });
   try {
-    await box.stub("notify-send"); await box.stub("xdg-terminal-exec");
-    const result = box.run(["a b.md"], { stdio: ["ignore", "pipe", "pipe"] });
-    assert.match(result.stderr, /Omarkie cannot start: the electron-stub-missing package is not installed/);
-    assert.match(result.stderr, /sudo pacman -S --needed electron-stub-missing/);
-    const [notify, terminal] = await box.calls();
-    assert.match(notify, /^notify-send --urgency=critical --app-name=Omarkie Omarkie cannot start/);
-    assert.match(notify, /A terminal is opening to install it/);
-    assert.match(terminal, /^xdg-terminal-exec bash -c if sudo pacman -S --needed electron-stub-missing; then setsid -f omarkie a\\ b\.md {2}<\/dev\/null >\/dev\/null 2>&1;/);
+    for (const series of ["electron", "electron39", "electron43", "electron100"]) await box.stub(series);
+    const result = box.run();
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(await box.calls(), ["electron100 /usr/lib/omarkie/app.asar"]);
+  } finally { await box.done(); }
+});
+
+const hasPty = linux && spawnSync("/usr/bin/script", ["--version"]).status === 0;
+
+async function prepareRecovery(box, file) {
+  await box.executable("sudo", 'exec "$@"');
+  await box.stub("electron43-ready", `[[ $# == 2 && $1 == /usr/lib/omarkie/app.asar && $2 == ${JSON.stringify(file)} ]] || exit 2\nprintf 'launched\\n' >> "$HOME/calls.log"`);
+}
+
+test("desktop recovery installs the local default and reopens the exact file", { skip: !hasPty }, async () => {
+  const box = await sandbox({ local: "electron43", installed: ["electron43", "electron44"], sync: "electron48" });
+  try {
+    await prepareRecovery(box, "a b.md");
+    await box.stub("electron44");
+    await box.stub("notify-send");
+    for (const name of ["bash", "setsid"]) await symlink(`/usr/bin/${name}`, path.join(box.root, name));
+    await box.executable("xdg-terminal-exec", `printf -v command '%q ' "$@"\nexec /usr/bin/script -qec "exec $command" /dev/null`);
+    const result = box.run(["a b.md"]);
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stderr, /the electron43 executable is missing/);
+    let calls;
+    for (let i = 0; i < 100; i++) {
+      calls = await box.calls();
+      if (calls.at(-1) === "launched") break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.match(calls[0] ?? "", /^notify-send --urgency=critical .*A terminal is opening to install it/);
+    assert.deepEqual(calls.slice(1), ["install electron43", "electron43-ready /usr/lib/omarkie/app.asar a b.md", "launched"], result.stdout + result.stderr);
   } finally { await box.done(); }
 });
 
 test("from the desktop without a terminal launcher the notification carries the install command", { skip: !linux }, async () => {
-  const box = await sandbox("electron-stub-missing");
+  const box = await sandbox();
   try {
     await box.stub("notify-send");
-    const result = spawnSync("/usr/bin/bash", [path.join(box.root, "omarkie")], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { PATH: box.root, HOME: box.root } });
+    const result = box.run();
     assert.equal(result.status, 1);
     const calls = await box.calls();
     assert.equal(calls.length, 1);
-    assert.match(calls[0], /Install it with: sudo pacman -S --needed electron-stub-missing$/);
+    assert.match(calls[0], /Install it with: sudo pacman -S electron47$/);
     assert.doesNotMatch(calls[0], /terminal/);
   } finally { await box.done(); }
 });
 
-test("without a terminal launcher it still fails loudly with a non-zero exit", { skip: !linux }, async () => {
-  const box = await sandbox("electron-stub-missing");
-  try {
-    const result = spawnSync("bash", ["-c", `PATH=${box.root}:/nonexistent exec /usr/bin/bash ${path.join(box.root, "omarkie")}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { HOME: box.root } });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /Omarkie cannot start/);
-  } finally { await box.done(); }
+test("unavailable or unsupported sync metadata never yields a guessed install offer", { skip: !linux }, async () => {
+  for (const sync of ["", "electron42"]) {
+    const box = await sandbox({ sync });
+    try {
+      await box.stub("notify-send"); await box.stub("xdg-terminal-exec");
+      const result = box.run();
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /no supported Electron series for Obsidian/);
+      assert.doesNotMatch(result.stderr, /pacman -S/);
+      const calls = await box.calls();
+      assert.equal(calls.length, 1);
+      assert.match(calls[0], /^notify-send /);
+    } finally { await box.done(); }
+  }
 });
 
-test("in a terminal it runs the pacman install itself, then starts Omarkie", { skip: !linux || spawnSync("script", ["--version"]).status !== 0 }, async () => {
-  const box = await sandbox("electron-stub-late");
+test("in a terminal it runs the pacman install itself, then starts Omarkie", { skip: !hasPty }, async () => {
+  const box = await sandbox({ local: "electron43", installed: ["electron43"], sync: "electron46" });
   try {
-    // The sudo stub plays pacman: it "installs" the Electron stub, which the launcher then runs.
-    await box.stub("sudo", `printf '#!/usr/bin/bash\\nprintf "%%s %%s\\\\n" electron-stub-late "$*" >> ${path.join(box.root, "calls.log")}\\n' > ${path.join(box.root, "electron-stub-late")}; chmod +x ${path.join(box.root, "electron-stub-late")}`);
-    const result = spawnSync("script", ["-qec", `bash ${path.join(box.root, "omarkie")} x.md`, "/dev/null"], { encoding: "utf8", env: { PATH: `${box.root}:/usr/bin:/bin`, HOME: box.root, TERM: "dumb" } });
+    await prepareRecovery(box, "x.md");
+    const result = spawnSync("/usr/bin/script", ["-qec", `exec ${path.join(box.root, "omarkie")} x.md`, "/dev/null"], { encoding: "utf8", env: { PATH: box.root, HOME: box.root, TERM: "dumb" }, timeout: 5000 });
+    assert.ifError(result.error);
     assert.equal(result.status, 0, result.stdout);
-    assert.deepEqual(await box.calls(), ["sudo pacman -S --needed electron-stub-late", "electron-stub-late /usr/lib/omarkie/app.asar x.md"]);
+    assert.deepEqual(await box.calls(), ["install electron43", "electron43-ready /usr/lib/omarkie/app.asar x.md", "launched"]);
   } finally { await box.done(); }
 });

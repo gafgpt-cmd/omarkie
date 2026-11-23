@@ -5,12 +5,10 @@ import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promi
 import path from "node:path";
 import pkg from "../package.json" with { type: "json" };
 import { prepareElectronApplication } from "./prepare-electron.mjs";
-import { archPkgver, describeBuild, electronSeries, installedPackages } from "./arch-electron.mjs";
+import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 // An Arch package that runs on the distribution's shared Electron instead of bundling Chromium.
 if (process.platform !== "linux") throw new Error("Build the Arch package on Linux.");
-const electron = electronSeries({ override: process.env.OMARKIE_ELECTRON, installed: installedPackages(), recommended: Number(pkg.devDependencies.electron.split(".")[0]) });
-console.log(`Arch package runtime: ${electron}`);
 const work = path.resolve("release/arch"), sources = path.join(work, "src");
 await rm(work, { recursive: true, force: true });
 await mkdir(sources, { recursive: true });
@@ -23,11 +21,11 @@ await copyFile("build/icon.png", path.join(sources, "omarkie.png"));
 await copyFile("packaging/arch/omarkie.desktop", path.join(sources, "omarkie.desktop"));
 const pkgver = archPkgver(pkg.version, describeBuild(pkg.version));
 console.log(`Arch package version: ${pkgver}`);
-const fill = text => text.replaceAll("@PKGVER@", pkgver).replaceAll("@VERSION@", pkg.version).replaceAll("@ELECTRON@", electron).replaceAll("@DESCRIPTION@", pkg.description.replaceAll('"', "'"));
-await writeFile(path.join(sources, "omarkie"), fill(await readFile("packaging/arch/omarkie", "utf8")), { mode: 0o755 });
+const fill = text => text.replaceAll("@PKGVER@", pkgver).replaceAll("@VERSION@", pkg.version).replaceAll("@DESCRIPTION@", pkg.description.replaceAll('"', "'"));
+await copyFile("packaging/arch/omarkie", path.join(sources, "omarkie"));
 await writeFile(path.join(sources, "PKGBUILD"), fill(await readFile("packaging/arch/PKGBUILD", "utf8")));
 
-// -d: the shared Electron is a runtime dependency only, not needed to build.
+// Skip checks for runtime-only dependencies on the build host.
 execFileSync("makepkg", ["--force", "--nodeps", "--noconfirm", "--cleanbuild"], { cwd: sources, stdio: "inherit", env: { ...process.env, PKGDEST: work, PKGEXT: ".pkg.tar.zst" } });
 
 const name = (await readdir(work)).find(file => file.endsWith(".pkg.tar.zst"));
@@ -36,7 +34,7 @@ const file = path.join(work, name), listing = execFileSync("bsdtar", ["-tf", fil
 for (const entry of ["usr/bin/omarkie", "usr/lib/omarkie/app.asar", "usr/share/applications/omarkie.desktop", "usr/share/licenses/omarkie/LICENSE"])
   if (!listing.split("\n").includes(entry)) throw new Error(`Arch package lacks ${entry}`);
 const info = execFileSync("bsdtar", ["-xOf", file, ".PKGINFO"], { encoding: "utf8" });
-if (!info.includes(`depend = ${electron}\n`)) throw new Error(`Arch package does not depend on ${electron}`);
+if (/^depend = electron(?:[0-9]+)?(?:[<>=].*)?$/m.test(info)) throw new Error("Arch package must not require Electron");
 const sum = `${createHash("sha256").update(await readFile(file)).digest("hex")}  ${name}`;
 await writeFile(path.join(work, "SHA256SUMS-arch.txt"), sum + "\n");
 console.log(sum);
