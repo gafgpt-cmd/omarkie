@@ -127,7 +127,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     content.add(self, name: "omarkie")
     #if WEBTEST
       if ProcessInfo.processInfo.environment["OMARKIE_TEST_LANGUAGE"] == "en" {
-        content.addUserScript(WKUserScript(source: "localStorage.setItem('omarkie-language', 'en')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        content.addUserScript(WKUserScript(source: "if (!localStorage.getItem('omarkie-language')) localStorage.setItem('omarkie-language', 'en')", injectionTime: .atDocumentStart, forMainFrameOnly: true))
       }
     #endif
     let script = try! String(
@@ -459,7 +459,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     if name == "bibliography" {
       let root = try arg(args, 0, String.self), action = try arg(args, 1, String.self)
       guard store.folder?.path == root, !root.isEmpty else { throw NativeFailure("请先打开笔记文件夹") }
-      owner.releaseBibliographies()
       var value = args.count > 2 ? args[2] as? String : nil
       if action == "link" {
         #if WEBTEST
@@ -500,11 +499,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       }
       guard request["action"] as? String == "export" else { return result }
       guard let markdown = result as? String else { throw NativeFailure("无法导出。请选择新的文件名。") }
-      let locale = (try? await webView.callAsyncJavaScript("return document.documentElement.lang", arguments: [:], in: nil, contentWorld: .page)) as? String
-      let names = ["en": "Reading notes.md", "es": "Notas de lectura.md", "ca": "Notes de lectura.md", "ro": "Notițe de lectură.md", "zh": "阅读笔记.md"]
       let panel = NSSavePanel()
       panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-      panel.nameFieldStringValue = names[locale ?? ""] ?? "阅读笔记.md"
+      panel.nameFieldStringValue = Self.localized("阅读笔记.md", locale: rendererLocale)
       guard panel.runModal() == .OK, let destination = panel.url else { return false }
       do { try NativeReadingStore.export(markdown, destination) }
       catch { throw NativeFailure("无法导出。请选择新的文件名。") }
@@ -557,7 +554,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   @MainActor func scanVault(_ folder: URL) async throws -> [String: Any] {
     let root = canonicalFileURL(folder)
     let warning = root != store.folder ? await NativeReadingStore.recoverVault(root) : false
+    let previous = store.folder
     var result = try store.scan(root)
+    if previous != store.folder { owner.releaseBibliographies() }
     result["readingRecoveryWarning"] = warning
     return result
   }
@@ -709,9 +708,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     case "openFolder":
       guard let file = chooseFile(false, folder: true) else { return nil }
       try owner.workspace.remember(file, folder: true)
-      let result = try await scanVault(file)
-      Task { @MainActor in self.owner.releaseBibliographies() }
-      return result
+      return try await scanVault(file)
     case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)
     case "exportBundle":
       let payload = try arg(args, 0, [String: Any].self)

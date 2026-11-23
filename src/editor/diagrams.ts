@@ -48,7 +48,7 @@ export async function renderDiagrams(container: HTMLElement) {
       element.dataset.mermaid ??= element.textContent || "";
       try {
         const { svg } = await mermaid.render(
-          `diagram-${crypto.randomUUID()}`,
+          `diagram-${crypto.getRandomValues(new Uint32Array(4)).join("-")}`,
           diagramSource(element.dataset.diagramLanguage || "mermaid", element.dataset.mermaid),
         );
         if (element.isConnected) {

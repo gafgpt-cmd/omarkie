@@ -29,3 +29,30 @@ test('diagram export recognizes spaced and nested fences without consuming surro
     ['mermaid', 'graph LR\nStart --> Finish\n', '> ', second],
   ]);
 });
+test('raster conversion keeps the diagram and following paragraph in one quote', async () => {
+  const source = '> Before\n>\n> ``` mermaid\n> graph TD\n> A --> B\n> ```\n> After\n';
+  const root = document.createElement('article');
+  root.innerHTML = renderMarkdown(source, 'fixture');
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  Object.defineProperty(svg, 'viewBox', { value: { baseVal: { width: 20, height: 30 } } });
+  root.querySelector('.mermaid-block').replaceChildren(svg);
+  const canvas = dom.window.HTMLCanvasElement.prototype;
+  const { getContext, toDataURL } = canvas;
+  const { Image, XMLSerializer } = globalThis;
+  canvas.getContext = () => ({ fillRect() {}, drawImage() {} });
+  canvas.toDataURL = () => png;
+  globalThis.Image = class { async decode() {} };
+  globalThis.XMLSerializer = dom.window.XMLSerializer;
+  try {
+    const output = document.createElement('article');
+    output.innerHTML = renderMarkdown(await conversionMarkdown(source, root), 'fixture');
+    assert.equal(output.children.length, 1);
+    assert.equal(output.firstElementChild.tagName, 'BLOCKQUOTE');
+    const quote = output.firstElementChild;
+    assert.deepEqual([...quote.querySelectorAll('p')].map(p => p.textContent.trim()), ['Before', '', 'After']);
+    assert.equal(quote.querySelector('img')?.getAttribute('src'), png);
+  } finally {
+    Object.assign(canvas, { getContext, toDataURL });
+    Object.assign(globalThis, { Image, XMLSerializer });
+  }
+});

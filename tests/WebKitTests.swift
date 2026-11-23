@@ -31,6 +31,9 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
       host.show(hidden: true)
+      host.webView.configuration.userContentController.addUserScript(WKUserScript(
+        source: "if (location.pathname.endsWith('/project-diagrams.html')) Object.defineProperty(crypto, 'randomUUID', { value: undefined })",
+        injectionTime: .atDocumentStart, forMainFrameOnly: false))
       host.webView.navigationDelegate = self
       DispatchQueue.main.asyncAfter(deadline: .now() + 180) {
         fputs("WebKit test timed out\n", stderr)
@@ -84,12 +87,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           print("PASS: native WebKit bridge persisted exact editor bytes")
           Task { @MainActor in
             do {
-              try await self.checkMenuLocale()
               try await self.checkLearningPersistence()
               try await self.checkInterruptedMove()
               try await self.checkCollisionOnlyRecovery()
               try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
+              try await self.checkMenuLocale()
               exit(0)
             } catch { self.fail(error) }
           }
@@ -98,11 +101,50 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     } catch { fail(error) }
   }
   @MainActor func checkMenuLocale() async throws {
-    _ = try await host.webView.callAsyncJavaScript("document.documentElement.lang = 'es'; return await window.desktop.ready()", arguments: [:], in: nil, contentWorld: .page)
-    host.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: host.window))
-    let items = NSApp.mainMenu?.items.flatMap { $0.submenu?.items ?? [] } ?? []
-    guard items.first(where: { $0.representedObject as? String == "clean-converted" })?.title == "Limpiar texto convertido…",
-          items.first(where: { $0.representedObject as? String == "collect-reading" })?.title == "Recopilar resaltados y avisos" else {
+    func waitFor(_ predicate: () -> Bool) async throws {
+      let deadline = ContinuousClock.now + .seconds(5)
+      while !predicate() {
+        guard ContinuousClock.now < deadline else { throw NativeFailure("Native menu focus transition timed out.") }
+        try await Task.sleep(nanoseconds: 50_000_000)
+      }
+    }
+    func labels() -> [String?] {
+      let items = NSApp.mainMenu?.items.flatMap { $0.submenu?.items ?? [] } ?? []
+      return ["clean-converted", "collect-reading"].map { action in
+        items.first(where: { $0.representedObject as? String == action })?.title
+      }
+    }
+    let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
+    defer { other.orderOut(nil) }
+    NSApp.setActivationPolicy(.regular)
+    NSApp.activate(ignoringOtherApps: true)
+    host.window.makeKeyAndOrderFront(nil)
+    try await waitFor { self.host.window.isKeyWindow }
+    let english = labels()
+    guard english == ["Clean converted text…", "Collect highlights and callouts"] else { throw NativeFailure("English File menu was not built.") }
+    host.webView.navigationDelegate = host
+    other.makeKeyAndOrderFront(nil)
+    try await waitFor { other.isKeyWindow }
+    host.rendererReady = false
+    _ = try await host.webView.callAsyncJavaScript("""
+      window.__omarkie.command({action:'preferences'});
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const select = document.querySelector('select[aria-label="Interface Language"]');
+        if (select) {
+          select.value = 'es';
+          setTimeout(() => select.dispatchEvent(new Event('change', {bubbles:true})), 0);
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      throw new Error('Language preference did not open');
+      """, arguments: [:], in: nil, contentWorld: .page)
+    try await waitFor { self.host.rendererReady }
+    guard other.isKeyWindow, labels() == english else { throw NativeFailure("Background reload replaced the key window menu.") }
+    host.window.makeKeyAndOrderFront(nil)
+    try await waitFor { self.host.window.isKeyWindow }
+    guard labels() == ["Limpiar texto convertido…", "Recopilar resaltados y avisos"] else {
       throw NativeFailure("Native File menu lost the background renderer locale on focus.")
     }
   }
@@ -336,6 +378,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
     }
     print("PASS: native Zotero stale/live state, PDF resolution, chapter order and one citeproc bibliography")
+    let cached = directory.appendingPathComponent("bibliographies/" + hashData(Data(root.utf8)) + ".json")
+    let before = try Data(contentsOf: cached)
+    _ = try await host.openShowcase(names: [])
+    try atomicWrite(export, Data("[{\"id\":\"closed\",\"type\":\"book\",\"title\":\"Closed vault must not refresh\"}]".utf8))
+    try await Task.sleep(nanoseconds: 1_600_000_000)
+    guard try Data(contentsOf: cached) == before else { throw NativeFailure("Zotero refreshed after the last window left its vault.") }
   }
   func fail(_ error: Error) {
     fputs("\(error)\n", stderr)
