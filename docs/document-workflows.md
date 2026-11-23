@@ -32,7 +32,7 @@
 
 ## Clean converted text
 
-- File → Clean converted text, or Reading Layers → Clean, opens a read-only preview. Back to source or Esc hides it without applying.
+- File → Clean converted text, or Reading Layers → Clean, opens a read-only preview. Back to source or Esc hides it without applying. See [preview media](#preview-media).
 - Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
 - A change to the note or its disk revision requires a fresh preview.
 - Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
@@ -44,7 +44,6 @@
 
 - Open a vault folder and a saved Markdown file in either desktop app. Open **Reading Layers** in the status bar.
 - Eyes show or hide layers per document. The pencil marks the active layer. L0 is locked; close the rail to edit the source.
-- Remote media stays off in the reader, even if enabled for editing.
 - Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
@@ -53,6 +52,11 @@
 - Trash and macOS Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes. Electron cannot undo Trash in Omarkie.
 - Tracked notes that become unreadable during a move may retain history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
+
+### Preview media
+
+- Reading Layers and Clean block remote media even if editing allows it.
+- Vault media and supported inline `data:` and page-created `blob:` media still render. In mixed image or audio/video sources, previews drop remote candidates and keep supported local fallbacks.
 
 ## Study cards (L5)
 

@@ -52,7 +52,10 @@ On Linux, `electron/omarchy.mjs` reads `~/.local/state/omarchy/current/theme/col
 
 Each window has its own web view, document store, model and session file. Opening a file that is already open focuses its window. The front end only passes document IDs; the host tracks which files each record may touch. Saves write a sibling temporary file, flush it, compare the on-disk hash again and rename atomically; an external change keeps the draft and reports a conflict. The resource protocol serves relative and absolute images and media for open documents only, honours a YAML root, and refuses symbolic links and oversized resources.
 
-The bridge only accepts the main frame of the local app origin. Remote images, media and embeds are off by default. The renderer strips remote attributes; Electron also blocks HTTP(S) and WebSocket requests from the app window, including loopback, except for the Vite origin in development. This filter does not cover host-side requests. Sanitised HTML drops scripts, event handlers and forged editor attributes.
+The bridge only accepts the main frame of the local app origin. Sanitised HTML drops scripts, event handlers and forged editor attributes. When remote media is off, the renderer filters remote resources.
+
+- Electron blocks HTTP(S) and WebSocket requests from the app window, including loopback, except for the Vite origin in development. This filter does not cover host-side requests.
+- macOS uses a WebKit content rule list for offline views and project PDF rendering. It blocks HTTP(S), WS(S) and FTP(S), not local schemes. CSP and HTML sanitisation still apply; `data:` and `blob:` media support does not grant navigation permission.
 
 Spellcheck languages are stored with editor preferences and validated against Electron’s available languages before applying them to the default session. Bundled en-US, es-ES, ca and ro-RO `.bdic` dictionaries are seeded into the profile, and the dictionary download URL points at the app's own local dictionaries folder. Other languages find nothing there and simply have no spellcheck; no Google dictionary host is contacted. System Hunspell `.aff`/`.dic` files in `/usr/share/hunspell` are not Chromium `.bdic` dictionaries and cannot be used directly. macOS uses the system spellchecker and its language settings.
 

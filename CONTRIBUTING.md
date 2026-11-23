@@ -66,7 +66,7 @@ Focused suites:
 | Command | Coverage | Environment |
 | --- | --- | --- |
 | `npm run test:native` | File bytes, atomic saves, recovery, conflicts, and workspace operations | macOS |
-| `npm run test:webkit` | WKWebView, native bridge, reader tools, cited-PDF path resolution, and document export, including project PDF from the UI. Reading Layers and Clean each verify local image decoding and zero remote fixture requests after an opted-in editing control. | macOS + Pandoc |
+| `npm run test:webkit` | WKWebView, native bridge, reader tools, cited-PDF path resolution, and document export, including project PDF from the UI. Reading Layers and Clean each check decoding of vault, inline data and blob images, local fallback retention, and zero remote fixture requests after an opted-in editing control. | macOS + Pandoc |
 | `npm run test:browser` | Illustrated startup, decoded pictures, source roundtrip and restored drafts | Playwright Chromium; run `npm run build` first |
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
