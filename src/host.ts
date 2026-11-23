@@ -175,13 +175,15 @@ export const host: Host = window.desktop
   ? new Proxy({ native: true } as Host, {
       get(target, name: keyof Host) {
         if (name === "native") return true;
+        if (name === "checkGrammar" && !window.desktop![name]) return undefined;
+        if (name === "bibliography" && !window.desktop?.bibliography) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
-            const error = new Error(response.error);
+            const error = new Error(response.code === "LEARNING_ERROR" ? t(response.error) : response.error);
             Object.assign(error, { code: response.code });
             throw error;
           }

@@ -4,13 +4,14 @@ window.addEventListener("error", (event) => errors.push(event.message));
 window.addEventListener("unhandledrejection", (event) =>
   errors.push(String(event.reason)),
 );
-const wait = async (predicate) => {
-  const deadline=Date.now()+10000;
-  while (Date.now()<deadline) {
-    if (predicate()) return;
+const wait = async (predicate, label = "Condition not reached", timeout = 10000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const result = predicate();
+    if (result) return result;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("Condition not reached");
+  throw new Error(label);
 };
 const check = (condition, label) => {
   if (!condition) throw new Error(label);
@@ -70,6 +71,164 @@ const readSource = () =>
     .join("\n");
 try {
   await wait(() => root()?.querySelector("strong"));
+  check(document.documentElement.lang === "en", "native fixture starts in English");
+  const cleanInput = "# Clean fixture\n\npublisher artifact\n\nA reconst-\nruction.\n";
+  const clean = await window.desktop.cleanConverted(cleanInput);
+  check(clean.ok && clean.value === "# Clean fixture\n\nA reconst-\nruction.\n", "native Clean CLI processes a private copy");
+  const documentId = "webkit-fixture";
+  const store = request => window.desktop.readingStore(documentId, request);
+  const block = { block: "This anchored sentence has enough words to survive a spelling edit.", headings: ["Synthetic fixture"], line: 4 };
+  const note = await store({ action: "put", item: { type: "note", id: "native-note", body: "Native margin note.", anchor: { ...block, quote: "anchored sentence" } } });
+  if (!note.ok) throw new Error(`Native margin note write failed: ${note.error}`);
+  check(note.value.anchor.hash === "4c1f7343f2c05c4dca5e59fb2d75e1a0ef372c737c897f79419debe437aea2c0" && note.value.document === "WebKit-fixture.md", "native bridge creates a scoped and hashed margin note");
+  const fuzzy = await store({ action: "resolve", blocks: [{ ...block, line: 11, block: block.block.replace("spelling", "speling") }] });
+  const orphan = await store({ action: "resolve", blocks: [] });
+  check(fuzzy.ok && fuzzy.value[0].line === 11 && orphan.ok && orphan.value[0].line === null, "native fuzzy reattachment and orphaning share the journal");
+  const card = await store({ action: "put", item: { type: "card", id: "native-card", front: "Synthetic question", back: "Synthetic answer" } });
+  const answer = await store({ action: "put", owner: "WebKit-fixture.md", item: { type: "answer", id: "native-answer", cardId: "native-card", rating: 5 } });
+  const review = await store({ action: "list", scope: "vault", types: ["card", "answer"] });
+  check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
+  const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });
+  check(!unknown.ok, "native reading store rejects an unregistered document");
+  const vault = (await window.desktop.restore()).value.folder;
+  const renamed = await window.desktop.fileOperation({ action: "rename", path: `${vault}/WebKit-fixture.md`, name: "WebKit-renamed.md" });
+  const movedEntries = await store({ action: "list" });
+  check(renamed.ok && movedEntries.ok && movedEntries.value.length === 3 && movedEntries.value.every(item => item.document === "WebKit-renamed.md"), "native rename carries the note, card and rating");
+  const undone = await window.desktop.fileOperation({ action: "undo" });
+  const restoredEntries = await store({ action: "list" });
+  check(undone.ok && restoredEntries.ok && restoredEntries.value.length === 3 && restoredEntries.value.every(item => item.document === "WebKit-fixture.md"), "native rename undo restores the reading paths");
+  const payload = { baseUrl: payloadBaseURL, confirmedOrigin: new URL(payloadBaseURL).origin, model: "native-fixture", source: "Synthetic source paragraph." };
+  const rejected = await window.desktop.payloadRequest({ ...payload, confirmedOrigin: "https://example.invalid" });
+  check(!rejected.ok, "native Payload rejects an unconfirmed origin");
+  const summary = await window.desktop.payloadRequest(payload);
+  const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
+  const under = await window.desktop.payloadRequest({ ...payload, model: "fixture-under" });
+  const over = await window.desktop.payloadRequest({ ...payload, model: "fixture-over" });
+  const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });
+  const overhead = JSON.stringify({ choices: [{ message: { content: "" } }] }).length;
+  check(under.ok && under.value === "x".repeat(63999 - overhead) && !over.ok && !failed.ok, "native Payload accepts only a valid in-limit 2xx completion");
+  const remotePreference = async enabled => {
+    window.__omarkie.command({ action: "preferences" });
+    const checkbox = () => document.querySelector('input[name="remoteImages"]');
+    const field = await wait(checkbox, `Remote media preference did not appear (enabled=${enabled})`);
+    if (field.checked !== enabled) field.click();
+    document.querySelector('.dialog-heading button').click();
+  };
+  await remotePreference(true);
+  const image = (container, alt) => container?.querySelector(`img[alt="${alt}"]`);
+  const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC";
+  const blobURL = URL.createObjectURL(new Blob([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], { type: "image/png" }));
+  const dataURL = `data:image/png;base64,${pixel}`;
+  const mediaFiles = await window.desktop.scan();
+  if (!mediaFiles.ok) throw new Error(mediaFiles.error);
+  const decoded = (img, url, width, height) => img?.currentSrc === url && img.naturalWidth === width && img.naturalHeight === height;
+  const probe = async (phase, name, container) => {
+    const img = new Image();
+    let loaded;
+    img.onload = () => { loaded = true; };
+    img.onerror = () => { loaded = false; };
+    try {
+      container.append(img);
+      img.src = `${grammarOrigin}/reader-media-${phase}-${name}`;
+      await wait(() => loaded !== undefined, `${phase}: media probe ${name} did not settle`);
+      return loaded;
+    } finally { img.remove(); }
+  };
+  const openMedia = async phase => {
+    const route = `/reader-media-${phase}-control`;
+    const file = mediaFiles.value.files.find(file => file.relative === `preview-media/Media-${phase}.md`);
+    if (!file) throw new Error(`${phase}: missing saved vault note`);
+    const opened = await window.desktop.openToken(file.token);
+    if (!opened.ok) throw new Error(`${phase}: could not open media fixture: ${opened.error}`);
+    const record = opened.value;
+    const asset = name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+    const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x, fallback.svg 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><video poster="${blobURL}"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
+    window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
+    await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
+    await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
+    check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
+    return asset;
+  };
+  const assertOffline = async (phase, container, asset) => {
+    for (const [alt, url, width, height] of [
+      ["Local image", asset("local.svg"), 11, 17],
+      ["Preview image", asset("fallback.svg"), 11, 17],
+      ["HTML blob", blobURL, 1, 1], ["Data image", dataURL, 1, 1], ["Markdown blob", blobURL, 1, 1],
+    ]) await wait(() => {
+      const preview = container();
+      const alert = preview?.querySelector("[role=alert]");
+      if (alert) throw new Error(`${phase}: ${alert.textContent}`);
+      return decoded(image(preview, alt), url, width, height);
+    }, `${phase}: ${alt} did not decode in preview`);
+    const preview = container(), video = preview.querySelector("video"), fallback = image(preview, "Preview image");
+    check(fallback.getAttribute("srcset") === `${asset("fallback.svg")} 1x` && video && !video.hasAttribute("poster"), `${phase}: preview keeps the local candidate and strips remote media`);
+    check(preview.querySelectorAll("video")[1]?.getAttribute("poster") === blobURL, `${phase}: preview keeps the local video poster`);
+    check([null, "11"].includes(fallback.getAttribute("width")) && [null, "17"].includes(fallback.getAttribute("height")), `${phase}: remote candidate dimensions do not size the local fallback`);
+    check(!await probe(phase, "offline-probe", preview), `${phase}: native policy blocks remote preview requests`);
+  };
+  const closeMedia = async phase => {
+    window.__omarkie.command({ action: "close" });
+    await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media note did not close`);
+  };
+  const readingAsset = await openMedia("reading");
+  const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
+  readingToggle.click();
+  await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
+  await assertOffline("reading", root, readingAsset);
+  await closeMedia("reading");
+  const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
+  readingClose.click();
+  await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
+  const cleanAsset = await openMedia("clean");
+  window.__omarkie.command({ action: "clean-converted" });
+  const cleanLayer = () => document.querySelector(".clean-layer");
+  await wait(cleanLayer, "Clean preview did not open");
+  await assertOffline("clean", cleanLayer, cleanAsset);
+  await closeMedia("clean");
+  URL.revokeObjectURL(blobURL);
+  window.__omarkie.command({ action: "document-tools" });
+  const writingTab = await wait(() => document.querySelector('.workflow-tabs [data-tab="writing"]:enabled'), "Document Tools writing tab did not become enabled");
+  writingTab.click();
+  const exportPdf = await wait(() => document.querySelector('[data-testid="project-export-pdf"]:enabled'), "Project PDF export button did not become enabled");
+  exportPdf.click();
+  await wait(() => {
+    if (exportPdf.disabled) return false;
+    const message = document.querySelector('.utility-dialog [role="alert"]')?.textContent;
+    if (!message) return false;
+    if (message !== "PDF exported.") throw new Error(`Project PDF export: ${message}`);
+    return true;
+  }, "Project PDF export did not finish after diagram preparation, conversion and rendering", 75000);
+  check(true, "native UI project PDF export completes");
+  document.querySelector('.dialog-heading button').click();
+  await remotePreference(false);
+  check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");
+  const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
+  check(sizes.ok && sizes.value["Background-fixture.png"]?.join("x") === "1x1" && Object.keys(sizes.value).length === 1, "native original dimensions are scoped to owned images");
+  const grammar = await window.desktop.checkGrammar(`${grammarOrigin}/v2/check`, "", "A😀 + &?");
+  const redirected = await window.desktop.checkGrammar(`${grammarOrigin}/redirect/v2/check`, "", "A😀 + &?");
+  const insecure = await window.desktop.checkGrammar("http://example.invalid/v2/check", "", "Never send.");
+  check(grammar.ok && grammar.value.matches[0].message === "Synthetic finding" && !redirected.ok && !insecure.ok, "native Grammar uses bounded approved transport without redirects");
+  const stopped = await window.desktop.readAloud(null);
+  const text = "Native café $(literal) speech.😀".padEnd(256_000, "x");
+  const spoken = await window.desktop.readAloud(text);
+  const tooLong = await window.desktop.readAloud(text + "x");
+  check(stopped.ok && spoken.ok && !tooLong.ok, "native speech accepts 256,000 UTF-16 units and rejects 256,001");
+  const linked = await window.desktop.bibliography(vault, "link");
+  const suggestions = await window.desktop.bibliography(vault, "suggest", "wat");
+  const authorSuggestions = await window.desktop.bibliography(vault, "suggest", "Garci\u0301a");
+  check(authorSuggestions.ok && authorSuggestions.value[0]?.id === "watched", "native citation suggestions find Unicode authors");
+  const wrongVault = await window.desktop.bibliography(`${vault}/unopened`, "info");
+  check(linked.ok && linked.value && suggestions.ok && suggestions.value[0].id === "watched" && !wrongVault.ok, "native bridge authorizes only the open bibliography vault");
+  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver" };
+  const chapters = ["# First native chapter\n\nSource [@watched].\n", "# Second native chapter\n\nAgain [@watched].\n"];
+  const outside = await window.desktop.exportConverted({ folder: `${vault}/unknown` }, "docx", chapters, "", citeOptions);
+  check(!outside.ok, "native bridge rejects project export from an unknown vault");
+  const projectDocx = await window.desktop.exportConverted({ folder: vault }, "docx", chapters, "", citeOptions);
+  if (!projectDocx.ok) throw new Error(`Native cited project DOCX: ${projectDocx.error}`);
+  const media = `<video preload="auto" src="${grammarOrigin}/project-export-media"></video>`;
+  const projectPdf = await window.desktop.exportConverted({ folder: vault }, "pdf", [chapters[0] + "\n" + media, chapters[1]], "", citeOptions);
+  if (!projectPdf.ok) throw new Error(`Native cited project PDF: ${projectPdf.error}`);
+  check(true, "native bridge exports cited project DOCX and PDF");
   check(
     location.protocol === "omarkie:" && window.desktop !== undefined,
     "bundled modules load through native WebKit scheme and bridge",
@@ -77,22 +236,22 @@ try {
   const originalResponse = await window.desktop.restore();
   if (!originalResponse.ok) throw new Error(originalResponse.error);
   const original = originalResponse.value.documents[0].content;
-  const openPreferences = async () => { window.__omarkie.command({action:"preferences"}); await wait(() => document.querySelector('[aria-label="关闭偏好设置"]')); };
-  const preferenceButton = text => [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === text);
-  await openPreferences(); preferenceButton('选择图片…').click();
+  const openPreferences = async () => { window.__omarkie.command({action:"preferences"}); await wait(() => document.querySelector('.background-settings')); };
+  const chooseBackground = () => document.querySelector('.background-file button:first-of-type').click();
+  await openPreferences(); chooseBackground();
   await wait(() => document.querySelector('.editor-background'));
   check((await window.desktop.background()).value.name === 'Background-fixture.png','native background picker persists the managed image');
-  const setRange = (label,value) => { const field = document.querySelector(`[aria-label="${label}"]`); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,String(value)); field.dispatchEvent(new Event('input',{bubbles:true})); };
-  setRange('背景不透明度',42); setRange('背景模糊',7);
+  const setRange = (index,value) => { const field = document.querySelectorAll('.background-controls input[type="range"]')[index]; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(field,String(value)); field.dispatchEvent(new Event('input',{bubbles:true})); };
+  setRange(0,42); setRange(1,7);
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.42');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(7px)','background controls change the image layer without dimming text');
-  preferenceButton('重置效果').click();
+  document.querySelector('.background-reset').click();
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(0px)','reset restores subtle background defaults');
-  preferenceButton('清除背景').click(); await wait(() => !document.querySelector('.editor-background'));
+  document.querySelector('.background-file button:nth-of-type(2)').click(); await wait(() => !document.querySelector('.editor-background'));
   check((await window.desktop.background()).value === null,'clear background updates native persistence');
-  preferenceButton('选择图片…').click(); await wait(() => document.querySelector('.editor-background'));
-  document.querySelector('[aria-label="关闭偏好设置"]').click();
+  chooseBackground(); await wait(() => document.querySelector('.editor-background'));
+  document.querySelector('.dialog-heading button').click();
   await sourceMode(true);
   check(getComputedStyle(document.querySelector('.source-surface .cm-editor')).backgroundColor === 'rgba(0, 0, 0, 0)' && readSource() === original,'background remains visible in source mode without changing Markdown');
   await sourceMode(false);
@@ -101,9 +260,9 @@ try {
     !root().querySelector(".math-error,[data-mjx-error]"),
     "offline MathJax SVG renders document macros and extended fonts",
   );
-  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('[role="dialog"][aria-label="插件管理"]')); };
-  const pluginCard = name => [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
-  const closePlugins = () => document.querySelector('[aria-label="关闭插件管理"]').click();
+  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list')); };
+  const pluginCard = (name, id) => id ? document.querySelector(`.plugin-card[data-plugin-id="${id}"]`) : [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
+  const closePlugins = () => document.querySelector('.dialog-heading button').click();
   pointText("粗体", 1);
   await openPlugins();
   await wait(() => pluginCard('Native-plugin-fixture'));
@@ -127,15 +286,16 @@ try {
   await wait(()=>!document.querySelector('style[data-plugin^="local-"]'));
   const stoppedTicks=window.packageProbe.ticks;await new Promise(resolve=>setTimeout(resolve,100));
   check(window.packageProbe.ticks===stoppedTicks,'native installed plugin timers stop when disabled');
-  for (const [name, id] of [['列表折叠','collapse_list'],['只读模式','read_only'],['无图阅读','no_image'],['段落聚焦','blur'],['常显语法标记','static_markers'],['反色夜间模式','dark']]) {
-    pluginCard(name).querySelector('input[type="checkbox"]').click();
-    await wait(() => !pluginCard(name).querySelector('.plugin-actions button').disabled);
-    check(!pluginCard(name).querySelector('[role="alert"]'), 'upstream ' + id + ' plugin runs in native WebKit');
+  for (const id of ['collapse_list','read_only','no_image','blur','static_markers','dark']) {
+    const card = pluginCard(null, id);
+    card.querySelector('input[type="checkbox"]').click();
+    await wait(() => !pluginCard(null, id).querySelector('.plugin-actions button').disabled);
+    check(!card.querySelector('[role="alert"]'), 'upstream ' + id + ' plugin runs in native WebKit');
     if (id === 'collapse_list') {
-      [...pluginCard(name).querySelectorAll('button')].find(button=>button.textContent==='插件命令…').click();
-      const command=()=>[...pluginCard(name).querySelectorAll('button')].find(button=>button.textContent==='记住折叠状态');
-      await wait(()=>command() || pluginCard(name).querySelector('[role="alert"]')).catch(()=>{throw new Error('Missing plugin command: '+pluginCard(name).textContent);});
-      if (!command()) throw new Error('Missing plugin action: '+pluginCard(name).textContent);
+      card.querySelector('.plugin-actions button:last-of-type').click();
+      const command=()=>pluginCard(null, id).querySelector('button[aria-pressed]');
+      await wait(()=>command() || card.querySelector('[role="alert"]')).catch(()=>{throw new Error('Missing plugin command: '+card.textContent);});
+      if (!command()) throw new Error('Missing plugin action: '+card.textContent);
       check(command()?.getAttribute('aria-pressed')==='true','upstream dynamic command is visible with its checked state');
       command().click(); await wait(()=>command()?.getAttribute('aria-pressed')==='false');
       check(true,'plugin command calls the original plugin and persists the changed setting');
@@ -148,7 +308,7 @@ try {
     }
     if (id === 'static_markers') check(getComputedStyle(root().querySelector('[data-mark="em"] .md-meta')).display === 'inline', 'static markers plugin changes rendered inline metadata');
     if (id === 'dark') check(document.documentElement.classList.contains('plugin-dark'), 'dark plugin applies its original root class');
-    pluginCard(name).querySelector('input[type="checkbox"]').click();
+    pluginCard(null, id).querySelector('input[type="checkbox"]').click();
     await wait(() => !document.querySelector('style[data-plugin="'+id+'"]'));
   }
   check(!document.documentElement.classList.contains('plugin-dark') && root().getAttribute('aria-readonly') === 'false', 'plugin teardown restores editing and removes presentation effects');
@@ -251,7 +411,7 @@ try {
   await sourceMode(false);
   const png = Uint8Array.from(
     atob(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=",
+      pixel,
     ),
     (char) => char.charCodeAt(0),
   );
@@ -301,7 +461,7 @@ try {
   check(readSource() === source, "native file operation preparation, path synchronization and undo preserve exact editor bytes");
   window.__omarkie.command({ action: "pdf" });
   await wait(() =>
-    document.querySelector(".toast")?.textContent.includes("PDF 已导出"),
+    document.querySelector(".toast")?.textContent.includes("PDF exported"),
   );
   check(
     true,
@@ -315,17 +475,17 @@ try {
   if (!marginPdf.ok) throw new Error(marginPdf.error);
   check(true, "native PDF ignores an unpainted trailing block margin");
   window.__omarkie.command({ action: "html" });
-  await wait(() => document.querySelector(".toast")?.textContent.includes("HTML 已导出"));
+  await wait(() => document.querySelector(".toast")?.textContent.includes("HTML exported"));
   check(true, "native HTML export embeds local fonts and images without live app links");
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: encoding dialog"]});
   // Drive the new encoding dialog through its real native bridge and byte writer.
   for (const encoding of ['gb18030', 'utf-16be', 'utf-8']) {
-    document.querySelector('[aria-label="更改文本编码"]').click(); await wait(() => document.querySelector('[aria-label="文本编码"]'));
-    const select = document.querySelector('select[aria-label="文本编码"]'); select.value = encoding; select.dispatchEvent(new Event('change', { bubbles: true }));
+    document.querySelector('[data-testid="text-encoding"]').click(); await wait(() => document.querySelector('[role="dialog"] select'));
+    const select = document.querySelector('[role="dialog"] select'); select.value = encoding; select.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise(resolve => setTimeout(resolve, 20));
-    [...document.querySelectorAll('[role="dialog"] button')].find(button => button.textContent === '转换并保存').click();
+    document.querySelector('[role="dialog"] .dialog-actions .primary-button').click();
     await wait(() => !document.querySelector('[role="dialog"]'));
-    check(document.querySelector('[aria-label="更改文本编码"]').textContent.includes(({gb18030:"GB18030", "utf-16be":"UTF-16 BE", "utf-8":"UTF-8"})[encoding]), 'native encoding dialog converts and updates metadata: ' + encoding);
+    check(document.querySelector('[data-testid="text-encoding"]').textContent.includes(({gb18030:"GB18030", "utf-16be":"UTF-16 BE", "utf-8":"UTF-8"})[encoding]), 'native encoding dialog converts and updates metadata: ' + encoding);
   }
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: complex source mode"]});
   await sourceMode(false);
@@ -342,11 +502,11 @@ try {
   window.webkit.messageHandlers.omarkie.postMessage({id:"phase",name:"progress",args:["phase: complex diagram"]});
   await wait(() => root()?.querySelectorAll('.mermaid-block svg').length === 3);
   check(true, 'complex Chinese fixture renders nested lists, tables, images, footnotes, math and Mermaid');
-  window.__omarkie.command({ action: 'pdf' }); await wait(() => document.querySelector('.toast')?.textContent.includes('PDF 已导出'));
+  window.__omarkie.command({ action: 'pdf' }); await wait(() => document.querySelector('.toast')?.textContent.includes('PDF exported'));
   check(true, 'complex native PDF export includes rendered Chinese tables, math, images, diagrams and footnotes');
   for (const format of ['docx', 'odt', 'rtf', 'epub', 'latex', 'rst', 'mediawiki', 'textile', 'opml', 'revealjs']) {
     window.__omarkie.command({ action: format });
-    await wait(() => { const message = document.querySelector('.toast')?.textContent || ''; if (/失败|无法|无效|不能|超时|需要 Pandoc/.test(message)) throw new Error(format + ': ' + message); return message.includes(format.toUpperCase() + ' 已导出'); });
+    await wait(() => { const message = document.querySelector('.toast')?.textContent || ''; if (/失败|无法|无效|不能|超时|需要 Pandoc|failed|could not/i.test(message)) throw new Error(format + ': ' + message); return message.includes(format.toUpperCase() + ' exported'); });
     check(true, 'real Pandoc ' + format + ' export completes from the rendered complex document');
   }
   const convertedImports = {};

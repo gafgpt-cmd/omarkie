@@ -11,7 +11,7 @@ export function PluginsDialog({ definitions, preferences, states, toggle, config
   const [commands,setCommands] = useState<{id:string;items:PluginAction[]} | null>(null);
   return <Dialog title={t("插件管理")} close={close}>
     <div className="plugin-intro"><p>{t("Fifteen optional plugins, available offline.")}</p><p className="dialog-note">{t("Original community plugins and focused reading ports. Enable only what you need.")}</p></div>
-    <div className="plugin-list">{definitions.map(definition => { const state = states[definition.id], enabled = preferences[definition.id]?.enabled || false; return <section className="plugin-card" key={definition.id}>
+    <div className="plugin-list">{definitions.map(definition => { const state = states[definition.id], enabled = preferences[definition.id]?.enabled || false; return <section className="plugin-card" key={definition.id} data-plugin-id={definition.id}>
       <div className="plugin-card-top"><div><h3>{t(definition.name)}</h3><span className="plugin-origin">{definition.builtin ? t("社区插件 · 随应用提供") : t("本地安装")}</span></div><label className="plugin-toggle"><input type="checkbox" aria-label={t("启用{{name}}", { name: t(definition.name) })} checked={enabled} disabled={state?.status === "loading"} onChange={event => toggle(definition.id, event.target.checked)} /><span>{state?.status === "loading" ? t("正在加载") : state?.status === "error" ? t("加载失败") : enabled ? t("已启用") : t("未启用")}</span></label></div>
       <p>{definition.description}</p>
       {state?.status === "error" && <p role="alert" className="form-error">{t("加载失败：{{error}}", { error: state.error })}</p>}

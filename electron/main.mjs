@@ -16,10 +16,10 @@ import { PhotoPreviews, chromiumPreview } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
-import { vaultSnapshot, exportBundle } from "./document-workflows.mjs";
+import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
 import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
@@ -31,6 +31,7 @@ import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
+import { ttsTextLimit } from "../shared/tts.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -66,6 +67,8 @@ let window,
 const pending = [], pendingPdfs = [];
 let rendererReady = false;
 let revealWindow = () => {};
+let speech;
+function stopSpeech() { speech?.abort(); speech = undefined; }
 
 const pluginToken = randomUUID();
 const authorizedPlugin = item => item && ({ ...item, url: item.url + "?token=" + pluginToken });
@@ -119,7 +122,19 @@ const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
+let bibliography;
+function releaseBibliography() { bibliography?.close(); bibliography = undefined; }
+async function vaultBibliography(folder) {
+  if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+  if (bibliography?.root === folder) return bibliography;
+  const { VaultBibliography } = await import("./bibliography.mjs");
+  if (folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+  if (bibliography && bibliography.root !== folder) releaseBibliography();
+  return bibliography ??= new VaultBibliography(store.dataDir, folder, () => send("bibliography-changed"));
+}
 const handlers = {
+  payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
+  payloadKey: async (_, baseUrl, value) => (await import("./payload.mjs")).setPayloadKey(baseUrl, value),
   viewState: (_, _focus, _typewriter, _sidebar, checked, disabled, context) => {
     viewChecked = checked || {};
     viewDisabled = disabled === true;
@@ -131,6 +146,21 @@ const handlers = {
     for (const definition of menuDefinitions) {
       const item = Menu.getApplicationMenu()?.getMenuItemById(definition.action);
       if (item) item.enabled = commandEnabled(definition);
+    }
+  },
+  readAloud: async (_, text) => {
+    if (text === null) { stopSpeech(); return; }
+    if (typeof text === "string" && text.length > ttsTextLimit) throw new Error(t("朗读文字过长，请选择较短的段落。"));
+    if (typeof text !== "string" || !text.trim()) throw new Error(t("没有可朗读的文字。"));
+    const configured = process.env.OMARKIE_TTS?.trim();
+    if (!configured) throw new Error(t("未配置朗读：请设置 OMARKIE_TTS。"));
+    stopSpeech();
+    const current = speech = new AbortController();
+    try {
+      const { speak } = await import("./tts.mjs");
+      await speak(configured, text, current.signal);
+    } finally {
+      if (speech === current) speech = undefined;
     }
   },
   background: () => readBackground(store.dataDir),
@@ -163,6 +193,7 @@ const handlers = {
     if (Array.isArray(languages) && process.platform !== "darwin") session.defaultSession.setSpellCheckerLanguages([...new Set(languages.filter(code => typeof code === "string" && available.includes(code)))]);
     return available;
   },
+  checkGrammar: async (_, url, approvedOrigin, text) => (await import("./grammar.mjs")).checkGrammar(url, approvedOrigin, text),
   setRemoteImages: async (_, value) => { remoteImages = value === true; return true; },
   setLanguage: async (_, choice) => {
     if (choice !== "auto" && !languages.some(([code]) => code === choice)) throw new Error(t("语言无效。"));
@@ -171,23 +202,59 @@ const handlers = {
     applyLanguage(choice); buildMenu(); setTimeout(() => window?.webContents.reload()); return true;
   },
   installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : installTheme(result.filePaths[0], store.dataDir); },
-  readResource: async (_, address) => exportResource(address,store,path.join(root,"dist")),
+  readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
+  cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  readingStore: async (_, id, request) => {
+    const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
+    if (request?.action !== "export") return readingStore(store, id, request);
+    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card"] });
+    const result = await dialog.showSaveDialog(window, { defaultPath: t("阅读笔记.md"), filters: [{ name: "Markdown", extensions: ["md"] }] });
+    if (result.canceled) return false;
+    try { await writeFile(result.filePath, readingMarkdown(entries), { encoding: "utf8", flag: "wx", mode: 0o600 }); }
+    catch { throw new Error(t("无法导出。请选择新的文件名。")); }
+    return true;
+  },
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
-  vaultSnapshot: () => vaultSnapshot(store),
+  vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
+  bibliography: async (_, folder, action, value) => {
+    if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
+    if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
+    if (action === "link") {
+      const result = await dialog.showOpenDialog(window, { title: t("关联 Zotero 自动导出"), properties: ["openFile"], filters: [{ name: "CSL JSON", extensions: ["json"] }] });
+      if (result.canceled) return false;
+      value = result.filePaths[0];
+    }
+    const service = await vaultBibliography(folder);
+    if (action === "link") { await service.run(action, value); return true; }
+    if (action !== "open") return service.run(action, value);
+    const file = await service.run("pdf", value);
+    if (folder !== store.folder || !file || await shell.openPath(file)) throw new Error(t("无法打开引用的本地 PDF"));
+  },
   exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : exportBundle(store, payload, result.filePaths[0]); },
   exportConverted: async (_, id, format, source, html, options) => {
-    const record = store.require(id), ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
-    const result = await dialog.showSaveDialog(window, { defaultPath: record.name.replace(/\.[^.]+$/, "." + ext) });
+    const project = id?.folder;
+    if (project !== undefined && (typeof project !== "string" || project !== store.folder)) throw new Error(t("目录已更新，请刷新后重试。"));
+    if (project ? !Array.isArray(source) || !["docx", "pdf"].includes(format) : typeof source !== "string") throw new Error(t("导出格式无效。"));
+    const profile = store.dataDir;
+    const ext = { latex: "tex", revealjs: "html", mediawiki: "wiki" }[format] || format;
+    const defaultPath = project ? `${path.basename(project)}.${ext}` : store.require(id).name.replace(/\.[^.]+$/, "." + ext);
+    const result = await dialog.showSaveDialog(window, project ? { defaultPath, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : { defaultPath });
     if (result.canceled) return null;
-    return convertExport(store.dataDir, format, source, html, result.filePath, options, async markup => {
-      const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, partition: "document-export-" + randomUUID() } });
+    const destination = project ? await projectDestination(project, result.filePath, ext) : result.filePath;
+    return convertExport(profile, format, source, html, destination, options, async file => {
+      const localPage = pathToFileURL(file).href;
+      const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, javascript: false, partition: "document-export-" + randomUUID() } });
       try {
-        preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !request.url.startsWith("data:") }));
+        preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !(request.resourceType === "mainFrame" && request.url === localPage || request.url.startsWith("data:")) }));
+        preview.webContents.on("will-navigate", event => event.preventDefault());
         preview.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
-        await preview.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(`<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup));
+        if ((await stat(file)).size > 150 * 1024 * 1024) throw new Error(t("资源过大。"));
+        const markup = await readFile(file, "utf8");
+        await writeFile(file, `<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup, "utf8");
+        await preview.loadFile(file);
         return await preview.webContents.printToPDF({ printBackground: true, pageSize: "A4" });
       } finally { preview.destroy(); }
     });
@@ -227,7 +294,11 @@ const handlers = {
     try {
       if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
       if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
-      const change = await workspace.execute(operation, store, file => shell.trashItem(file)); workspace.apply(change, store);
+      const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
+      const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
+      const change = ["rename", "move", "undo", "trash"].includes(operation.action)
+        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
+      workspace.apply(change, store);
       await prepareOperation("commit", change); return change;
     } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
   },
@@ -251,7 +322,7 @@ const handlers = {
     let result = restored;
     if (!result) {
       const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
-      result = { documents, activeId: documents[0].id, folder: folder.folder };
+      result = { documents, activeId: documents[0].id, folder: folder.folder, readingRecoveryWarning: folder.readingRecoveryWarning };
     }
     return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },
@@ -438,7 +509,7 @@ app
     });
     session.defaultSession.setSpellCheckerDictionaryDownloadURL(dictionaryDownloadURL(dictionarySource(root)));
     const devOrigin = development ? new URL(development).origin : null;
-    session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) =>
+    session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (details, callback) =>
       callback({ cancel: !!window && details.webContentsId === window.webContents.id && blocksRequest(details.url, devOrigin, remoteImages) }));
     for (const [name, handler] of Object.entries(handlers))
       ipcMain.handle(`document:${name}`, async (event, ...args) => {
@@ -452,6 +523,7 @@ app
         } catch (error) {
           return { ok: false, error: error.message, code: error.code };
         }
+        finally { if (bibliography && bibliography.root !== store.folder) releaseBibliography(); }
       });
     function createWindow() {
       window = new BrowserWindow({
@@ -491,6 +563,7 @@ app
         callback(false),
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      created.webContents.on("render-process-gone", stopSpeech);
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
       if (development) window.loadURL(development);
@@ -502,8 +575,10 @@ app
         }
       });
       window.on("closed", () => {
+        stopSpeech();
         window = null;
         rendererReady = false;
+        releaseBibliography();
       });
     }
     ipcMain.handle("app:close", (event) => {

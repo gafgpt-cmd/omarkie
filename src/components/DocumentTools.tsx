@@ -3,7 +3,7 @@ import { Dialog } from "./Dialog";
 import "./document-workflows.css";
 import { t } from "../i18n";
 import { host } from "../host";
-import type { ConversionOptions, DocumentRecord, VaultSnapshot, FileEntry } from "../types";
+import type { BibliographyInfo, ConversionOptions, DocumentRecord, VaultSnapshot, FileEntry } from "../types";
 import type { Preferences } from "../preferences";
 import { makeReady, properties, setProperties, validateOKF } from "../../shared/frontmatter.mjs";
 import { referenceIndex, bundlePlan } from "../../shared/references.mjs";
@@ -17,9 +17,10 @@ const jsonValue = (value: unknown) => { try { return JSON.stringify(value); } ca
 function templates(): Template[] {
   try { const value = JSON.parse(localStorage.getItem("omarkie-templates") || "[]"); return Array.isArray(value) ? value.filter(item => typeof item?.name === "string" && typeof item?.content === "string").slice(0, 50) : []; } catch { return []; }
 }
-export function DocumentTools({ record, documents, files, folder, preferences, initial, request, close, open, change, create, convert }: {
+export function DocumentTools({ record, documents, files, folder, preferences, initial, request, close, open, openFolder, change, create, convert }: {
   record: DocumentRecord; documents: DocumentRecord[]; files: FileEntry[]; folder: string | null; preferences: Preferences; initial: ToolTab; request?: string;
   close(): void; open(token: string, line?: number): Promise<void>;
+  openFolder(): Promise<void>;
   change(change: Change): Promise<void>; create(name: string, content: string): Promise<void>;
   convert(format: string, options: ConversionOptions): Promise<void>;
 }) {
@@ -27,7 +28,24 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
   const [preview, setPreview] = useState<Change[]>([]), [report, setReport] = useState<string[]>([]), [tag, setTag] = useState(request?.startsWith("omarkie-tag:") ? decoded(request.slice(12)) : "");
   const [propertyKey, setPropertyKey] = useState("type"), [propertyValue, setPropertyValue] = useState("\"Reference\"");
   const [savedTemplates, setSavedTemplates] = useState(templates), [templateName, setTemplateName] = useState("");
-  const [bibliography, setBibliography] = useState(""), [useCitations, setUseCitations] = useState(false), [letterName, setLetterName] = useState(() => localStorage.getItem("omarkie-letter-name") || ""), [letterDetail, setLetterDetail] = useState(() => localStorage.getItem("omarkie-letter-detail") || "");
+  const [bibliography, setBibliography] = useState<BibliographyInfo | null>(null), [bibliographyDraft, setBibliographyDraft] = useState<string | null>(null);
+  const [useCitations, setUseCitations] = useState(false), [letterName, setLetterName] = useState(() => localStorage.getItem("omarkie-letter-name") || ""), [letterDetail, setLetterDetail] = useState(() => localStorage.getItem("omarkie-letter-detail") || "");
+  const vaultBibliography = folder ? host.bibliography : undefined;
+  const csl = bibliographyDraft ?? bibliography?.csl ?? "";
+  useEffect(() => {
+    if (!vaultBibliography || !folder || tab !== "writing") return;
+    let active = true, revision = 0;
+    function refresh() {
+      const request = ++revision;
+      void vaultBibliography!(folder!, "info").then(
+        result => { if (active && request === revision) setBibliography(result); },
+        error => { if (active && request === revision) setMessage(t(error.message)); },
+      );
+    }
+    const unsubscribe = host.onCommand(({ action }) => { if (action === "bibliography-changed") refresh(); });
+    refresh();
+    return () => { active = false; unsubscribe(); };
+  }, [folder, tab]);
   async function run(task: () => Promise<unknown> | unknown) { setBusy(true); setMessage(""); try { await task(); } catch (error) { setMessage(t((error as Error).message)); } finally { setBusy(false); } }
   async function scan() {
     const value = await host.vaultSnapshot();
@@ -52,12 +70,21 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
     const notes = folder ? (await scan()).notes : [{ token: undefined, relative: record.name, content: record.content }];
     setPreview(notes.filter(note => !/(^|\/)(index|log)\.md$/.test(note.relative)).map(note => ({ token: note.token, relative: note.relative, before: note.content, after: makeReady(note.content, note.relative) })).filter(item => item.after !== item.before));
   }
-  const options = (): ConversionOptions => ({ ...(useCitations ? { bibliography, style: "vancouver" as const } : {}), ...(letterName || letterDetail ? { letterhead: { name: letterName, detail: letterDetail } } : {}) });
+  const options = async (): Promise<ConversionOptions> => {
+    const current = useCitations && bibliographyDraft === null && vaultBibliography && folder ? (await vaultBibliography(folder, "info")).csl : csl;
+    return { ...(useCitations ? { bibliography: current, style: "vancouver" as const } : {}), ...(letterName || letterDetail ? { letterhead: { name: letterName, detail: letterDetail } } : {}) };
+  };
+  async function compile(format: "docx" | "pdf") {
+    if (!folder) throw new Error(t("请先打开文件夹"));
+    // Load project assembly only when the user exports a project.
+    const { exportProject } = await import("../editor/projectExport");
+    if (await exportProject(format, folder, documents, await options())) setMessage(t("{{format}} 已导出。", { format: format.toUpperCase() }));
+  }
   const labels: Record<ToolTab, string> = { properties: t("属性"), references: t("链接与标签"), backlinks: t("反向链接"), graph: t("知识库图谱"), okf: t("OKF"), writing: t("写作与导出"), checks: t("知识库维护") };
   const states: Record<string, string> = { resolved: t("已解析"), external: t("外部链接"), invalid: t("链接无效"), escape: t("链接指向知识库之外"), ambiguous: t("有多个同名目标"), missing: t("未找到目标"), "missing-heading": t("未找到标题") };
   const issues: Record<string, string> = { "index-frontmatter": t("index.md 的前置元数据只能包含 okf_version"), "log-frontmatter": t("log.md 不应包含前置元数据"), "log-date": t("log.md 的日期标题必须是 YYYY-MM-DD"), "missing-frontmatter": t("缺少前置元数据"), "missing-type": t("缺少 type 属性"), "okf-delimiter": t("前置元数据结束标记应为 ---") };
   return <Dialog title={t("文档工具")} close={close}>
-    <nav className="workflow-tabs" aria-label={t("文档工具")}>{(["properties", "references", "backlinks", "graph", "okf", "writing", "checks"] as ToolTab[]).map(value => <button key={value} aria-pressed={tab === value} disabled={busy} onClick={() => { setTab(value); setPreview([]); setReport([]); }}>{labels[value]}</button>)}</nav>
+    <nav className="workflow-tabs" aria-label={t("文档工具")}>{(["properties", "references", "backlinks", "graph", "okf", "writing", "checks"] as ToolTab[]).map(value => <button key={value} data-tab={value} aria-pressed={tab === value} disabled={busy} onClick={() => { setTab(value); setPreview([]); setReport([]); }}>{labels[value]}</button>)}</nav>
     {message && <p role="alert">{message}</p>}
     {busy && <p role="status">{t("处理中…")}</p>}
     {snapshot?.truncated && <p role="alert">{t("清点不完整，请缩小文件夹范围后再转换或导出。")}</p>}
@@ -94,12 +121,40 @@ export function DocumentTools({ record, documents, files, folder, preferences, i
       <ul>{savedTemplates.map(item => <li key={item.name}><button disabled={busy} onClick={() => void run(async () => { await create(item.name + ".md", setProperties(makeReady(item.content, item.name + ".md"), { generated: { by: "process:editor", at: new Date().toISOString() } })); close(); })}>{t("用 {{name}} 新建笔记", { name: item.name })}</button><button disabled={busy} onClick={() => void run(() => { const next = savedTemplates.filter(template => template.name !== item.name); localStorage.setItem("omarkie-templates", JSON.stringify(next)); setSavedTemplates(next); })}>{t("删除模板")}</button></li>)}</ul>
       <h3>{t("引用与信头")}</h3>
       <label><input type="checkbox" checked={useCitations} onChange={event => setUseCitations(event.target.checked)} />{t("通过 Pandoc citeproc 生成 Vancouver 引用")}</label>
-      <label>{t("CSL JSON 书目")}<textarea aria-label={t("CSL JSON 书目")} placeholder='[{"id":"key","type":"article-journal","title":"Example"}]' value={bibliography} onChange={event => setBibliography(event.target.value)} /></label>
-      <label>{t("导入 CSL JSON")}<input type="file" accept=".json" onChange={event => { const file = event.target.files?.[0]; if (file) void run(async () => { if (file.size > 2 * 1024 * 1024) throw new Error(t("书目超过 2 MB")); setBibliography(await file.text()); }); }} /></label>
+      <label>{t("CSL JSON 书目")}<textarea aria-label={t("CSL JSON 书目")} placeholder='[{"id":"key","type":"article-journal","title":"Example"}]' value={csl} onChange={event => setBibliographyDraft(event.target.value)} /></label>
+      <label>{t("导入 CSL JSON")}<input type="file" accept=".json" disabled={busy} onChange={event => {
+        const file = event.target.files?.[0];
+        event.target.value = "";
+        if (file) void run(async () => {
+          if (file.size > 2 * 1024 * 1024) throw new Error(t("书目超过 2 MB"));
+          const raw = await file.text();
+          if (vaultBibliography && folder) { await vaultBibliography(folder, "save", raw); setBibliographyDraft(null); }
+          else setBibliographyDraft(raw);
+        });
+      }} /></label>
+      {vaultBibliography && folder && <>
+        <button disabled={busy || !csl || bibliographyDraft === null} onClick={() => void run(async () => { await vaultBibliography(folder, "save", csl); setBibliographyDraft(null); })}>{t("保存书目到知识库")}</button>
+        <button disabled={busy} onClick={() => void run(async () => { if (await vaultBibliography(folder, "link")) setBibliographyDraft(null); })}>{t("关联 Zotero 自动导出")}</button>
+        {bibliography?.source && <>
+          <p>{t("Zotero 自动导出：{{name}}", { name: bibliography.source })}</p>
+          {bibliography.stale && <p role="alert">{t("无法读取 Zotero 导出，正在使用上次有效的书目。")}</p>}
+          <button disabled={busy} onClick={() => void run(async () => { await vaultBibliography(folder, "disconnect"); setBibliographyDraft(null); })}>{t("断开 Zotero 关联")}</button>
+        </>}
+        <button disabled={busy || !bibliography?.csl && !bibliography?.source} onClick={() => void run(async () => { await vaultBibliography(folder, "clear"); setBibliographyDraft(null); })}>{t("清除知识库书目")}</button>
+      </>}
       <label>{t("信头名称")}<input value={letterName} onChange={event => void run(() => { localStorage.setItem("omarkie-letter-name", event.target.value); setLetterName(event.target.value); })} maxLength={200} /></label>
       <label>{t("信头详细信息")}<textarea aria-label={t("信头详细信息")} value={letterDetail} onChange={event => void run(() => { localStorage.setItem("omarkie-letter-detail", event.target.value); setLetterDetail(event.target.value); })} maxLength={2000} /></label>
-      <button disabled={busy} onClick={() => void run(() => convert("docx", options()))}>{t("导出带信头的 DOCX")}</button>
-      <button disabled={busy} onClick={() => void run(() => convert("pdf", options()))}>{t("导出带信头的 PDF")}</button>
+      <button disabled={busy} onClick={() => void run(async () => convert("docx", await options()))}>{t("导出带信头的 DOCX")}</button>
+      <button disabled={busy} onClick={() => void run(async () => convert("pdf", await options()))}>{t("导出带信头的 PDF")}</button>
+      {host.native && <>
+        <h3>{t("项目导出")}</h3>
+        <p>{t("将文件夹中的 Markdown 章节编译成一个文档。")}</p>
+        {folder && <p title={folder}>{folder}</p>}
+        <button disabled={busy} onClick={() => void run(openFolder)}>{t("选择项目文件夹…")}</button>
+        {(["docx", "pdf"] as const).map(format => <button key={format} data-testid={`project-export-${format}`} disabled={busy || !folder} onClick={() => void run(() => compile(format))}>
+          {t("导出项目为 {{format}}", { format: format.toUpperCase() })}
+        </button>)}
+      </>}
     </section>}
     {tab === "checks" && <section>
       <p>{t("仅生成报告。不会删除或修改任何文件。")}</p>

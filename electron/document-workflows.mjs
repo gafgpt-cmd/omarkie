@@ -11,7 +11,7 @@ async function owned(root, relative) {
   if (!inside(root, file) || await realpath(file) !== file) throw new Error(t("知识库路径无效"));
   return file;
 }
-export async function vaultSnapshot(store) {
+export async function vaultSnapshot(store, chaptersOnly = false) {
   if (!store.folder) throw new Error(t("请先打开文件夹"));
   const inventory = await store.scan(), root = inventory.folder, notes = [], assets = [];
   const encodings = new Map([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding]));
@@ -25,6 +25,7 @@ export async function vaultSnapshot(store) {
     try { notes.push({ token: entry.token, relative: entry.relative.split(path.sep).join("/"), content: decodeText(bytes, store.hasBOM(bytes) ? undefined : encodings.get(file)).content, path: file }); }
     catch { truncated = true; }
   }
+  if (chaptersOnly) return { notes, assets, truncated, folder: root };
   async function walk(directory, depth) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       if (++entries > 50000 || Date.now() > deadline) { truncated = true; return; }
@@ -36,6 +37,16 @@ export async function vaultSnapshot(store) {
   }
   await walk(root, 0);
   return { notes, assets, truncated };
+}
+
+export async function projectDestination(root, selected, format) {
+  if (path.extname(selected).toLowerCase() !== "." + format) throw new Error(t("导出格式无效。"));
+  const parent = await realpath(path.dirname(selected));
+  if (inside(root, parent)) throw new Error(t("请选择知识库之外的目标位置"));
+  const file = path.join(parent, path.basename(selected));
+  const existing = await lstat(file).catch(error => { if (error.code !== "ENOENT") throw error; });
+  if (existing?.isSymbolicLink()) throw new Error(t("知识库路径无效"));
+  return file;
 }
 export async function exportBundle(store, payload, parent) {
   if (!store.folder || !payload || !Array.isArray(payload.notes) || !Array.isArray(payload.assets) || payload.notes.length > 1000 || payload.assets.length > 50000 || typeof payload.index !== "string" || typeof payload.log !== "string") throw new Error(t("压缩包无效"));

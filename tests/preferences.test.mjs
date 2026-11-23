@@ -11,6 +11,10 @@ test("reading preferences round-trip and reject invalid types and unsafe ranges"
     let preferences = loadPreferences(); assert.equal(preferences.lineHeight, 1.9); assert.equal(preferences.editorColumns, 96); assert.equal(preferences.fontSize, 21); assert.equal(preferences.sourceLineNumbers, true); assert.equal(preferences.codeLineNumbers, true);
     saved = JSON.stringify({ lineHeight: -3, editorColumns: 1e6, sourceLineNumbers: "true", codeLineNumbers: 1 }); preferences = loadPreferences();
     assert.equal(preferences.lineHeight, 1); assert.equal(preferences.editorColumns, 160); assert.equal(preferences.sourceLineNumbers, false); assert.equal(preferences.codeLineNumbers, false);
+    for (const [scale, expected] of [[1, 1], [1.5, 1.5], [2, 2], [3, 2], [4, 2]]) {
+      saved = JSON.stringify({ standaloneImageScale: scale });
+      assert.equal(loadPreferences().standaloneImageScale, expected);
+    }
   } finally { if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor); else Reflect.deleteProperty(globalThis, "localStorage"); }
 });
 

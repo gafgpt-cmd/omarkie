@@ -1,4 +1,7 @@
+import type { ReadingStore } from "../shared/reading-store.ts";
+
 export interface DocumentRecord {
+  readingRecoveryWarning?: boolean;
   id: string;
   path: string | null;
   name: string;
@@ -26,12 +29,14 @@ export interface PathChange { fromPath?: string; toPath?: string; removedPath?: 
 export interface SearchMatch { token: string; path: string; name: string; line: number; column: number; length: number; preview: string }
 export interface SearchResult { matches: SearchMatch[]; truncated: boolean; skipped: number }
 export interface FolderResult {
+  readingRecoveryWarning?: boolean;
   folder: string | null;
   files: FileEntry[];
   truncated: boolean;
   skipped?: number;
 }
 export interface Recovery {
+  readingRecoveryWarning?: boolean;
   documents: DocumentRecord[];
   activeId?: string;
   folder?: string | null;
@@ -55,12 +60,35 @@ export interface Command {
   line?: number;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
-export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean }
+export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }
 export interface BundlePayload { notes: VaultNote[]; assets: { source: string; relative: string }[]; index: string; log: string }
 export interface ConversionOptions { bibliography?: string; style?: "vancouver"; letterhead?: { name: string; detail: string } }
+export interface PayloadRequest {
+  baseUrl: string;
+  confirmedOrigin: string;
+  allowedOrigin?: string;
+  model: string;
+  source: string;
+  question?: string;
+  modernLimit: boolean;
+}
+export interface CitationMatch { id: string; title: string; authors: string }
+export interface BibliographyInfo { csl: string; source: string | null; stale: boolean }
+interface BibliographyOperations {
+  info: BibliographyInfo;
+  save: void;
+  clear: void;
+  link: boolean;
+  disconnect: void;
+  suggest: CitationMatch[];
+  open: void;
+}
 export interface Host {
-  vaultSnapshot(): Promise<VaultSnapshot>;
+  readingStore?: ReadingStore;
+  vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
+  bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
+  cleanConverted?(body: string): Promise<string | null>;
   native: boolean;
   cancelClose(): Promise<unknown>;
   windowAction(action: string): Promise<unknown>;
@@ -70,6 +98,7 @@ export interface Host {
   installTheme(): Promise<string | null>;
   omarchyTheme(): Promise<import("./themes").OmarchyPalette | null>;
   spellcheckLanguages(languages?: string[]): Promise<string[]>;
+  checkGrammar?(url: string, approvedOrigin: string, text: string): Promise<unknown>;
   setRemoteImages(allow: boolean): Promise<unknown>;
   background(): Promise<import("./background").BackgroundAsset | null>;
   chooseBackground(): Promise<import("./background").BackgroundAsset | null>;
@@ -80,6 +109,7 @@ export interface Host {
   conversionSettings(choose?: boolean): Promise<{ pandoc: string; word: boolean; libreOffice?: string }>;
   importDocument(): Promise<{ html?: string; markdown?: string; name: string } | null>;
   exportConverted(id: string, format: string, source: string, html: string, options?: ConversionOptions): Promise<string | null>;
+  exportConverted(project: { folder: string }, format: "docx" | "pdf", chapters: string[], html: "", options?: ConversionOptions): Promise<string | null>;
   restore(): Promise<Recovery | null>;
   showcase(): Promise<FolderResult & { document: DocumentRecord }>;
   registerDraft(record: DocumentRecord): Promise<unknown>;
@@ -115,6 +145,7 @@ export interface Host {
   exportHtml(name: string, html: string): Promise<string | null>;
   writeClipboard(text: string): Promise<unknown>;
   readClipboard(): Promise<string>;
+  readAloud?(text: string | null): Promise<void>;
   openLink(url: string): Promise<unknown>;
   openDocumentLink(id: string, url: string): Promise<unknown>;
   confirmDiscard(name: string): Promise<boolean>;
@@ -122,6 +153,8 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   onCommand(callback: (command: Command) => void): () => void;
+  payloadRequest?(request: PayloadRequest): Promise<string>;
+  payloadKey?(baseUrl: string, value: string): Promise<void>;
 }
 declare global {
   interface Window {

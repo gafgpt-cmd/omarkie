@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, FolderOpen, X, AlertCircle } from "lucide-react";
+import { FilePlus2, FolderOpen, X, AlertCircle, Layers } from "lucide-react";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -27,6 +27,10 @@ import type { FileOperation } from "./types";
 import type { Command, ConversionOptions } from "./types";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
+const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
+const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
+import type { FlashcardPanel } from "./components/Flashcards";
+const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
 import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
@@ -41,6 +45,9 @@ const PluginsDialog = lazy(() => import("./components/PluginsDialog").then(modul
 import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
+import type { ReadingLayerState } from "./components/ReadingLayers";
+const ReadingLayers = lazy(() => import("./components/ReadingLayers"));
+const defaultReadingLayers: ReadingLayerState = { active: "note", note: true, visual: true };
 export default function App() {
   const [painted, setPainted] = useState(false);
   const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
@@ -70,6 +77,10 @@ export default function App() {
   const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
+  const [cleanId, setCleanId] = useState<string | null>(null);
+  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
+  const [readingOpen, setReadingOpen] = useState(false);
+  const [readingViews, setReadingViews] = useState<Record<string, ReadingLayerState>>({});
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -84,11 +95,58 @@ export default function App() {
     );
   const [cursor, setCursor] = useState({ line: 1, column: 1 }),
     [about, setAbout] = useState(false);
+  const [flashcardPanel, setFlashcardPanel] = useState<(FlashcardPanel & { id: string; path: string; folder: string }) | null>(null);
   const editor = () => editors.current.get(session.activeId);
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const cleanVisible = !!active && cleanId === active.id;
+  function closeClean() {
+    setCleanId(null);
+    const id = cleanId;
+    if (id) requestAnimationFrame(() => editors.current.get(id)?.focus());
+  }
+  function openClean() {
+    if (active && !editor()?.composing()) setCleanId(active.id);
+  }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
+  const payloadEnabled = preferences.payloadEnabled && !!window.desktop?.payloadRequest;
+  const activePayload = payloadEnabled && payload?.id === active?.id ? payload : null;
+  useEffect(() => {
+    if (payload && (!payloadEnabled || payload.id !== active?.id)) setPayload(null);
+  }, [payloadEnabled, payload, active?.id]);
+  function openPayload(mode: "summary" | "question", selectedSource?: string) {
+    if (!payloadEnabled || !active) return;
+    const target = editor();
+    const selected = selectedSource ?? target?.selectionText(true);
+    if (selectedSource !== undefined && !selectedSource.trim()) return;
+    const source = selected || target?.markdown() || active.content;
+    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
+  }
+  function appendPayload(summary: string) {
+    const target = editor();
+    if (!active || active.conflict || !target || readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
+    const source = target.markdown(), eol = active.lineEnding;
+    const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
+    if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
+  }
+  const readingView = readingViews[session.activeId] || defaultReadingLayers;
+  const readingVisible = readingOpen && !!active && !focus;
+  const renderedView = readingVisible ? readingView.visual : rendered;
+  const suppressRemoteImages = readingVisible || cleanVisible;
+  const remoteImages = preferences.remoteImages && !suppressRemoteImages;
+  const previousRemoteImages = useRef(remoteImages);
+  useLayoutEffect(() => {
+    if (previousRemoteImages.current !== remoteImages || suppressRemoteImages && preferences.remoteImages) {
+      const options = { ...preferences, remoteImages };
+      setMarkdownOptions(options);
+    }
+    previousRemoteImages.current = remoteImages;
+  }, [preferences, suppressRemoteImages, remoteImages]);
+  function setRenderedView(value: boolean) {
+    if (readingVisible) setReadingViews(current => ({ ...current, [session.activeId]: { ...readingView, visual: value } }));
+    else setRendered(value);
+  }
   useEffect(() => {
     setMountedDocuments(current => {
       let removed = false;
@@ -143,12 +201,12 @@ export default function App() {
     });
   }, [pluginDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
-  useEffect(() => { void host.setRemoteImages(preferences.remoteImages).catch(() => {}); }, [preferences.remoteImages]);
+  useEffect(() => { void host.setRemoteImages(remoteImages).catch(() => {}); }, [remoteImages]);
   useEffect(() => {
     if (!activeEditorReady || paintedDocument !== active?.id || !pluginRuntime.current) return;
     return afterDocumentPaint(() => pluginRuntime.current?.documentChanged());
   }, [active?.id, active?.path, active?.content, activeEditorReady, paintedDocument, runtimeReady]);
-  useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !rendered); }, [rendered]);
+  useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !renderedView); }, [renderedView]);
   useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", sidebar); }, [sidebar]);
   async function installPlugin(folder = false) { const installed = await host.installPlugin(folder); if (installed) setInstalledPlugins(previous => [...previous.filter(item => item.id !== installed.id), { ...installed, description: t("本地插件，通过兼容接口运行。"), config: {} }]); }
   async function removePlugin(id: string) {
@@ -175,11 +233,12 @@ export default function App() {
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
     document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
     document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
+    document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !rendered, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
+  const checked = { source: !renderedView, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, rendered, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, renderedView, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -208,6 +267,20 @@ export default function App() {
   async function importDocument() {
     try { const imported = await host.importDocument(); if (!imported) return; const content = imported.markdown ?? (await import("./editor/clipboard")).htmlToMarkdown(imported.html || ""), record = { id: crypto.randomUUID(), path: null, name: imported.name, content, savedContent: "", diskHash: null, lineEnding: "\n" }; await host.registerDraft(record); await session.add(record); }
     catch (e) { session.setMessage((e as Error).message); }
+  }
+  const flashcardsVisible = !!flashcardPanel && flashcardPanel.id === active?.id
+    && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
+  const closeFlashcards = () => setFlashcardPanel(null);
+  function openFlashcards(target?: FlashcardPanel["target"]) {
+    if (window.desktop?.readingStore && active?.path && session.folder)
+      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
+  }
+  const readingSaved = !!active?.path && !!session.folder;
+  function closeReading() {
+    setReadingOpen(false);
+    if (cleanVisible) closeClean();
+    if (flashcardsVisible) closeFlashcards();
+    setPayload(null);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
@@ -261,6 +334,21 @@ export default function App() {
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
+    else if (action === "clean-converted" && active) {
+      if (cleanVisible) closeClean();
+      else openClean();
+    }
+    else if (action === "collect-reading" && active) {
+      const current = editor();
+      if (current?.composing()) { session.setMessage(t("Finish composing text before collecting highlights and callouts.")); return; }
+      const markdown = current?.markdown() ?? active.content;
+      void import("../shared/reading-collector.ts").then(({ collectReadingItems, readingSummary }) => {
+        const items = collectReadingItems(markdown);
+        if (!items.length) { session.setMessage(t("No highlights or callouts in this note.")); return; }
+        const title = t("Reading summary");
+        return session.create({ name: `${title}.md`, body: readingSummary(items, title, t("Source: {{name}}", { name: active.name })) });
+      }).catch(error => session.setMessage(error.message));
+    }
     else if (action === "encoding") setDialog("encoding");
     else if (action === "saveAs") void session.save(true);
     else if (action === "close") void session.close();
@@ -273,7 +361,7 @@ export default function App() {
     else if (action === "quit") void session.quit();
     else if (action === "close-window") void session.closeWindow();
     else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
-    else if (action === "source") setRendered((value) => !value);
+    else if (action === "source") setRenderedView(!renderedView);
     else if (action === "sidebar") setSidebar((value) => !value);
     else if (action === "outline" || action === "files" || action === "file-tree") {
       setTab(action === "file-tree" ? "tree" : action);
@@ -282,6 +370,13 @@ export default function App() {
       chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
     else if (action === "focus") setFocus((value) => !value);
     else if (action === "typewriter") setTypewriter(value => !value);
+    else if (action === "tts-paragraph" || action === "tts-cursor" || action === "tts-stop") {
+      if (!window.desktop?.readAloud) return;
+      try {
+        const text = action === "tts-stop" ? null : editor()?.readingText(action === "tts-cursor") ?? "";
+        void host.readAloud!(text).catch(error => session.setMessage(error.message));
+      } catch (error) { session.setMessage((error as Error).message); }
+    }
     else if (action === "new-file" || action === "new-folder") setFileOperation({ action, path: session.folder || undefined, name: action === "new-file" ? t("未命名.md") : t("新文件夹") });
     else if (action === "undo-file") void session.fileOperation({ action: "undo" }).catch(e => session.setMessage(e.message));
     else if (["preferences", "plugins", "quick-open", "statistics", "recent", "global-search", "table", "link", "reference-link", "footnote"].includes(action)) {
@@ -383,19 +478,20 @@ export default function App() {
           : t("本地草稿");
   return (
     <div
-      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}`}
+      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
     >
       <Toolbar
         checked={checked}
         name={active?.name || ""}
         edited={!!active && active.content !== active.savedContent}
-        rendered={rendered}
-        setRendered={setRendered}
+        rendered={renderedView}
+        setRendered={setRenderedView}
         sidebar={() => setSidebar(!sidebar)}
         command={(action) => commands.current({ action })}
         autosave={session.autosave}
         disabled={!active}
         context={editor()?.context() || ""}
+        payload={payloadEnabled ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
@@ -410,7 +506,7 @@ export default function App() {
         select={session.setActiveId}
         openToken={session.openToken}
         openFolder={session.openFolder}
-        create={session.create}
+        create={() => void session.create()}
         refresh={session.refresh}
         close={session.close}
         jump={(line) => editor()?.jump(line)}
@@ -452,7 +548,7 @@ export default function App() {
             {session.documents.map((record) => record.id === session.activeId || mountedDocuments.has(record.id) ? (
               <div
                 className="document-editor"
-                hidden={record.id !== session.activeId}
+                hidden={record.id !== session.activeId || cleanVisible}
                 key={record.id}
               >
                 <MarkdownEditor
@@ -464,8 +560,11 @@ export default function App() {
                     } else editors.current.delete(record.id);
                   }}
                   document={record}
-                  rendered={rendered}
+                  rendered={record.id === session.activeId ? renderedView : rendered}
+                  active={record.id === session.activeId}
                   readOnly={readOnly}
+                  reading={readingVisible && record.id === session.activeId}
+                  citationVault={painted && record.id === session.activeId && host.bibliography ? session.folder ?? undefined : undefined}
                   preferences={preferences}
                   typewriter={typewriter}
                   onChange={(content) => session.update(record.id, { content })}
@@ -476,7 +575,7 @@ export default function App() {
                   }}
                   onSelection={text => { if (record.id === session.activeId) setSelection(text); }}
                   onCompositionEnd={() => { if (record.id === session.activeId) pluginRuntime.current?.documentChanged(); }}
-                  onSourceFallback={() => { if (record.id === session.activeId) setRendered(false); }}
+                  onSourceFallback={() => { if (record.id === session.activeId) setRenderedView(false); }}
                   onReady={mode => {
                     if (mode && record.id === session.activeId) performance.mark("omarkie:editor-ready", { detail: { id: record.id, mode } });
                     setReadyEditors(current => {
@@ -493,6 +592,21 @@ export default function App() {
                 />
               </div>
             ) : null)}
+            {cleanVisible && <Suspense fallback={<p role="status">{t("正在清理文本…")}</p>}><CleanLayer
+              key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
+              canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
+            /></Suspense>}
+            {readingVisible && <Suspense fallback={null}><ReadingLayers
+              key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
+              saved={readingSaved} state={readingView}
+              change={value => setReadingViews(current => ({ ...current, [active.id]: value }))}
+              actions={{
+                clean: { visible: cleanVisible, open: openClean, close: closeClean },
+                ask: payloadEnabled ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote), close: () => setPayload(null) } : undefined,
+                card: readingSaved ? { visible: flashcardsVisible, open: openFlashcards, close: closeFlashcards } : undefined,
+              }}
+              close={closeReading}
+            /></Suspense>}
             <article
               className="print-document"
               ref={printDocument}
@@ -500,6 +614,11 @@ export default function App() {
           </>
         )}
       </main>
+      <Suspense fallback={null}>{activePayload && <PayloadPanel
+        key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
+        preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
+        configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
+      />}</Suspense>
       <footer className="statusbar">
         <button id="footer-word-count-label" onClick={() => setDialog("statistics")}
           title={t("{{status}} · 第 {{line}} 行，第 {{column}} 列 · Markdown · {{encoding}}", { status, line: cursor.line, column: cursor.column, encoding: encodingNames[active?.encoding || "utf-8"] })}
@@ -507,7 +626,9 @@ export default function App() {
         >
           {countUnit === "characters" ? t("{{count}} 字", { count: selection ? selectionCharacters : characters }) : t("{{count}} 词", { count: selection ? documentStatistics(selection, selection, preferences.readingSpeed).words : wholeStatistics?.words || 0 })}{selection && t("（选中）")}{exporting && t(" · 正在导出…")}
         </button>
-        {active && <button aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
+        {window.desktop?.readingStore && active && <button type="button" data-testid="reading-layers-toggle" aria-label={t("阅读图层")} title={t("阅读图层")}
+          aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => readingVisible ? closeReading() : setReadingOpen(true)}><Layers size={15} /></button>}
+        {active && <button data-testid="text-encoding" aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
       </footer>
       {focus && (
         <button className="leave-focus" onClick={() => setFocus(false)}>
@@ -522,10 +643,18 @@ export default function App() {
           </button>
         </div>
       )}
+      {flashcardsVisible && active && flashcardPanel && <Suspense fallback={null}><Flashcards
+        id={active.id} content={active.content} panel={flashcardPanel}
+        close={closeFlashcards}
+      /></Suspense>}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
-        key={tools.id + (tools.request || "")} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
+        key={JSON.stringify([tools.id, tools.request, session.folder])} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
         open={async (token, line) => { const opened = await session.openToken(token); if (opened && line) jumpTo(opened.id, line); }}
+        openFolder={async () => {
+          setTools(current => current && { ...current, tab: "writing" });
+          await session.openFolder();
+        }}
         change={async item => {
           if (readOnly || session.fileOperationBusy) throw new Error(t("当前不可编辑"));
           const record = item.token ? await session.openToken(item.token) : session.documents.find(record => record.id === tools.id);

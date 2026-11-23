@@ -1,6 +1,7 @@
 import { alertTitle } from "./markdownExtensions.ts";
 import {
   editableHtml,
+  diagramLanguage,
   renderMarkdown,
   inlineTokens,
   decodeMarkdownText,
@@ -192,7 +193,7 @@ export function renderNode(
     const id = leaf("", [0, 1]); holder.innerHTML = `<blockquote><p><span data-leaf="${id}"><br /></span></p></blockquote>`;
   } else if (["html_preview", "html_block"].includes(node.kind)) {
     const { id, raw } = fenceLeaf();
-    holder.innerHTML = `<div class="md-fence md-html" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId)}</div><pre class="fence-body"><code>${escapeHtml(raw)}</code></pre><span class="fence-language">html</span></div>`;
+    holder.innerHTML = `<div class="md-fence md-html" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId, { standalone: true })}</div><pre class="fence-body"><code>${escapeHtml(raw)}</code></pre><span class="fence-language">html</span></div>`;
   } else if (node.kind === "frontmatter") {
     const id = leaf(node.source, null, "code");
     holder.innerHTML = `<pre class="md-frontmatter"><code data-leaf="${id}">${escapeHtml(node.source)}</code></pre>`;
@@ -250,7 +251,7 @@ export function renderNode(
         const openingLine = node.source.split("\n")[token.map?.[0] || 0];
         if (token.map?.[1] === (token.map?.[0] || 0) + 1 && !node.source.includes("\n")) { const raw = openingLine.replace(/^\s*(?:>\s*)*(?:(?:[-+*]|\d+[.)])\s+)?/, ""), id = leaf(raw, token.map); return `<p><span data-leaf="${id}" class="md-fence-opening">${escapeHtml(raw)}</span></p>`; }
         const { id, raw } = fenceLeaf(token.map?.[0] || 0);
-        if (/^(mermaid|sequence|flow)$/.test(token.info.trim()))
+        if (diagramLanguage(token))
           return `<div class="md-fence" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId)}</div><pre class="fence-body"><code>${escapeHtml(token.content)}</code></pre><span class="fence-language">${token.info.trim()}</span></div>`;
         return `<div class="md-fence" contenteditable="false" data-fence="${id}"><pre class="fence-body"><code data-highlight-language="${escapeHtml(token.info.trim().split(/\s/)[0])}" data-leaf="${id}">${highlightCode(raw, token.info.trim().split(/\s/)[0])}</code></pre><span class="fence-language">${escapeHtml(token.info)}</span></div>`;
       },
@@ -400,7 +401,7 @@ function tokenInlineHtml(
       append(`<span class="md-meta md-cell-break">${escapeHtml(token.markup)}</span><br>${cursor === raw.length ? '<br class="md-ui" data-break-placeholder>' : ''}`);
       continue;
     }
-    if (token.type === "html_embed") { const source = spelling(token.content, cursor); append(object(source, renderMarkdown(token.content, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
+    if (token.type === "html_embed") { const source = spelling(token.content, cursor); append(object(source, renderMarkdown(token.content, documentId, { ...environment, fragment: true, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_embed") { const decoded = token.markup + (token.meta?.attributes || ""), source = spelling(decoded, cursor); append(object(source, renderMarkdown(decoded, documentId, { ...environment, standalone: raw.trim() === source }).replace(/^<p>|<\/p>\n?$/g, ""), "image", cursor)); cursor += source.length; continue; }
     if (token.type === "wiki_link" || token.type === "vault_tag") {
       const view = renderMarkdown(token.markup, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");

@@ -53,12 +53,17 @@ test("renderer selects previews while HTML and portable export retain original b
   const dom = new JSDOM("<!doctype html><body></body>", { url: "https://editor.test/" });
   for (const key of ["window", "document", "Node", "HTMLElement", "Element", "DOMParser", "NodeFilter", "FileReader"]) globalThis[key] = dom.window[key];
   Object.defineProperty(globalThis, "navigator", { value: { userAgent: "Electron/43.0.0" }, configurable: true });
-  const { renderMarkdown } = await import("../src/editor/markdown.ts");
+  const { rememberImageSizes, renderMarkdown } = await import("../src/editor/markdown.ts");
   const { MarkdownDocument } = await import("../src/editor/model.ts");
   const { renderNode } = await import("../src/editor/richRender.ts");
   const model = new MarkdownDocument("![camera](camera.jpg)");
+  const cold = renderNode(model.nodes[0], "photo", new Map()).querySelector("img");
+  assert.equal(cold.hasAttribute("srcset"), false, "the original supplies dimensions when metadata is unavailable");
+  rememberImageSizes("photo", { "camera.jpg": [3000, 2000], "portrait.jpeg": [1800, 2400] });
   const rendered = renderNode(model.nodes[0], "photo", new Map());
   assert.match(rendered.querySelector("img").srcset, /preview=800/);
+  assert.equal(rendered.querySelector("img").getAttribute("width"), "3000");
+  assert.equal(rendered.querySelector("img").getAttribute("height"), "2000");
   const { exportHtml, portableHtml } = await import("../src/editor/print.ts");
   const content = document.createElement("article");
   content.innerHTML = renderMarkdown("![camera](camera.jpg)\n\n<img src=\"portrait.jpeg\">\n\n![animated](clip.gif)", "photo");

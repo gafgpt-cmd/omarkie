@@ -29,6 +29,12 @@ execFileSync(
     "native/ImageActions.swift",
     "native/App.swift",
     "native/PDFExporter.swift",
+    "native/LearningTools.swift",
+    "native/ReadingStore.swift",
+    "native/Bibliography.swift",
+    "native/Speech.swift",
+    "-framework",
+    "JavaScriptCore",
     "-o",
     path.join(contents, "MacOS/Omarkie"),
     "-framework",
@@ -48,6 +54,10 @@ await cp("docs/showcase", path.join(resources, "showcase"), { recursive: true })
 await cp("shared/commands.json", path.join(resources, "commands.json"));
 await cp("third-party/csl", path.join(resources, "csl"), { recursive: true });
 await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
+await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
+await cp("shared/locales", path.join(resources, "locales"), { recursive: true });
+await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
+await cp("shared/tts-limit.json", path.join(resources, "tts-limit.json"));
 await cp("build/icon.icns", path.join(resources, "icon.icns"));
 await cp("LICENSE", path.join(resources, "LICENSE"));
 await cp(
@@ -65,13 +75,15 @@ await writeFile(
 await licenseNotices(path.join(resources, "ThirdPartyLicenses"));
 await cp("third-party/typora-plugins", path.join(resources, "ThirdPartyLicenses/typora-plugins"), { recursive: true });
 const plist = `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>CFBundleName</key><string>Omarkie</string><key>CFBundleDisplayName</key><string>Omarkie</string><key>CFBundleIdentifier</key><string>org.omarkie.desktop</string><key>CFBundleExecutable</key><string>Omarkie</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleShortVersionString</key><string>${pkg.version}</string><key>CFBundleVersion</key><string>${pkg.version}</string><key>CFBundleIconFile</key><string>icon.icns</string><key>LSMinimumSystemVersion</key><string>14.0</string><key>CFBundleDevelopmentRegion</key><string>zh_CN</string><key>CFBundleLocalizations</key><array><string>zh_CN</string><string>en</string></array><key>NSHighResolutionCapable</key><true/><key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>Markdown document</string><key>CFBundleTypeRole</key><string>Editor</string><key>CFBundleTypeExtensions</key><array><string>md</string><string>markdown</string><string>mdown</string></array></dict></array></dict></plist>`;
+const loopbackTransport = `<key>NSAppTransportSecurity</key><dict><key>NSExceptionDomains</key><dict>${["localhost", "127.0.0.1", "::1"].map(host => `<key>${host}</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>`).join("")}</dict></dict>`;
+const infoPlist = plist.replace("</dict></plist>", `${loopbackTransport}</dict></plist>`);
 await writeFile(
   path.join(contents, "Info.plist"),
   preview
-    ? plist
+    ? infoPlist
         .replaceAll("Omarkie", "Omarkie Preview")
         .replace("org.omarkie.desktop", "org.omarkie.desktop.preview")
-    : plist,
+    : infoPlist,
 );
 execFileSync(
   "/usr/bin/codesign",

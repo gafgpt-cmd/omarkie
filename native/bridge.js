@@ -19,8 +19,10 @@
     });
   const methods = [
     "background", "chooseBackground", "clearBackground",
+    "cleanConverted", "readingStore", "payloadRequest", "payloadKey",
+    "checkGrammar", "readAloud", "bibliography", "imageSizes",
     "restore", "imageAction", "importDocument", "exportConverted", "themes", "installTheme", "plugins", "installPlugin", "removePlugin", "conversionSettings", "ready", "fileOperation", "recent", "recentAction", "searchFiles", "reveal",
-    "registerDraft",
+    "registerDraft", "setRemoteImages",
     "open",
     "openFolder",
     "showcase",

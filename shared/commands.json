@@ -15,6 +15,8 @@
     {"label":"另存为…","action":"saveAs","key":"Mod-Shift-S","context":"document"},
     {"label":"文本编码…","action":"encoding","context":"document"},
     {"label":"文档工具…","action":"document-tools","context":"document"},
+    {"label":"清理转换文本…","action":"clean-converted","context":"document"},
+    {"label":"Collect highlights and callouts","action":"collect-reading","context":"document"},
     {"label":"属性…","action":"properties","context":"document"},
     {"label":"反向链接…","action":"backlinks","context":"document"},
     {"label":"知识库图谱…","action":"graph","context":"document"},

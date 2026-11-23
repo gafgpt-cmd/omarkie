@@ -34,6 +34,6 @@ Flow states (`|approved`), hyperlinks (`:>`), directional hints, parallel nodes 
 
 ## Export
 
-HTML and PDF include rendered SVGs. Pandoc exports replace rendered diagrams with PNG images in the exported copy, while the Markdown document remains unchanged. A diagram with an error blocks converted export so it cannot be mistaken for a complete figure.
+Direct HTML and PDF exports include rendered SVGs. Pandoc exports, including project DOCX and PDF, replace diagrams with PNGs in the exported copy only. A diagram error blocks converted export; project export names the affected chapter.
 
 Mermaid itself supports more diagram types than this legacy subset. Use a `mermaid` fence for new documents when possible.

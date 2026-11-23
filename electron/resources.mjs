@@ -39,15 +39,16 @@ export async function pluginResource(address, profile) {
   return { bytes, mime: "application/javascript" };
 }
 
-export async function exportResource(address, store, bundle) {
+export async function exportResource(address, store, bundle, project = false) {
   const url = new URL(address);
+  if (project && (url.protocol !== "omarkie-asset:" || url.host !== "local")) throw new Error(t("导出资源来源无效。"));
   if (["http:","https:"].includes(url.protocol)) {
     const {bytes,mime} = await downloadImage(address); return {base64:bytes.toString("base64"),mime};
   }
   let file;
   if (url.protocol === "omarkie-asset:" && url.host === "local") {
     const [id,...source] = url.pathname.slice(1).split("/");
-    file = await store.asset(decodeURIComponent(id),decodeURIComponent(source.join("/")));
+    file = await store.asset(decodeURIComponent(id),decodeURIComponent(source.join("/")), project);
   } else if (url.protocol === "file:") {
     const root = await realpath(bundle), target = await realpath(fileURLToPath(url)), relative = path.relative(root,target);
     if (relative === ".." || relative.startsWith(".."+path.sep) || path.isAbsolute(relative)) throw new Error(t("导出资源不在应用目录内。"));

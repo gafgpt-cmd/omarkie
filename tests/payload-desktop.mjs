@@ -1,0 +1,109 @@
+import { _electron as electron, expect } from "playwright/test";
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+
+const dir = await mkdtemp(path.join(os.tmpdir(), "omarkie-payload-"));
+const file = path.join(dir, "synthetic.md");
+const selection = "Synthetic triangle fixture.";
+const original = `# Geometry fixture\r\n\r\n${selection}\r\n\r\nExcluded fixture.`;
+await writeFile(file, original);
+const requests = [];
+const server = createServer(async (request, response) => {
+  let text = "";
+  for await (const chunk of request) text += chunk;
+  const body = JSON.parse(text);
+  requests.push({ url: request.url, body });
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify({ choices: [{ message: { content: body.messages.length === 2 ? "**Triangle:** three sides." : "Three sides." } }] }));
+});
+server.listen(0, "127.0.0.1");
+await once(server, "listening");
+const origin = `http://127.0.0.1:${server.address().port}`;
+const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: dir, OMARKIE_LANGUAGE: "en" });
+delete env.OMARKIE_DEV_URL;
+delete env.ELECTRON_RUN_AS_NODE;
+let application;
+try {
+  application = await electron.launch({ args: [process.cwd(), ...headlessArguments, file], env });
+  const page = await application.firstWindow();
+  const bundleRequests = [];
+  page.on("request", request => bundleRequests.push(request.url()));
+  const rich = page.locator(".document-editor:not([hidden]) .rich-document");
+  const button = page.getByRole("button", { name: "Payload", exact: true });
+  await expect(rich.getByRole("heading", { name: "Geometry fixture" })).toBeVisible();
+  await expect(button).toHaveCount(0);
+  assert.equal(bundleRequests.filter(url => /\/PayloadPanel-[^/]+\.js$/.test(url)).length, 0);
+  assert.equal(requests.length, 0);
+
+  await page.keyboard.press("ControlOrMeta+,");
+  const preferences = page.getByRole("dialog", { name: "Preferences", exact: true });
+  await preferences.getByLabel("Enable Payload").check();
+  await preferences.getByLabel("Payload model").fill("fixture");
+  await preferences.getByLabel("Payload base URL").fill("https://inference.example.test/v1");
+  await preferences.getByRole("button", { name: "Done", exact: true }).click();
+  await button.click();
+  const panel = page.getByRole("complementary", { name: "Payload", exact: true });
+  const send = panel.getByRole("button", { name: "Send text for summary" });
+  await expect(send).toBeDisabled();
+  await panel.getByRole("button", { name: "Preferences", exact: true }).click();
+  await preferences.getByLabel("Allow Payload requests to https://inference.example.test").check();
+  await preferences.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(send).toBeEnabled();
+  await expect(panel).toContainText("Sends this note’s text to https://inference.example.test.");
+  await expect(panel).toContainText("Do not send identifiable medical data.");
+  assert.equal(requests.length, 0);
+  await panel.getByRole("button", { name: "Close Payload" }).click();
+  await page.keyboard.press("ControlOrMeta+,");
+  await preferences.getByLabel("Payload base URL").fill("https://inference.example.test:8443/v1");
+  await expect(preferences.getByLabel("Allow Payload requests to https://inference.example.test:8443")).not.toBeChecked();
+  await preferences.getByLabel("Use max_completion_tokens instead of max_tokens").check();
+  await preferences.getByLabel("Payload base URL").fill(`${origin}/v1`);
+  await preferences.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(() => bundleRequests.filter(url => /\/PayloadPanel-[^/]+\.js$/.test(url)).length).toBe(1);
+  assert.equal(requests.length, 0);
+
+  const paragraph = rich.getByText(selection, { exact: true });
+  await paragraph.click();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Shift+End");
+  await button.click();
+  await expect(panel.getByText(`Sends the selected text to ${origin}.`, { exact: true })).toBeVisible();
+  await expect(panel.getByText(/Do not send identifiable medical data/)).toBeVisible();
+  assert.equal(requests.length, 0);
+  await send.click();
+  const summary = panel.getByRole("region", { name: "Payload summary" });
+  await expect(summary.locator("strong")).toHaveText("Triangle:");
+  assert.equal(requests[0].url, "/v1/chat/completions");
+  assert.equal(requests[0].body.messages[1].content, selection);
+  assert.equal(requests[0].body.max_completion_tokens, 768);
+  assert.equal(requests[0].body.max_tokens, undefined);
+  assert.equal(await readFile(file, "utf8"), original);
+
+  const question = panel.getByLabel("Ask one question about this text");
+  for (const text of ["How many sides?", "Confirm the number of sides?"]) {
+    await question.fill(text);
+    await panel.getByRole("button", { name: "Send question" }).click();
+    await expect(question).toHaveValue("");
+    await expect(panel.getByRole("region", { name: "Payload answer" })).toHaveText("Three sides.");
+    assert.deepEqual(requests.at(-1).body.messages.slice(1).map(message => message.content), [selection, text]);
+    assert.equal(requests.at(-1).body.max_completion_tokens, 384);
+  }
+  await summary.getByRole("button", { name: "Append as callout" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  const source = page.locator(".document-editor:not([hidden]) .cm-content");
+  await expect(source).toContainText("> [!summary] Payload summary");
+  await source.press("ControlOrMeta+z");
+  await expect(source).not.toContainText("Payload summary");
+  assert.equal((await source.locator(".cm-line").allTextContents()).join("\n"), original.replaceAll("\r\n", "\n"));
+  assert.equal(requests.length, 3);
+  console.log("PASS: Payload opt-in and lazy load, origin allowance, explicit selection send, stateless questions and shared undo");
+} finally {
+  await application?.close();
+  server.closeAllConnections();
+  await new Promise(resolve => server.close(resolve));
+}

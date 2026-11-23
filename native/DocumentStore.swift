@@ -30,6 +30,7 @@ struct SessionRecord: Codable {
   var activeId: String?
   var folder: String?
   var restoreError: String?
+  var readingRecoveryWarning: Bool?
 }
 func hashData(_ data: Data) -> String {
   SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -302,18 +303,21 @@ final class DocumentStore {
     while closedOrder.count > 20 { closedRecords.removeValue(forKey: closedOrder.removeFirst()) }
     records = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
   }
-  func restore() throws -> SessionRecord? {
+  static func decodeSession(_ bytes: Data) throws -> SessionRecord {
+    let session = try JSONDecoder().decode(SessionRecord.self, from: bytes)
+    guard session.version == 1, session.documents.count <= 100 else { throw NativeFailure("恢复数据格式无效。") }
+    guard session.documents.allSatisfy({ $0.content.utf8.count <= Self.maxBytes }) else { throw NativeFailure("恢复文档过大。") }
+    return session
+  }
+  func restore(_ saved: Data? = nil) throws -> SessionRecord? {
     let file = dataDirectory.appendingPathComponent("session.json")
-    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-    let bytes = try Data(contentsOf: file)
+    guard saved != nil || FileManager.default.fileExists(atPath: file.path) else { return nil }
+    let bytes = try saved ?? Data(contentsOf: file)
     do {
-      var session = try JSONDecoder().decode(SessionRecord.self, from: bytes)
-      guard session.version == 1, session.documents.count <= 100 else {
-        throw NativeFailure("恢复数据格式无效。")
-      }
+      var session = try Self.decodeSession(bytes)
+      if let path = session.folder { _ = try? scan(URL(fileURLWithPath: path)) }
       var documents = [DocumentRecord]()
       for var record in session.documents {
-        guard record.content.utf8.count <= Self.maxBytes else { throw NativeFailure("恢复文档过大。") }
         records[record.id] = record
         if record.path != nil, let changed = try check(record.id) {
           if record.content == record.savedContent, let text = changed["content"] as? String,
@@ -330,7 +334,6 @@ final class DocumentStore {
       }
       session.documents = documents
       activeId = session.activeId
-      if let path = session.folder { _ = try? scan(URL(fileURLWithPath: path)) }
       session.folder = folder?.path
       return session
     } catch {
@@ -350,13 +353,19 @@ final class DocumentStore {
     }
     return nil
   }
-  func asset(_ id: String, relative: String) throws -> URL {
-    let record = try require(id)
+  func asset(_ id: String, relative: String, project: Bool = false) throws -> URL {
+    let record = project ? nil : (try require(id))
     let reference = URL(string: relative).flatMap { $0.isFileURL ? $0.path : nil } ?? relative.removingPercentEncoding ?? relative
     guard ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "mp4", "webm", "ogg", "mp3", "wav", "m4a"].contains((reference as NSString).pathExtension.lowercased()), !reference.contains("\0") else { throw NativeFailure("图片路径不可用。") }
-    let parent = record.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? dataDirectory
+    let parent: URL
+    if project {
+      guard let chapter = tokens[id], let folder, ["md", "markdown", "mdown"].contains(chapter.pathExtension.lowercased()),
+        !reference.hasPrefix("/"), !reference.contains(":"), !reference.contains("\\") else { throw NativeFailure("知识库路径无效") }
+      parent = chapter.deletingLastPathComponent()
+      guard contained(folder, parent.appendingPathComponent(reference).standardizedFileURL) else { throw NativeFailure("知识库路径无效") }
+    } else { parent = record?.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? dataDirectory }
     let target: URL
-    if let root = yamlValue("typora-root-url", source: record.content), !root.contains("://") {
+    if let record, let root = yamlValue("typora-root-url", source: record.content), !root.contains("://") {
       let base = root.hasPrefix("/") ? URL(fileURLWithPath: root) : parent.appendingPathComponent(root)
       target = base.appendingPathComponent(reference.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).standardizedFileURL
     } else { target = (reference.hasPrefix("/") ? URL(fileURLWithPath: reference) : parent.appendingPathComponent(reference)).standardizedFileURL }

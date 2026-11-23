@@ -216,6 +216,7 @@ export class DocumentStore {
   async scanFolder(folder = this.folder) {
     if (!folder) return { folder: null, files: [], truncated: false, skipped: 0 };
     const root = await realpath(folder), tokens = new Map(), files = [];
+    const readingRecoveryWarning = root !== this.folder && await (await import("./reading-store.mjs")).recoverReadingVault(root);
     let truncated = false, skipped = 0;
     const walk = async (directory, depth) => {
       let entries;
@@ -260,7 +261,7 @@ export class DocumentStore {
     // A failed root scan must retain the last usable folder and token grants.
     this.folder = root;
     this.fileTokens = tokens;
-    return { folder: root, files, truncated, skipped };
+    return { folder: root, files, truncated, skipped, readingRecoveryWarning };
   }
   async openToken(token) {
     const file = this.fileTokens.get(token);
@@ -337,6 +338,10 @@ export class DocumentStore {
       if (session.version !== 1 || !Array.isArray(session.documents))
         return null;
       const documents = [];
+      let readingRecoveryWarning = false;
+      if (session.folder) {
+        try { ({ readingRecoveryWarning } = await this.scan(session.folder)); } catch {}
+      }
       for (const record of session.documents) {
         if (typeof record.id !== "string" || typeof record.content !== "string")
           continue;
@@ -356,12 +361,7 @@ export class DocumentStore {
         this.records.set(record.id, record);
         documents.push(record);
       }
-      if (session.folder) {
-        try {
-          await this.scan(session.folder);
-        } catch {}
-      }
-      return { documents, activeId: session.activeId, folder: this.folder };
+      return { documents, activeId: session.activeId, folder: this.folder, readingRecoveryWarning };
     } catch (e) {
       if (e.code === "ENOENT") return null;
       const original = await readFile(path.join(this.dataDir, "session.json"));
@@ -375,15 +375,21 @@ export class DocumentStore {
       };
     }
   }
-  async asset(id, relative) {
-    const record = this.require(id);
+  async asset(id, relative, project = false) {
+    const folder = project ? this.folder : undefined, chapter = project ? this.fileTokens.get(id) : undefined;
+    if (project && (!chapter || !folder || !markdown.test(chapter))) throw new Error(t("知识库路径无效"));
+    const record = project ? { path: chapter } : this.require(id);
     if (typeof relative !== "string") throw new Error(t("图片路径不可用。"));
-    let reference = relative.startsWith("file://") ? fileURLToPath(relative) : decodeURIComponent(relative);
+    const reference = relative.startsWith("file://") ? fileURLToPath(relative) : decodeURIComponent(relative);
     if (!/\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|ogg|mp3|wav|m4a)$/i.test(reference) || reference.includes("\0")) throw new Error(t("图片路径不可用。"));
     const base = await realpath(record.path ? path.dirname(record.path) : this.dataDir);
     let requested = path.resolve(base, reference);
+    if (project) {
+      const fromRoot = path.relative(folder, requested);
+      if (base !== path.dirname(chapter) || /^[\\/]|[:\0]/.test(reference) || fromRoot === ".." || fromRoot.startsWith(".." + path.sep) || path.isAbsolute(fromRoot)) throw new Error(t("知识库路径无效"));
+    }
     // Obsidian vaults link attachments by name: look a missing relative reference up in the vault.
-    if (record.path && !path.isAbsolute(reference) && await lstat(requested).then(() => false, error => error.code === "ENOENT")) requested = await findInVault(await vaultRoot(base, this.folder), reference) || requested;
+    if (!project && record.path && !path.isAbsolute(reference) && await lstat(requested).then(() => false, error => error.code === "ENOENT")) requested = await findInVault(await vaultRoot(base, this.folder), reference) || requested;
     if (process.platform === "darwin") { if (requested.startsWith("/var/")) requested = "/private" + requested; else if (requested.startsWith("/tmp/")) requested = "/private" + requested; }
     if (process.platform === "win32") {
       // realpath expands valid 8.3 names (RUNNER~1, PROGRA~1) and normalizes
@@ -397,7 +403,9 @@ export class DocumentStore {
     }
     const target = await realpath(requested);
     if (target !== requested) throw new Error(t("图片位于文档目录之外。"));
-    if ((await stat(target)).size > 20 * 1024 * 1024)
+    const info = await stat(target);
+    if (project && !info.isFile()) throw new Error(t("图片路径不可用。"));
+    if (info.size > 20 * 1024 * 1024)
       throw new Error(t("图片超过 20 MB。"));
     return target;
   }

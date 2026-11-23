@@ -35,7 +35,7 @@ export default ({ BasePlugin, utils }: any) => class extends BasePlugin {
       if (!drag || !target || event.pointerId !== drag.id) return;
       if (!api.editable() || drag.document !== api.documentId()) { cancel(); return; }
       const width = Math.max(16, Math.min(10000, drag.width + event.clientX - drag.x));
-      target.style.width = `${width}px`; target.style.height = `${drag.height * width / drag.width}px`; target.style.maxWidth = "none"; position();
+      target.style.zoom = "1"; target.style.width = `${width}px`; target.style.height = `${drag.height * width / drag.width}px`; target.style.maxWidth = "none"; position();
     }) as EventListener);
     listen(api, handle, "pointerup", ((event: PointerEvent) => {
       if (!drag || !target || event.pointerId !== drag.id) return;

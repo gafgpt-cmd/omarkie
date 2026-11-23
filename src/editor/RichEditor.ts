@@ -247,6 +247,17 @@ export class RichEditor {
       ? element.closest<HTMLElement>("[data-leaf]")
       : null;
   }
+  citationPosition(x: number, y: number) {
+    const caret = document.caretPositionFromPoint?.(x, y);
+    const range = !caret ? document.caretRangeFromPoint?.(x, y) : null;
+    const node = caret?.offsetNode ?? range?.startContainer;
+    if (!node || !this.leafElement(node) || this.citationExcluded(node)) return null;
+    return this.point(node, caret?.offset ?? range!.startOffset);
+  }
+  citationExcluded(node: Node | null = window.getSelection()?.anchorNode ?? null) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    return !element || !this.root.contains(element) || !!element.closest("a,code,pre,.cm-editor,.md-view,.md-ui,[data-mark='code'],[data-mark='math'],[data-mark='image']");
+  }
   private point(node: Node, offset: number) {
     const parent =
       node.nodeType === Node.ELEMENT_NODE
@@ -343,12 +354,13 @@ export class RichEditor {
     this.pins.push(...missing.map(item => typeof item === "number" ? { from: item, to: item } : item));
     this.render(false);
   }
-  private domPoint(position: number): { node: Node; offset: number } | null {
-    this.ensureRendered(position);
+  private domPoint(position: number, exact = false): { node: Node; offset: number } | null {
+    if (!exact) this.ensureRendered(position);
     const candidates = [...this.leaves.values()].filter(
       (leaf) =>
         position >= leaf.positions[0] && position <= leaf.positions.at(-1)!,
     );
+    if (exact && !candidates.some(leaf => leaf.positions.includes(position))) return null;
     const leaf =
       candidates[0] ||
       [...this.leaves.values()].sort(
@@ -373,6 +385,15 @@ export class RichEditor {
       local -= text.length;
     }
     return { node: element, offset: 0 };
+  }
+  grammarRange(from: number, to: number) {
+    const start = this.domPoint(from, true), end = this.domPoint(to, true);
+    if (!start || !end) return null;
+    const range = document.createRange();
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    // Do not mark ranges whose Markdown offsets do not map to literal visible text.
+    return range.toString() === this.model.text.slice(from, to) ? range : null;
   }
   restore(selection = this.model.selection, focus = true) {
     this.pins = [];

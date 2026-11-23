@@ -16,13 +16,25 @@ export async function pandocPath() {
   return "";
 }
 const exportFormats = new Set(["docx", "rtf", "odt", "epub", "latex", "rst", "mediawiki", "textile", "opml", "revealjs", "pdf"]);
+export const cslByteLimit = 2 * 1024 * 1024;
+export function parseCSL(text, allowEmpty = false) {
+  const invalid = () => new Error(t("CSL JSON 书目无效"));
+  if (typeof text !== "string" || Buffer.byteLength(text) > cslByteLimit) throw invalid();
+  let entries;
+  try { entries = JSON.parse(text.replace(/^\uFEFF/, "")); } catch { throw invalid(); }
+  if (!Array.isArray(entries) || (!allowEmpty && !entries.length) || entries.length > 5000) throw invalid();
+  const keys = new Set();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object" || typeof entry.id !== "string" || !/^[\w.:+/-]{1,256}$/.test(entry.id) || typeof entry.type !== "string" || keys.has(entry.id)) throw invalid();
+    keys.add(entry.id);
+  }
+  return entries;
+}
 export function conversionOptions(options = {}) {
   if (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some(key => !["bibliography", "style", "letterhead"].includes(key))) throw new Error(t("导出选项无效"));
   if (options.style !== undefined && options.style !== "vancouver") throw new Error(t("引用样式无效"));
   if (options.bibliography !== undefined) {
-    if (typeof options.bibliography !== "string" || options.bibliography.length > 2 * 1024 * 1024) throw new Error(t("CSL JSON 书目无效"));
-    let entries; try { entries = JSON.parse(options.bibliography); } catch { throw new Error(t("CSL JSON 书目无效")); }
-    if (!Array.isArray(entries) || !entries.length || entries.length > 5000 || entries.some(entry => !entry || typeof entry !== "object" || typeof entry.id !== "string" || !/^[\w.:+/-]{1,256}$/.test(entry.id) || typeof entry.type !== "string") || new Set(entries.map(entry => entry.id)).size !== entries.length) throw new Error(t("CSL JSON 书目无效"));
+    parseCSL(options.bibliography);
     if (options.style !== "vancouver") throw new Error(t("请选择引用样式"));
   }
   if (options.style && !options.bibliography) throw new Error(t("请添加 CSL JSON 书目"));
@@ -32,7 +44,11 @@ export function conversionOptions(options = {}) {
 export async function convertExport(directory, format, source, html, destination, options = {}, renderPdf) {
   options = conversionOptions(options);
   // pandoc runs `--to=<file>.lua` as a Lua writer; only fixed format names may reach it.
-  if (!exportFormats.has(format) || typeof source !== "string" || typeof html !== "string") throw new Error(t("导出格式无效。"));
+  const project = Array.isArray(source);
+  if (!exportFormats.has(format) || typeof html !== "string" || (project
+    ? !["docx", "pdf"].includes(format) || !source.length || source.length > 1000 ||
+      source.some(chapter => typeof chapter !== "string") || source.reduce((size, chapter) => size + Buffer.byteLength(chapter), 0) > 100 * 1024 * 1024
+    : typeof source !== "string")) throw new Error(t("导出格式无效。"));
   await mkdir(directory, { recursive: true }); const temporary = await mkdtemp(path.join(directory, "conversion-"));
   try { const pandoc = await pandocPath();
     if (pandoc) {
@@ -40,7 +56,7 @@ export async function convertExport(directory, format, source, html, destination
       const filter = path.join(temporary, "html.lua");
       await writeFile(filter, "function RawBlock(el) if el.format == 'html' then return pandoc.read(el.text, 'html').blocks end end\nfunction RawInline(el) if el.format == 'html' and el.text:match('^<img') then local blocks = pandoc.read(el.text, 'html').blocks; if #blocks > 0 then return blocks[1].content end end end", "utf8");
       extra.push("--lua-filter=" + filter);
-      if (Object.keys(options).length) {
+      if (!project && Object.keys(options).length) {
         const { frontmatter } = await import("../shared/frontmatter.mjs"); source = frontmatter(source).body;
       }
       if (options.bibliography) {
@@ -49,16 +65,24 @@ export async function convertExport(directory, format, source, html, destination
         await writeFile(style, await readFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "../third-party/csl/nlm-citation-sequence.csl")));
         extra.push("--citeproc", "--bibliography=" + bibliography, "--csl=" + style);
       }
+      const inputs = project ? [...source] : [source];
       if (options.letterhead) {
         const escape = value => value.replace(/[\\`*_{}\[\]<>()#!|]/g, "\\$&");
-        source = `**${escape(options.letterhead.name)}**\n\n${escape(options.letterhead.detail)}\n\n---\n\n` + source;
+        const header = `**${escape(options.letterhead.name)}**\n\n${escape(options.letterhead.detail)}\n\n---\n\n`;
+        if (project) inputs.unshift(header);
+        else inputs[0] = header + inputs[0];
       }
-      const file = path.join(temporary, "input.md"); await writeFile(file, source, "utf8");
-      await exec(pandoc, [file, "--sandbox", "--to=" + (format === "pdf" ? "html5" : format), "--standalone", "--output=" + output, ...extra], { timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
-      if (format === "pdf") { if (!renderPdf) throw new Error(t("PDF 渲染器不可用")); await atomicWrite(destination, await renderPdf(await readFile(output, "utf8"))); }
+      const files = [];
+      for (const [index, text] of inputs.entries()) {
+        const name = `input-${index}.md`, file = path.join(temporary, name);
+        await writeFile(file, text, "utf8"); files.push(project ? name : file);
+      }
+      if (project) extra.push("--file-scope", "--from=markdown-yaml_metadata_block");
+      await exec(pandoc, [...files, "--sandbox", "--to=" + (format === "pdf" ? "html5" : format), "--standalone", "--output=" + output, ...extra], { cwd: project ? temporary : undefined, timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
+      if (format === "pdf") { if (!renderPdf) throw new Error(t("PDF 渲染器不可用")); await atomicWrite(destination, await renderPdf(output)); }
       else await atomicWrite(destination, await readFile(output));
     }
-    else if (!Object.keys(options).length && process.platform === "darwin" && ["docx", "odt", "rtf"].includes(format)) { const file = path.join(temporary, "input.html"); await writeFile(file, html); const { stdout } = await exec("/usr/bin/textutil", ["-convert", format, "-stdout", file], { encoding: "buffer", timeout: 30000, maxBuffer: 50 * 1024 * 1024 }); await atomicWrite(destination, stdout); }
+    else if (!project && !Object.keys(options).length && process.platform === "darwin" && ["docx", "odt", "rtf"].includes(format)) { const file = path.join(temporary, "input.html"); await writeFile(file, html); const { stdout } = await exec("/usr/bin/textutil", ["-convert", format, "-stdout", file], { encoding: "buffer", timeout: 30000, maxBuffer: 50 * 1024 * 1024 }); await atomicWrite(destination, stdout); }
     else throw new Error(t("此格式需要安装 Pandoc。"));
     return destination;
   } finally { await rm(temporary, { recursive: true, force: true }); }

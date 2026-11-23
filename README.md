@@ -32,9 +32,10 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 - **Files you control**: folder tree, full-text search, quick open, recent files, autosave, session recovery and external-change conflict detection.
 - **Vault references**: Ctrl/Cmd-click wikilinks, aliases and tags; search tags; inspect linked mentions and a lazy graph. Ambiguous targets stay visible.
 - **Document workflows**: generic OKF-ready new notes, lazy Properties, explicit note/folder conversion previews and copied OKF bundles. Existing notes never migrate silently.
-- **Writing output**: reusable templates, neutral letterheads, Vancouver citations through Pandoc citeproc, and actual PDF/DOCX export. Non-destructive link/asset reports and on-demand Markdown checks ([workflow guide](docs/document-workflows.md)).
-- **Private by default**: remote images and embeds are blocked until you allow them, so opening a note never contacts other servers.
-- **Images, math and diagrams**: local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
+- **Study and annotate**: preview converted-text cleanup, collect highlights and callouts, pin margin notes, and review spaced-repetition cards. See [Reading Layers](docs/document-workflows.md#reading-layers).
+- **Writing output**: templates, letterheads, [Zotero and Vancouver citations](docs/document-workflows.md#vault-bibliography), and [multi-note DOCX/PDF export](docs/document-workflows.md#project-export). Also includes link/asset reports and Markdown checks.
+- **Private by default**: remote media and embeds are blocked until allowed. [Payload summaries and follow-up questions](docs/document-workflows.md#payload) and [LanguageTool](#grammar-with-languagetool) are opt-in and send text only when requested.
+- **Images, math and diagrams**: [standalone images that fit the reading column](docs/document-workflows.md#reading-images), local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
 - **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252. BOM and mixed line endings survive edits, transforms and undo.
 - **Import and export**: HTML and PDF built in; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
 
@@ -122,6 +123,14 @@ Install [Pandoc](https://pandoc.org/installing.html) for DOCX, ODT, EPUB and oth
 
 PDFs (Linux and Windows): **Open** a `.pdf`, or pass one to `omarkie`, and Omarkie opens a Markdown copy with its pictures, made by an external PDF-to-Markdown converter and kept in the data folder (`PDF/`), so an unchanged PDF opens again without converting. The converter is called as `<converter> <file.pdf> --output <folder>` and must write a `.md` file there. Omarkie uses `OMARKIE_PDF_CONVERTER` (a path, or a JSON list such as `["python3", "/path/to/orchestrator.py"]`), else a `pdf-converter` file with the same content in the data folder, else `pdf-md` on `PATH`. Without a converter, or when it fails, Omarkie offers to open the PDF in your PDF viewer.
 
+### Read aloud offline
+
+- Desktop: **More actions → Read selection or paragraph**, **Read from cursor**, or **Stop reading**.
+- A selection takes priority. With no selection, read the current block or from the cursor to the end. Source mode reads literal Markdown and uses blank lines to find paragraph boundaries.
+- Install [eSpeak NG](https://github.com/espeak-ng/espeak-ng) separately. Example on Linux: `OMARKIE_TTS='["espeak-ng","--stdin","-b","1"]' omarkie`.
+- Set `OMARKIE_TTS` before launching the app. Use one executable name/path or a JSON array of the executable and fixed arguments. No shell. The program gets UTF-8 text on stdin and must own playback in the foreground.
+- Off by default. Omarkie starts only the configured program, only when asked. No speech engine is bundled. Use a trusted offline program; no eSpeak NG (GPL-3.0) code is included. The note is not edited.
+
 ## Build from source
 
 Use **Node.js 26** and npm.
@@ -150,6 +159,15 @@ Open a Markdown file or a folder, or start from the Showcase examples (**Help �
 | Find in the document | `Ctrl+F` | `⌘F` |
 | Search the folder | `Ctrl+Shift+F` | `⌘⇧F` |
 | Quick open | `Ctrl+P` | `⌘⇧O` |
+
+### Grammar with LanguageTool
+
+- Start the [self-hosted LanguageTool HTTP server](https://dev.languagetool.org/http-server) (LGPL-2.1). Omarkie does not bundle or start it.
+- Enable **Preferences → LanguageTool grammar**. Default: `http://127.0.0.1:8081/v2/check`.
+- For a non-loopback server, enter its HTTPS `/v2/check` URL and approve its exact origin. Redirects are blocked.
+- Choose **Check grammar… → Send note**. Only this action sends the current Markdown (up to 20,000 characters) to the displayed endpoint. Check the server's data policy before sending sensitive text.
+- Click an underline or pick a grammar finding. Choose a replacement to edit, or close to leave the note unchanged. Undo reverses the edit. Editing clears old findings.
+- Desktop only. Off by default. No requests on open, edit, or enable. Separate from offline spellcheck and Markdown lint.
 
 ## Development
 
