@@ -289,14 +289,14 @@ try {
     !root().querySelector(".math-error,[data-mjx-error]"),
     "offline MathJax SVG renders document macros and extended fonts",
   );
-  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list')); };
+  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list'), 'Plugin Manager did not open'); };
   const pluginCard = (name, id) => id ? document.querySelector(`.plugin-card[data-plugin-id="${id}"]`) : [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
   const closePlugins = () => document.querySelector('.dialog-heading button').click();
   pointText("粗体", 1);
   await openPlugins();
-  await wait(() => pluginCard('Native-plugin-fixture'));
-  pluginCard('Native-plugin-fixture').querySelector('input[type="checkbox"]').click();
-  await wait(() => getComputedStyle(root()).getPropertyValue('--plugin-fixture').trim() === 'loaded');
+  const nativePlugin = await wait(() => pluginCard('Native-plugin-fixture'), 'Native-plugin-fixture was not listed');
+  nativePlugin.querySelector('input[type="checkbox"]').click();
+  await wait(() => getComputedStyle(root()).getPropertyValue('--plugin-fixture').trim() === 'loaded', 'Native-plugin-fixture did not apply its style');
   check(true, 'installed CommonJS plugin is dynamically imported by native WebKit under the existing CSP');
   pluginCard('Native-plugin-fixture').querySelector('.plugin-actions button').click();
   closePlugins(); await wait(() => root().textContent.includes('粗插件体'));

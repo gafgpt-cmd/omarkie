@@ -118,7 +118,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var titleObservation: NSKeyValueObservation?
   private var offlineRules: WKContentRuleList?
   private var rendererLocale: String?
-  func show(hidden: Bool = false) {
+  func show() {
     let configuration = WKWebViewConfiguration()
     #if WEBTEST
       configuration.websiteDataStore = .nonPersistent()
@@ -159,11 +159,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     titleObservation = webView.observe(\.title, options: [.new]) { [weak self] view, _ in
       self?.window.title = view.title ?? "Omarkie"
     }
-    if !hidden {
-      window.center()
-      window.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
-    }
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
     WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-reader", encodedContentRuleList: PDFExporter.offlinePolicy) { [weak self] list, _ in
       DispatchQueue.main.async {
         guard let self else { return }

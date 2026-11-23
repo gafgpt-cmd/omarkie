@@ -38,7 +38,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         owner: owner, directory: directory,
         seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
-      host.show(hidden: true)
+      host.show()
       host.webView.configuration.userContentController.addUserScript(WKUserScript(
         source: "if (location.pathname.endsWith('/project-diagrams.html')) Object.defineProperty(crypto, 'randomUUID', { value: undefined })",
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -143,7 +143,6 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
     let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
     defer { other.orderOut(nil) }
-    NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
     host.window.makeKeyAndOrderFront(nil)
     try await waitFor { self.host.window.isKeyWindow }
@@ -572,7 +571,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let app = NSApplication.shared
     let delegate = WebKitTests()
     app.delegate = delegate
-    app.setActivationPolicy(.prohibited)
+    app.setActivationPolicy(.regular)
     app.run()
     withExtendedLifetime(delegate) {}
   }
