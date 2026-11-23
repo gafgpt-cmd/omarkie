@@ -129,6 +129,24 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     guard original?.first?["id"] as? String == "original-card", replacement?.isEmpty == true else {
       throw NativeFailure("Interrupted move assigned the card to the replacement.")
     }
+    let chapter = root.appendingPathComponent("chapter"), renamed = root.appendingPathComponent("renamed")
+    try FileManager.default.createDirectory(at: chapter, withIntermediateDirectories: false)
+    for name in ["present", "missing"] {
+      let file = chapter.appendingPathComponent(name + ".md")
+      try atomicWrite(file, Data(name.utf8))
+      let child = NativeReadingStore.Scope(root: root, file: file, document: "chapter/\(name).md")
+      _ = try await reading.perform(child, ["action": "put", "item": ["type": "card", "id": name, "front": "Q", "back": "A"]])
+    }
+    try FileManager.default.removeItem(at: chapter.appendingPathComponent("missing.md"))
+    _ = try await reading.moveEntries(root) { move in
+      try move(chapter, renamed)
+      return [:]
+    }
+    let entries = try await reading.perform(moved, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
+    guard entries.first(where: { $0["id"] as? String == "present" })?["document"] as? String == "renamed/present.md",
+          entries.first(where: { $0["id"] as? String == "missing" })?["document"] as? String == "chapter/missing.md" else {
+      throw NativeFailure("Folder rename moved history for a missing descendant.")
+    }
   }
   @MainActor func checkLearningPersistence() async throws {
     let scope = try NativeReadingStore.scope(host.store, "webkit-fixture")

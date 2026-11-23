@@ -344,6 +344,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             _ = try await host.webView.callAsyncJavaScript("return await window.__omarkie.fileOperation('commit', change)", arguments: ["change": change], in: nil, contentWorld: .page)
           }
           outcome = ["ok": true, "value": change]
+        } catch let error as NativeFailure where error.code == "LEARNING_ERROR" {
+          outcome = ["ok": false, "error": error.message, "code": error.code]
         } catch { outcome = ["ok": false, "error": error.localizedDescription] }
         for host in locked {
           _ = try? await host.webView.callAsyncJavaScript("return await window.__omarkie.fileOperation('release', {})", arguments: [:], in: nil, contentWorld: .page)

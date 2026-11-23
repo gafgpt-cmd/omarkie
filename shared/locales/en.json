@@ -48,6 +48,7 @@
   "阅读数据路径不安全。": "The reading data path is unsafe.",
   "阅读记录损坏，未更改原文件。": "The reading journal is damaged. The original file was not changed.",
   "Could not confirm reading history recovery.": "Could not confirm reading history recovery.",
+  "Resolve the pending reading move before editing reading history.": "Resolve the pending reading move before editing reading history.",
   "阅读笔记.md": "Reading notes.md",
   "无法导出。请选择新的文件名。": "Could not export. Choose a new file name.",
   "请先打开文件夹并保存文档。": "Open a folder and save the document first.",

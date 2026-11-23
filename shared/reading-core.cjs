@@ -1,5 +1,5 @@
 // Also evaluated by the native host in an isolated JavaScriptCore context.
-module.exports = function readingCore(digest) {
+module.exports = function readingCore(digest, translate = message => message) {
   const kinds = new Set(["note", "card", "answer"]);
   const invalid = () => new Error("阅读图层数据无效。");
   const normalize = text => text.normalize("NFC").replace(/\s+/gu, " ").trim();
@@ -137,7 +137,9 @@ module.exports = function readingCore(digest) {
   const tracked = (entries, prefix) => [...entries.keys()].filter(file => under(file, prefix)).map(file => file.slice(prefix.length + 1));
   function checkPending(entries, document, subtree = false) {
     const intent = entries.pending;
-    if (intent && [intent.from, intent.to].some(path => under(document, path) || subtree && under(path, document))) throw new Error("Resolve the pending reading move before editing reading history.");
+    if (intent && [intent.from, intent.to].some(path => under(document, path) || subtree && under(path, document))) {
+      throw Object.assign(new Error(translate("Resolve the pending reading move before editing reading history.")), { code: "LEARNING_ERROR" });
+    }
   }
 
   function putDocument(entries, document, item, owner) {
@@ -198,11 +200,13 @@ module.exports = function readingCore(digest) {
           const { from, to } = move;
           checkMove(from, to);
           if (entries.pending?.from !== from || entries.pending?.to !== to) throw invalid();
+          const moved = (entries.pending.files ?? [""]).map(suffix => suffix ? `${from}/${suffix}` : from)
+            .filter(file => entries.has(file)).map(file => [file, entries.get(file)]);
           delete entries.pending;
-          const moved = [...entries].filter(([file]) => under(file, from));
-          for (const file of entries.keys()) if (under(file, from) || under(file, to)) entries.delete(file);
+          for (const [file] of moved) entries.delete(file);
           for (const [file, items] of moved) {
             const document = to + file.slice(from.length);
+            entries.delete(document);
             for (const item of items.values()) indexEntry(entries, { ...item, document });
           }
           continue;

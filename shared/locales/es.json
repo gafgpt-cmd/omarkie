@@ -48,6 +48,7 @@
   "阅读数据路径不安全。": "La ruta de los datos de lectura no es segura.",
   "阅读记录损坏，未更改原文件。": "El registro de lectura está dañado. El archivo original no se ha modificado.",
   "Could not confirm reading history recovery.": "No se pudo confirmar la recuperación del historial de lectura.",
+  "Resolve the pending reading move before editing reading history.": "Resuelve el traslado pendiente antes de editar el historial de lectura.",
   "阅读笔记.md": "Notas de lectura.md",
   "无法导出。请选择新的文件名。": "No se ha podido exportar. Elige un nombre de archivo nuevo.",
   "请先打开文件夹并保存文档。": "Abre una carpeta y guarda el documento primero.",

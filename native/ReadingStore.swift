@@ -110,8 +110,9 @@ final class NativeReadingStore {
                 if files.isEmpty { try moveExclusive(source, destination); return }
                 guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 let move = ["from": from, "to": to]
-                guard let fingerprint = try Self.moveFingerprint(root, from, files) else { throw NativeFailure(Self.unsafe) }
-                try append(["intent": ["from": from, "to": to, "fingerprint": fingerprint, "files": files] as [String: Any]])
+                guard let evidence = try Self.moveFingerprint(root, from, files, skipMissing: true) else { throw NativeFailure(Self.unsafe) }
+                if evidence.files.isEmpty { try moveExclusive(source, destination); return }
+                try append(["intent": ["from": from, "to": to, "fingerprint": evidence.fingerprint, "files": evidence.files] as [String: Any]])
                 do { try moveExclusive(source, destination) }
                 catch { try? append(["cancel": true]); throw error }
                 try? append(["move": move])
@@ -142,7 +143,8 @@ final class NativeReadingStore {
     core.context.exception = nil
     let value = core.invokeMethod(name, withArguments: args)
     if let exception = core.context.exception {
-      throw NativeFailure(exception.forProperty("message")?.toString() ?? Self.invalid)
+      let code = exception.forProperty("code")?.toString()
+      throw NativeFailure(exception.forProperty("message")?.toString() ?? Self.invalid, code == "LEARNING_ERROR" ? "LEARNING_ERROR" : "DOCUMENT_ERROR")
     }
     guard let value else { throw NativeFailure(Self.invalid) }
     return value
@@ -152,13 +154,18 @@ final class NativeReadingStore {
     (metadata.st_mode & S_IFMT) == S_IFREG && metadata.st_nlink == 1
   }
 
-  private static func moveFingerprint(_ root: URL, _ prefix: String, _ files: [String]) throws -> String? {
+  private static func moveFingerprint(_ root: URL, _ prefix: String, _ files: [String], skipMissing: Bool = false) throws -> (fingerprint: String, files: [String])? {
     var rows = [String]()
+    var measured = [String]()
     for suffix in files {
       let target = root.appendingPathComponent(suffix.isEmpty ? prefix : prefix + "/" + suffix)
       guard canonicalFileURL(target).path == target.path else { return nil }
       let fd = open(target.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-      if fd < 0, errno == ENOENT || errno == ENOTDIR || errno == ELOOP { return nil }
+      if fd < 0, errno == ENOENT || errno == ENOTDIR {
+        if skipMissing { continue }
+        return nil
+      }
+      if fd < 0, errno == ELOOP { return nil }
       guard fd >= 0 else { throw NativeFailure(unsafe) }
       let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
       defer { try? handle.close() }
@@ -170,11 +177,12 @@ final class NativeReadingStore {
         hash.update(data: chunk)
       }
       let marker = "\(size):" + hash.finalize().map { String(format: "%02x", $0) }.joined()
-      if files.count == 1 && suffix.isEmpty { return marker }
+      if files.count == 1 && suffix.isEmpty { return (marker, [suffix]) }
+      measured.append(suffix)
       rows += [suffix, marker]
     }
     let bytes = Data(rows.joined(separator: "\0").utf8)
-    return "\(bytes.count):\(hashData(bytes))"
+    return ("\(bytes.count):\(hashData(bytes))", measured)
   }
 
   private static func revision(_ descriptor: Int32) throws -> Revision {
@@ -298,7 +306,7 @@ final class NativeReadingStore {
        let from = intent["from"] as? String, let to = intent["to"] as? String, let fingerprint = intent["fingerprint"] as? String {
       do {
         let files = intent["files"] as? [String] ?? [""]
-        let source = try Self.moveFingerprint(folder, from, files) == fingerprint, destination = try Self.moveFingerprint(folder, to, files) == fingerprint
+        let source = try Self.moveFingerprint(folder, from, files)?.fingerprint == fingerprint, destination = try Self.moveFingerprint(folder, to, files)?.fingerprint == fingerprint
         if source != destination {
           if destination { try append(["move": ["from": from, "to": to]]) }
           else { try append(["cancel": true]) }

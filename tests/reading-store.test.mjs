@@ -9,6 +9,7 @@ import readingCore from "../shared/reading-core.cjs";
 import { moveReadingEntries, readingMarkdown, readingStore } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
 import { Workspace } from "../electron/workspace.mjs";
+import { t as translate } from "../electron/i18n.mjs";
 import { dueCards } from "../src/flashcards.ts";
 
 const { readingAnchor, resolveReadingAnchors } = readingCore(digest);
@@ -170,6 +171,33 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
   }
 });
 
+test("folder move and undo leave absent descendants at their original paths", async t => {
+  const { store, source } = await fixture(t);
+  const chapter = path.join(store.folder, "chapter");
+  await mkdir(chapter);
+  for (const name of ["stays.md", "gone.md"]) {
+    const file = path.join(chapter, name);
+    await writeFile(file, body);
+    const record = await store.open(file);
+    await readingStore(store, record.id, { action: "put", item: note(name) });
+  }
+  await rm(path.join(chapter, "gone.md"));
+  const workspace = new Workspace(store.folder);
+  const run = async operation => workspace.apply(await moveReadingEntries(store.folder,
+    move => workspace.execute(operation, store, undefined, move)), store);
+  const owners = async () => Object.fromEntries((await readingStore(store, source.id, { action: "list", scope: "vault" })).map(item => [item.id, item.document]));
+  await run({ action: "rename", path: chapter, name: "renamed" });
+  await assert.rejects(stat(chapter), { code: "ENOENT" });
+  assert.equal(await readFile(path.join(store.folder, "renamed", "stays.md"), "utf8"), body);
+  assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "renamed/stays.md" });
+  await run({ action: "undo" });
+  assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "chapter/stays.md" });
+  await rm(path.join(chapter, "stays.md"));
+  await run({ action: "rename", path: chapter, name: "empty" });
+  assert.ok((await stat(path.join(store.folder, "empty"))).isDirectory());
+  assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "chapter/stays.md" });
+});
+
 test("rating belongs to the reviewed card and survives unrelated path reuse", async t => {
   const { store, source, other } = await fixture(t);
   for (const record of [source, other]) await readingStore(store, record.id, { action: "put", item: { type: "card", id: "same", front: "Q", back: "A" } });
@@ -196,7 +224,9 @@ test("ambiguous fingerprints remain pending until one path matches", async t => 
     assert.equal((await new DocumentStore(store.folder).scan(store.folder)).readingRecoveryWarning, true);
     assert.ok((await readFile(log, "utf8")).endsWith(awaiting));
     for (const record of [source, other]) {
-      await assert.rejects(readingStore(store, record.id, { action: "put", item: note("blocked") }), /pending reading move/i);
+      await assert.rejects(readingStore(store, record.id, { action: "put", item: note("blocked") }), {
+        code: "LEARNING_ERROR", message: translate("Resolve the pending reading move before editing reading history."),
+      });
     }
   }
   await writeFile(other.path, body);

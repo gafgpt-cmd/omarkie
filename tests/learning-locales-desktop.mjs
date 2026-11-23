@@ -8,6 +8,13 @@ import { languages } from "../shared/languages.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 const origin = "http://127.0.0.1:11434";
+const pendingNotice = {
+  en: "Resolve the pending reading move before editing reading history.",
+  es: "Resuelve el traslado pendiente antes de editar el historial de lectura.",
+  ca: "Resol el trasllat pendent abans d’editar l’historial de lectura.",
+  ro: "Rezolvă mutarea în așteptare înainte de a edita istoricul de lectură.",
+  zh: "请先处理尚未完成的移动，再编辑阅读记录。",
+};
 const payloadConsent = {
   en: [`Sends the selected text to ${origin}.`, `Sends this note’s text to ${origin}.`, "Do not send identifiable medical data. Even a local server can forward requests."],
   es: [`Envía el texto seleccionado a ${origin}.`, `Envía el texto de esta nota a ${origin}.`, "No envíes datos médicos identificables. Incluso un servidor local puede reenviar solicitudes."],
@@ -61,6 +68,12 @@ for (const [language] of languages) {
     await button(cards, "从高亮和笔记生成卡片").click();
     await expect(cards.getByRole("textbox", { name: label("答案"), exact: true })).toHaveValue("Highlight fixture");
     await expect(button(cards, "保存选中卡片")).toBeEnabled();
+    const sidecar = path.join(vault, ".omarkie");
+    await mkdir(sidecar, { recursive: true });
+    const intent = { from: "locale.md", to: "moved.md", fingerprint: `0:${"0".repeat(64)}` };
+    await writeFile(path.join(sidecar, "store.jsonl"), JSON.stringify({ v: 1, intent }) + "\n");
+    await button(cards, "保存选中卡片").click();
+    await expect(cards.getByRole("alert")).toHaveText(pendingNotice[language]);
     await page.keyboard.press("Escape");
     await button(rail, "显示{{layer}}", { layer: label("卡片") }).click();
     await button(cards, "考考我").click();
