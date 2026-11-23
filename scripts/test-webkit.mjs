@@ -7,9 +7,16 @@ import assert from "node:assert/strict";
 const directory = await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-"));
 const uploads = [];
 const payloadRequests = [];
+const payloadBoundaryRequests = [];
+const readerMediaRequests = [];
 const projectMediaRequests = [];
 const grammarRequests = [];
 const server = createServer(async (request, response) => {
+  if (request.url?.startsWith("/reader-media-")) {
+    readerMediaRequests.push(request.url);
+    response.writeHead(200, { "Content-Type": "image/png" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64"));
+    return;
+  }
   if (request.url?.startsWith("/project-export-media")) {
     projectMediaRequests.push(request.url);
     response.writeHead(404).end();
@@ -26,6 +33,16 @@ const server = createServer(async (request, response) => {
   if (request.url === "/payload/v1/chat/completions") {
     let body = ""; for await (const chunk of request) body += chunk;
     const payload = JSON.parse(body);
+    const boundary = { "fixture-under": [63_999, 200], "fixture-over": [64_001, 200], "fixture-status": [63_999, 400] }[payload.model];
+    if (boundary) {
+      payloadBoundaryRequests.push(payload.model);
+      const [size, status] = boundary;
+      const wrap = content => JSON.stringify({ choices: [{ message: { content } }] });
+      response.writeHead(status, { "Content-Type": "application/json" });
+      response.write(wrap("x".repeat(size - Buffer.byteLength(wrap("")))));
+      response.end();
+      return;
+    }
     payloadRequests.push(payload);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ choices: [{ message: { content: payload.messages.length === 3 ? "Synthetic follow-up answer." : "Synthetic summary." } }] }));
@@ -119,6 +136,8 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
+  assert.deepEqual(readerMediaRequests, ["/reader-media-control"], "native reader blocks media until explicitly enabled");
+  assert.deepEqual(payloadBoundaryRequests, ["fixture-under", "fixture-over", "fixture-status"]);
   assert.deepEqual(projectMediaRequests, ["/project-export-media-control"], "only the unrestricted native PDF renderer loads the fixture");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
   assert.deepEqual(payloadRequests.map(body => [body.model, body.max_tokens, body.max_completion_tokens, body.messages.slice(1).map(message => message.content)]), [

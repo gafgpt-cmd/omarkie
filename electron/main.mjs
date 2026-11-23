@@ -509,7 +509,7 @@ app
     });
     session.defaultSession.setSpellCheckerDictionaryDownloadURL(dictionaryDownloadURL(dictionarySource(root)));
     const devOrigin = development ? new URL(development).origin : null;
-    session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*"] }, (details, callback) =>
+    session.defaultSession.webRequest.onBeforeRequest({ urls: ["http://*/*", "https://*/*", "ws://*/*", "wss://*/*"] }, (details, callback) =>
       callback({ cancel: !!window && details.webContentsId === window.webContents.id && blocksRequest(details.url, devOrigin, remoteImages) }));
     for (const [name, handler] of Object.entries(handlers))
       ipcMain.handle(`document:${name}`, async (event, ...args) => {

@@ -51,6 +51,7 @@
 - Back up `.omarkie/` with the vault. `store.jsonl` is the journal; `index.json` is rebuilt from it.
 - Use one Omarkie process when first enabling reading history in a vault.
 - Trash and Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes.
+- Tracked notes that become unreadable during a move may retain history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
 ## Study cards (L5)

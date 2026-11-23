@@ -99,6 +99,21 @@ try {
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");
   const summary = await window.desktop.payloadRequest(payload);
   const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
+  const under = await window.desktop.payloadRequest({ ...payload, model: "fixture-under" });
+  const over = await window.desktop.payloadRequest({ ...payload, model: "fixture-over" });
+  const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });
+  const overhead = JSON.stringify({ choices: [{ message: { content: "" } }] }).length;
+  check(under.ok && under.value === "x".repeat(63999 - overhead) && !over.ok && !failed.ok, "native Payload accepts only a valid in-limit 2xx completion");
+  const probe = async route => {
+    const img = document.createElement("img");
+    const loaded = new Promise(resolve => { img.onload = () => resolve(true); img.onerror = () => resolve(false); });
+    img.src = grammarOrigin.replace("http:", "h\tttp:") + route;
+    document.body.append(img);
+    try { return await loaded; } finally { img.remove(); }
+  };
+  check(!await probe("/reader-media-blocked"), "native reader refuses normalized remote media by default");
+  check((await window.desktop.setRemoteImages(true)).ok && await probe("/reader-media-control"), "native reader permits opted-in media");
+  check((await window.desktop.setRemoteImages(false)).ok && !await probe("/reader-media-blocked-again"), "native reader restores the offline guard");
   check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");
   const sizes = await window.desktop.imageSizes(documentId, ["Background-fixture.png", "https://example.invalid/foreign.png"]);
   check(sizes.ok && sizes.value["Background-fixture.png"]?.join("x") === "1x1" && Object.keys(sizes.value).length === 1, "native original dimensions are scoped to owned images");

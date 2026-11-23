@@ -116,6 +116,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var rendererReady = false
   var pendingCommands = [[String: Any]]()
   var titleObservation: NSKeyValueObservation?
+  private var offlineRules: WKContentRuleList?
   func show(hidden: Bool = false) {
     let configuration = WKWebViewConfiguration()
     #if WEBTEST
@@ -158,7 +159,24 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       window.makeKeyAndOrderFront(nil)
       NSApp.activate(ignoringOtherApps: true)
     }
-    webView.load(URLRequest(url: URL(string: "omarkie://app/index.html")!))
+    let block = #"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#
+    let local = ["omarkie", "omarkie-asset", "data", "blob", "about"].map { scheme in
+      #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"ignore-previous-rules"}}"#
+    }
+    let rules = "[" + ([block] + local).joined(separator: ",") + "]"
+    WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-reader", encodedContentRuleList: rules) { [weak self] list, _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        guard let list else {
+          let alert = NSAlert(); alert.messageText = "Could not enable offline reader protection."
+          alert.beginSheetModal(for: self.window)
+          return
+        }
+        self.offlineRules = list
+        content.add(list)
+        self.webView.load(URLRequest(url: URL(string: "omarkie://app/index.html")!))
+      }
+    }
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     if closing { return true }
@@ -621,6 +639,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if panel.runModal() == .OK, let file = panel.url, FileManager.default.isExecutableFile(atPath: file.path) { UserDefaults.standard.set(file.path, forKey: "pandocPath") }
       }
       return ["pandoc": Interchange.pandoc()?.path ?? "", "word": true]
+    case "setRemoteImages":
+      guard let offlineRules else { return false }
+      let content = webView.configuration.userContentController
+      content.remove(offlineRules)
+      if args.first as? Bool != true { content.add(offlineRules) }
+      return true
     case "ready":
       rendererReady = true
       let queued = pendingCommands; pendingCommands.removeAll()

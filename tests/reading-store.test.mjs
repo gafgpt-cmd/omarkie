@@ -131,10 +131,18 @@ test("two warmed processes contend, repair a torn tail and see both commits", { 
   assert.deepEqual(await exits, [[0, null], [0, null]]);
 });
 
-test("reopening recovers both sides of an interrupted rename and releases the lock", { timeout: 10000 }, async t => {
+for (const collisionOnly of [false, true]) test(`reopening recovers an interrupted ${collisionOnly ? "collision-only" : "tracked"} rename`, { timeout: 10000 }, async t => {
   const { store, source, log } = await fixture(t);
-  await readingStore(store, source.id, { action: "put", item: note("seed") });
-  await readingStore(store, source.id, { action: "put", item: { id: "card", type: "card", front: "Q", back: "A" } });
+  if (!collisionOnly) {
+    await readingStore(store, source.id, { action: "put", item: note("seed") });
+    await readingStore(store, source.id, { action: "put", item: { id: "card", type: "card", front: "Q", back: "A" } });
+  } else {
+    const destination = path.join(store.folder, "renamed.md");
+    await writeFile(destination, "Old destination");
+    const record = await store.open(destination);
+    await readingStore(store, record.id, { action: "put", item: note("stale-destination") });
+    await rm(destination);
+  }
   const staleFolder = path.join(store.folder, "renamed.md");
   const staleFile = path.join(staleFolder, "child.md");
   await mkdir(staleFolder);
@@ -170,7 +178,13 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
     const name = moved ? "renamed.md" : "source.md";
     const record = await reopened.open(path.join(store.folder, name));
     await reopened.save(record.id, "Saved before opening Reading Layers");
-    assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), [["seed", name], ["card", name]]);
+    assert.deepEqual((await readingStore(reopened, record.id, { action: "list" })).map(item => [item.id, item.document]), collisionOnly ? [] : [["seed", name], ["card", name]]);
+    if (collisionOnly) {
+      const vault = await readingStore(reopened, record.id, { action: "list", scope: "vault" });
+      assert.deepEqual(vault.map(item => item.id).filter(id => id === "stale-destination"), moved ? [] : ["stale-destination"]);
+      const other = await reopened.open(path.join(store.folder, "other.md"));
+      assert.equal((await readingStore(reopened, moved ? record.id : other.id, { action: "put", item: note("unblocked") })).id, "unblocked");
+    }
     if (moved) {
       const replacement = await reopened.open(source.path);
       assert.deepEqual(await readingStore(reopened, replacement.id, { action: "list" }), []);

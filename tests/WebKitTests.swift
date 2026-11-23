@@ -82,6 +82,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             do {
               try await self.checkLearningPersistence()
               try await self.checkInterruptedMove()
+              try await self.checkCollisionOnlyRecovery()
               try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
               exit(0)
@@ -139,21 +140,60 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
     try FileManager.default.removeItem(at: chapter.appendingPathComponent("missing.md"))
     try atomicWrite(chapter.appendingPathComponent("incoming.md"), Data("Incoming without history".utf8))
+    try FileManager.default.createSymbolicLink(atPath: chapter.appendingPathComponent("link.md").path, withDestinationPath: "incoming.md")
     try FileManager.default.createDirectory(at: renamed, withIntermediateDirectories: false)
     let stale = renamed.appendingPathComponent("incoming.md")
     try atomicWrite(stale, Data("Deleted destination note".utf8))
     let staleScope = NativeReadingStore.Scope(root: root, file: stale, document: "renamed/incoming.md")
     _ = try await reading.perform(staleScope, ["action": "put", "item": ["type": "card", "id": "stale", "front": "Q", "back": "A"]])
+    let staleLink = renamed.appendingPathComponent("link.md")
+    try atomicWrite(staleLink, Data("Old regular file".utf8))
+    let linkScope = NativeReadingStore.Scope(root: root, file: staleLink, document: "renamed/link.md")
+    _ = try await reading.perform(linkScope, ["action": "put", "item": ["type": "card", "id": "stale-link", "front": "Q", "back": "A"]])
     try FileManager.default.removeItem(at: renamed)
     _ = try await reading.moveEntries(root) { move in
       try move(chapter, renamed)
       return [:]
+    }
+    guard try FileManager.default.destinationOfSymbolicLink(atPath: renamed.appendingPathComponent("link.md").path) == "incoming.md" else {
+      throw NativeFailure("Stale link history blocked the folder rename.")
     }
     let entries = try await reading.perform(moved, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     guard entries.first(where: { $0["id"] as? String == "present" })?["document"] as? String == "renamed/present.md",
           entries.first(where: { $0["id"] as? String == "missing" })?["document"] as? String == "chapter/missing.md",
           !entries.contains(where: { $0["id"] as? String == "stale" }) else {
       throw NativeFailure("Folder rename moved history for a missing descendant.")
+    }
+  }
+  @MainActor func checkCollisionOnlyRecovery() async throws {
+    for moved in [false, true] {
+      let root = owner.directory.appendingPathComponent(moved ? "collision-after" : "collision-before")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+      let source = root.appendingPathComponent("source.md"), destination = root.appendingPathComponent("destination.md")
+      try atomicWrite(source, Data("Incoming".utf8)); try atomicWrite(destination, Data("Old".utf8))
+      let script = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+      let reading = NativeReadingStore(script)
+      let destinationScope = NativeReadingStore.Scope(root: root, file: destination, document: "destination.md")
+      _ = try await reading.perform(destinationScope, ["action": "put", "item": ["type": "card", "id": "stale", "front": "Q", "back": "A"]])
+      try FileManager.default.removeItem(at: destination)
+      let worker = Process()
+      worker.executableURL = Bundle.main.executableURL
+      worker.arguments = ["--collision-worker", root.path, moved ? "after" : "before"]
+      try worker.run()
+      defer { if worker.isRunning { worker.terminate() } }
+      let deadline = ContinuousClock.now + .seconds(2)
+      while !FileManager.default.fileExists(atPath: root.appendingPathComponent("interrupted").path) {
+        guard worker.isRunning, ContinuousClock.now < deadline else { throw NativeFailure("Collision worker did not reach the interruption point.") }
+        try await Task.sleep(nanoseconds: 10_000_000)
+      }
+      kill(worker.processIdentifier, SIGKILL)
+      worker.waitUntilExit()
+      guard worker.terminationReason == .uncaughtSignal, worker.terminationStatus == SIGKILL,
+            !(await NativeReadingStore.recoverVault(root)) else { throw NativeFailure("Collision-only move did not recover.") }
+      let live = moved ? destinationScope : NativeReadingStore.Scope(root: root, file: source, document: "source.md")
+      let entries = try await reading.perform(live, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
+      guard entries.compactMap({ $0["id"] as? String }) == (moved ? [] : ["stale"]) else { throw NativeFailure("Collision history resolved incorrectly.") }
+      _ = try await reading.perform(live, ["action": "put", "item": ["type": "card", "id": "new", "front": "Q", "back": "A"]])
     }
   }
   @MainActor func checkLearningPersistence() async throws {
@@ -293,6 +333,27 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
   }
   static func main() {
     setbuf(stdout, nil)
+    if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--collision-worker" {
+      Task {
+        let root = URL(fileURLWithPath: CommandLine.arguments[2])
+        let reading = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
+        let pause = {
+          do { try atomicWrite(root.appendingPathComponent("interrupted"), Data()) }
+          catch { exit(1) }
+          while true { Thread.sleep(forTimeInterval: 1) }
+        }
+        if CommandLine.arguments[3] == "after" { reading.beforeMoveCommit = pause }
+        else { reading.afterMoveIntent = pause }
+        do {
+          _ = try await reading.moveEntries(root) { move in
+            try move(root.appendingPathComponent("source.md"), root.appendingPathComponent("destination.md"))
+            return [:]
+          }
+        } catch { fputs("\(error)\n", stderr) }
+        exit(1)
+      }
+      dispatchMain()
+    }
     if CommandLine.arguments.count == 5, CommandLine.arguments[1] == "--reading-worker" {
       Task {
         do { try await readingWorker(CommandLine.arguments); exit(0) }

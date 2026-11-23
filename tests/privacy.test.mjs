@@ -24,6 +24,17 @@ test("offline HTML drops CSS image sources but preserves explicit sizing", () =>
   assert.doesNotMatch(parsed.innerHTML, /tracker\.example/);
 });
 
+test("offline HTML classifies URLs after browser whitespace normalization", () => {
+  setMarkdownOptions(defaultPreferences);
+  const fixture = '<div><img src="h&#9;ttp://tracker.example/a" srcset="local.png 1x, ht&#13;tp://tracker.example/b 2x"><video src="local.mp4" poster="h&#10;ttp://tracker.example/c"></video><input type="image" src="&#1;http://tracker.example/d"><svg><image href="h&#9;ttp://tracker.example/e"/></svg></div>';
+  const parsed = document.createElement("template");
+  parsed.innerHTML = renderMarkdown(fixture, "doc");
+  assert.equal(parsed.content.querySelector("img")?.getAttribute("src") ?? null, null);
+  assert.equal(parsed.content.querySelector("img")?.getAttribute("srcset") ?? null, null);
+  assert.equal(parsed.content.querySelector("video").hasAttribute("poster"), false);
+  for (const image of parsed.content.querySelectorAll("input, svg image")) assert.equal(image.getAttribute("src") ?? image.getAttribute("href"), null);
+});
+
 test("remote images stay blocked unless the user enables them", () => {
   const source = "![pixel](https://tracker.example/p.gif)";
   assert.equal(defaultPreferences.remoteImages, false);

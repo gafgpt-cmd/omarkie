@@ -51,6 +51,8 @@ final class NativeReadingStore {
 
   #if WEBTEST
   var onContention: (() -> Void)?
+  var beforeMoveCommit: (() -> Void)?
+  var afterMoveIntent: (() -> Void)?
   #endif
 
   static func scope(_ store: DocumentStore, _ id: String) throws -> Scope {
@@ -312,6 +314,9 @@ final class NativeReadingStore {
     }
     var state = try load()
     func append(_ record: [String: Any]) throws {
+      #if WEBTEST
+      if record["move"] != nil { beforeMoveCommit?() }
+      #endif
       var row = record; row["v"] = 1
       var bytes = try JSONSerialization.data(withJSONObject: row)
       bytes.append(10)
@@ -320,6 +325,9 @@ final class NativeReadingStore {
       try handle.write(contentsOf: bytes)
       try handle.synchronize()
       state = try load()
+      #if WEBTEST
+      if record["intent"] != nil { afterMoveIntent?() }
+      #endif
     }
     var warning = try call("badRows", [state.entries]).toInt32() > 0
     if warning { NSLog("Reading journal skipped invalid rows.") }

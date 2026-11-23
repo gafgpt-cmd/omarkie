@@ -50,10 +50,18 @@ test("Payload refuses overlapping requests, oversized responses and provider err
   const fetch = context.mock.method(globalThis, "fetch", () => promise);
   const first = requestPayload(request);
   await assert.rejects(requestPayload(request), { message: t("Wait for the current Payload request to finish.") });
-  resolve(new Response("x".repeat(64_001)));
+  const completion = size => {
+    const empty = JSON.stringify({ choices: [{ message: { content: "" } }] });
+    const text = "x".repeat(size - Buffer.byteLength(empty));
+    return { text, body: JSON.stringify({ choices: [{ message: { content: text } }] }) };
+  };
+  const under = completion(63_999), over = completion(64_001);
+  resolve(new Response(under.body));
   const failure = t("Payload failed. Check the endpoint, model, and API key.");
-  await assert.rejects(first, { message: failure });
-  fetch.mock.mockImplementation(async () => new Response("private provider error details", { status: 400 }));
+  assert.equal(await first, under.text);
+  fetch.mock.mockImplementation(async () => new Response(over.body));
+  await assert.rejects(requestPayload(request), { message: failure });
+  fetch.mock.mockImplementation(async () => new Response(under.body, { status: 400 }));
   await assert.rejects(requestPayload(request), { message: failure });
 });
 

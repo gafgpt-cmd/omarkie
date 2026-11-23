@@ -9,7 +9,7 @@ import DOMPurify from "dompurify";
 import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
-import { bundledImageUrls } from "./htmlResources.ts";
+import { bundledImageUrls, normalizedURL, remoteURL } from "./htmlResources.ts";
 let allowRemoteImages = false;
 export interface Block {
   fromLine: number;
@@ -76,9 +76,10 @@ export function localImageSources(text: string) {
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
 function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string) {
-  if (/^https?:\/\//i.test(source) && !allowRemoteImages)
+  source = normalizedURL(source);
+  if (remoteURL(source) && !allowRemoteImages)
     return `<span class="remote-image">${alt}${t("（远程图片：{{source}}）", { source: md.utils.escapeHtml(source) })}</span>`;
-  const url = /^(?:https?:\/\/|data:image\/(?:png|jpeg|gif|webp);)/i.test(source)
+  const url = remoteURL(source) || /^data:image\/(?:png|jpeg|gif|webp);/i.test(source)
     ? source
     : documentId
       ? `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`
@@ -106,7 +107,6 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     : `<span class="wiki-embed">${name}</span>`;
 };
 function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
-  const remote = /^\s*(?:https?:|\/\/)/i;
   const safe = DOMPurify.sanitize(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll("[style]")) {
@@ -121,9 +121,9 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     else element.removeAttribute("style");
   }
   for (const image of template.content.querySelectorAll("img")) {
-    const source = image.getAttribute("src") || "";
-    if (remote.test(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
-    if (documentId && source && !/^(?:https?:|data:|omarkie-asset:)/i.test(source)) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
+    const source = normalizedURL(image.getAttribute("src") || "");
+    if (remoteURL(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
+    if (documentId && source && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(source)) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
     if (standalone === true && !image.classList.contains("md-standalone") &&
         !image.hasAttribute("width") && !image.hasAttribute("height") &&
@@ -152,22 +152,22 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     if (bundled) image.src = bundled;
   }
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll<Element>("[srcset],[poster],[style],[background],input[src],image")) {
-    if (/(?:https?:|(?:^|[\s,])\/\/)/i.test(element.getAttribute("srcset") || "")) element.removeAttribute("srcset");
+    if ((element.getAttribute("srcset") || "").split(",").some(remoteURL)) element.removeAttribute("srcset");
     for (const attribute of ["poster", "background", ...(element.localName === "input" ? ["src"] : []), ...(element.localName === "image" ? ["href", "xlink:href"] : [])])
-      if (remote.test(element.getAttribute(attribute) || "")) element.removeAttribute(attribute);
+      if (remoteURL(element.getAttribute(attribute) || "")) element.removeAttribute(attribute);
   }
   if (!allowRemoteImages) for (const media of template.content.querySelectorAll("video,audio,iframe,source,track")) {
-    const source = [media, ...media.querySelectorAll("source,track")].map(item => item.getAttribute("src") || "").find(item => remote.test(item));
+    const source = [media, ...media.querySelectorAll("source,track")].map(item => normalizedURL(item.getAttribute("src") || "")).find(remoteURL);
     if (source === undefined) continue;
     const placeholder = document.createElement("span"); placeholder.className = "remote-image"; placeholder.textContent = t("（远程图片：{{source}}）", { source: source.trim() }).trim();
     media.replaceWith(placeholder);
   }
   for (const frame of template.content.querySelectorAll("iframe")) {
-    if (!/^https:\/\//i.test(frame.getAttribute("src") || "")) { frame.remove(); continue; }
+    if (!/^https:\/\//i.test(normalizedURL(frame.getAttribute("src") || ""))) { frame.remove(); continue; }
     frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.setAttribute("loading", "lazy");
   }
   for (const media of template.content.querySelectorAll("video,audio,source")) {
-    const source = media.getAttribute("src"); if (source && documentId && !/^(?:https?:|data:|omarkie-asset:)/i.test(source)) media.setAttribute("src", `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
+    const source = normalizedURL(media.getAttribute("src") || ""); if (source && documentId && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(source)) media.setAttribute("src", `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
   }
   return template.innerHTML;
 }
