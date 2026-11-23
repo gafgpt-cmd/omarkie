@@ -344,7 +344,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           let change: [String: String]
           if ["rename", "move", "undo", "trash"].contains(operation["action"] ?? "") {
             let folder = operation["action"] == "undo" ? owner.workspace.undo?.folder : store.folder
-            let trash = operation["action"] == "trash" ? operation["path"].map { (URL(fileURLWithPath: $0), UUID().uuidString) } : nil
+            let trash = operation["action"] == "trash" ? (try owner.workspace.authorize(operation["path"] ?? folder?.path ?? "", store: store), UUID().uuidString) : nil
             let restoring = operation["action"] == "undo" ? owner.workspace.undo?.trashID : nil
             let workspace = owner.workspace
             let snapshot = DocumentStore(store.dataDirectory)

@@ -1,3 +1,6 @@
-import { renderDiagrams } from "./diagrams";
-
-Object.assign(window, { renderProjectDiagrams: renderDiagrams });
+Object.assign(window, {
+  async renderProjectDiagrams(container: HTMLElement) {
+    const { renderDiagrams } = await import("./diagrams");
+    await renderDiagrams(container);
+  },
+});

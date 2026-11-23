@@ -27,8 +27,10 @@ const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: profil
 const application = await electron.launch({ args: [root, ...headlessArguments], env }), page = await application.firstWindow(), errors = [], outbound = [];
 page.on("pageerror", error => errors.push(error.message));
 page.on("request", request => { if (/^https?:/.test(request.url())) outbound.push(request.url()); });
-const projectRequests = [];
-page.on("request", request => { if (/\/projectExport-[^/]+\.js$/.test(request.url())) projectRequests.push(request.url()); });
+const projectScripts = [];
+const debuggerSession = await page.context().newCDPSession(page);
+debuggerSession.on("Debugger.scriptParsed", ({ url }) => { if (/\/projectExport-[^/]+\.js$/.test(url)) projectScripts.push(url); });
+await debuggerSession.send("Debugger.enable");
 await fullSize(application, page);
 const rich = page.locator('.document-editor:not([hidden]) .rich-document');
 const dialog = page.getByRole("dialog", { name: "Document tools", exact: true });
@@ -115,7 +117,7 @@ try {
   await application.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, project);
   await dialog.getByRole("button", { name: "Choose project folder…", exact: true }).click();
   await expect(dialog.getByTitle(await realpath(project), { exact: true })).toBeVisible();
-  assert.deepEqual(projectRequests, []);
+  assert.equal(projectScripts.length, 0);
   await close();
   await page.keyboard.press("ControlOrMeta+,");
   await page.locator('input[name="remoteImages"]').check();
@@ -165,7 +167,7 @@ try {
   assert.match(pdfImages, /\bimage\s+1\s+1\b/); assert.match(pdfImages, /\bimage\s+3\s+2\b/);
   assert.equal(new Set([...pdfImages.matchAll(/\bimage\s+(\d+)\s+\d+/g)].map(match => Number(match[1])).filter(width => width > 3)).size, 2);
   assert.equal(await readFile(first, "utf8"), opening); assert.equal(await readFile(second, "utf8"), ending);
-  assert.equal(projectRequests.length, 1);
+  assert.equal(projectScripts.length, 1);
   await page.screenshot({ path: path.join(qa, "project-export.png") });
   assert.equal(await readFile(file, "utf8"), source); assert.deepEqual(errors, []); assert.deepEqual(outbound, []);
   console.log(JSON.stringify({ passed: ["wiki aliases and heading navigation", "visible ambiguity", "tag search", "linked mentions", "lazy graph", "property preview and undo", "explicit make-ready", "non-destructive asset report", "maintained Markdown checks", "reusable templates", "real citeproc DOCX and PDF", "copied OKF bundle", "original bytes unchanged", "mixed line endings preserve exact body and undo", "cyclic YAML properties do not crash", "lazy project export with draft ordering, one bibliography, one letterhead, and chapter-local assets", "no outbound renderer requests"], artifacts: qa, exports: output }, null, 2));

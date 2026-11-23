@@ -58,9 +58,16 @@ final class NativeReadingStore {
     guard let path = try store.require(id).path, let folder = store.folder else {
       throw NativeFailure("请先打开文件夹并保存文档。")
     }
-    let root = canonicalFileURL(folder), file = URL(fileURLWithPath: path).standardizedFileURL
-    guard contained(root, file) else { throw NativeFailure(unsafe) }
-    return Scope(root: root, file: file, document: String(file.path.dropFirst(root.path.count + 1)))
+    let file = URL(fileURLWithPath: path)
+    guard let document = relativePath(folder, file) else { throw NativeFailure(unsafe) }
+    return Scope(root: folder, file: file, document: document)
+  }
+
+  private static func relativePath(_ root: URL, _ file: URL) -> String? {
+    let prefix = root.path == "/" ? "/" : root.path + "/"
+    let path = file.path
+    guard path.hasPrefix(prefix), path.count > prefix.count else { return nil }
+    return String(path.dropFirst(prefix.count))
   }
 
   func perform(_ scope: Scope, _ request: [String: Any], current: @escaping () -> Bool = { true }) async throws -> Any {
@@ -79,19 +86,15 @@ final class NativeReadingStore {
           guard let folder else { return try execute(moveExclusive) }
           let root = canonicalFileURL(folder)
           return try self.transaction(root, writing: false) { state, append, _ in
-              let offset = root.path.count + 1
-              let relative = { (url: URL) in String(url.standardizedFileURL.path.dropFirst(offset)) }
               var detached: [String: String]?
-              if let state, let (url, id) = trash, contained(root, url) {
-                let file = relative(url)
+              if let state, let (url, id) = trash, let file = Self.relativePath(root, url) {
                 guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
                 detached = ["path": file, "id": id]
                 _ = try self.call("checkPending", [state.entries, file, true])
               }
               if let detached { try append(["trash": detached]) }
               do { return try execute { source, destination in
-                if let state, let restoring, contained(root, destination), try self.call("hasTrash", [state.entries, restoring]).toBool() {
-                  let file = relative(destination)
+                if let state, let restoring, let file = Self.relativePath(root, destination), try self.call("hasTrash", [state.entries, restoring]).toBool() {
                   guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
                   _ = try self.call("checkPending", [state.entries, file, true])
                   try append(["restore": ["path": file, "id": restoring]])
@@ -99,11 +102,9 @@ final class NativeReadingStore {
                   catch { try append(["trash": ["path": file, "id": restoring]]); throw error }
                   return
                 }
-                guard state != nil, contained(root, source), contained(root, destination) else {
+                guard let state, let from = Self.relativePath(root, source), let to = Self.relativePath(root, destination) else {
                   try moveExclusive(source, destination); return
                 }
-                let from = relative(source), to = relative(destination)
-                guard let state else { throw NativeFailure(Self.unsafe) }
                 _ = try self.call("checkMove", [from, to])
                 _ = try self.call("checkPending", [state.entries, from, true])
                 _ = try self.call("checkPending", [state.entries, to, true])
