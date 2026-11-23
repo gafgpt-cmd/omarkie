@@ -4,13 +4,14 @@ window.addEventListener("error", (event) => errors.push(event.message));
 window.addEventListener("unhandledrejection", (event) =>
   errors.push(String(event.reason)),
 );
-const wait = async (predicate) => {
-  const deadline=Date.now()+10000;
-  while (Date.now()<deadline) {
-    if (predicate()) return;
+const wait = async (predicate, label = "Condition not reached", timeout = 10000) => {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const result = predicate();
+    if (result) return result;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error("Condition not reached");
+  throw new Error(label);
 };
 const check = (condition, label) => {
   if (!condition) throw new Error(label);
@@ -115,37 +116,71 @@ try {
   };
   await remotePreference(true);
   const primary = "Background-fixture.png";
-  const mediaDraft = { id: "preview-media", path: null, name: "Media-preview.md", lineEnding: "\n",
-    content: `<div><img alt="Preview image" src="${primary}" srcset="${grammarOrigin}/reader-media-control 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-poster"></video></div>\n` };
-  mediaDraft.savedContent = mediaDraft.content;
-  check((await window.desktop.registerDraft(mediaDraft)).ok, "native registers the Markdown media fixture");
-  window.__omarkie.command({ action: "opened", document: mediaDraft });
   const image = container => container?.querySelector('img[alt="Preview image"]');
-  await wait(() => image(root())?.currentSrc.endsWith("/reader-media-control") && image(root()).naturalWidth > 0);
-  check(true, "native Markdown editing permits opted-in media");
-  const offlineStart = new Image();
-  offlineStart.src = `${grammarOrigin}/reader-media-offline-start`;
-  await offlineStart.decode();
-  const assertOffline = async container => {
-    await wait(() => image(container())?.currentSrc.includes(primary) && image(container()).naturalWidth > 0 && container().querySelector("video"));
-    check(!image(container()).hasAttribute("srcset") && !container().querySelector("video").hasAttribute("poster"), "native preview keeps the local image and strips remote media");
+  const probe = async (phase, name, container) => {
+    const img = new Image();
+    let loaded;
+    img.onload = () => { loaded = true; };
+    img.onerror = () => { loaded = false; };
+    try {
+      container.append(img);
+      img.src = `${grammarOrigin}/reader-media-${phase}-${name}`;
+      await wait(() => loaded !== undefined, `${phase}: media probe ${name} did not settle`);
+      return loaded;
+    } finally { img.remove(); }
   };
-  document.querySelector('[data-testid="reading-layers-toggle"]').click();
-  await wait(() => document.querySelector(".layers-rail"));
-  await assertOffline(root);
+  const openMedia = async phase => {
+    const route = `/reader-media-${phase}-control`;
+    const content = `<div><img alt="Preview image" src="${primary}" srcset="${grammarOrigin}${route} 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video></div>\n`;
+    const draft = { id: `preview-media-${phase}`, path: null, name: `Media-${phase}.md`, lineEnding: "\n", content, savedContent: content };
+    const registered = await window.desktop.registerDraft(draft);
+    if (!registered.ok) throw new Error(`${phase}: could not register media fixture: ${registered.error}`);
+    window.__omarkie.command({ action: "opened", document: draft });
+    await wait(() => image(root())?.currentSrc.endsWith(route) && image(root()).naturalWidth > 0, `${phase}: opted-in editing did not decode remote media`);
+    check(await probe(phase, "offline-start", document.body), `${phase}: native Markdown editing permits opted-in media`);
+  };
+  const assertOffline = async (phase, container) => {
+    await wait(() => {
+      const preview = container();
+      const alert = preview?.querySelector("[role=alert]");
+      if (alert) throw new Error(`${phase}: ${alert.textContent}`);
+      const img = image(preview);
+      return img?.currentSrc === `omarkie-asset://local/preview-media-${phase}/${primary}` && img.naturalWidth > 0;
+    }, `${phase}: local preview image did not decode`);
+    const preview = container(), video = preview.querySelector("video");
+    check(!image(preview).hasAttribute("srcset") && video && !video.hasAttribute("poster"), `${phase}: preview keeps the local image and strips remote media`);
+    check(!await probe(phase, "offline-probe", preview), `${phase}: native policy blocks remote preview requests`);
+  };
+  const closeMedia = async phase => {
+    window.__omarkie.command({ action: "close" });
+    await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media draft did not close`);
+  };
+  await openMedia("reading");
+  const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
+  readingToggle.click();
+  await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
+  await assertOffline("reading", root);
+  await closeMedia("reading");
+  const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
+  readingClose.click();
+  await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
+  await openMedia("clean");
   window.__omarkie.command({ action: "clean-converted" });
-  await wait(() => document.querySelector(".clean-layer"));
-  await assertOffline(() => document.querySelector(".clean-layer"));
-  window.__omarkie.command({ action: "close" });
-  await wait(() => document.querySelector('.document-title')?.textContent === 'WebKit-fixture.md');
-  document.querySelector('[data-testid="reading-layers-close"]')?.click();
+  const cleanLayer = () => document.querySelector(".clean-layer");
+  await wait(cleanLayer, "Clean preview did not open");
+  await assertOffline("clean", cleanLayer);
+  await closeMedia("clean");
   window.__omarkie.command({ action: "document-tools" });
-  const writingTab = () => document.querySelector('.workflow-tabs [data-tab="writing"]');
-  await wait(writingTab);
-  writingTab().click();
-  await wait(() => document.querySelector('[data-testid="project-export-pdf"]:enabled'));
-  document.querySelector('[data-testid="project-export-pdf"]').click();
-  await wait(() => document.querySelector('.utility-dialog [role="alert"]')?.textContent.includes("PDF exported"));
+  const writingTab = await wait(() => document.querySelector('.workflow-tabs [data-tab="writing"]:enabled'), "Document Tools writing tab did not become enabled");
+  writingTab.click();
+  const exportPdf = await wait(() => document.querySelector('[data-testid="project-export-pdf"]:enabled'), "Project PDF export button did not become enabled");
+  exportPdf.click();
+  await wait(() => {
+    if (exportPdf.disabled) return false;
+    const message = document.querySelector('.utility-dialog [role="alert"]')?.textContent;
+    if (message !== "PDF exported.") throw new Error(`Project PDF export: ${message || "finished without a result"}`);
+    return true;
+  }, "Project PDF export did not finish", 40000);
   document.querySelector('.dialog-heading button').click();
   await remotePreference(false);
   check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");

@@ -138,10 +138,17 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
-  const offlineStart = readerMediaRequests.indexOf("/reader-media-offline-start");
-  assert.ok(offlineStart > 0 && readerMediaRequests.slice(0, offlineStart).includes("/reader-media-control"), "editing loads the owned media fixture before preview");
-  assert.ok(readerMediaRequests.slice(0, offlineStart).every(route => ["/reader-media-control", "/reader-media-poster"].includes(route)), "only editing controls load before preview");
-  assert.deepEqual(readerMediaRequests.slice(offlineStart + 1), [], "previews and project preparation never request remote fixture media");
+  let next = 0;
+  for (const phase of ["reading", "clean"]) {
+    const prefix = `/reader-media-${phase}-`;
+    const start = readerMediaRequests.indexOf(`${prefix}offline-start`, next);
+    assert.ok(start > next, `${phase}: missing editing requests or offline boundary`);
+    const editing = readerMediaRequests.slice(next, start);
+    assert.ok(editing.includes(`${prefix}control`), `${phase}: editing loads the owned media fixture before preview`);
+    assert.ok(editing.every(route => [`${prefix}control`, `${prefix}poster`].includes(route)), `${phase}: unexpected request before preview: ${editing.join(", ")}`);
+    next = start + 1;
+  }
+  assert.deepEqual(readerMediaRequests.slice(next), [], "Clean preview and project preparation never request remote fixture media");
   assert.deepEqual(payloadBoundaryRequests, ["fixture-under", "fixture-over", "fixture-status"]);
   assert.deepEqual(projectMediaRequests, ["/project-export-media-control"], "only the unrestricted native PDF renderer loads the fixture");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");
