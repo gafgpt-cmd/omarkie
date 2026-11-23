@@ -258,9 +258,13 @@ final class NativeReadingStore {
     guard root >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(root) }
     let needsLock = writing || lockForMove
-    if needsLock, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
+    var requireDirectory = needsLock
+    if needsLock, mkdirat(root, ".omarkie", 0o700) != 0, errno != EEXIST {
+      guard lockForMove, !writing, [EACCES, EPERM, EROFS].contains(errno) else { throw NativeFailure(Self.unsafe) }
+      requireDirectory = false
+    }
     let directory = openat(root, ".omarkie", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    if directory < 0, !needsLock, errno == ENOENT { return try run(nil, noAppend, false) }
+    if directory < 0, !requireDirectory, errno == ENOENT { return try run(nil, noAppend, false) }
     guard directory >= 0 else { throw NativeFailure(Self.unsafe) }
     defer { _ = close(directory) }
     if !needsLock {

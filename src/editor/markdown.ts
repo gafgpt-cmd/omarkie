@@ -48,12 +48,14 @@ md.renderer.rules.fence = (tokens, index, options, env, self) => {
 };
 export function exportDiagramBlocks(source: string) {
   const { lines, offsets } = sourceLines(source);
-  return md.parse(source, {}).flatMap(token => {
+  return md.parse(source, {}).flatMap((token, index, tokens) => {
     const language = token.type === "fence" && diagramLanguage(token);
     if (!language || !token.map) return [];
-    const [start, end] = token.map;
+    const [start, end] = token.map, paragraph = tokens[index - 3];
+    const afterParagraph = tokens[index - 1]?.type === "paragraph_close" && paragraph?.type === "paragraph_open"
+      && paragraph.level === token.level && paragraph.map?.[1] === start;
     return [{ language, body: token.content, prefix: lines[start].slice(0, lines[start].indexOf(token.markup)),
-      from: offsets[start], to: offsets[end] ?? source.length }];
+      from: offsets[start], to: offsets[end] ?? source.length, afterParagraph }];
   });
 }
 // Natural sizes of images seen so far: later renders reserve the box and the page does not jump.

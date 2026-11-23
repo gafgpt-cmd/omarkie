@@ -277,11 +277,23 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
-    let coordination = owner.directory.appendingPathComponent("journal-test")
+    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    let root = canonicalFileURL(owner.directory).appendingPathComponent("first-journal-vault")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    let file = root.appendingPathComponent("first.md"), source = root.appendingPathComponent("source.md")
+    try atomicWrite(file, Data("First writer".utf8))
+    try atomicWrite(source, Data("Renamed note".utf8))
+    try await checkReadingContention(.init(root: root, file: file, document: "first.md"),
+                                     expected: ["parallel-a", "parallel-b"], renaming: source)
+    print("PASS: native journal replay, Markdown export and exclusive destination")
+  }
+  @MainActor func checkReadingContention(_ scope: NativeReadingStore.Scope, expected: Set<String>, renaming: URL? = nil) async throws {
+    let core = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+    let coordination = owner.directory.appendingPathComponent(renaming == nil ? "journal-test" : "first-journal-test")
     try FileManager.default.createDirectory(at: coordination, withIntermediateDirectories: false)
     let child = Process()
     child.executableURL = Bundle.main.executableURL
-    child.arguments = ["--reading-worker", scope.root.path, scope.file.path, coordination.path]
+    child.arguments = ["--reading-worker", scope.root.path, (renaming ?? scope.file).path, coordination.path] + (renaming == nil ? [] : ["renamed.md"])
     try child.run()
     defer { if child.isRunning { child.terminate() } }
     func waitFor(_ file: String) async throws {
@@ -292,31 +304,41 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
     }
     try await waitFor("held")
-    let store = reopened
+    let store = NativeReadingStore(core)
     store.onContention = { try? atomicWrite(coordination.appendingPathComponent("contended"), Data()) }
     let journal = scope.root.appendingPathComponent(".omarkie/store.jsonl")
-    let before = try Data(contentsOf: journal)
+    let before = renaming == nil ? try Data(contentsOf: journal) : nil
     let put = Task { try await store.perform(scope, ["action": "put", "item": ["id": "parallel-a", "type": "card", "front": "A", "back": "1"]]) }
     try await waitFor("contended")
     let indexFile = scope.root.appendingPathComponent(".omarkie/index.json")
-    guard try Data(contentsOf: journal) == before else { throw NativeFailure("Native append escaped the worker lock.") }
+    if let before {
+      guard try Data(contentsOf: journal) == before else { throw NativeFailure("Native append escaped the worker lock.") }
+    } else {
+      guard !FileManager.default.fileExists(atPath: journal.path) else { throw NativeFailure("First native append escaped the rename lock.") }
+    }
     try atomicWrite(coordination.appendingPathComponent("release"), Data())
     _ = try await put.value
     try await waitFor("written")
     try atomicWrite(coordination.appendingPathComponent("read"), Data())
     try await waitFor("ids.json")
-    let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
-    let local = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let local = try await store.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
+    if let renaming {
+      let renamed = scope.root.appendingPathComponent("renamed.md")
+      guard !FileManager.default.fileExists(atPath: renaming.path),
+            try String(contentsOf: renamed, encoding: .utf8) == "Renamed note",
+            Set(local.compactMap { $0["document"] as? String }) == ["first.md", "renamed.md"] else {
+        throw NativeFailure("First native rename or journal paths are incorrect.")
+      }
+    }
     let remote = try JSONDecoder().decode([String].self, from: Data(contentsOf: coordination.appendingPathComponent("ids.json")))
     guard !FileManager.default.fileExists(atPath: indexFile.path) else { throw NativeFailure("Reading index must stay in memory.") }
-    let fresh = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
-    let replayed = try await fresh.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let fresh = NativeReadingStore(core)
+    let replayed = try await fresh.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     for ids in [local.compactMap { $0["id"] as? String }, remote, replayed.compactMap { $0["id"] as? String }] {
       guard ids.count == expected.count, Set(ids) == expected else { throw NativeFailure("Concurrent native writers disagree on commits.") }
     }
     child.waitUntilExit()
     guard child.terminationStatus == 0 else { throw NativeFailure("Native reading worker failed.") }
-    print("PASS: native journal replay, Markdown export and exclusive destination")
   }
   @MainActor func checkReaderPersistence() async throws {
     let directory = owner.directory, root = canonicalFileURL(directory).path
@@ -409,18 +431,21 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 @main struct WebKitTestMain {
   static func readingWorker(_ args: [String]) async throws {
     let root = URL(fileURLWithPath: args[2]), file = URL(fileURLWithPath: args[3]), coordination = URL(fileURLWithPath: args[4])
-    let scope = NativeReadingStore.Scope(root: root, file: file, document: file.lastPathComponent)
+    let renamed = args.count == 6 ? root.appendingPathComponent(args[5]) : nil
+    let destination = renamed ?? file
     let store = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
-    _ = try await store.perform(scope, ["action": "list"])
-    _ = try await store.moveEntries(root) { _ in
+    _ = try await store.perform(.init(root: root, file: file, document: file.lastPathComponent), ["action": "list"])
+    _ = try await store.moveEntries(root) { move in
       try atomicWrite(coordination.appendingPathComponent("held"), Data())
       let deadline = ContinuousClock.now + .seconds(2)
       while !FileManager.default.fileExists(atPath: coordination.appendingPathComponent("release").path) {
         guard ContinuousClock.now < deadline else { throw NativeFailure("Reading lock was not released by the test.") }
         Thread.sleep(forTimeInterval: 0.01)
       }
+      if let renamed { try move(file, renamed) }
       return [:]
     }
+    let scope = NativeReadingStore.Scope(root: root, file: destination, document: destination.lastPathComponent)
     _ = try await store.perform(scope, ["action": "put", "item": ["id": "parallel-b", "type": "card", "front": "B", "back": "2"]])
     try atomicWrite(coordination.appendingPathComponent("written"), Data())
     let deadline = ContinuousClock.now + .seconds(2)
@@ -428,7 +453,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       guard ContinuousClock.now < deadline else { throw NativeFailure("Reading worker did not receive the list signal.") }
       try await Task.sleep(nanoseconds: 10_000_000)
     }
-    let entries = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let entries = try await store.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     try atomicWrite(coordination.appendingPathComponent("ids.json"), JSONEncoder().encode(entries.compactMap { $0["id"] as? String }))
   }
   static func main() {
@@ -454,7 +479,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
       dispatchMain()
     }
-    if CommandLine.arguments.count == 5, CommandLine.arguments[1] == "--reading-worker" {
+    if [5, 6].contains(CommandLine.arguments.count), CommandLine.arguments[1] == "--reading-worker" {
       Task {
         do { try await readingWorker(CommandLine.arguments); exit(0) }
         catch { fputs("\(error)\n", stderr); exit(1) }

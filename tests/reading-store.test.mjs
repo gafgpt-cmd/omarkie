@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { appendFile, chmod, link, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { appendFile, chmod, link, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import os from "node:os";
@@ -92,25 +92,64 @@ function readWorkerEntries(child) {
 
 test("first journal writers wait for an in-flight move in a never-used vault", { timeout: 10000 }, async t => {
   const { store, source, other, sidecar, log } = await fixture(t);
-  const workers = [source, other].map(record => startWorker(t, store.folder, record.path, `
+  const workspace = new Workspace(store.folder);
+  const original = source.path, renamed = path.join(store.folder, "renamed.md");
+  const workers = ["first", "second"].map(id => startWorker(t, store.folder, other.path, `
     const go = once(process, "message");
     process.send(await list());
     await go;
-    await readingStore(store, note.id, {action:"put", item:{type:"card", id:path.basename(file), front:"Q", back:"A"}});
+    await readingStore(store, note.id, {action:"put", item:{type:"card", id:${JSON.stringify(id)}, front:"Q", back:"A"}});
     process.disconnect();
   `));
   assert.deepEqual(await Promise.all(workers.map(readWorkerEntries)), [[], []]);
   await assert.rejects(stat(sidecar), { code: "ENOENT" });
   const exits = Promise.all(workers.map(child => once(child, "exit")));
-  await moveReadingEntries(store.folder, async () => {
+  const change = await moveReadingEntries(store.folder, move => workspace.execute({ action: "rename", path: original, name: "renamed.md" }, store, undefined, async (from, to) => {
     const attempting = Promise.all(workers.map(child => once(child, "message")));
     workers.forEach(child => child.send("go"));
     assert.deepEqual((await attempting).map(([message]) => message), ["journal-lock-contended", "journal-lock-contended"]);
     await assert.rejects(stat(log), { code: "ENOENT" });
-  });
+    await move(from, to);
+  }));
+  workspace.apply(change, store);
   assert.deepEqual(await exits, [[0, null], [0, null]]);
+  await assert.rejects(stat(original), { code: "ENOENT" });
+  assert.equal(await readFile(renamed, "utf8"), body);
+  await readingStore(store, source.id, { action: "put", item: note("renamed") });
   const items = await readingStore(store, source.id, { action: "list", scope: "vault" });
-  assert.deepEqual(items.map(item => [item.id, item.document]).sort(), [["other.md", "other.md"], ["source.md", "source.md"]]);
+  assert.deepEqual(items.map(item => [item.id, item.document]).sort(), [["first", "other.md"], ["renamed", "renamed.md"], ["second", "other.md"]]);
+});
+
+test("file operations below a read-only unused vault root need no journal", {
+  skip: process.platform === "win32" || process.getuid() === 0,
+}, async t => {
+  const { store, sidecar } = await fixture(t);
+  const root = store.folder, chapter = path.join(root, "chapter"), target = path.join(root, "target");
+  await mkdir(chapter); await mkdir(target);
+  const original = path.join(chapter, "note.md"), renamed = path.join(chapter, "renamed.md");
+  const trashed = path.join(target, "trashed.md");
+  await writeFile(original, body);
+  const noteRecord = await store.open(original);
+  const workspace = new Workspace(root);
+  const change = async operation => {
+    const trash = operation.action === "trash" ? operation.path : undefined;
+    const result = await moveReadingEntries(root, move => workspace.execute(operation, store, file => rename(file, trashed), move), trash);
+    workspace.apply(result, store);
+  };
+  await chmod(root, 0o500);
+  try {
+    await assert.rejects(readingStore(store, noteRecord.id, { action: "put", item: note("blocked") }), { code: "EACCES" });
+    await change({ action: "rename", path: original, name: "renamed.md" });
+    assert.equal(await readFile(renamed, "utf8"), body);
+    await change({ action: "move", path: renamed, target });
+    assert.equal(await readFile(path.join(target, "renamed.md"), "utf8"), body);
+    await change({ action: "undo" });
+    assert.equal(await readFile(renamed, "utf8"), body);
+    await change({ action: "trash", path: renamed });
+    await assert.rejects(stat(renamed), { code: "ENOENT" });
+    assert.equal(await readFile(trashed, "utf8"), body);
+    await assert.rejects(stat(sidecar), { code: "ENOENT" });
+  } finally { await chmod(root, 0o700); }
 });
 
 test("two warmed processes contend, repair a torn tail and see both commits", { timeout: 10000 }, async t => {

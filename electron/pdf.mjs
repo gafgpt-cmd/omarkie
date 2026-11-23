@@ -21,8 +21,11 @@ async function executable(command, environment) {
 }
 export async function pdfConverter(dataDir, environment = process.env) {
   const configured = environment.OMARKIE_PDF_CONVERTER || (await readFile(path.join(dataDir, "pdf-converter"), "utf8").catch(() => "")).trim();
-  const argv = configured ? (configured.startsWith("[") ? JSON.parse(configured) : [configured]) : ["pdf-md"];
-  if (!Array.isArray(argv) || !argv.length || argv.some(part => typeof part !== "string" || !part)) throw new Error(t("PDF 转换器设置无效。"));
+  const invalid = () => new Error(t("PDF 转换器设置无效。"));
+  let argv;
+  try { argv = configured.startsWith("[") ? JSON.parse(configured) : [configured || "pdf-md"]; }
+  catch { throw invalid(); }
+  if (!Array.isArray(argv) || !argv.length || argv.some(part => typeof part !== "string" || !part || part.includes("\0"))) throw invalid();
   const command = await executable(argv[0], environment);
   return command ? [command, ...argv.slice(1)] : null;
 }

@@ -33,8 +33,15 @@ async function scope(store, id) {
 async function directoryAt(root, directory, create = false) {
   let metadata = await info(directory);
   if (!metadata && create) {
-    await mkdir(directory, { mode: 0o700 }).catch(error => { if (error.code !== "EEXIST") throw error; });
-    metadata = await info(directory);
+    try { await mkdir(directory, { mode: 0o700 }); }
+    catch (error) {
+      if (error.code !== "EEXIST") {
+        if (create !== "move" || !["EACCES", "EPERM", "EROFS"].includes(error.code)) throw error;
+        metadata = await info(directory);
+        if (!metadata) return false;
+      }
+    }
+    metadata ??= await info(directory);
   }
   if (metadata && (!metadata.isDirectory() || await realpath(directory) !== path.join(root, ".omarkie"))) throw unsafe();
   return metadata !== null;
@@ -193,7 +200,7 @@ export async function moveReadingEntries(folder, execute, trashPath) {
   if (!folder) return execute();
   const root = await realpath(folder);
   const relative = file => path.relative(root, file).split(path.sep).join("/");
-  return queued(root, () => locked(root, true, () => transaction(root, false, async (entries, append) => {
+  return queued(root, () => locked(root, "move", exists => !exists ? execute() : transaction(root, false, async (entries, append) => {
     const trashed = entries && trashPath && within(root, trashPath) ? { path: relative(trashPath), id: randomUUID() } : null;
     if (trashed && !validPath(trashed.path)) throw invalid();
     if (trashed) { checkPending(entries, trashed.path, true); await append({ trash: trashed }); }

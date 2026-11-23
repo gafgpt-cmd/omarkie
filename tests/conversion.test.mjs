@@ -30,7 +30,7 @@ test('diagram export recognizes spaced and nested fences without consuming surro
   ]);
 });
 test('raster conversion keeps diagrams separate from adjacent paragraphs in quotes and list items', async () => {
-  const source = '> Before quote\n> ``` mermaid\n> graph TD\n> A --> B\n> ```\n> After quote\n\n- Before list\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n  After list\n';
+  const source = '> Before quote\n> ``` mermaid\n> graph TD\n> A --> B\n> ```\n> After quote\n\n- Before list\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n  After list\n-\n  ```mermaid\n  graph TD\n  A --> B\n  ```\n  After empty item\n';
   const root = document.createElement('article');
   root.innerHTML = renderMarkdown(source, 'fixture');
   for (const diagram of root.querySelectorAll('.mermaid-block')) {
@@ -53,6 +53,9 @@ test('raster conversion keeps diagrams separate from adjacent paragraphs in quot
       assert.deepEqual([...container.children].map(p => p.textContent.trim()), [`Before ${label}`, '', `After ${label}`]);
       assert.equal(container.querySelector('img')?.getAttribute('src'), png);
     }
+    const emptyItem = output.querySelector('li + li');
+    assert.deepEqual([...emptyItem.children].map(p => p.textContent.trim()), ['', 'After empty item']);
+    assert.equal(emptyItem.firstElementChild.querySelector('img')?.getAttribute('src'), png);
   } finally {
     Object.assign(canvas, { getContext, toDataURL });
     Object.assign(globalThis, { Image, XMLSerializer });
