@@ -131,27 +131,35 @@ async function locked(root, create, run) {
 
 async function moveFingerprint(root, prefix, files, skipMissing = false) {
   const rows = [], measured = [];
+  if (!files.length && !skipMissing) {
+    const target = path.join(root, prefix);
+    if (!within(root, target) || process.platform === "win32" && prefix.includes("\\")) return null;
+    const metadata = await lstat(target, { bigint: true }).catch(missing);
+    if ((!metadata?.isFile() && !metadata?.isDirectory()) || await realpath(target) !== target) return null;
+    return { fingerprint: `0:${digest(`${metadata.dev}:${metadata.ino}`)}`, files };
+  }
   for (const suffix of files) {
+    try {
     const file = suffix ? `${prefix}/${suffix}` : prefix;
     if (process.platform === "win32" && file.includes("\\")) throw unsafe();
     const target = path.join(root, file);
     if (!within(root, target)) throw unsafe();
     const metadata = await lstat(target).catch(error => error.code === "ENOTDIR" ? null : missing(error));
-    if ((!metadata || metadata.isDirectory()) && skipMissing) continue;
-    if (!metadata?.isFile() || await realpath(target) !== target) return null;
+    if (!metadata?.isFile() || await realpath(target) !== target) { if (skipMissing) continue; return null; }
     const handle = await open(target, constants.O_RDONLY | noFollow).catch(missing);
     if (!handle) { if (skipMissing) continue; return null; }
     let size = 0;
     const hash = createHash("sha256");
     try {
-      if (!(await handle.stat()).isFile()) return null;
+      if (!(await handle.stat()).isFile()) { if (skipMissing) continue; return null; }
       for await (const chunk of handle.createReadStream({ autoClose: false })) { size += chunk.length; hash.update(chunk); }
     } finally { await handle.close(); }
     const marker = `${size}:${hash.digest("hex")}`;
-    if (files.length === 1 && !suffix) return { fingerprint: marker, files: [suffix] };
     measured.push(suffix);
     rows.push(suffix, marker);
+    } catch (error) { if (!skipMissing) throw error; }
   }
+  if (measured.length === 1 && measured[0] === "") return { fingerprint: rows[1], files: measured };
   const bytes = Buffer.from(rows.join("\0"));
   return { fingerprint: `${bytes.length}:${digest(bytes)}`, files: measured };
 }
@@ -208,12 +216,22 @@ export async function moveReadingEntries(folder, execute, trashPath) {
       const from = relative(source), to = relative(destination);
       try { checkMove(from, to); } catch { throw invalid(); }
       checkPending(entries, from, true); checkPending(entries, to, true);
-      const files = [...new Set([...tracked(entries, from), ...tracked(entries, to)])];
-      const evidence = files.length ? await moveFingerprint(root, from, files, true) : { files: [] };
+      const files = tracked(entries, from);
+      let evidence = await moveFingerprint(root, from, files, true);
       if (!evidence) throw unsafe();
-      if (!evidence.files.length) return moveExclusive(source, destination);
+      const collisions = [];
+      for (const suffix of tracked(entries, to)) {
+        const candidate = suffix ? path.join(source, suffix) : source;
+        if (!within(root, candidate) || process.platform === "win32" && suffix.includes("\\")) continue;
+        if (await lstat(candidate).then(stat => stat.isFile(), () => false) && await realpath(candidate).catch(() => null) === candidate) collisions.push(suffix);
+      }
+      if (!evidence.files.length) {
+        if (!collisions.length) return moveExclusive(source, destination);
+        evidence = await moveFingerprint(root, from, []);
+        if (!evidence) return moveExclusive(source, destination);
+      }
       if (pending(entries)) throw unsafe();
-      await append({ intent: { from, to, ...evidence } });
+      await append({ intent: { from, to, ...evidence, collisions } });
       try { await moveExclusive(source, destination); }
       catch (error) { await append({ cancel: true }).catch(() => {}); throw error; }
       await append({ move: { from, to } }).catch(() => {});

@@ -186,7 +186,9 @@ module.exports = function readingCore(digest, translate = message => message) {
         if (intent) {
           checkMove(intent.from, intent.to);
           if (typeof intent.fingerprint !== "string" || !/^\d+:[a-f0-9]{64}$/.test(intent.fingerprint)) throw invalid();
-          if (intent.files !== undefined && (!Array.isArray(intent.files) || !intent.files.length || intent.files.some(file => file !== "" && !validPath(file)))) throw invalid();
+          for (const paths of [intent.files, intent.collisions]) {
+            if (paths !== undefined && (!Array.isArray(paths) || paths.some(file => file !== "" && !validPath(file)))) throw invalid();
+          }
           if (entries.pending) throw invalid();
           entries.pending = intent;
           continue;
@@ -200,11 +202,11 @@ module.exports = function readingCore(digest, translate = message => message) {
           const { from, to } = move;
           checkMove(from, to);
           if (entries.pending?.from !== from || entries.pending?.to !== to) throw invalid();
-          const files = entries.pending.files ?? [""];
+          const { files = [""], collisions = [] } = entries.pending;
           const moved = files.map(suffix => suffix ? `${from}/${suffix}` : from)
             .filter(file => entries.has(file)).map(file => [file, entries.get(file)]);
           delete entries.pending;
-          for (const suffix of files) entries.delete(suffix ? `${to}/${suffix}` : to);
+          for (const suffix of [...files, ...collisions]) entries.delete(suffix ? `${to}/${suffix}` : to);
           for (const [file] of moved) entries.delete(file);
           for (const [file, items] of moved) {
             const document = to + file.slice(from.length);

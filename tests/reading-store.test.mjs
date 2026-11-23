@@ -135,6 +135,13 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
   const { store, source, log } = await fixture(t);
   await readingStore(store, source.id, { action: "put", item: note("seed") });
   await readingStore(store, source.id, { action: "put", item: { id: "card", type: "card", front: "Q", back: "A" } });
+  const staleFolder = path.join(store.folder, "renamed.md");
+  const staleFile = path.join(staleFolder, "child.md");
+  await mkdir(staleFolder);
+  await writeFile(staleFile, "Old destination child");
+  const stale = await store.open(staleFile);
+  await readingStore(store, stale.id, { action: "put", item: note("stale-child") });
+  await rm(staleFolder, { recursive: true });
   for (const moved of [false, true]) {
     const child = startWorker(t, store.folder, source.path, `
       const handle = await open(file, "r");
@@ -192,12 +199,23 @@ test("folder moves transfer present history and clear stale destination history"
     store.records.delete(record.id);
     await rm(dir, { recursive: true });
   }
+  if (process.platform !== "win32") {
+    const dir = path.join(store.folder, "renamed"), staleLink = path.join(dir, "link.md");
+    await mkdir(dir);
+    await writeFile(staleLink, "Old regular file");
+    const stale = await store.open(staleLink);
+    await readingStore(store, stale.id, { action: "put", item: note("stale-link") });
+    store.records.delete(stale.id);
+    await rm(dir, { recursive: true });
+    await symlink("incoming.md", path.join(chapter, "link.md"));
+  }
   const workspace = new Workspace(store.folder);
   const run = async operation => workspace.apply(await moveReadingEntries(store.folder,
     move => workspace.execute(operation, store, undefined, move)), store);
-  const owners = async () => Object.fromEntries((await readingStore(store, source.id, { action: "list", scope: "vault" })).map(item => [item.id, item.document]));
+  const owners = async () => Object.fromEntries((await readingStore(store, source.id, { action: "list", scope: "vault" })).filter(item => item.id !== "stale-link").map(item => [item.id, item.document]));
   await run({ action: "rename", path: chapter, name: "renamed" });
   await assert.rejects(stat(chapter), { code: "ENOENT" });
+  if (process.platform !== "win32") assert.equal(await readFile(path.join(store.folder, "renamed", "link.md"), "utf8"), "Incoming without history");
   assert.equal(await readFile(path.join(store.folder, "renamed", "stays.md"), "utf8"), body);
   assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "renamed/stays.md", "stale-empty": "empty/incoming.md" });
   const incoming = await store.open(path.join(store.folder, "renamed", "incoming.md"));
@@ -211,7 +229,8 @@ test("folder moves transfer present history and clear stale destination history"
   assert.deepEqual(await readingStore(store, incoming.id, { action: "list" }), []);
   const commits = (await readFile(log, "utf8")).trimEnd().split("\n").map(JSON.parse);
   assert.equal(commits.some(row => row.trash), false);
-  assert.deepEqual(commits.at(-2).intent.files, ["incoming.md"]);
+  assert.deepEqual(commits.at(-2).intent.files, []);
+  assert.deepEqual(commits.at(-2).intent.collisions, ["incoming.md"]);
   assert.deepEqual(commits.at(-1).move, { from: "chapter", to: "empty" });
 });
 

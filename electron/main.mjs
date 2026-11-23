@@ -251,7 +251,7 @@ const handlers = {
         preview.webContents.on("will-navigate", event => event.preventDefault());
         preview.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
-        if ((await stat(file)).size > 150 * 1024 * 1024) throw new Error(t("导出内容过大。"));
+        if ((await stat(file)).size > 150 * 1024 * 1024) throw new Error(t("资源过大。"));
         const markup = await readFile(file, "utf8");
         await writeFile(file, `<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup, "utf8");
         await preview.loadFile(file);

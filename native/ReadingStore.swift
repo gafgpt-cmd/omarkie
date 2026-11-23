@@ -106,15 +106,21 @@ final class NativeReadingStore {
                 _ = try self.call("checkMove", [from, to])
                 _ = try self.call("checkPending", [state.entries, from, true])
                 _ = try self.call("checkPending", [state.entries, to, true])
-                let sourceFiles = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
+                let files = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
                 let destinationFiles = try self.call("tracked", [state.entries, to]).toArray() as? [String] ?? []
-                let files = sourceFiles + destinationFiles.filter { !sourceFiles.contains($0) }
+                let collisions = destinationFiles.filter { suffix in
+                  let child = suffix.isEmpty ? source : source.appendingPathComponent(suffix)
+                  var metadata = stat()
+                  return lstat(child.path, &metadata) == 0 && metadata.st_mode & S_IFMT == S_IFREG && canonicalFileURL(child).path == child.path
+                }
                 let move = ["from": from, "to": to]
-                let evidence = files.isEmpty ? (fingerprint: "", files: [String]()) : try Self.moveFingerprint(root, from, files, skipMissing: true)
-                guard let evidence else { throw NativeFailure(Self.unsafe) }
-                if evidence.files.isEmpty { try moveExclusive(source, destination); return }
+                guard var evidence = try Self.moveFingerprint(root, from, files, skipMissing: true) else { throw NativeFailure(Self.unsafe) }
+                if evidence.files.isEmpty {
+                  guard !collisions.isEmpty, let identity = try Self.moveFingerprint(root, from, []) else { try moveExclusive(source, destination); return }
+                  evidence = identity
+                }
                 guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
-                try append(["intent": ["from": from, "to": to, "fingerprint": evidence.fingerprint, "files": evidence.files] as [String: Any]])
+                try append(["intent": ["from": from, "to": to, "fingerprint": evidence.fingerprint, "files": evidence.files, "collisions": collisions] as [String: Any]])
                 do { try moveExclusive(source, destination) }
                 catch { try? append(["cancel": true]); throw error }
                 try? append(["move": move])
@@ -157,23 +163,33 @@ final class NativeReadingStore {
   }
 
   private static func moveFingerprint(_ root: URL, _ prefix: String, _ files: [String], skipMissing: Bool = false) throws -> (fingerprint: String, files: [String])? {
+    if files.isEmpty && !skipMissing {
+      let target = root.appendingPathComponent(prefix)
+      var metadata = stat()
+      guard lstat(target.path, &metadata) == 0, canonicalFileURL(target).path == target.path,
+            metadata.st_mode & S_IFMT == S_IFREG || metadata.st_mode & S_IFMT == S_IFDIR else { return nil }
+      let identity = "\(UInt32(bitPattern: metadata.st_dev)):\(metadata.st_ino)"
+      return ("0:\(hashData(Data(identity.utf8)))", [])
+    }
     var rows = [String]()
     var measured = [String]()
     for suffix in files {
+      do {
       let target = root.appendingPathComponent(suffix.isEmpty ? prefix : prefix + "/" + suffix)
-      guard canonicalFileURL(target).path == target.path else { return nil }
+      guard canonicalFileURL(target).path == target.path else { if skipMissing { continue }; return nil }
       let fd = open(target.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
       if fd < 0, errno == ENOENT || errno == ENOTDIR {
         if skipMissing { continue }
         return nil
       }
+      if fd < 0, skipMissing { continue }
       if fd < 0, errno == ELOOP { return nil }
       guard fd >= 0 else { throw NativeFailure(unsafe) }
       let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
       defer { try? handle.close() }
       var metadata = stat()
       guard fstat(fd, &metadata) == 0 else { throw NativeFailure(unsafe) }
-      if skipMissing && metadata.st_mode & S_IFMT == S_IFDIR { continue }
+      if skipMissing && metadata.st_mode & S_IFMT != S_IFREG { continue }
       guard metadata.st_mode & S_IFMT == S_IFREG else { return nil }
       var hash = SHA256(), size = 0
       while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
@@ -181,10 +197,11 @@ final class NativeReadingStore {
         hash.update(data: chunk)
       }
       let marker = "\(size):" + hash.finalize().map { String(format: "%02x", $0) }.joined()
-      if files.count == 1 && suffix.isEmpty { return (marker, [suffix]) }
       measured.append(suffix)
       rows += [suffix, marker]
+      } catch { if !skipMissing { throw error } }
     }
+    if measured == [""] { return (rows[1], measured) }
     let bytes = Data(rows.joined(separator: "\0").utf8)
     return ("\(bytes.count):\(hashData(bytes))", measured)
   }
