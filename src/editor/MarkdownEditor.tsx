@@ -693,7 +693,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     useEffect(() => {
       historyState();
     });
-    useEffect(() => {
+    useLayoutEffect(() => {
       applyViewOptions();
     }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, preferences?.sourceLineNumbers, preferences?.codeLineNumbers, preferences?.lineHeight, preferences?.editorColumns, preferences?.fontSize, typewriter, readOnly]);
     useLayoutEffect(() => {

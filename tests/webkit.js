@@ -330,8 +330,9 @@ try {
       check(true,'plugin command calls the original plugin and persists the changed setting');
     }
     if (id === 'read_only') {
-      closePlugins(); pointText('粗体', 1); input('insertText','BLOCKED');
-      check(!root().textContent.includes('BLOCKED') && root().getAttribute('aria-readonly') === 'true', 'read-only plugin blocks real editor input events');
+      closePlugins(); pointText('粗体', 1);
+      const accepted = input('insertText','BLOCKED');
+      check(!accepted && !root().isContentEditable && !root().textContent.includes('BLOCKED') && root().getAttribute('aria-readonly') === 'true', 'read-only plugin blocks real editor input events');
       await sourceMode(true); check(document.querySelector('.document-editor:not([hidden]) .cm-content').getAttribute('contenteditable') === 'false', 'read-only plugin also locks source mode');
       await sourceMode(false); await openPlugins();
     }
