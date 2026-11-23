@@ -14,7 +14,7 @@ const grammarRequests = [];
 const server = createServer(async (request, response) => {
   if (request.url?.startsWith("/reader-media-")) {
     readerMediaRequests.push(request.url);
-    response.writeHead(200, { "Content-Type": "image/png" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64"));
+    response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64"));
     return;
   }
   if (request.url?.startsWith("/project-export-media")) {
@@ -138,8 +138,10 @@ try {
     );
   });
   assert.equal(uploads.length, 1, "native PicGo request reaches the owned HTTP fixture once");
-  assert.ok(readerMediaRequests.includes("/reader-media-control"), "editing loads the owned media fixture");
-  assert.ok(readerMediaRequests.every(route => ["/reader-media-control", "/reader-media-poster"].includes(route)), "only editing media routes are requested");
+  const offlineStart = readerMediaRequests.indexOf("/reader-media-offline-start");
+  assert.ok(offlineStart > 0 && readerMediaRequests.slice(0, offlineStart).includes("/reader-media-control"), "editing loads the owned media fixture before preview");
+  assert.ok(readerMediaRequests.slice(0, offlineStart).every(route => ["/reader-media-control", "/reader-media-poster"].includes(route)), "only editing controls load before preview");
+  assert.deepEqual(readerMediaRequests.slice(offlineStart + 1), [], "previews and project preparation never request remote fixture media");
   assert.deepEqual(payloadBoundaryRequests, ["fixture-under", "fixture-over", "fixture-status"]);
   assert.deepEqual(projectMediaRequests, ["/project-export-media-control"], "only the unrestricted native PDF renderer loads the fixture");
   console.log("PASS: native PicGo integration sends owned PNG bytes and accepts the returned URL");

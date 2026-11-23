@@ -117,6 +117,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var pendingCommands = [[String: Any]]()
   var titleObservation: NSKeyValueObservation?
   private var offlineRules: WKContentRuleList?
+  private var rendererLocale: String?
   func show(hidden: Bool = false) {
     let configuration = WKWebViewConfiguration()
     #if WEBTEST
@@ -159,7 +160,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       self?.window.title = view.title ?? "Omarkie"
     }
     if !hidden {
-      buildMenu()
       window.center()
       window.makeKeyAndOrderFront(nil)
       NSApp.activate(ignoringOtherApps: true)
@@ -178,6 +178,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         self.webView.load(URLRequest(url: URL(string: "omarkie://app/index.html")!))
       }
     }
+  }
+  func windowDidBecomeKey(_ notification: Notification) {
+    buildMenu()
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     if closing { return true }
@@ -277,9 +280,10 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           let chapters = project == nil ? nil : (try arg(args, 2, [String].self))
           let ext = ["latex":"tex", "revealjs":"html", "mediawiki":"wiki"][format] ?? format
           #if WEBTEST
+          let artifact = (args.last as? [String: Any])?["webTestCiteproc"] as? Bool == true ? "native-project" : "native-project-ui"
           let destination = project == nil
             ? store.dataDirectory.appendingPathComponent("native-converted." + ext)
-            : store.dataDirectory.deletingLastPathComponent().appendingPathComponent("native-project." + ext)
+            : store.dataDirectory.deletingLastPathComponent().appendingPathComponent(artifact + "." + ext)
           #else
           let panel = NSSavePanel()
           panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .data]
@@ -647,8 +651,8 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       if args.first as? Bool != true { content.add(offlineRules) }
       return true
     case "ready":
-      let locale = (try? await webView.callAsyncJavaScript("return document.documentElement.lang", arguments: [:], in: nil, contentWorld: .page)) as? String
-      if window.isKeyWindow { buildMenu(locale: locale) }
+      rendererLocale = (try? await webView.callAsyncJavaScript("return document.documentElement.lang", arguments: [:], in: nil, contentWorld: .page)) as? String
+      if window.isKeyWindow { buildMenu() }
       rendererReady = true
       let queued = pendingCommands; pendingCommands.removeAll()
       for item in queued { deliver(item) }; return nil
@@ -919,7 +923,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       .flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([String: String].self, from: $0) }
     return catalog?[key] ?? key
   }
-  func buildMenu(locale: String? = nil) {
+  func buildMenu() {
     let main = NSMenu()
     NSApp.mainMenu = main
     func group(_ title: String) -> NSMenu {
@@ -936,7 +940,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if key.hasPrefix("F"), let number = Int(key.dropFirst()), (1...20).contains(number) { key = String(UnicodeScalar(0xF703 + number)!) }
         if key == "Backspace" { key = "\u{8}" }
         let item = NSMenuItem(
-          title: ["clean-converted", "collect-reading"].contains(command.action) ? Self.localized(command.label, locale: locale) : command.label,
+          title: ["clean-converted", "collect-reading"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
           action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
         if command.selector == nil { item.target = owner }
         item.representedObject = command.action

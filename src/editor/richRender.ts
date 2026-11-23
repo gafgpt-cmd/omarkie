@@ -1,6 +1,7 @@
 import { alertTitle } from "./markdownExtensions.ts";
 import {
   editableHtml,
+  diagramLanguage,
   renderMarkdown,
   inlineTokens,
   decodeMarkdownText,
@@ -250,7 +251,7 @@ export function renderNode(
         const openingLine = node.source.split("\n")[token.map?.[0] || 0];
         if (token.map?.[1] === (token.map?.[0] || 0) + 1 && !node.source.includes("\n")) { const raw = openingLine.replace(/^\s*(?:>\s*)*(?:(?:[-+*]|\d+[.)])\s+)?/, ""), id = leaf(raw, token.map); return `<p><span data-leaf="${id}" class="md-fence-opening">${escapeHtml(raw)}</span></p>`; }
         const { id, raw } = fenceLeaf(token.map?.[0] || 0);
-        if (/^(mermaid|sequence|flow)$/.test(token.info.trim()))
+        if (diagramLanguage(token))
           return `<div class="md-fence" contenteditable="false" data-fence="${id}"><div class="fence-preview">${renderMarkdown(node.source, documentId)}</div><pre class="fence-body"><code>${escapeHtml(token.content)}</code></pre><span class="fence-language">${token.info.trim()}</span></div>`;
         return `<div class="md-fence" contenteditable="false" data-fence="${id}"><pre class="fence-body"><code data-highlight-language="${escapeHtml(token.info.trim().split(/\s/)[0])}" data-leaf="${id}">${highlightCode(raw, token.info.trim().split(/\s/)[0])}</code></pre><span class="fence-language">${escapeHtml(token.info)}</span></div>`;
       },

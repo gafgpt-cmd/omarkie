@@ -1,7 +1,6 @@
 import DOMPurify from "dompurify";
-import { parseBlocks } from "./markdown.ts";
+import { exportDiagramBlocks } from "./markdown.ts";
 import { imageReferences } from "./images.ts";
-import { sourceLines } from "../../shared/source-lines.mjs";
 import { t } from "../i18n.ts";
 import { pluginExportStyles } from "../plugins/exportStyles.ts";
 export function exportHtml(content: HTMLElement) {
@@ -81,15 +80,6 @@ async function diagramPNG(svg: SVGSVGElement) {
 }
 // Convert only on export. The editor's Markdown and undo history remain untouched.
 const same = (a: string, b: string) => { const d = (s: string) => { try { return decodeURIComponent(s); } catch { return s; } }; return a === b || d(a) === d(b); };
-const diagramFence = /^ {0,3}(`{3,}|~{3,})(mermaid|sequence|flow)[ \t]*(?:\r\n|\r|\n|$)/;
-export function exportDiagramBlocks(source: string) {
-  return parseBlocks(source).flatMap(block => {
-    const match = block.kind === "fence" && diagramFence.exec(block.source);
-    if (!match) return [];
-    const fence = new RegExp(`(?:^|\\r?\\n) {0,3}${match[1][0]}{${match[1].length},}[ \\t]*(?:\\r?\\n)?$`);
-    return [{ ...block, language: match[2], body: block.source.slice(match[0].length).replace(fence, "") }];
-  });
-}
 export async function conversionMarkdown(source: string, rendered: HTMLElement, chapterToken?: string) {
   const changes: { from: number; to: number; text: string }[] = [], resources = new Map<string, Promise<string>>();
   async function embed(url: string) {
@@ -119,12 +109,11 @@ export async function conversionMarkdown(source: string, rendered: HTMLElement, 
     }
     changes.push({ from: image.from, to: image.to, text: replacement });
   }
-  const { offsets } = sourceLines(source);
-  const diagrams = [...rendered.querySelectorAll<HTMLElement>(".mermaid-block")]; let index = 0;
+  const diagrams = [...rendered.querySelectorAll<HTMLElement>(".mermaid-block[data-diagram-language]")]; let index = 0;
   for (const block of exportDiagramBlocks(source)) {
     const diagram = diagrams[index++], svg = diagram?.querySelector<SVGSVGElement>("svg");
     if (!svg || diagram.classList.contains("diagram-error")) throw new Error(t("图表有语法错误，无法导出。"));
-    changes.push({ from: offsets[block.fromLine - 1], to: Math.min(source.length, offsets[block.toLine]), text: `![流程图](${await diagramPNG(svg)})\n\n` });
+    changes.push({ from: block.from, to: block.to, text: `${block.prefix}![流程图](${await diagramPNG(svg)})\n\n` });
   }
   for (const change of changes.sort((a, b) => b.from - a.from)) source = source.slice(0, change.from) + change.text + source.slice(change.to);
   return source;

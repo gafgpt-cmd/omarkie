@@ -2,7 +2,8 @@ import { projectChapters } from "../../shared/project-export.mjs";
 import { host } from "../host";
 import { t } from "../i18n";
 import type { ConversionOptions, DocumentRecord } from "../types";
-import { conversionMarkdown, exportDiagramBlocks } from "./print";
+import { conversionMarkdown } from "./print";
+import { exportDiagramBlocks } from "./markdown";
 
 export async function exportProject(format: "docx" | "pdf", folder: string, drafts: DocumentRecord[], options: ConversionOptions) {
   const snapshot = await host.vaultSnapshot(true);

@@ -15,7 +15,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         "# WebKit 验收\n\n普通 **粗体** 与 *斜体*。\n\n- [ ] 任务\n\n| 名称 | 内容 |\n| --- | --- |\n| A | B |\n\n```javascript\nconst count = 1;\n```\n\n$$\n\\newcommand{\\myvalue}{x+1}\n$$\n\n$$\n\\myvalue + \\mathbb{R}\n$$\n"
       try atomicWrite(file, Data(source.utf8))
       if let origin = ProcessInfo.processInfo.environment["OMARKIE_TEST_GRAMMAR"] {
-        let chapter = "# Diagram chapter\n\n<div class=\"mermaid-block\"><video poster=\"\(origin)/reader-media-project\"></video></div>\n\n```mermaid\ngraph TD\n A --> B\n```\n"
+        let chapter = "# Diagram chapter\n\n<div class=\"mermaid-block\"><video poster=\"\(origin)/reader-media-project\"></video></div>\n\n``` mermaid\ngraph TD\n A --> B\n```\n\n~~~mermaid\ngraph LR\n Start --> Middle --> Finish\n~~~\n"
         try atomicWrite(directory.appendingPathComponent("Diagram-chapter.md"), Data(chapter.utf8))
       }
       let store = DocumentStore(directory)
@@ -31,12 +31,6 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
       host.show(hidden: true)
-      host.buildMenu(locale: "es")
-      let nativeItems = NSApp.mainMenu?.items.flatMap { $0.submenu?.items ?? [] } ?? []
-      guard nativeItems.first(where: { $0.representedObject as? String == "clean-converted" })?.title == "Limpiar texto convertido…",
-            nativeItems.first(where: { $0.representedObject as? String == "collect-reading" })?.title == "Recopilar resaltados y avisos" else {
-        throw NativeFailure("Native File menu learning labels did not localize.")
-      }
       host.webView.navigationDelegate = self
       DispatchQueue.main.asyncAfter(deadline: .now() + 180) {
         fputs("WebKit test timed out\n", stderr)
@@ -90,6 +84,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           print("PASS: native WebKit bridge persisted exact editor bytes")
           Task { @MainActor in
             do {
+              try await self.checkMenuLocale()
               try await self.checkLearningPersistence()
               try await self.checkInterruptedMove()
               try await self.checkCollisionOnlyRecovery()
@@ -101,6 +96,15 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         } catch { self.fail(error) }
       }
     } catch { fail(error) }
+  }
+  @MainActor func checkMenuLocale() async throws {
+    _ = try await host.webView.callAsyncJavaScript("document.documentElement.lang = 'es'; return await window.desktop.ready()", arguments: [:], in: nil, contentWorld: .page)
+    host.windowDidBecomeKey(Notification(name: NSWindow.didBecomeKeyNotification, object: host.window))
+    let items = NSApp.mainMenu?.items.flatMap { $0.submenu?.items ?? [] } ?? []
+    guard items.first(where: { $0.representedObject as? String == "clean-converted" })?.title == "Limpiar texto convertido…",
+          items.first(where: { $0.representedObject as? String == "collect-reading" })?.title == "Recopilar resaltados y avisos" else {
+      throw NativeFailure("Native File menu lost the background renderer locale on focus.")
+    }
   }
   @MainActor func checkOfflinePDF() async throws {
     guard let origin = ProcessInfo.processInfo.environment["OMARKIE_TEST_GRAMMAR"] else { throw NativeFailure("Missing PDF fixture origin.") }
@@ -298,6 +302,27 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Single note and project did not share the native bibliography.")
     }
     let output = directory.deletingLastPathComponent()
+    let uiURL = output.appendingPathComponent("native-project-ui.pdf")
+    guard PDFDocument(url: uiURL)?.string?.contains("Diagram chapter") == true,
+          let uiPDF = CGPDFDocument(uiURL as CFURL) else {
+      throw NativeFailure("Native UI project PDF lost the diagram chapter.")
+    }
+    var imageCount = 0
+    for number in 1...uiPDF.numberOfPages {
+      var resources: CGPDFDictionaryRef?, objects: CGPDFDictionaryRef?
+      guard let page = uiPDF.page(at: number)?.dictionary,
+            CGPDFDictionaryGetDictionary(page, "Resources", &resources), let resources,
+            CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { continue }
+      CGPDFDictionaryApplyFunction(objects, { _, object, context in
+        var stream: CGPDFStreamRef?, subtype: UnsafePointer<CChar>?
+        guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
+              let dictionary = CGPDFStreamGetDictionary(stream),
+              CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype,
+              String(cString: subtype) == "Image" else { return }
+        context?.assumingMemoryBound(to: Int.self).pointee += 1
+      }, &imageCount)
+    }
+    guard imageCount == 2 else { throw NativeFailure("Native UI project PDF did not rasterize both diagrams.") }
     let docxURL = output.appendingPathComponent("native-project.docx")
     let pdfURL = output.appendingPathComponent("native-project.pdf")
     guard let converter = Interchange.pandoc(),

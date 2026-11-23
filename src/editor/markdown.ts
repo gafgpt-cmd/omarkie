@@ -38,10 +38,25 @@ export function setMarkdownOptions(options: { highlight: boolean; subscript: boo
   setSyntaxOptions(md, options);
 }
 const defaultFence = md.renderer.rules.fence!;
-md.renderer.rules.fence = (tokens, index, options, env, self) =>
-  /^(mermaid|sequence|flow)$/.test(tokens[index].info.trim())
-    ? `<div class="mermaid-block" data-diagram-language="${tokens[index].info.trim()}">${md.utils.escapeHtml(tokens[index].content)}</div>`
+export function diagramLanguage(token: Token) {
+  const language = token.info.trim();
+  return /^(mermaid|sequence|flow)$/.test(language) ? language : undefined;
+}
+md.renderer.rules.fence = (tokens, index, options, env, self) => {
+  const token = tokens[index], language = diagramLanguage(token);
+  return language ? `<div class="mermaid-block" data-diagram-language="${language}">${md.utils.escapeHtml(token.content)}</div>`
     : defaultFence(tokens, index, options, env, self);
+};
+export function exportDiagramBlocks(source: string) {
+  const { lines, offsets } = sourceLines(source);
+  return md.parse(source, {}).flatMap(token => {
+    const language = token.type === "fence" && diagramLanguage(token);
+    if (!language || !token.map) return [];
+    const [start, end] = token.map;
+    return [{ language, body: token.content, prefix: lines[start].slice(0, lines[start].indexOf(token.markup)),
+      from: offsets[start], to: offsets[end] ?? source.length }];
+  });
+}
 // Natural sizes of images seen so far: later renders reserve the box and the page does not jump.
 const imageSizes = new Map<string, [number, number]>();
 if (typeof document !== "undefined")

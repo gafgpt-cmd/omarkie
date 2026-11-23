@@ -122,6 +122,9 @@ try {
   const image = container => container?.querySelector('img[alt="Preview image"]');
   await wait(() => image(root())?.currentSrc.endsWith("/reader-media-control") && image(root()).naturalWidth > 0);
   check(true, "native Markdown editing permits opted-in media");
+  const offlineStart = new Image();
+  offlineStart.src = `${grammarOrigin}/reader-media-offline-start`;
+  await offlineStart.decode();
   const assertOffline = async container => {
     await wait(() => image(container())?.currentSrc.includes(primary) && image(container()).naturalWidth > 0 && container().querySelector("video"));
     check(!image(container()).hasAttribute("srcset") && !container().querySelector("video").hasAttribute("poster"), "native preview keeps the local image and strips remote media");
@@ -132,10 +135,9 @@ try {
   window.__omarkie.command({ action: "clean-converted" });
   await wait(() => document.querySelector(".clean-layer"));
   await assertOffline(() => document.querySelector(".clean-layer"));
-  document.querySelector('[data-testid="clean-back"]').click();
-  document.querySelector('[data-testid="reading-layers-close"]')?.click();
   window.__omarkie.command({ action: "close" });
   await wait(() => document.querySelector('.document-title')?.textContent === 'WebKit-fixture.md');
+  document.querySelector('[data-testid="reading-layers-close"]')?.click();
   window.__omarkie.command({ action: "document-tools" });
   const writingTab = () => document.querySelector('.workflow-tabs [data-tab="writing"]');
   await wait(writingTab);
@@ -163,7 +165,7 @@ try {
   check(authorSuggestions.ok && authorSuggestions.value[0]?.id === "watched", "native citation suggestions find Unicode authors");
   const wrongVault = await window.desktop.bibliography(`${vault}/unopened`, "info");
   check(linked.ok && linked.value && suggestions.ok && suggestions.value[0].id === "watched" && !wrongVault.ok, "native bridge authorizes only the open bibliography vault");
-  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver" };
+  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver", webTestCiteproc: true };
   const chapters = ["# First native chapter\n\nSource [@watched].\n", "# Second native chapter\n\nAgain [@watched].\n"];
   const outside = await window.desktop.exportConverted({ folder: `${vault}/unknown` }, "docx", chapters, "", citeOptions);
   const projectDocx = await window.desktop.exportConverted({ folder: vault }, "docx", chapters, "", citeOptions);
