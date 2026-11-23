@@ -175,7 +175,16 @@ async function transaction(root, writing, run) {
     const append = async record => {
       const before = regular(await handle.stat({ bigint: true }));
       if (fingerprint(before) !== index.signature) throw unsafe();
-      if (before.size !== BigInt(index.offset)) await handle.truncate(index.offset);
+      if (before.size !== BigInt(index.offset)) {
+        if (process.platform === "win32") {
+          // Windows append handles lack truncate access.
+          const repair = await open(log, constants.O_RDWR | noFollow);
+          try {
+            if (fingerprint(regular(await repair.stat({ bigint: true }))) !== index.signature) throw unsafe();
+            await repair.truncate(index.offset);
+          } finally { await repair.close(); }
+        } else await handle.truncate(index.offset);
+      }
       const row = JSON.stringify({ v: 1, ...record });
       await handle.writeFile(row + "\n");
       await handle.sync();

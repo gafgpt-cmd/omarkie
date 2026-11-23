@@ -57,7 +57,10 @@ test("desktop recovery installs the local default and reopens the exact file", {
     await prepareRecovery(box, "a b.md");
     await box.stub("electron44");
     await box.stub("notify-send");
-    for (const name of ["bash", "setsid"]) await symlink(`/usr/bin/${name}`, path.join(box.root, name));
+    for (const name of ["bash", "nohup"]) await symlink(`/usr/bin/${name}`, path.join(box.root, name));
+    await box.executable("setsid", `: </dev/tty || exit 1
+kill -s HUP "$BASHPID" || exit 1
+exec /usr/bin/setsid "$@"`);
     await box.executable("xdg-terminal-exec", `printf -v command '%q ' "$@"\nexec /usr/bin/script -qec "exec $command" /dev/null`);
     const result = box.run(["a b.md"]);
     assert.ifError(result.error);
