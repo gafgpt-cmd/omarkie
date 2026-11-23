@@ -52,7 +52,7 @@ Desktop checks cover shared undo, photo previews, reading tools, document workfl
 Strict timing stays separate; see [performance targets](README.md#performance-targets).
 
 [CI](.github/workflows/ci.yml) runs the Linux checks on pull requests and pushes to `main`.
-Pull requests also run `npm run test:native` on macOS to compile the native app and run its tests; this does not build or test the installer.
+Pull requests also run the two macOS suites below, with Pandoc installed. They do not build or test the installer.
 Platform package checks run in the [release workflow](#publish-a-release).
 
 Linux CI-equivalent invocation:
@@ -66,7 +66,7 @@ Focused suites:
 | Command | Coverage | Environment |
 | --- | --- | --- |
 | `npm run test:native` | File bytes, atomic saves, recovery, conflicts, and workspace operations | macOS |
-| `npm run test:webkit` | Actual WKWebView, native bridge, document conversion, and PDF export | macOS + Pandoc |
+| `npm run test:webkit` | WKWebView, native bridge, reader tools, cited-PDF path resolution, and document export | macOS + Pandoc |
 | `npm run test:browser` | Illustrated startup, decoded pictures, source roundtrip and restored drafts | Playwright Chromium; run `npm run build` first |
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
@@ -74,8 +74,8 @@ Focused suites:
 | `npm run test:features` | Menus, preferences, navigation, file workflows, PDF open, startup/plugin ordering, reading/document tools and packaged regressions | Electron + converters; Linux uses the invocation above |
 | `npm run test:reading` | Callout/table folding, image viewing/resizing, slash commands, width and right outline | Electron; included in `test:features` |
 | `npm run test:learning` | Clean, Payload, margin notes, study cards and five UI locales | Electron; included in `test:features` |
-| `npm run test:reader` | Synthetic speech, LanguageTool, Zotero, single-note and project export | Electron + Pandoc + Poppler; included in `test:features` |
-| `npm run test:document-workflows` | Properties, OKF conversion/bundles, references, templates and citation/letterhead output | Electron + Pandoc + `pdftotext`; included in `test:features` |
+| `npm run test:reader` | Speech hook with a synthetic engine, LanguageTool and `test:document-workflows` | Electron + Pandoc + Poppler; included in `test:features` |
+| `npm run test:document-workflows` | Properties, OKF, references, templates, Zotero, single-note and project export | Electron + Pandoc + `pdftotext` |
 | `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron + Pandoc + LibreOffice |
 | `npm run test:alignment` | File workflows, regex replace, tables, images, links, search, emoji, and file tree (also part of `test:features`) | Electron; Linux runs headless |
 | `npm run test:encoding` | Encoding conversion, save protection, composition, and image paste | Electron; Linux runs headless |

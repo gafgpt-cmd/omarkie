@@ -47,10 +47,10 @@
 - Remote media stays off in the reader, even if enabled for editing.
 - Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
-- **Export notes and cards** saves a Markdown copy for the open vault. It never overwrites a file.
+- **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
 - Back up `.omarkie/store.jsonl` with the vault. The reading index is built in memory.
 - Use one Omarkie process when first enabling reading history in a vault.
-- Trash and Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes.
+- Trash and macOS Undo Trash update the journal before the filesystem. A crash between those steps can leave history detached or restored before the file changes. Electron cannot undo Trash in Omarkie.
 - Tracked notes that become unreadable during a move may retain history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
@@ -63,14 +63,14 @@
 - **Test me** queues new and due cards across the open folder. Recall before revealing; then rate from 0 to 5.
 - Ratings below 4 repeat in the session. Ratings below 3 restart the [SM-2](https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method) schedule.
 - Cards and ratings stay in `.omarkie/store.jsonl`. The schedule is replayed from ratings. Source Markdown stays untouched.
-- Use **Export notes and cards** in the margin notes panel for a Markdown copy.
+- To save a Markdown copy, see [Reading Layers](#reading-layers).
 - [Obsidian Spaced Repetition](https://stephenmwangi.com/obsidian-spaced-repetition/flashcards/reviewing/) (MIT): review UI ideas only; no code copied.
 
 ## Reading images
 
-- Unsized standalone images fill the reading column, up to 2× their natural width.
-- Preferences → Image → Standalone image scale limit: change the cap or choose **Off (natural size)**. Large images still fit the column.
-- Explicit Markdown `{width=N}`, wiki `![[image|N]]`, and HTML `width` take precedence. Inline images keep their size.
+- Unsized standalone images fill the reading column, up to 2× their natural width by default.
+- Preferences → Image → Standalone image scale limit: choose 1.5× or **Off (natural size)** instead. Large images still fit the column.
+- Explicit dimensions take precedence: Markdown `{width=N}`, wiki `![[image|N]]`, or HTML dimensions. Inline images do not upscale.
 - Display only. Markdown, exports, and the full-window Image viewer are unchanged.
 
 ## Bounds
@@ -112,7 +112,6 @@
 
 ## Export
 
-- CSL JSON bibliography; `[@key]` citations.
 - Actual Pandoc citeproc; maintained official NLM/Vancouver style.
 - Neutral configurable letterhead; actual DOCX or PDF.
 - Converter options are structured and allowlisted. No arbitrary flags, filters or CSL paths.
@@ -128,9 +127,9 @@
 3. Enable Vancouver citations to reuse the saved vault bibliography. Set the letterhead in the same panel, then export as DOCX or PDF.
 4. Save outside the project folder.
 
-- Includes Markdown notes in subfolders. Lower numbers first; ties and unnumbered notes sort by relative path. Unnumbered notes come last.
+- Includes Markdown notes in subfolders. Lower numbers first; ties and unnumbered notes sort by relative path. Unnumbered notes come last. An incomplete folder scan blocks export.
 - Uses open drafts, drops each chapter's frontmatter from the output, and leaves source files untouched.
-- Relative images resolve from their chapter, inside the project only. Remote images and symlinks are not read.
+- Local images resolve from their chapter, inside the project only. Remote images and symlinks are not read. See [diagram export](diagrams.md#export).
 - One [Pandoc](https://pandoc.org/MANUAL.html#option--file-scope) conversion, bibliography and letterhead. Pandoc (GPL-2.0-or-later) is an external executable; no code copied.
 
 ## Reuse
@@ -154,6 +153,6 @@
 - Non-loopback URLs require HTTPS and an explicit allowance for that scheme, host and port. To revoke, select its URL and uncheck the allowance. Redirects are refused.
 - Select text or use the current note. Open **Payload**, review the destination and sensitive-data notice, then choose **Send text for summary**. Even local servers can forward requests.
 - The recipe keeps decisions, thresholds, exceptions and red flags. Spanish by default; a question can ask for English. Output may be wrong; check it against the source.
-- Input: 24 KB of text. Output: up to 768 tokens for summaries, 384 for answers. Choose `max_completion_tokens` if your endpoint requires it.
+- Input: up to 24 KB of text and a 1,000-character question. Output: up to 768 tokens for summaries, 384 for answers. Choose `max_completion_tokens` if your endpoint requires it.
 - **Append as callout** is one undoable edit. Questions reuse the original text, not previous answers; only the latest answer stays visible. No request history, cache or telemetry.
 - Reuse: Markdown preview uses the existing markdown-it parser (MIT). Single-question interaction inspired by DeepTutor (Apache-2.0); no code copied.
