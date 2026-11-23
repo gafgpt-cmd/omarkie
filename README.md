@@ -198,7 +198,7 @@ Eight paired Linux/Xvfb runs, alternating order with fresh profiles. Times are m
 
 - Linux timing run: `flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run test:perf'`.
 - Launch did not improve consistently. Launch and cold photo still miss their targets.
-- Four photos loaded within three seconds on every run. Reported image dimensions are density-corrected, not decoded pixel counts.
+- Four photos loaded within three seconds on every run. See [timing report fields](docs/architecture.md#tests).
 
 ## Current limitations
 

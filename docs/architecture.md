@@ -93,7 +93,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 **Speed checks.** After `npm run build`, use the [timing command and release policy](../README.md#performance-targets).
 - `tests/perf-desktop.mjs` creates fresh synthetic fixtures and isolated profiles under `test-results/` each run.
 - Results: `test-results/perf/perf-results.json`; `OMARKIE_QA_DIR` overrides the output directory.
-- Reports include medians, decoded image dimensions and loaded-image counts.
+- Reports include medians. Photo samples report `naturalSize` (density-corrected browser dimensions, not decoded pixel counts) and `loadedAfter3s` (loaded-image count).
 - Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
 - `OMARKIE_PERF_RUNS` sets repetitions (default 3).
 - `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar.
