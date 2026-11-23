@@ -323,8 +323,12 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             let folder = operation["action"] == "undo" ? owner.workspace.undo?.folder : store.folder
             let trash = operation["action"] == "trash" ? operation["path"].map { (URL(fileURLWithPath: $0), UUID().uuidString) } : nil
             let restoring = operation["action"] == "undo" ? owner.workspace.undo?.trashID : nil
+            let workspace = owner.workspace
+            let snapshot = DocumentStore(store.dataDirectory)
+            snapshot.folder = store.folder
+            snapshot.records = store.records
             change = try await owner.readingStore.moveEntries(folder, trash: trash, restoring: restoring) { move in
-              try self.owner.workspace.execute(operation, store: self.store, trashID: trash?.1, move: move)
+              try workspace.execute(operation, store: snapshot, trashID: trash?.1, move: move)
             }
           } else {
             change = try owner.workspace.execute(operation, store: store)

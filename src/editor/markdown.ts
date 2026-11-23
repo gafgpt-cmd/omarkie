@@ -111,9 +111,11 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
   const template = document.createElement("template"); template.innerHTML = safe;
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll("[style]")) {
     const declarations = (element.getAttribute("style") || "").split(";").filter(value => {
-      const match = /^\s*[a-z][a-z-]*\s*:\s*(.+)$/is.exec(value);
-      if (!match || !/^[\w\s.,#%+!*/()-]+$/.test(match[1])) return false;
-      return [...match[1].matchAll(/([\w-]+)\s*\(/g)].every(([, name]) => /^(?:calc|min|max|clamp|round|mod|rem|abs|sign|rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|linear-gradient|radial-gradient|conic-gradient|translate[xyz3d]*|scale[xyz3d]*|rotate[xyz3d]*|skew[xy]*|matrix(?:3d)?)$/i.test(name));
+      const normalized = value.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\\(?:([0-9a-f]{1,6})\s?|([^\r\n\f]))/gi, (_, hex, char) => {
+        const code = hex ? parseInt(hex, 16) : 0;
+        return hex ? String.fromCodePoint(code > 0 && code <= 0x10ffff ? code : 0xfffd) : char;
+      });
+      return !/\b(?:url|src|image|(?:-webkit-)?image-set|attr)\s*\(|(?:https?:|\/\/)/i.test(normalized);
     });
     if (declarations.length) element.setAttribute("style", declarations.join(";"));
     else element.removeAttribute("style");

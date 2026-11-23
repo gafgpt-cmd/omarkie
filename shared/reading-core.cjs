@@ -133,12 +133,21 @@ module.exports = function readingCore(digest) {
     if (!validPath(from) || !validPath(to) || from === to) throw invalid();
   }
 
+  const under = (file, prefix) => file === prefix || file.startsWith(prefix + "/");
+  const tracked = (entries, prefix) => [...entries.keys()].filter(file => under(file, prefix)).map(file => file.slice(prefix.length + 1));
+  function checkPending(entries, document, subtree = false) {
+    const intent = entries.pending;
+    if (intent && [intent.from, intent.to].some(path => under(document, path) || subtree && under(path, document))) throw new Error("Resolve the pending reading move before editing reading history.");
+  }
+
   function putDocument(entries, document, item, owner) {
     if (!validPath(document)) throw invalid();
     if (item.type === "answer") {
       if (!entries.get(owner)?.has(`card:${item.cardId}`)) throw invalid();
+      checkPending(entries, owner);
       return owner;
     }
+    checkPending(entries, document);
     if (item.type !== "card") return document;
     const items = entries.get(document);
     if (items && !items.has(`card:${item.id}`) && [...items.values()].filter(entry => entry.type === "card").length >= 10) throw invalid();
@@ -155,18 +164,18 @@ module.exports = function readingCore(digest) {
         if (trash || restore) {
           const { path, id } = trash ?? restore;
           if (!validPath(path)) throw invalid();
+          checkPending(entries, path, true);
           identifier(id);
-          const under = file => file === path || file.startsWith(path + "/");
           entries.trash ??= new Map();
           if (trash) {
             if (entries.trash.has(id)) throw invalid();
-            const detached = [...entries].filter(([file]) => under(file));
+            const detached = [...entries].filter(([file]) => under(file, path));
             entries.trash.set(id, detached);
             for (const [file] of detached) entries.delete(file);
           } else {
             const detached = entries.trash.get(id);
-            if (!detached || detached.some(([file]) => !under(file))) throw invalid();
-            for (const [file] of entries) if (under(file)) entries.delete(file);
+            if (!detached || detached.some(([file]) => !under(file, path))) throw invalid();
+            for (const [file] of entries) if (under(file, path)) entries.delete(file);
             for (const [file, items] of detached) entries.set(file, items);
             entries.trash.delete(id);
           }
@@ -175,6 +184,7 @@ module.exports = function readingCore(digest) {
         if (intent) {
           checkMove(intent.from, intent.to);
           if (typeof intent.fingerprint !== "string" || !/^\d+:[a-f0-9]{64}$/.test(intent.fingerprint)) throw invalid();
+          if (intent.files !== undefined && (!Array.isArray(intent.files) || !intent.files.length || intent.files.some(file => file !== "" && !validPath(file)))) throw invalid();
           if (entries.pending) throw invalid();
           entries.pending = intent;
           continue;
@@ -189,7 +199,6 @@ module.exports = function readingCore(digest) {
           checkMove(from, to);
           if (entries.pending?.from !== from || entries.pending?.to !== to) throw invalid();
           delete entries.pending;
-          const under = (file, prefix) => file === prefix || file.startsWith(prefix + "/");
           const moved = [...entries].filter(([file]) => under(file, from));
           for (const file of entries.keys()) if (under(file, from) || under(file, to)) entries.delete(file);
           for (const [file, items] of moved) {
@@ -199,6 +208,7 @@ module.exports = function readingCore(digest) {
           continue;
         }
         if (!validPath(entry.document) || typeof entry.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.at) || !Number.isFinite(Date.parse(entry.at)) || new Date(entry.at).toISOString() !== entry.at) throw invalid();
+        checkPending(entries, entry.document);
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       } catch { entries.badRows = (entries.badRows ?? 0) + 1; }
     }
@@ -220,5 +230,5 @@ module.exports = function readingCore(digest) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, putDocument, checkMove, validPath, readJournal, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, allEntries, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
 };

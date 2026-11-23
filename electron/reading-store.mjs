@@ -1,14 +1,14 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, readlink, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, realpath, rename, unlink } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { t } from "./i18n.mjs";
 import readingCore from "../shared/reading-core.cjs";
 import { digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, checkMove, validPath, readJournal, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest);
+const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, pending, badRows, allEntries, query, readingMarkdown } = readingCore(digest);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -129,32 +129,28 @@ async function locked(root, create, run) {
   }
 }
 
-async function moveFingerprint(root, file) {
-  if (process.platform === "win32" && file.includes("\\")) throw unsafe();
-  const target = path.join(root, file);
-  if (!within(root, target)) throw unsafe();
-  const metadata = await info(target);
-  if (!metadata) return null;
-  if (metadata.isSymbolicLink() || await realpath(target) !== target) throw unsafe();
-  async function hash(file, stat) {
-    let bytes;
-    if (stat.isDirectory()) {
-      const names = (await readdir(file)).sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
-      const rows = [];
-      for (const name of names) {
-        const child = path.join(file, name), metadata = await lstat(child);
-        rows.push(name, await hash(child, metadata), "");
-      }
-      bytes = Buffer.from("directory\0" + rows.join("\0"));
-    } else if (stat.isSymbolicLink()) bytes = Buffer.from("symlink\0" + await readlink(file));
-    else if (stat.isFile()) {
-      const handle = await open(file, constants.O_RDONLY | noFollow);
-      try { if (!(await handle.stat()).isFile()) throw unsafe(); bytes = await handle.readFile(); }
-      finally { await handle.close(); }
-    } else throw unsafe();
-    return `${bytes.length}:${digest(bytes)}`;
+async function moveFingerprint(root, prefix, files) {
+  const rows = [];
+  for (const suffix of files) {
+    const file = suffix ? `${prefix}/${suffix}` : prefix;
+    if (process.platform === "win32" && file.includes("\\")) throw unsafe();
+    const target = path.join(root, file);
+    if (!within(root, target)) throw unsafe();
+    const metadata = await lstat(target).catch(error => error.code === "ENOTDIR" ? null : missing(error));
+    if (!metadata?.isFile() || await realpath(target) !== target) return null;
+    const handle = await open(target, constants.O_RDONLY | noFollow);
+    let size = 0;
+    const hash = createHash("sha256");
+    try {
+      if (!(await handle.stat()).isFile()) return null;
+      for await (const chunk of handle.createReadStream({ autoClose: false })) { size += chunk.length; hash.update(chunk); }
+    } finally { await handle.close(); }
+    const marker = `${size}:${hash.digest("hex")}`;
+    if (files.length === 1 && !suffix) return marker;
+    rows.push(suffix, marker);
   }
-  return hash(target, metadata);
+  const bytes = Buffer.from(rows.join("\0"));
+  return `${bytes.length}:${digest(bytes)}`;
 }
 
 async function transaction(root, writing, run) {
@@ -178,9 +174,9 @@ async function transaction(root, writing, run) {
     let notice = badRows(index.entries) > 0;
     if (notice) console.warn("Reading journal skipped invalid rows.");
     if (intent) {
-      const { from, to, fingerprint } = intent;
+      const { from, to, fingerprint, files = [""] } = intent;
       try {
-        const source = await moveFingerprint(root, from) === fingerprint, destination = await moveFingerprint(root, to) === fingerprint;
+        const source = await moveFingerprint(root, from, files) === fingerprint, destination = await moveFingerprint(root, to, files) === fingerprint;
         if (source !== destination) await append(destination ? { move: { from, to } } : { cancel: true });
         else { notice = true; console.warn("Reading move recovery could not identify the original document."); }
       } catch { notice = true; console.warn("Reading move recovery could not confirm the destination."); }
@@ -200,25 +196,30 @@ export async function moveReadingEntries(folder, execute, trashPath) {
   if (!folder) return execute();
   const root = await realpath(folder);
   const relative = file => path.relative(root, file).split(path.sep).join("/");
-  return locked(root, false, exists => !exists ? execute() : transaction(root, false, async (entries, append) => {
-    const trashed = entries && trashPath && within(root, trashPath) ? relative(trashPath) : null;
-    if (trashed && !validPath(trashed)) throw invalid();
-    const change = await execute(async (source, destination) => {
+  return queued(root, () => locked(root, false, exists => !exists ? execute() : transaction(root, false, async (entries, append) => {
+    const trashed = entries && trashPath && within(root, trashPath) ? { path: relative(trashPath), id: randomUUID() } : null;
+    if (trashed && !validPath(trashed.path)) throw invalid();
+    if (trashed) { checkPending(entries, trashed.path, true); await append({ trash: trashed }); }
+    try { return await execute(async (source, destination) => {
     if (entries && within(root, source) && within(root, destination)) {
       const from = relative(source), to = relative(destination);
-      if (pending(entries)) throw unsafe();
       try { checkMove(from, to); } catch { throw invalid(); }
-      const fingerprint = await moveFingerprint(root, from);
+      checkPending(entries, from, true); checkPending(entries, to, true);
+      const files = tracked(entries, from);
+      if (!files.length) return moveExclusive(source, destination);
+      if (pending(entries)) throw unsafe();
+      const fingerprint = await moveFingerprint(root, from, files);
       if (!fingerprint) throw unsafe();
-      await append({ intent: { from, to, fingerprint } });
+      await append({ intent: { from, to, fingerprint, files } });
       try { await moveExclusive(source, destination); }
       catch (error) { await append({ cancel: true }).catch(() => {}); throw error; }
       await append({ move: { from, to } }).catch(() => {});
     } else await moveExclusive(source, destination);
-    });
-    if (trashed) await append({ trash: { path: trashed, id: randomUUID() } });
-    return change;
-  }));
+    }); } catch (error) {
+      if (trashed) await append({ restore: trashed });
+      throw error;
+    }
+  })));
 }
 
 async function operate({ root, document, current }, request) {
@@ -239,13 +240,17 @@ async function operate({ root, document, current }, request) {
   });
 }
 
+async function queued(root, run) {
+  const prior = queues.get(root) || Promise.resolve();
+  const result = prior.then(run);
+  const settled = result.catch(() => {});
+  queues.set(root, settled);
+  try { return await result; }
+  finally { if (queues.get(root) === settled) queues.delete(root); }
+}
+
 export async function readingStore(store, id, request) {
   if (!request || typeof request !== "object") throw invalid();
   const authorized = await scope(store, id);
-  const prior = queues.get(authorized.root) || Promise.resolve();
-  const result = prior.then(() => operate(authorized, request));
-  const settled = result.catch(() => {});
-  queues.set(authorized.root, settled);
-  try { return await result; }
-  finally { if (queues.get(authorized.root) === settled) queues.delete(authorized.root); }
+  return queued(authorized.root, () => operate(authorized, request));
 }

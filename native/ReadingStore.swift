@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 import JavaScriptCore
@@ -74,42 +75,50 @@ final class NativeReadingStore {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
         continuation.resume(with: Result {
-          guard let folder else { return try DispatchQueue.main.sync { try execute(moveExclusive) } }
+          guard let folder else { return try execute(moveExclusive) }
           let root = canonicalFileURL(folder)
           return try self.transaction(root, writing: false) { state, append, _ in
-            try DispatchQueue.main.sync {
               let offset = root.path.count + 1
               let relative = { (url: URL) in String(url.standardizedFileURL.path.dropFirst(offset)) }
               var detached: [String: String]?
-              if state != nil, let (url, id) = trash, contained(root, url) {
+              if let state, let (url, id) = trash, contained(root, url) {
                 let file = relative(url)
                 guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
                 detached = ["path": file, "id": id]
+                _ = try self.call("checkPending", [state.entries, file, true])
               }
-              let change = try execute { source, destination in
+              if let detached { try append(["trash": detached]) }
+              do { return try execute { source, destination in
                 if let state, let restoring, contained(root, destination), try self.call("hasTrash", [state.entries, restoring]).toBool() {
                   let file = relative(destination)
                   guard try self.call("validPath", [file]).toBool() else { throw NativeFailure(Self.invalid) }
-                  try moveExclusive(source, destination)
+                  _ = try self.call("checkPending", [state.entries, file, true])
                   try append(["restore": ["path": file, "id": restoring]])
+                  do { try moveExclusive(source, destination) }
+                  catch { try append(["trash": ["path": file, "id": restoring]]); throw error }
                   return
                 }
                 guard state != nil, contained(root, source), contained(root, destination) else {
                   try moveExclusive(source, destination); return
                 }
                 let from = relative(source), to = relative(destination)
-                guard from != to, let state, try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
+                guard let state else { throw NativeFailure(Self.unsafe) }
                 _ = try self.call("checkMove", [from, to])
+                _ = try self.call("checkPending", [state.entries, from, true])
+                _ = try self.call("checkPending", [state.entries, to, true])
+                let files = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
+                if files.isEmpty { try moveExclusive(source, destination); return }
+                guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 let move = ["from": from, "to": to]
-                guard let fingerprint = try Self.moveFingerprint(root, from) else { throw NativeFailure(Self.unsafe) }
-                try append(["intent": ["from": from, "to": to, "fingerprint": fingerprint]])
+                guard let fingerprint = try Self.moveFingerprint(root, from, files) else { throw NativeFailure(Self.unsafe) }
+                try append(["intent": ["from": from, "to": to, "fingerprint": fingerprint, "files": files] as [String: Any]])
                 do { try moveExclusive(source, destination) }
                 catch { try? append(["cancel": true]); throw error }
                 try? append(["move": move])
+              } } catch {
+                if let detached { try append(["restore": detached]) }
+                throw error
               }
-              if let detached { try append(["trash": detached]) }
-              return change
-            }
           }
         })
       }
@@ -131,7 +140,11 @@ final class NativeReadingStore {
   private func call(_ name: String, _ args: [Any]) throws -> JSValue {
     let core = try logic()
     core.context.exception = nil
-    guard let value = core.invokeMethod(name, withArguments: args), core.context.exception == nil else { throw NativeFailure(Self.invalid) }
+    let value = core.invokeMethod(name, withArguments: args)
+    if let exception = core.context.exception {
+      throw NativeFailure(exception.forProperty("message")?.toString() ?? Self.invalid)
+    }
+    guard let value else { throw NativeFailure(Self.invalid) }
     return value
   }
 
@@ -139,42 +152,29 @@ final class NativeReadingStore {
     (metadata.st_mode & S_IFMT) == S_IFREG && metadata.st_nlink == 1
   }
 
-  private static func moveFingerprint(_ root: URL, _ file: String) throws -> String? {
-    let target = root.appendingPathComponent(file)
-    var metadata = stat()
-    if lstat(target.path, &metadata) != 0 {
-      if errno == ENOENT { return nil }
-      throw NativeFailure(unsafe)
-    }
-    guard canonicalFileURL(target).path == target.path else { throw NativeFailure(unsafe) }
-    func hash(_ url: URL, _ metadata: stat) throws -> String {
-      let bytes: Data
-      switch metadata.st_mode & S_IFMT {
-      case S_IFDIR:
-        let names = try FileManager.default.contentsOfDirectory(atPath: url.path).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-        var rows = [String]()
-        for name in names {
-          let child = url.appendingPathComponent(name)
-          var entry = stat()
-          guard lstat(child.path, &entry) == 0 else { throw NativeFailure(unsafe) }
-          rows += [name, try hash(child, entry), ""]
-        }
-        bytes = Data(("directory\0" + rows.joined(separator: "\0")).utf8)
-      case S_IFLNK:
-        bytes = Data(("symlink\0" + (try FileManager.default.destinationOfSymbolicLink(atPath: url.path))).utf8)
-      case S_IFREG:
-        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { throw NativeFailure(unsafe) }
-        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
-        defer { try? handle.close() }
-        var current = stat()
-        guard fstat(fd, &current) == 0, current.st_mode & S_IFMT == S_IFREG else { throw NativeFailure(unsafe) }
-        bytes = try handle.readToEnd() ?? Data()
-      default: throw NativeFailure(unsafe)
+  private static func moveFingerprint(_ root: URL, _ prefix: String, _ files: [String]) throws -> String? {
+    var rows = [String]()
+    for suffix in files {
+      let target = root.appendingPathComponent(suffix.isEmpty ? prefix : prefix + "/" + suffix)
+      guard canonicalFileURL(target).path == target.path else { return nil }
+      let fd = open(target.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+      if fd < 0, errno == ENOENT || errno == ENOTDIR || errno == ELOOP { return nil }
+      guard fd >= 0 else { throw NativeFailure(unsafe) }
+      let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+      defer { try? handle.close() }
+      var metadata = stat()
+      guard fstat(fd, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG else { return nil }
+      var hash = SHA256(), size = 0
+      while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+        size += chunk.count
+        hash.update(data: chunk)
       }
-      return "\(bytes.count):\(hashData(bytes))"
+      let marker = "\(size):" + hash.finalize().map { String(format: "%02x", $0) }.joined()
+      if files.count == 1 && suffix.isEmpty { return marker }
+      rows += [suffix, marker]
     }
-    return try hash(target, metadata)
+    let bytes = Data(rows.joined(separator: "\0").utf8)
+    return "\(bytes.count):\(hashData(bytes))"
   }
 
   private static func revision(_ descriptor: Int32) throws -> Revision {
@@ -294,10 +294,11 @@ final class NativeReadingStore {
     }
     var warning = try call("badRows", [state.entries]).toInt32() > 0
     if warning { NSLog("Reading journal skipped invalid rows.") }
-    if let intent = try call("pending", [state.entries]).toDictionary() as? [String: String],
-       let from = intent["from"], let to = intent["to"], let fingerprint = intent["fingerprint"] {
+    if let intent = try call("pending", [state.entries]).toDictionary() as? [String: Any],
+       let from = intent["from"] as? String, let to = intent["to"] as? String, let fingerprint = intent["fingerprint"] as? String {
       do {
-        let source = try Self.moveFingerprint(folder, from) == fingerprint, destination = try Self.moveFingerprint(folder, to) == fingerprint
+        let files = intent["files"] as? [String] ?? [""]
+        let source = try Self.moveFingerprint(folder, from, files) == fingerprint, destination = try Self.moveFingerprint(folder, to, files) == fingerprint
         if source != destination {
           if destination { try append(["move": ["from": from, "to": to]]) }
           else { try append(["cancel": true]) }

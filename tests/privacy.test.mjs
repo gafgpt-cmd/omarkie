@@ -17,6 +17,11 @@ test("offline HTML drops CSS image sources but preserves explicit sizing", () =>
   assert.equal(image.getAttribute("style").trim(), "width: 180px; max-width: calc(100% - 2rem)");
   assert.equal(parsed.content.querySelector("style"), null);
   assert.doesNotMatch(parsed.innerHTML, /tracker\.example/);
+  parsed.innerHTML = renderMarkdown(`<div><img src="local.png" style='--figure-width: 180px; width: var(--figure-width, 160px); --unsafe: image-set("https://tracker.example/hidden" 1x)'></div>`, "doc");
+  const sized = parsed.content.querySelector("img");
+  assert.equal(sized.style.getPropertyValue("--figure-width"), "180px");
+  assert.equal(sized.style.width, "var(--figure-width, 160px)");
+  assert.doesNotMatch(parsed.innerHTML, /tracker\.example/);
 });
 
 test("remote images stay blocked unless the user enables them", () => {

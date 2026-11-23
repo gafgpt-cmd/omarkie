@@ -195,10 +195,14 @@ test("ambiguous fingerprints remain pending until one path matches", async t => 
     await writeFile(other.path, content);
     assert.equal((await new DocumentStore(store.folder).scan(store.folder)).readingRecoveryWarning, true);
     assert.ok((await readFile(log, "utf8")).endsWith(awaiting));
+    for (const record of [source, other]) {
+      await assert.rejects(readingStore(store, record.id, { action: "put", item: note("blocked") }), /pending reading move/i);
+    }
   }
   await writeFile(other.path, body);
   assert.equal((await new DocumentStore(store.folder).scan(store.folder)).readingRecoveryWarning, false);
   assert.deepEqual((await readingStore(store, other.id, { action: "list" })).map(item => item.id), ["original"]);
+  await readingStore(store, other.id, { action: "put", item: note("unblocked") });
 });
 
 test("unused vault moves stay lazy and Trash hides history from path reuse", async t => {
@@ -212,7 +216,14 @@ test("unused vault moves stay lazy and Trash hides history from path reuse", asy
   workspace.apply(await relocate({ action: "undo" }), store);
   await assert.rejects(stat(path.join(sidecar, "journal.lock")), { code: "ENOENT" });
   await readingStore(store, source.id, { action: "put", item: note("trashed") });
-  const change = await moveReadingEntries(store.folder, () => workspace.execute({ action: "trash", path: original }, store, file => rm(file)), original);
+  const trash = handler => moveReadingEntries(store.folder, () => workspace.execute({ action: "trash", path: original }, store, handler), original);
+  await assert.rejects(trash(async () => {
+    const journal = await readFile(path.join(sidecar, "store.jsonl"), "utf8");
+    assert.equal(JSON.parse(journal.trimEnd().split("\n").at(-1)).trash.path, "source.md");
+    throw new Error("Trash refused");
+  }), /Trash refused/);
+  assert.deepEqual((await readingStore(store, source.id, { action: "list" })).map(item => item.id), ["trashed"]);
+  const change = await trash(file => rm(file));
   workspace.apply(change, store);
   await writeFile(original, "Replacement");
   const replacement = await store.open(original);
