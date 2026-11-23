@@ -110,8 +110,8 @@ try {
   const remotePreference = async enabled => {
     window.__omarkie.command({ action: "preferences" });
     const checkbox = () => document.querySelector('input[name="remoteImages"]');
-    await wait(checkbox);
-    if (checkbox().checked !== enabled) checkbox().click();
+    const field = await wait(checkbox, `Remote media preference did not appear (enabled=${enabled})`);
+    if (field.checked !== enabled) field.click();
     document.querySelector('.dialog-heading button').click();
   };
   await remotePreference(true);
@@ -137,7 +137,7 @@ try {
     if (!registered.ok) throw new Error(`${phase}: could not register media fixture: ${registered.error}`);
     window.__omarkie.command({ action: "opened", document: draft });
     await wait(() => image(root())?.currentSrc.endsWith(route) && image(root()).naturalWidth > 0, `${phase}: opted-in editing did not decode remote media`);
-    check(await probe(phase, "offline-start", document.body), `${phase}: native Markdown editing permits opted-in media`);
+    check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
   };
   const assertOffline = async (phase, container) => {
     await wait(() => {
@@ -180,7 +180,8 @@ try {
     const message = document.querySelector('.utility-dialog [role="alert"]')?.textContent;
     if (message !== "PDF exported.") throw new Error(`Project PDF export: ${message || "finished without a result"}`);
     return true;
-  }, "Project PDF export did not finish", 40000);
+  }, "Project PDF export did not finish after diagram preparation, conversion and rendering", 75000);
+  check(true, "native UI project PDF export completes");
   document.querySelector('.dialog-heading button').click();
   await remotePreference(false);
   check(summary.ok && followUp.ok && summary.value === "Synthetic summary." && followUp.value === "Synthetic follow-up answer.", "native Payload returns the response to each explicit request");

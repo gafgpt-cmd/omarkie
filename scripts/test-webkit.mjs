@@ -3,18 +3,28 @@ import { mkdtemp, mkdir, cp, writeFile, rm, readFile, readdir, realpath } from "
 import path from "node:path";
 import os from "node:os";
 import { createServer } from "node:http";
+import { EventEmitter, once } from "node:events";
 import assert from "node:assert/strict";
 const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-webkit-")));
 const uploads = [];
 const payloadRequests = [];
 const payloadBoundaryRequests = [];
 const readerMediaRequests = [];
+const readerMediaArrivals = new EventEmitter();
 const projectMediaRequests = [];
 const grammarRequests = [];
 const server = createServer(async (request, response) => {
   if (request.url?.startsWith("/reader-media-")) {
+    if (request.url.endsWith("-offline-start")) {
+      const poster = request.url.replace(/offline-start$/, "poster");
+      if (!readerMediaRequests.includes(poster)) {
+        try { await once(readerMediaArrivals, poster, { signal: AbortSignal.timeout(8000) }); }
+        catch { response.writeHead(408).end(); return; }
+      }
+    }
     readerMediaRequests.push(request.url);
     response.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "no-store" }).end(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=", "base64"));
+    readerMediaArrivals.emit(request.url);
     return;
   }
   if (request.url?.startsWith("/project-export-media")) {
@@ -144,7 +154,7 @@ try {
     const start = readerMediaRequests.indexOf(`${prefix}offline-start`, next);
     assert.ok(start > next, `${phase}: missing editing requests or offline boundary`);
     const editing = readerMediaRequests.slice(next, start);
-    assert.ok(editing.includes(`${prefix}control`), `${phase}: editing loads the owned media fixture before preview`);
+    assert.ok([`${prefix}control`, `${prefix}poster`].every(route => editing.includes(route)), `${phase}: editing loads the owned image and poster before preview`);
     assert.ok(editing.every(route => [`${prefix}control`, `${prefix}poster`].includes(route)), `${phase}: unexpected request before preview: ${editing.join(", ")}`);
     next = start + 1;
   }
