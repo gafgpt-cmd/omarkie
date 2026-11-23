@@ -277,6 +277,97 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
+    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    let root = canonicalFileURL(owner.directory).appendingPathComponent("first-journal-vault")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+    let file = root.appendingPathComponent("first.md"), source = root.appendingPathComponent("source.md")
+    try atomicWrite(file, Data("First writer".utf8))
+    try atomicWrite(source, Data("Renamed note".utf8))
+    let previous = host.store.folder
+    _ = try await host.scanVault(root)
+    defer { host.store.folder = previous }
+    try await checkFirstRename(.init(root: root, file: file, document: "first.md"), source)
+    try await checkDeferredTrashPurge(.init(root: root, file: file, document: "first.md"))
+    print("PASS: native journal replay, Markdown export and exclusive destination")
+  }
+  @MainActor func checkDeferredTrashPurge(_ scope: NativeReadingStore.Scope) async throws {
+    let core = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+    let store = NativeReadingStore(core), id = UUID().uuidString
+    let trashed = scope.root.appendingPathComponent("trashed.md")
+    _ = try await store.moveEntries(scope.root, trash: (scope.file, id)) { move in
+      try move(scope.file, trashed)
+      return [:]
+    }
+    let sidecar = scope.root.appendingPathComponent(".omarkie")
+    let lock = open(sidecar.appendingPathComponent("journal.lock").path, O_RDWR | O_CLOEXEC)
+    guard lock >= 0 else { throw NativeFailure("Could not open the purge test lock.") }
+    defer { _ = close(lock) }
+    guard flock(lock, LOCK_EX | LOCK_NB) == 0 else { throw NativeFailure("Could not hold the purge test lock.") }
+    await store.discardTrash(scope.root, id)
+    let journal = sidecar.appendingPathComponent("store.jsonl")
+    let before = try String(contentsOf: journal, encoding: .utf8)
+    guard !before.contains("purgeTrash"), flock(lock, LOCK_UN) == 0,
+          !(await NativeReadingStore.recoverVault(scope.root)) else { throw NativeFailure("Trash recovery could not reopen the journal.") }
+    let after = try String(contentsOf: journal, encoding: .utf8)
+    let purges = try after.split(separator: "\n").compactMap { row in
+      (try JSONSerialization.jsonObject(with: Data(row.utf8)) as? [String: Any])?["purgeTrash"] as? String
+    }
+    guard purges == [id], !FileManager.default.fileExists(atPath: scope.file.path) else {
+      throw NativeFailure("Reopening the vault did not purge unreachable Trash history.")
+    }
+  }
+  @MainActor func checkFirstRename(_ scope: NativeReadingStore.Scope, _ source: URL) async throws {
+    let coordination = owner.directory.appendingPathComponent("first-journal-test")
+    try FileManager.default.createDirectory(at: coordination, withIntermediateDirectories: false)
+    let child = Process()
+    child.executableURL = Bundle.main.executableURL
+    child.arguments = ["--reading-worker", scope.root.path, scope.file.path, coordination.path]
+    try child.run()
+    defer { if child.isRunning { child.terminate() } }
+    func waitFor(_ name: String) async throws {
+      let deadline = ContinuousClock.now + .seconds(2)
+      while !FileManager.default.fileExists(atPath: coordination.appendingPathComponent(name).path) {
+        guard child.isRunning, ContinuousClock.now < deadline else { throw NativeFailure("First rename worker did not signal \(name).") }
+        try await Task.sleep(nanoseconds: 10_000_000)
+      }
+    }
+    try await waitFor("held")
+    let store = owner.readingStore
+    store.onContention = { try? atomicWrite(coordination.appendingPathComponent("contended"), Data()) }
+    defer { store.onContention = nil }
+    let renamed = scope.root.appendingPathComponent("renamed.md")
+    let operation = Task {
+      try await host.webView.callAsyncJavaScript("return await window.desktop.fileOperation({action:'rename', path:source, name:'renamed.md'})",
+                                                 arguments: ["source": source.path], in: nil, contentWorld: .page)
+    }
+    try await waitFor("contended")
+    guard FileManager.default.fileExists(atPath: source.path), !FileManager.default.fileExists(atPath: renamed.path),
+          !FileManager.default.fileExists(atPath: scope.root.appendingPathComponent(".omarkie/store.jsonl").path) else {
+      throw NativeFailure("First native rename did not wait for the journal lock.")
+    }
+    try atomicWrite(coordination.appendingPathComponent("release"), Data())
+    guard let response = try await operation.value as? [String: Any], response["ok"] as? Bool == true,
+          !FileManager.default.fileExists(atPath: source.path), try String(contentsOf: renamed, encoding: .utf8) == "Renamed note" else {
+      throw NativeFailure("First native rename did not move the note.")
+    }
+    try await waitFor("written")
+    _ = try await store.perform(.init(root: scope.root, file: renamed, document: "renamed.md"),
+                                ["action": "put", "item": ["id": "renamed", "type": "card", "front": "Q", "back": "A"]])
+    try atomicWrite(coordination.appendingPathComponent("read"), Data())
+    try await waitFor("ids.json")
+    child.waitUntilExit()
+    let core = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
+    let entries = try await NativeReadingStore(core).perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
+    let pairs = Set(entries.compactMap { entry -> String? in
+      guard let id = entry["id"] as? String, let document = entry["document"] as? String else { return nil }
+      return "\(id):\(document)"
+    })
+    guard child.terminationStatus == 0, pairs == ["parallel-b:first.md", "renamed:renamed.md"] else {
+      throw NativeFailure("First native journal stored incorrect paths.")
+    }
+  }
+  @MainActor func checkReadingContention(_ scope: NativeReadingStore.Scope, expected: Set<String>) async throws {
+    let core = Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs")
     let coordination = owner.directory.appendingPathComponent("journal-test")
     try FileManager.default.createDirectory(at: coordination, withIntermediateDirectories: false)
     let child = Process()
@@ -292,7 +383,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       }
     }
     try await waitFor("held")
-    let store = reopened
+    let store = NativeReadingStore(core)
     store.onContention = { try? atomicWrite(coordination.appendingPathComponent("contended"), Data()) }
     let journal = scope.root.appendingPathComponent(".omarkie/store.jsonl")
     let before = try Data(contentsOf: journal)
@@ -305,18 +396,16 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     try await waitFor("written")
     try atomicWrite(coordination.appendingPathComponent("read"), Data())
     try await waitFor("ids.json")
-    let expected = Set(["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
-    let local = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let local = try await store.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     let remote = try JSONDecoder().decode([String].self, from: Data(contentsOf: coordination.appendingPathComponent("ids.json")))
     guard !FileManager.default.fileExists(atPath: indexFile.path) else { throw NativeFailure("Reading index must stay in memory.") }
-    let fresh = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
-    let replayed = try await fresh.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let fresh = NativeReadingStore(core)
+    let replayed = try await fresh.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     for ids in [local.compactMap { $0["id"] as? String }, remote, replayed.compactMap { $0["id"] as? String }] {
       guard ids.count == expected.count, Set(ids) == expected else { throw NativeFailure("Concurrent native writers disagree on commits.") }
     }
     child.waitUntilExit()
     guard child.terminationStatus == 0 else { throw NativeFailure("Native reading worker failed.") }
-    print("PASS: native journal replay, Markdown export and exclusive destination")
   }
   @MainActor func checkReaderPersistence() async throws {
     let directory = owner.directory, root = canonicalFileURL(directory).path
@@ -339,10 +428,9 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let updated: [[String: Any]] = [["id": "new", "type": "book", "title": "Updated native reference", "omarkie-pdf": [attachment.path]]]
     try atomicWrite(export, try JSONSerialization.data(withJSONObject: updated))
     try await waitForInfo(false, title: "Updated native reference")
-    let reopened = NativeBibliographies(directory) { _ in }
-    guard let live = try reopened.perform(root, "info") as? [String: Any], live["stale"] as? Bool == false,
+    guard let live = try bibliography.perform(root, "info") as? [String: Any], live["stale"] as? Bool == false,
           let csl = live["csl"] as? String, csl.contains("Updated native reference"), !csl.contains(attachment.path),
-          try reopened.perform(root, "open", "new") as? String == canonicalFileURL(attachment).path else {
+          try bibliography.perform(root, "open", "new") as? String == canonicalFileURL(attachment).path else {
       throw NativeFailure("Native Zotero replacement, CSL isolation or PDF resolution failed.")
     }
     let options: [String: Any] = ["bibliography": csl, "style": "vancouver"]
@@ -388,7 +476,16 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     print("PASS: native Zotero stale/live state, PDF resolution, chapter order and one citeproc bibliography")
     let cached = directory.appendingPathComponent("bibliographies/" + hashData(Data(root.utf8)) + ".json")
     let before = try Data(contentsOf: cached)
+    let restoring = NativeWindowHost(owner: owner, directory: output.appendingPathComponent("restore-window"))
+    _ = try await restoring.scanVault(directory)
+    owner.hosts.append(restoring)
+    defer { owner.hosts.removeAll { $0 === restoring } }
     _ = try await host.openShowcase(names: [])
+    guard let nextVault = host.store.folder else { throw NativeFailure("Missing destination vault.") }
+    try atomicWrite(restoring.store.dataDirectory.appendingPathComponent("session.json"),
+                    JSONEncoder().encode(SessionRecord(documents: [], folder: nextVault.path)))
+    _ = try await restoring.handle("restore", [])
+    guard restoring.store.folder == nextVault else { throw NativeFailure("Renderer session restore did not switch vaults.") }
     try atomicWrite(export, Data("[{\"id\":\"closed\",\"type\":\"book\",\"title\":\"Closed vault must not refresh\"}]".utf8))
     try await Task.sleep(nanoseconds: 1_600_000_000)
     guard try Data(contentsOf: cached) == before else { throw NativeFailure("Zotero refreshed after the last window left its vault.") }
@@ -420,7 +517,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       guard ContinuousClock.now < deadline else { throw NativeFailure("Reading worker did not receive the list signal.") }
       try await Task.sleep(nanoseconds: 10_000_000)
     }
-    let entries = try await store.perform(scope, ["action": "list"]) as? [[String: Any]] ?? []
+    let entries = try await store.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]] ?? []
     try atomicWrite(coordination.appendingPathComponent("ids.json"), JSONEncoder().encode(entries.compactMap { $0["id"] as? String }))
   }
   static func main() {

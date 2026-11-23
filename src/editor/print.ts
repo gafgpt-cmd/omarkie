@@ -114,7 +114,8 @@ export async function conversionMarkdown(source: string, rendered: HTMLElement, 
     const diagram = diagrams[index++], svg = diagram?.querySelector<SVGSVGElement>("svg");
     if (!svg || diagram.classList.contains("diagram-error")) throw new Error(t("图表有语法错误，无法导出。"));
     const continuation = block.prefix.replace(/[^>\s]/g, " ").trimEnd();
-    changes.push({ from: block.from, to: block.to, text: `${block.prefix}![流程图](${await diagramPNG(svg)})\n${continuation}\n` });
+    const separator = block.afterParagraph ? `${continuation}\n` : "";
+    changes.push({ from: block.from, to: block.to, text: `${separator}${block.prefix}![流程图](${await diagramPNG(svg)})\n${continuation}\n` });
   }
   for (const change of changes.sort((a, b) => b.from - a.from)) source = source.slice(0, change.from) + change.text + source.slice(change.to);
   return source;

@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from "node:fs/promise
 import os from "node:os";
 import path from "node:path";
 import { convertPdf, pdfConverter } from "../electron/pdf.mjs";
+import { t as translate } from "../electron/i18n.mjs";
 
 // A stand-in converter with the pdf-md calling convention: <file.pdf> --output <folder>; writes Markdown and a picture.
 async function fixture(t, body = 'const [file,, out] = process.argv.slice(2); const fs = require("fs"), path = require("path"); fs.appendFileSync(process.env.CALLS, "x"); fs.mkdirSync(path.join(out, "_images"), { recursive: true }); fs.writeFileSync(path.join(out, "_images", "page1.png"), "png"); fs.writeFileSync(path.join(out, path.basename(file, ".pdf") + ".md"), "# Converted\\n\\n![p](_images/page1.png)\\n"); fs.writeFileSync(path.join(out, "notes.md"), "x");') {
@@ -26,7 +27,12 @@ test("the converter comes from the environment, the data folder or PATH, and non
   // A bare interpreter name in the argv resolves on PATH, like `["python3", "/path/to/orchestrator.py"]`.
   const interpreter = path.basename(process.execPath).replace(/\.exe$/i, "");
   assert.deepEqual(await pdfConverter(empty, { PATH: path.dirname(process.execPath), OMARKIE_PDF_CONVERTER: JSON.stringify([interpreter, script]) }), [process.execPath, script]);
-  await assert.rejects(pdfConverter(empty, { OMARKIE_PDF_CONVERTER: '["", 1]' }));
+  const invalid = { message: translate("PDF 转换器设置无效。") };
+  for (const value of ['["pdf-md"', '["", 1]', `${process.execPath}\0`, JSON.stringify([`${process.execPath}\0`]), JSON.stringify([process.execPath, "bad\0arg"])]) {
+    await assert.rejects(pdfConverter(data, { OMARKIE_PDF_CONVERTER: value }), invalid);
+    await writeFile(path.join(data, "pdf-converter"), value + "\n");
+    await assert.rejects(pdfConverter(data, {}), invalid);
+  }
 });
 
 test("a PDF converts once into a Markdown copy with its pictures; a changed PDF converts again", async t => {

@@ -50,6 +50,7 @@
   "阅读记录损坏，未更改原文件。": "Jurnalul de lectură este deteriorat. Fișierul original nu a fost modificat.",
   "Could not confirm reading history recovery.": "Nu s-a putut confirma recuperarea istoricului de lectură.",
   "Resolve the pending reading move before editing reading history.": "Rezolvă mutarea în așteptare înainte de a edita istoricul de lectură.",
+  "Cannot move a tracked note that is unreadable.": "O notă cu istoric nu poate fi mutată dacă nu poate fi citită.",
   "阅读笔记.md": "Notițe de lectură.md",
   "无法导出。请选择新的文件名。": "Exportul a eșuat. Alege un nume de fișier nou.",
   "请先打开文件夹并保存文档。": "Mai întâi deschide un dosar și salvează documentul.",
