@@ -90,7 +90,7 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 Release builds publish the lightweight Arch package and its SHA-256 checksum in GitHub Releases. Installing the Arch package does not install Electron, and the package does not bundle it. On launch, Omarkie looks for the versioned Electron dependency of installed Obsidian (the Omarchy default). Without installed Obsidian, it checks for the newest runnable installed `electronNN`, then checks Obsidian's pacman sync metadata. If the selected executable is missing, Omarkie offers to install or repair that series. If no supported series is found, Omarkie stops. Electron 43 or newer is required. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.2.2-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
-On desktops with `xdg-terminal-exec`, Electron repair opens a terminal. After a successful install, Omarkie reopens the requested files without keeping the terminal open.
+If the selected Electron executable is missing when you launch from the desktop, Omarkie uses `xdg-terminal-exec` to open an installer terminal. After a successful install or repair, Omarkie opens the requested files even after that terminal closes. Without `xdg-terminal-exec`, run the printed install command and launch Omarkie again.
 
 #### Update, uninstall and clean up
 
