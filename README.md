@@ -84,7 +84,7 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 | --- | --- | --- |
 | Arch, Omarchy, Manjaro | `omarkie-0.2.2-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.2.2-1-any.pkg.tar.zst` |
 | Debian, Ubuntu, Mint | `Omarkie-0.2.2-linux-x64.deb` | `sudo apt install ./Omarkie-0.2.2-linux-x64.deb` |
-| Fedora, RHEL | `Omarkie-0.2.2-1.x86_64.rpm` | `sudo dnf install ./Omarkie-0.2.2-1.x86_64.rpm` |
+| Fedora, RHEL | `omarkie-0.2.2-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.2.2-1.x86_64.rpm` |
 | openSUSE | `omarkie-0.2.2-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.2.2-1.x86_64.rpm` |
 | Any x64 distribution | `Omarkie-0.2.2-linux-x64.AppImage` | `chmod +x` the file and run it |
 
