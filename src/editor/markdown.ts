@@ -31,9 +31,9 @@ const md = createMarkdown({
 }).use(configureDocumentRendering);
 // Bumped on every option change so cached block renders are invalidated.
 export let markdownOptionsVersion = 0;
-export function setMarkdownOptions(options: { highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean }) {
+export function setMarkdownOptions(options: { highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean; remoteImages?: boolean }) {
   markdownOptionsVersion++;
-  allowRemoteImages = (options as { remoteImages?: boolean }).remoteImages === true;
+  allowRemoteImages = options.remoteImages === true;
   setSyntaxOptions(md, options);
 }
 const defaultFence = md.renderer.rules.fence!;

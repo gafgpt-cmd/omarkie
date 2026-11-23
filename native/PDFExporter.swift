@@ -67,7 +67,15 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     let measurement = """
       const root = document.querySelector('.print-document'); root.getBoundingClientRect();
       await document.fonts.ready;
-      await Promise.all([...document.images].map(image => image.complete ? Promise.resolve() : new Promise(resolve => { image.onload = image.onerror = resolve; setTimeout(resolve, 5000); })));
+      let imageDeadline;
+      await Promise.race([
+        Promise.all([...document.images].map(image => {
+          image.loading = 'eager';
+          return image.decode().catch(() => {});
+        })),
+        new Promise(resolve => { imageDeadline = setTimeout(resolve, 5000); }),
+      ]);
+      clearTimeout(imageDeadline);
       // The final block's bottom margin has no painted content. Counting it can
       // create an otherwise empty last page when text fits within the page.
       const range = document.createRange(); range.selectNodeContents(root);

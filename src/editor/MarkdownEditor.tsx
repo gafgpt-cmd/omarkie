@@ -74,6 +74,7 @@ interface Props {
   reading?: boolean;
   citationVault?: string;
   preferences?: Preferences;
+  remoteImages?: boolean;
   typewriter?: boolean;
   onChange(content: string): void;
   onError(error: string): void;
@@ -86,7 +87,7 @@ interface Props {
 }
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(
   function MarkdownEditor(
-    { document: record, rendered, active = true, readOnly: locked = false, reading = false, citationVault, preferences, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
+    { document: record, rendered, active = true, readOnly: locked = false, reading = false, citationVault, preferences, remoteImages = preferences?.remoteImages, typewriter = false, onChange, onError, onCursor, onSelection, onCompositionEnd, onReference, onReady, onSourceFallback },
     ref,
   ) {
     const readOnly = locked || reading;
@@ -169,7 +170,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       callbacks.current.onError(t("请先完成当前输入法组合输入，再修改文档。"));
       return true;
     }
-    const richViewOptions = useRef<{ preferences?: Preferences; typewriter: boolean; readOnly: boolean } | null>(null);
+    const richViewOptions = useRef<{ preferences?: Preferences; remoteImages?: boolean; typewriter: boolean; readOnly: boolean } | null>(null);
     function richOptions() {
       const { preferences, typewriter, readOnly } = viewOptions.current;
       return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly };
@@ -177,9 +178,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     function applyViewOptions() {
       if (isComposing()) { pendingOptions.current = true; return; }
       pendingOptions.current = false;
-      const { preferences, typewriter, readOnly } = viewOptions.current;
+      const { preferences, remoteImages, typewriter, readOnly } = viewOptions.current;
       const previous = richViewOptions.current;
-      if (rich.current && (!previous || previous.preferences !== preferences || previous.typewriter !== typewriter || previous.readOnly !== readOnly)) {
+      if (rich.current && (!previous || previous.preferences !== preferences || previous.remoteImages !== remoteImages || previous.typewriter !== typewriter || previous.readOnly !== readOnly)) {
         rich.current.setOptions(richOptions());
         model.current?.refreshCaret(); rich.current.render(false);
         richViewOptions.current = viewOptions.current;
@@ -195,8 +196,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     }
     const sourceBehavior = useRef<Compartment | null>(null);
     const sourceOptions = () => [...(viewOptions.current.preferences?.sourceLineNumbers ? [codeMirror!.lineNumbers()] : []), codeMirror!.EditorState.readOnly.of(viewOptions.current.readOnly), codeMirror!.EditorView.editable.of(!viewOptions.current.readOnly), codeMirror!.indentUnit.of(" ".repeat(viewOptions.current.preferences?.tabSize || 2)), ...(viewOptions.current.preferences?.autoPair ? [codeMirror!.closeBrackets(), codeMirror!.keymap.of(codeMirror!.closeBracketsKeymap)] : [])];
-    const viewOptions = useRef({ preferences, typewriter, readOnly, locked });
-    viewOptions.current = { preferences, typewriter, readOnly, locked };
+    const viewOptions = useRef({ preferences, remoteImages, typewriter, readOnly, locked });
+    viewOptions.current = { preferences, remoteImages, typewriter, readOnly, locked };
     function historyState() {
       if (root.current?.closest(".document-editor")?.hasAttribute("hidden"))
         return;
@@ -693,9 +694,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     useEffect(() => {
       historyState();
     });
-    useEffect(() => {
+    useLayoutEffect(() => {
       applyViewOptions();
-    }, [preferences?.spellcheck, preferences?.tabSize, preferences?.autoPair, preferences?.emoji, preferences?.highlight, preferences?.subscript, preferences?.superscript, preferences?.inlineMath, preferences?.remoteImages, preferences?.sourceLineNumbers, preferences?.codeLineNumbers, preferences?.lineHeight, preferences?.editorColumns, preferences?.fontSize, typewriter, readOnly]);
+    }, [preferences, remoteImages, typewriter, readOnly]);
     useLayoutEffect(() => {
       if (readyMode && (readyMode === "rich") === visibleMode && (visibleMode ? rich.current : source.current)) callbacks.current.onReady?.(readyMode);
     }, [readyMode, visibleMode]);

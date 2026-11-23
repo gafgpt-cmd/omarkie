@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FilePlus2, FolderOpen, X, AlertCircle, Layers } from "lucide-react";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
@@ -135,14 +135,10 @@ export default function App() {
   const renderedView = readingVisible ? readingView.visual : rendered;
   const suppressRemoteImages = readingVisible || cleanVisible;
   const remoteImages = preferences.remoteImages && !suppressRemoteImages;
-  const previousRemoteImages = useRef(remoteImages);
-  useLayoutEffect(() => {
-    if (previousRemoteImages.current !== remoteImages || suppressRemoteImages && preferences.remoteImages) {
-      const options = { ...preferences, remoteImages };
-      setMarkdownOptions(options);
-    }
-    previousRemoteImages.current = remoteImages;
-  }, [preferences, suppressRemoteImages, remoteImages]);
+  useInsertionEffect(() => {
+    // Rich editors read the parser policy in descendant layout effects.
+    setMarkdownOptions({ ...preferences, remoteImages });
+  }, [preferences, remoteImages]);
   function setRenderedView(value: boolean) {
     if (readingVisible) setReadingViews(current => ({ ...current, [session.activeId]: { ...readingView, visual: value } }));
     else setRendered(value);
@@ -283,7 +279,7 @@ export default function App() {
     setPayload(null);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
-  function changePreferences(next: typeof preferences) { setMarkdownOptions(next); setPreferences(next); }
+  function changePreferences(next: typeof preferences) { setPreferences(next); }
   async function exportDocument(kind: string, options?: ConversionOptions) {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
@@ -307,7 +303,7 @@ export default function App() {
     const sync = (event: StorageEvent) => {
       if (event.key === pluginPreferenceKey) setPluginPreferences(loadPluginPreferences());
       if (event.key === "omarkie-theme") setTheme(event.newValue || "light");
-      if (event.key === "omarkie-preferences") { const next = loadPreferences(); setMarkdownOptions(next); setPreferences(next); }
+      if (event.key === "omarkie-preferences") setPreferences(loadPreferences());
       if (event.key === backgroundRevisionKey) void refreshBackground().catch(error => session.setMessage(error.message));
     };
     window.addEventListener("storage", sync); return () => window.removeEventListener("storage", sync);
@@ -566,6 +562,7 @@ export default function App() {
                   reading={readingVisible && record.id === session.activeId}
                   citationVault={painted && record.id === session.activeId && host.bibliography ? session.folder ?? undefined : undefined}
                   preferences={preferences}
+                  remoteImages={remoteImages}
                   typewriter={typewriter}
                   onChange={(content) => session.update(record.id, { content })}
                   onError={session.setMessage}

@@ -90,7 +90,8 @@ try {
   check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
   const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });
   check(!unknown.ok, "native reading store rejects an unregistered document");
-  const vault = (await window.desktop.restore()).value.folder;
+  const initialSession = (await window.desktop.restore()).value;
+  const vault = initialSession.folder;
   const renamed = await window.desktop.fileOperation({ action: "rename", path: `${vault}/WebKit-fixture.md`, name: "WebKit-renamed.md" });
   const movedEntries = await store({ action: "list" });
   check(renamed.ok && movedEntries.ok && movedEntries.value.length === 3 && movedEntries.value.every(item => item.document === "WebKit-renamed.md"), "native rename carries the note, card and rating");
@@ -114,13 +115,12 @@ try {
     if (field.checked !== enabled) field.click();
     document.querySelector('.dialog-heading button').click();
   };
-  await remotePreference(true);
+  const policy = await window.desktop.setRemoteImages(false);
+  check(policy.ok && policy.value, "native editor starts the local image check with remote media blocked");
   const image = (container, alt) => container?.querySelector(`img[alt="${alt}"]`);
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC";
   const blobURL = URL.createObjectURL(new Blob([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], { type: "image/png" }));
   const dataURL = `data:image/png;base64,${pixel}`;
-  const mediaFiles = await window.desktop.scan();
-  if (!mediaFiles.ok) throw new Error(mediaFiles.error);
   const decoded = (img, url, width, height) => img?.currentSrc === url && img.naturalWidth === width && img.naturalHeight === height;
   const probe = async (phase, name, container) => {
     const img = new Image();
@@ -134,20 +134,27 @@ try {
       return loaded;
     } finally { img.remove(); }
   };
-  const openMedia = async phase => {
-    const route = `/reader-media-${phase}-control`;
-    const file = mediaFiles.value.files.find(file => file.relative === `preview-media/Media-${phase}.md`);
+  const assetFor = record => name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${encodeURIComponent(name)}`;
+  const openMediaToken = async phase => {
+    const scanned = await window.desktop.scan();
+    if (!scanned.ok) throw new Error(scanned.error);
+    const file = scanned.value.files.find(file => file.relative === `preview-media/Media-${phase}.md`);
     if (!file) throw new Error(`${phase}: missing saved vault note`);
     const opened = await window.desktop.openToken(file.token);
     if (!opened.ok) throw new Error(`${phase}: could not open media fixture: ${opened.error}`);
-    const record = opened.value;
-    const asset = name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+    return opened.value;
+  };
+  const openMedia = async phase => {
+    const route = `/reader-media-${phase}-control`;
+    const record = await openMediaToken(phase);
+    const asset = assetFor(record);
+    if (phase === "reading") check(await probe(phase, "editor-allowed", root()), "native opted-in editor loads the loopback image");
     const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x, fallback.svg 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><video poster="${blobURL}"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
     window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
     check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
-    return asset;
+    return record;
   };
   const assertOffline = async (phase, container, asset) => {
     for (const [alt, url, width, height] of [
@@ -166,25 +173,47 @@ try {
     check([null, "11"].includes(fallback.getAttribute("width")) && [null, "17"].includes(fallback.getAttribute("height")), `${phase}: remote candidate dimensions do not size the local fallback`);
     check(!await probe(phase, "offline-probe", preview), `${phase}: native policy blocks remote preview requests`);
   };
-  const closeMedia = async phase => {
+  const closeMedia = async (phase, asset) => {
     window.__omarkie.command({ action: "close" });
     await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media note did not close`);
+    check(!(await window.desktop.readResource(asset("local.svg"))).ok, `${phase}: closing the tab revokes its asset grant`);
   };
-  const readingAsset = await openMedia("reading");
+  const offlineRecord = await openMediaToken("reading");
+  const offlineAsset = assetFor(offlineRecord);
+  const stale = await window.desktop.persist(initialSession);
+  if (!stale.ok) throw new Error(`Could not persist the preceding tab snapshot: ${stale.error}`);
+  const local = await window.desktop.readResource(offlineAsset("local.svg"));
+  check(local.ok && local.value.mime === "image/svg+xml", "native asset grant survives a session snapshot taken before the note opened");
+  window.__omarkie.command({ action: "opened", document: offlineRecord });
+  await wait(() => decoded(image(root(), "Local image"), offlineAsset("local.svg"), 11, 17), "offline editor did not decode the saved note's local image");
+  check(!await probe("reading", "editor-blocked", root()), "native offline editor blocks the loopback image");
+  await closeMedia("offline reading", offlineAsset);
+  await remotePreference(true);
+  const readingRecord = await openMedia("reading");
+  const readingAsset = assetFor(readingRecord);
   const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
   readingToggle.click();
   await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
   await assertOffline("reading", root, readingAsset);
-  await closeMedia("reading");
+  await closeMedia("reading", readingAsset);
   const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
   readingClose.click();
   await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
-  const cleanAsset = await openMedia("clean");
+  const reopenedFromTree = await openMediaToken("reading");
+  check(reopenedFromTree.id !== readingRecord.id, "file tree open issues a fresh grant after close");
+  window.__omarkie.command({ action: "opened", document: reopenedFromTree });
+  await wait(() => decoded(image(root(), "Local image"), assetFor(reopenedFromTree)("local.svg"), 11, 17), "file tree open did not decode the local image");
+  const reopenedFromHistory = await window.desktop.reopen(readingRecord.id);
+  await closeMedia("reopened reading", assetFor(reopenedFromTree));
+  check(reopenedFromHistory.ok && reopenedFromHistory.value.id === reopenedFromTree.id &&
+    !(await window.desktop.readResource(readingAsset("local.svg"))).ok,
+    "reopen reuses the live tab and closing it leaves neither grant readable");
+  const cleanAsset = assetFor(await openMedia("clean"));
   window.__omarkie.command({ action: "clean-converted" });
   const cleanLayer = () => document.querySelector(".clean-layer");
   await wait(cleanLayer, "Clean preview did not open");
   await assertOffline("clean", cleanLayer, cleanAsset);
-  await closeMedia("clean");
+  await closeMedia("clean", cleanAsset);
   URL.revokeObjectURL(blobURL);
   window.__omarkie.command({ action: "document-tools" });
   const writingTab = await wait(() => document.querySelector('.workflow-tabs [data-tab="writing"]:enabled'), "Document Tools writing tab did not become enabled");
@@ -245,8 +274,8 @@ try {
   setRange(0,42); setRange(1,7);
   await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.42');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(7px)','background controls change the image layer without dimming text');
-  document.querySelector('.background-reset').click();
-  await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18');
+  document.querySelector('.background-settings .background-reset').click();
+  await wait(() => getComputedStyle(document.querySelector('.editor-background')).opacity === '0.18', 'Background reset did not restore default opacity');
   check(getComputedStyle(document.querySelector('.editor-background')).filter === 'blur(0px)','reset restores subtle background defaults');
   document.querySelector('.background-file button:nth-of-type(2)').click(); await wait(() => !document.querySelector('.editor-background'));
   check((await window.desktop.background()).value === null,'clear background updates native persistence');
@@ -260,14 +289,14 @@ try {
     !root().querySelector(".math-error,[data-mjx-error]"),
     "offline MathJax SVG renders document macros and extended fonts",
   );
-  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list')); };
+  const openPlugins = async () => { window.__omarkie.command({action:"plugins"}); await wait(() => document.querySelector('.plugin-list'), 'Plugin Manager did not open'); };
   const pluginCard = (name, id) => id ? document.querySelector(`.plugin-card[data-plugin-id="${id}"]`) : [...document.querySelectorAll('.plugin-card')].find(card => card.querySelector('h3')?.textContent === name);
   const closePlugins = () => document.querySelector('.dialog-heading button').click();
   pointText("粗体", 1);
   await openPlugins();
-  await wait(() => pluginCard('Native-plugin-fixture'));
-  pluginCard('Native-plugin-fixture').querySelector('input[type="checkbox"]').click();
-  await wait(() => getComputedStyle(root()).getPropertyValue('--plugin-fixture').trim() === 'loaded');
+  const nativePlugin = await wait(() => pluginCard('Native-plugin-fixture'), 'Native-plugin-fixture was not listed');
+  nativePlugin.querySelector('input[type="checkbox"]').click();
+  await wait(() => getComputedStyle(root()).getPropertyValue('--plugin-fixture').trim() === 'loaded', 'Native-plugin-fixture did not apply its style');
   check(true, 'installed CommonJS plugin is dynamically imported by native WebKit under the existing CSP');
   pluginCard('Native-plugin-fixture').querySelector('.plugin-actions button').click();
   closePlugins(); await wait(() => root().textContent.includes('粗插件体'));
@@ -301,8 +330,10 @@ try {
       check(true,'plugin command calls the original plugin and persists the changed setting');
     }
     if (id === 'read_only') {
-      closePlugins(); pointText('粗体', 1); input('insertText','BLOCKED');
-      check(!root().textContent.includes('BLOCKED') && root().getAttribute('aria-readonly') === 'true', 'read-only plugin blocks real editor input events');
+      await wait(() => root()?.getAttribute('aria-readonly') === 'true', 'Read-only plugin did not lock the rich editor');
+      closePlugins(); pointText('粗体', 1);
+      const accepted = input('insertText','BLOCKED');
+      check(!accepted && !root().isContentEditable && !root().textContent.includes('BLOCKED') && root().getAttribute('aria-readonly') === 'true', 'read-only plugin blocks real editor input events');
       await sourceMode(true); check(document.querySelector('.document-editor:not([hidden]) .cm-content').getAttribute('contenteditable') === 'false', 'read-only plugin also locks source mode');
       await sourceMode(false); await openPlugins();
     }
@@ -311,6 +342,7 @@ try {
     pluginCard(null, id).querySelector('input[type="checkbox"]').click();
     await wait(() => !document.querySelector('style[data-plugin="'+id+'"]'));
   }
+  await wait(() => root()?.getAttribute('aria-readonly') === 'false', 'Plugin teardown did not unlock the rich editor');
   check(!document.documentElement.classList.contains('plugin-dark') && root().getAttribute('aria-readonly') === 'false', 'plugin teardown restores editing and removes presentation effects');
   closePlugins();
   for (const [needle, offset] of [["粗体",1],["任务",1],["B",1]]) {
@@ -471,7 +503,7 @@ try {
   const longPdf = await window.desktop.exportPdf(longHtml, {testName:'long', paper:'letter', margin:42, title:'Pagination fixture', header:'${title}', footer:'${pageNo} / ${totalPages}'});
   if (!longPdf.ok) throw new Error(longPdf.error);
   check(true, "long PDF uses configurable paper, margins, headers and line-aware page boundaries");
-  const marginPdf = await window.desktop.exportPdf('<!doctype html><html><head><style>html,body{margin:0;padding:0}.print-document{display:flow-root}p{margin:0 0 800px;font:16px/24px sans-serif}</style></head><body><article class="print-document"><p>Trailing margin regression</p></article></body></html>');
+  const marginPdf = await window.desktop.exportPdf('<!doctype html><html><head><style>html,body{margin:0;padding:0}.print-document{display:flow-root}p{margin:0 0 800px;font:16px/24px sans-serif}</style></head><body><article class="print-document"><p>Trailing margin regression</p></article></body></html>', {testName:'margin'});
   if (!marginPdf.ok) throw new Error(marginPdf.error);
   check(true, "native PDF ignores an unpainted trailing block margin");
   window.__omarkie.command({ action: "html" });

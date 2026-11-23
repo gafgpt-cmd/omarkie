@@ -38,7 +38,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         owner: owner, directory: directory,
         seed: SessionRecord(documents: [record], activeId: record.id, folder: canonicalFileURL(directory).path))
       owner.hosts.append(host)
-      host.show(hidden: true)
+      host.show()
       host.webView.configuration.userContentController.addUserScript(WKUserScript(
         source: "if (location.pathname.endsWith('/project-diagrams.html')) Object.defineProperty(crypto, 'randomUUID', { value: undefined })",
         injectionTime: .atDocumentStart, forMainFrameOnly: false))
@@ -72,6 +72,11 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             try Data(contentsOf: pdfURL).count < 1_000_000
           else { throw NativeFailure("Native PDF pagination or size is invalid.") }
           print("PASS: native PDF is valid A4 with \(pdf.numberOfPages) pages and bounded size")
+          let marginURL = self.owner.directory.appendingPathComponent("native-test-margin.pdf")
+          guard let marginPDF = PDFDocument(url: marginURL), marginPDF.pageCount == 1,
+                marginPDF.string?.contains("Trailing margin regression") == true else {
+            throw NativeFailure("Trailing margin PDF lost content or added an empty page.")
+          }
           let longURL = self.owner.directory.appendingPathComponent("native-test-long.pdf")
           guard let longPDF = PDFDocument(url: longURL), longPDF.pageCount > 5 else { throw NativeFailure("Long PDF did not paginate.") }
           let longText = longPDF.string ?? ""
@@ -101,12 +106,31 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
               try await self.checkOfflinePDF()
               try await self.checkReaderPersistence()
               try await self.checkMenuLocale()
+              try await self.checkShowcaseGrant()
               exit(0)
             } catch { self.fail(error) }
           }
         } catch { self.fail(error) }
       }
     } catch { fail(error) }
+  }
+  @MainActor func checkShowcaseGrant() async throws {
+    _ = try await host.webView.callAsyncJavaScript("""
+      const snapshot = await window.desktop.restore();
+      if (!snapshot.ok) throw new Error(snapshot.error);
+      const showcase = await window.desktop.showcase();
+      if (!showcase.ok) throw new Error(showcase.error);
+      const { id, name } = showcase.value.document;
+      if (name !== "travel-journal.md" || snapshot.value.documents.some(record => record.id === id)) {
+        throw new Error("Expected Showcase to open a new travel journal tab");
+      }
+      const stale = await window.desktop.persist(snapshot.value);
+      if (!stale.ok) throw new Error(stale.error);
+      const asset = `omarkie-asset://local/${encodeURIComponent(id)}/${encodeURIComponent("images/coast-sunrise.jpg")}`;
+      const local = await window.desktop.readResource(asset);
+      if (!local.ok || local.value.mime !== "image/jpeg") throw new Error("Stale snapshot revoked the Showcase image grant");
+      """, arguments: [:], in: nil, contentWorld: .page)
+    print("PASS: stale snapshot preserves the Showcase image grant")
   }
   @MainActor func checkMenuLocale() async throws {
     func waitFor(_ predicate: () -> Bool) async throws {
@@ -124,7 +148,6 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     }
     let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
     defer { other.orderOut(nil) }
-    NSApp.setActivationPolicy(.regular)
     NSApp.activate(ignoringOtherApps: true)
     host.window.makeKeyAndOrderFront(nil)
     try await waitFor { self.host.window.isKeyWindow }
@@ -445,22 +468,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
           let uiPDF = CGPDFDocument(uiURL as CFURL) else {
       throw NativeFailure("Native UI project PDF lost the diagram chapter.")
     }
-    var imageCount = 0
+    var diagramSizes = Set<String>()
     for number in 1...uiPDF.numberOfPages {
-      var resources: CGPDFDictionaryRef?, objects: CGPDFDictionaryRef?
-      guard let page = uiPDF.page(at: number)?.dictionary,
-            CGPDFDictionaryGetDictionary(page, "Resources", &resources), let resources,
-            CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { continue }
-      CGPDFDictionaryApplyFunction(objects, { _, object, context in
-        var stream: CGPDFStreamRef?, subtype: UnsafePointer<CChar>?
-        guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
-              let dictionary = CGPDFStreamGetDictionary(stream),
-              CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype,
-              String(cString: subtype) == "Image" else { return }
-        context?.assumingMemoryBound(to: Int.self).pointee += 1
-      }, &imageCount)
+      guard let page = uiPDF.page(at: number)?.dictionary else { continue }
+      withUnsafeMutablePointer(to: &diagramSizes) { Self.collectDiagramSizes(page, $0) }
     }
-    guard imageCount == 2 else { throw NativeFailure("Native UI project PDF did not rasterize both diagrams.") }
+    guard diagramSizes.count == 2 else { throw NativeFailure("Native UI project PDF did not rasterize both diagrams: \(diagramSizes.sorted()).") }
     let docxURL = output.appendingPathComponent("native-project.docx")
     let pdfURL = output.appendingPathComponent("native-project.pdf")
     guard let converter = Interchange.pandoc(),
@@ -489,6 +502,28 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     try atomicWrite(export, Data("[{\"id\":\"closed\",\"type\":\"book\",\"title\":\"Closed vault must not refresh\"}]".utf8))
     try await Task.sleep(nanoseconds: 1_600_000_000)
     guard try Data(contentsOf: cached) == before else { throw NativeFailure("Zotero refreshed after the last window left its vault.") }
+  }
+  private static func collectDiagramSizes(_ owner: CGPDFDictionaryRef, _ context: UnsafeMutableRawPointer) {
+    var resources: CGPDFDictionaryRef?, objects: CGPDFDictionaryRef?
+    guard CGPDFDictionaryGetDictionary(owner, "Resources", &resources), let resources,
+          CGPDFDictionaryGetDictionary(resources, "XObject", &objects), let objects else { return }
+    CGPDFDictionaryApplyFunction(objects, { _, object, context in
+      var stream: CGPDFStreamRef?, subtype: UnsafePointer<CChar>?
+      guard let context, CGPDFObjectGetValue(object, .stream, &stream), let stream,
+            let dictionary = CGPDFStreamGetDictionary(stream),
+            CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else { return }
+      switch String(cString: subtype) {
+      case "Form": WebKitTests.collectDiagramSizes(dictionary, context)
+      case "Image":
+        var width: CGPDFInteger = 0, height: CGPDFInteger = 0
+        // Ignore the vault's 11 × 17 SVG; the two Mermaid fixtures have different raster sizes.
+        if CGPDFDictionaryGetInteger(dictionary, "Width", &width),
+           CGPDFDictionaryGetInteger(dictionary, "Height", &height), width > 17, height > 17 {
+          context.assumingMemoryBound(to: Set<String>.self).pointee.insert("\(width)x\(height)")
+        }
+      default: break
+      }
+    }, context)
   }
   func fail(_ error: Error) {
     fputs("\(error)\n", stderr)
@@ -553,7 +588,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let app = NSApplication.shared
     let delegate = WebKitTests()
     app.delegate = delegate
-    app.setActivationPolicy(.prohibited)
+    app.setActivationPolicy(.regular)
     app.run()
     withExtendedLifetime(delegate) {}
   }
