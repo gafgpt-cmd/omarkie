@@ -14,7 +14,7 @@
 
 Omarkie is an open-source Markdown editor with live, inline rendering. Write directly in the formatted document, switch to source when you need it, and keep ordinary `.md` files in your own folders. It feels at home on [Omarchy](https://omarchy.org): it follows your Omarchy theme and font live, and it runs on Linux, Windows and macOS.
 
-**Status:** early development, version **0.2.0**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
+**Status:** early development, version **0.2.1**. The interface is available in English, Spanish, Catalan, Romanian and Chinese.
 
 **No telemetry.** Omarkie never phones home: no analytics, no crash reports, no update checks, and the spellcheck dictionaries are built in.
 
@@ -82,13 +82,13 @@ Download the package for your platform from [Releases](https://github.com/gafgpt
 
 | Distribution | Package | Install |
 | --- | --- | --- |
-| Arch, Omarchy, Manjaro | `omarkie-0.2.0-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.2.0-1-any.pkg.tar.zst` |
-| Debian, Ubuntu, Mint | `Omarkie-0.2.0-linux-x64.deb` | `sudo apt install ./Omarkie-0.2.0-linux-x64.deb` |
-| Fedora, RHEL | `omarkie-0.2.0-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.2.0-1.x86_64.rpm` |
-| openSUSE | `omarkie-0.2.0-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.2.0-1.x86_64.rpm` |
-| Any x64 distribution | `Omarkie-0.2.0-linux-x64.AppImage` | `chmod +x` the file and run it |
+| Arch, Omarchy, Manjaro | `omarkie-0.2.1-1-any.pkg.tar.zst` | `sudo pacman -U ./omarkie-0.2.1-1-any.pkg.tar.zst` |
+| Debian, Ubuntu, Mint | `Omarkie-0.2.1-linux-x64.deb` | `sudo apt install ./Omarkie-0.2.1-linux-x64.deb` |
+| Fedora, RHEL | `omarkie-0.2.1-1.x86_64.rpm` | `sudo dnf install ./omarkie-0.2.1-1.x86_64.rpm` |
+| openSUSE | `omarkie-0.2.1-1.x86_64.rpm` | `sudo zypper install ./omarkie-0.2.1-1.x86_64.rpm` |
+| Any x64 distribution | `Omarkie-0.2.1-linux-x64.AppImage` | `chmod +x` the file and run it |
 
-The lightweight Arch package does not install or bundle Electron. On launch, it reuses the installed Obsidian Electron series (the Omarchy default), or the newest installed `electronNN` if Obsidian's runtime is unavailable. Electron 43 or newer is required. If none is installed, `omarkie` offers the series listed for Obsidian in pacman's sync database, if supported. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.2.0-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
+The lightweight Arch package does not install or bundle Electron. On launch, it reuses the installed Obsidian Electron series (the Omarchy default), or the newest installed `electronNN` if Obsidian's runtime is unavailable. Electron 43 or newer is required. If none is installed, `omarkie` offers the series listed for Obsidian in pacman's sync database, if supported. The other packages bundle their own runtime. All packages add the launcher and the Markdown file association; removing them keeps your documents and recovery data. The AppImage may need FUSE 2; without it, run `./Omarkie-0.2.1-linux-x64.AppImage --appimage-extract` and then `./squashfs-root/AppRun`. Do not disable Chromium's sandbox to run the application.
 
 #### Update, uninstall and clean up
 
@@ -99,9 +99,9 @@ To update, install the new package over the old one with the same command as abo
 | Which build is installed | `pacman -Q omarkie` | `dpkg -s omarkie` | `rpm -q omarkie` | `rpm -q omarkie` |
 | Uninstall | `sudo pacman -R omarkie` | `sudo apt remove omarkie` | `sudo dnf remove omarkie` | `sudo zypper remove omarkie` |
 
-- Matching release tag: plain version, such as `0.2.0`.
-- Later Arch builds: `0.2.0.r<commits>.g<commit>`.
-- Later DEB/RPM/AppImage builds: `0.2.0+r<commits>.g<commit>`.
+- Matching release tag: plain version, such as `0.2.1`.
+- Later Arch builds: `0.2.1.r<commits>.g<commit>`.
+- Later DEB/RPM/AppImage builds: `0.2.1+r<commits>.g<commit>`.
 - Without a matching tag, the build retains a reachable version tag or a hash-only fallback (`.r0.g<commit>`).
 - Packaged **About** shows the build identity. All Linux artifact filenames retain the revision.
 
