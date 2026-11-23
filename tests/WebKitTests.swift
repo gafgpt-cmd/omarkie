@@ -18,6 +18,14 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let chapter = "# Diagram chapter\n\n<div class=\"mermaid-block\"><video poster=\"\(origin)/reader-media-project\"></video></div>\n\n``` mermaid\ngraph TD\n A --> B\n```\n\n~~~mermaid\ngraph LR\n Start --> Middle --> Finish\n~~~\n"
         try atomicWrite(directory.appendingPathComponent("Diagram-chapter.md"), Data(chapter.utf8))
       }
+      let mediaFolder = directory.appendingPathComponent("preview-media")
+      try FileManager.default.createDirectory(at: mediaFolder, withIntermediateDirectories: false)
+      let mediaImage = Data(#"<svg xmlns="http://www.w3.org/2000/svg" width="11" height="17"><rect width="11" height="17" fill="green"/></svg>"#.utf8)
+      for name in ["local.svg", "fallback.svg"] { try atomicWrite(mediaFolder.appendingPathComponent(name), mediaImage) }
+      for phase in ["reading", "clean"] {
+        let note = #"<div><img alt="Local image" src="local.svg"></div>"# + "\n"
+        try atomicWrite(mediaFolder.appendingPathComponent("Media-\(phase).md"), Data(note.utf8))
+      }
       let store = DocumentStore(directory)
       let plugin = directory.appendingPathComponent("Native-plugin-fixture.js")
       try atomicWrite(plugin, Data("class NativePlugin extends BasePlugin { style() { return '#write { --plugin-fixture: loaded; }' }; call() { this.utils.insertText('插件') } }; module.exports = {plugin: NativePlugin};".utf8))

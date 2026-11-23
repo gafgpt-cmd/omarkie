@@ -63,7 +63,11 @@ if (typeof document !== "undefined")
   document.addEventListener("load", event => {
     // Tag check, not instanceof: DOM test environments expose document without the HTMLImageElement global.
     const image = event.target as HTMLImageElement | null;
-    if (image?.tagName === "IMG" && image.naturalWidth && !image.currentSrc?.includes("?preview=")) imageSizes.set(image.getAttribute("src") || "", [image.naturalWidth, image.naturalHeight]);
+    if (image?.tagName !== "IMG" || !image.naturalWidth || !image.currentSrc || image.currentSrc.includes("?preview=")) return;
+    const size: [number, number] = [image.naturalWidth, image.naturalHeight];
+    imageSizes.set(image.currentSrc, size);
+    const source = image.getAttribute("src");
+    if (source && image.src === image.currentSrc) imageSizes.set(source, size);
   }, true);
 // Sizes announced by the host before a document's first render, keyed like the image rule keys
 // them: by the raw source and by its Markdown-normalized form.
@@ -88,20 +92,21 @@ export function localImageSources(text: string) {
     return !scheme || scheme.length === 1 || scheme === "file";
   }))];
 }
+function mediaURL(source: string, documentId?: string) {
+  const classified = normalizedURL(source);
+  if (remoteURL(classified) || /^(?:data|blob|omarkie|omarkie-asset):/i.test(classified)) return classified;
+  return classified && documentId ? `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}` : "";
+}
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
 function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string) {
   const classified = normalizedURL(source);
   if (remoteURL(source) && !allowRemoteImages)
     return `<span class="remote-image">${alt}${t("（远程图片：{{source}}）", { source: md.utils.escapeHtml(source) })}</span>`;
-  const url = remoteURL(classified) || /^data:image\/(?:png|jpeg|gif|webp);/i.test(classified)
-    ? classified
-    : documentId
-      ? `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`
-      : "";
+  const url = /^data:/i.test(classified) && !/^data:image\/(?:png|jpeg|gif|webp);/i.test(classified) ? "" : mediaURL(source, documentId);
   if (!url) return `<span class="remote-image">${alt}（${md.utils.escapeHtml(source)}）</span>`;
   const natural = imageSizes.get(url), size = width && !width.endsWith("%") && !height && natural ? [width, String(Math.round(Number(width) * natural[1] / natural[0]))] : width || height ? [width, height] : natural?.map(String);
-  return `<img src="${url}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ` class="md-standalone${width || height ? "" : " md-fit-image"}"` : ""} />`;
+  return `<img src="${md.utils.escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ` class="md-standalone${width || height ? "" : " md-fit-image"}"` : ""} />`;
 }
 // An image alone on its line is laid out as a centred figure.
 // The rich editor renders each image on its own and says whether it fills its line.
@@ -138,7 +143,8 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
   for (const image of template.content.querySelectorAll("img")) {
     const source = image.getAttribute("src") || "";
     if (remoteURL(source) && !allowRemoteImages) { image.replaceWith(document.createTextNode(image.alt || t("远程图片"))); continue; }
-    if (documentId && source && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(normalizedURL(source))) image.src = `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`;
+    const url = mediaURL(source, documentId);
+    if (url && url !== source) image.setAttribute("src", url);
     for (const attribute of ["width", "height"]) if (image.hasAttribute(attribute) && !/^\d+(?:\.\d+)?%?$/.test(image.getAttribute(attribute)!)) image.removeAttribute(attribute);
     if (standalone === true && !image.classList.contains("md-standalone") &&
         !image.hasAttribute("width") && !image.hasAttribute("height") &&
@@ -182,7 +188,9 @@ function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
     frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-presentation"); frame.setAttribute("referrerpolicy", "no-referrer"); frame.setAttribute("loading", "lazy");
   }
   for (const media of template.content.querySelectorAll("video,audio,source")) {
-    const source = media.getAttribute("src") || ""; if (source && documentId && !remoteURL(source) && !/^(?:data:|omarkie-asset:)/i.test(normalizedURL(source))) media.setAttribute("src", `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}`);
+    const source = media.getAttribute("src") || "";
+    const url = mediaURL(source, documentId);
+    if (url && url !== source) media.setAttribute("src", url);
   }
   return template.innerHTML;
 }

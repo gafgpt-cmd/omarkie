@@ -4,11 +4,10 @@ import WebKit
 
 final class PDFExporter: NSObject, WKNavigationDelegate {
   static let offlinePolicy: String = {
-    let block = #"{"trigger":{"url-filter":".*"},"action":{"type":"block"}}"#
-    let local = ["omarkie", "omarkie-asset", "data", "blob", "about"].map { scheme in
-      #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"ignore-previous-rules"}}"#
+    let network = ["https?", "wss?", "ftps?"].map { scheme in
+      #"{"trigger":{"url-filter":"^\#(scheme):"},"action":{"type":"block"}}"#
     }
-    return "[" + ([block] + local).joined(separator: ",") + "]"
+    return "[" + network.joined(separator: ",") + "]"
   }()
   private let view: WKWebView
   private let window: NSWindow
