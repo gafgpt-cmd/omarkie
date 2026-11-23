@@ -67,7 +67,8 @@ if ! command -v "$electron" >/dev/null 2>&1; then
     fi
     if $terminal; then
       relaunch=$(printf '%q ' omarkie "$@")
-      exec xdg-terminal-exec bash -c "if sudo pacman -S $electron && command -v $electron >/dev/null 2>&1; then setsid -f $relaunch </dev/null >/dev/null 2>&1; else read -rp 'Installation failed. Press Enter to close.'; fi"
+      # The terminal may hang up before the forked child enters its new session.
+      exec xdg-terminal-exec bash -c "if sudo pacman -S $electron && command -v $electron >/dev/null 2>&1; then nohup setsid -f $relaunch </dev/null >/dev/null 2>&1; else read -rp 'Installation failed. Press Enter to close.'; fi"
     fi
     exit 1
   fi
