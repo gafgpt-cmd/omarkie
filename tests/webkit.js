@@ -330,6 +330,7 @@ try {
       check(true,'plugin command calls the original plugin and persists the changed setting');
     }
     if (id === 'read_only') {
+      await wait(() => root()?.getAttribute('aria-readonly') === 'true', 'Read-only plugin did not lock the rich editor');
       closePlugins(); pointText('粗体', 1);
       const accepted = input('insertText','BLOCKED');
       check(!accepted && !root().isContentEditable && !root().textContent.includes('BLOCKED') && root().getAttribute('aria-readonly') === 'true', 'read-only plugin blocks real editor input events');
@@ -341,6 +342,7 @@ try {
     pluginCard(null, id).querySelector('input[type="checkbox"]').click();
     await wait(() => !document.querySelector('style[data-plugin="'+id+'"]'));
   }
+  await wait(() => root()?.getAttribute('aria-readonly') === 'false', 'Plugin teardown did not unlock the rich editor');
   check(!document.documentElement.classList.contains('plugin-dark') && root().getAttribute('aria-readonly') === 'false', 'plugin teardown restores editing and removes presentation effects');
   closePlugins();
   for (const [needle, offset] of [["粗体",1],["任务",1],["B",1]]) {
@@ -501,7 +503,7 @@ try {
   const longPdf = await window.desktop.exportPdf(longHtml, {testName:'long', paper:'letter', margin:42, title:'Pagination fixture', header:'${title}', footer:'${pageNo} / ${totalPages}'});
   if (!longPdf.ok) throw new Error(longPdf.error);
   check(true, "long PDF uses configurable paper, margins, headers and line-aware page boundaries");
-  const marginPdf = await window.desktop.exportPdf('<!doctype html><html><head><style>html,body{margin:0;padding:0}.print-document{display:flow-root}p{margin:0 0 800px;font:16px/24px sans-serif}</style></head><body><article class="print-document"><p>Trailing margin regression</p></article></body></html>');
+  const marginPdf = await window.desktop.exportPdf('<!doctype html><html><head><style>html,body{margin:0;padding:0}.print-document{display:flow-root}p{margin:0 0 800px;font:16px/24px sans-serif}</style></head><body><article class="print-document"><p>Trailing margin regression</p></article></body></html>', {testName:'margin'});
   if (!marginPdf.ok) throw new Error(marginPdf.error);
   check(true, "native PDF ignores an unpainted trailing block margin");
   window.__omarkie.command({ action: "html" });

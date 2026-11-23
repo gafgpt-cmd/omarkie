@@ -72,6 +72,11 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             try Data(contentsOf: pdfURL).count < 1_000_000
           else { throw NativeFailure("Native PDF pagination or size is invalid.") }
           print("PASS: native PDF is valid A4 with \(pdf.numberOfPages) pages and bounded size")
+          let marginURL = self.owner.directory.appendingPathComponent("native-test-margin.pdf")
+          guard let marginPDF = PDFDocument(url: marginURL), marginPDF.pageCount == 1,
+                marginPDF.string?.contains("Trailing margin regression") == true else {
+            throw NativeFailure("Trailing margin PDF lost content or added an empty page.")
+          }
           let longURL = self.owner.directory.appendingPathComponent("native-test-long.pdf")
           guard let longPDF = PDFDocument(url: longURL), longPDF.pageCount > 5 else { throw NativeFailure("Long PDF did not paginate.") }
           let longText = longPDF.string ?? ""
