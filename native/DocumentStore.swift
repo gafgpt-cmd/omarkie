@@ -272,7 +272,7 @@ final class DocumentStore {
     return ["folder": root.path, "files": files, "truncated": truncated, "skipped": skipped]
   }
 
-  func persist(_ incoming: SessionRecord) throws {
+  func persist(_ incoming: SessionRecord, preserving unlistedOpens: Set<String> = []) throws {
     guard incoming.documents.count <= 100 else { throw NativeFailure("打开的文档超过 100 份。") }
     var documents = [DocumentRecord]()
     var bytes = 0
@@ -297,11 +297,11 @@ final class DocumentStore {
     try atomicWrite(
       dataDirectory.appendingPathComponent("session.json"), JSONEncoder().encode(session))
     let openIDs = Set(documents.map { $0.id })
-    for (id, record) in records where !openIDs.contains(id) {
+    for (id, record) in records where !openIDs.contains(id) && !unlistedOpens.contains(id) {
       closedRecords[id] = record; closedOrder.removeAll { $0 == id }; closedOrder.append(id)
+      records.removeValue(forKey: id)
     }
     while closedOrder.count > 20 { closedRecords.removeValue(forKey: closedOrder.removeFirst()) }
-    records = Dictionary(uniqueKeysWithValues: documents.map { ($0.id, $0) })
   }
   static func decodeSession(_ bytes: Data) throws -> SessionRecord {
     let session = try JSONDecoder().decode(SessionRecord.self, from: bytes)

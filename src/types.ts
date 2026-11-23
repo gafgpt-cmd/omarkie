@@ -51,6 +51,7 @@ export interface DiskChange {
 export interface SessionSnapshot {
   documents: DocumentRecord[];
   activeId: string;
+  closedId?: string;
 }
 export interface Command {
   action: string;

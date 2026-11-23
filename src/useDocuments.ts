@@ -362,6 +362,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     await host.persist({
       documents: remaining,
       activeId: nextId,
+      closedId: id,
     });
     setDocuments(remaining); setActiveId(nextId);
     closed.current = [...closed.current.filter(item => item.id !== id), { id, name: record.name }].slice(-20);

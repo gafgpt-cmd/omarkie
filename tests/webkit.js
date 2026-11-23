@@ -90,7 +90,8 @@ try {
   check(card.ok && answer.ok && review.ok && review.value[0].back === "Synthetic answer" && review.value[1].rating === 5, "native card and rating share one vault journal");
   const unknown = await window.desktop.readingStore("unknown-document", { action: "list", scope: "vault" });
   check(!unknown.ok, "native reading store rejects an unregistered document");
-  const vault = (await window.desktop.restore()).value.folder;
+  const initialSession = (await window.desktop.restore()).value;
+  const vault = initialSession.folder;
   const renamed = await window.desktop.fileOperation({ action: "rename", path: `${vault}/WebKit-fixture.md`, name: "WebKit-renamed.md" });
   const movedEntries = await store({ action: "list" });
   check(renamed.ok && movedEntries.ok && movedEntries.value.length === 3 && movedEntries.value.every(item => item.document === "WebKit-renamed.md"), "native rename carries the note, card and rating");
@@ -114,7 +115,8 @@ try {
     if (field.checked !== enabled) field.click();
     document.querySelector('.dialog-heading button').click();
   };
-  await remotePreference(true);
+  const policy = await window.desktop.setRemoteImages(false);
+  check(policy.ok && policy.value, "native editor starts the local image check with remote media blocked");
   const image = (container, alt) => container?.querySelector(`img[alt="${alt}"]`);
   const pixel = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgaGAAAAEEAIEl6+oTAAAAAElFTkSuQmCC";
   const blobURL = URL.createObjectURL(new Blob([Uint8Array.from(atob(pixel), c => c.charCodeAt(0))], { type: "image/png" }));
@@ -142,9 +144,19 @@ try {
     if (!opened.ok) throw new Error(`${phase}: could not open media fixture: ${opened.error}`);
     const record = opened.value;
     const asset = name => `omarkie-asset://local/${encodeURIComponent(record.id)}/${name}`;
+    if (phase === "reading") {
+      const stale = await window.desktop.persist(initialSession);
+      if (!stale.ok) throw new Error(`Could not persist the preceding tab snapshot: ${stale.error}`);
+      const local = await window.desktop.readResource(asset("local.svg"));
+      check(local.ok && local.value.mime === "image/svg+xml", "native asset grant survives a session snapshot taken before the note opened");
+    }
     const content = record.content + `\n<div><img alt="Preview image" src="fallback.svg" srcset="${grammarOrigin}${route} 1x, fallback.svg 1x"><video poster="${grammarOrigin.replace("http:", "h&#9;ttp:")}/reader-media-${phase}-poster"></video><video poster="${blobURL}"></video><img alt="HTML blob" src="${blobURL}"><img alt="Data image" src="${dataURL}"></div>\n\n![Markdown blob](${blobURL})\n`;
     window.__omarkie.command({ action: "opened", document: { ...record, content, savedContent: content } });
     await wait(() => decoded(image(root(), "Local image"), asset("local.svg"), 11, 17), `${phase}: editing did not decode the saved note's local image`);
+    if (phase === "reading") {
+      await window.desktop.setRemoteImages(true);
+      await remotePreference(true);
+    }
     await wait(() => decoded(image(root(), "Preview image"), `${grammarOrigin}${route}`, 1, 1), `${phase}: opted-in editing did not decode remote media`);
     check(await probe(phase, "offline-start", document.body), `${phase}: offline cutover could not confirm the editing poster request`);
     return asset;
@@ -166,16 +178,17 @@ try {
     check([null, "11"].includes(fallback.getAttribute("width")) && [null, "17"].includes(fallback.getAttribute("height")), `${phase}: remote candidate dimensions do not size the local fallback`);
     check(!await probe(phase, "offline-probe", preview), `${phase}: native policy blocks remote preview requests`);
   };
-  const closeMedia = async phase => {
+  const closeMedia = async (phase, asset) => {
     window.__omarkie.command({ action: "close" });
     await wait(() => document.querySelector('.document-title')?.title === 'WebKit-fixture.md', `${phase}: media note did not close`);
+    check(!(await window.desktop.readResource(asset("local.svg"))).ok, `${phase}: closing the tab revokes its asset grant`);
   };
   const readingAsset = await openMedia("reading");
   const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
   readingToggle.click();
   await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
   await assertOffline("reading", root, readingAsset);
-  await closeMedia("reading");
+  await closeMedia("reading", readingAsset);
   const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
   readingClose.click();
   await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
@@ -184,7 +197,7 @@ try {
   const cleanLayer = () => document.querySelector(".clean-layer");
   await wait(cleanLayer, "Clean preview did not open");
   await assertOffline("clean", cleanLayer, cleanAsset);
-  await closeMedia("clean");
+  await closeMedia("clean", cleanAsset);
   URL.revokeObjectURL(blobURL);
   window.__omarkie.command({ action: "document-tools" });
   const writingTab = await wait(() => document.querySelector('.workflow-tabs [data-tab="writing"]:enabled'), "Document Tools writing tab did not become enabled");

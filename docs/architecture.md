@@ -51,6 +51,7 @@ On Linux, `electron/omarchy.mjs` reads `~/.local/state/omarchy/current/theme/col
 ## Files, windows and privacy
 
 Each window has its own web view, document store, model and session file. Opening a file that is already open focuses its window. The front end only passes document IDs; the host tracks which files each record may touch. Saves write a sibling temporary file, flush it, compare the on-disk hash again and rename atomically; an external change keeps the draft and reports a conflict. The resource protocol serves relative and absolute images and media for open documents only, honours a YAML root, and refuses symbolic links and oversized resources.
+On macOS, an older session snapshot cannot revoke a newly opened tab's local image access. Closing the tab still revokes access.
 
 The bridge only accepts the main frame of the local app origin. Sanitised HTML drops scripts, event handlers and forged editor attributes. When remote media is off, the renderer filters remote resources.
 
