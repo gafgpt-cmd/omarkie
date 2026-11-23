@@ -5,11 +5,10 @@ import { sourceLines } from "../../shared/source-lines.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
-import DOMPurify from "dompurify";
 import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
-import { bundledImageUrls, normalizedURL, remoteURL } from "./htmlResources.ts";
+import { bundledImageUrls, normalizedURL, remoteURL, sanitizeDocumentMedia } from "./htmlResources.ts";
 let allowRemoteImages = false;
 export interface Block {
   fromLine: number;
@@ -127,7 +126,7 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
     : `<span class="wiki-embed">${name}</span>`;
 };
 function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
-  const safe = DOMPurify.sanitize(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_URI_SAFE_ATTR: ["src"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
+  const safe = sanitizeDocumentMedia(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
   const template = document.createElement("template"); template.innerHTML = safe;
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll("[style]")) {
     const declarations = (element.getAttribute("style") || "").split(";").filter(value => {
@@ -301,10 +300,10 @@ export function editableHtml(
         : renderer.renderToken(tokens, index, md.options);
     })
     .join("");
-  return DOMPurify.sanitize(html, {
+  return sanitizeDocumentMedia(html, {
     ADD_TAGS: ["video", "audio", "source"],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-    ADD_URI_SAFE_ATTR: ["src", "srcset"],
+    ADD_URI_SAFE_ATTR: ["srcset"],
     ADD_ATTR: [
       "controls",
       "contenteditable",
