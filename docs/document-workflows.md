@@ -47,11 +47,13 @@
 - Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
-- Back up `.omarkie/store.jsonl` with the vault. The reading index is built in memory.
-- The first reading write and vault file moves share a lock across Omarkie processes. Opening a vault does not create a journal.
+- Include the hidden `.omarkie` folder when backing up the vault. The reading index is built in memory.
+- Opening a vault does not create a journal. Reading writes, rename, move, Undo and Trash share a lock across Omarkie processes, even before the first journal entry.
+- File operations in writable subfolders can proceed if permissions prevent creating the lock and neither a journal nor a lock exists.
 - Trash and macOS Undo Trash update the journal before moving the file. A crash between those steps can leave the file and history out of sync.
-- Trashed history stops being restorable in Omarkie immediately on Electron, or when macOS replaces the Trash undo or quits. The append-only journal retains previous rows.
-- A move is refused if a tracked note cannot be read. Missing notes retain their history at the old path.
+- Electron has no in-app Trash undo. On macOS, Undo restores reading history when the system returns a Trash location and the undo is still available.
+- Omarkie attempts to purge detached history after successful Trash on Electron, or when macOS has no Trash undo, replaces it, or quits. If cleanup is recorded as pending in `.omarkie`, reopening the vault retries it. This does not erase earlier journal rows.
+- A rename or move reports an error if it contains an unreadable tracked note. Missing notes retain their history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
 ### Preview media
@@ -100,7 +102,7 @@
 ### Zotero
 
 1. In Zotero with [Better BibTeX](https://retorque.re/zotero-better-bibtex/exporting/auto/) installed, export a collection as **Better CSL JSON** with **Keep updated** checked.
-2. Choose **Link Zotero auto-export** and select that JSON file. Keep it at the same path. External changes refresh suggestions and exports; missing or malformed exports keep the last valid copy.
+2. Choose **Link Zotero auto-export** and select that JSON file. Keep it at the same path. External changes refresh suggestions and exports while the vault is open; missing or malformed exports keep the last valid copy.
 3. To include PDF paths, add this snippet under Better BibTeX → Export → Postscript before exporting:
 
    ```js

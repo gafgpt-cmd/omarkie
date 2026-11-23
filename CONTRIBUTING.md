@@ -20,7 +20,7 @@ Use Node.js 26 and npm. Linux and Windows use Electron; macOS needs macOS 14+ an
 - `npm run verify` requires Pandoc 3, LibreOffice, Playwright Chromium and Poppler's `pdftotext` on PATH.
 - Linux also needs `flock`, Xvfb and xauth for the command below.
 - Missing Chromium libraries: `npx playwright install --with-deps chromium`.
-- The Linux CI job uses GitHub-hosted Ubuntu with these dependencies and the latest digest-verified Pandoc; converters are mandatory via `OMARKIE_REQUIRE_CONVERTERS=1`.
+- The Linux CI job uses Ubicloud Ubuntu with these dependencies and the latest digest-verified Pandoc; converters are mandatory via `OMARKIE_REQUIRE_CONVERTERS=1`.
 
 ```sh
 git clone https://github.com/gafgpt-cmd/omarkie.git
