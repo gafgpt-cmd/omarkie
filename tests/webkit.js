@@ -219,13 +219,16 @@ try {
   check(authorSuggestions.ok && authorSuggestions.value[0]?.id === "watched", "native citation suggestions find Unicode authors");
   const wrongVault = await window.desktop.bibliography(`${vault}/unopened`, "info");
   check(linked.ok && linked.value && suggestions.ok && suggestions.value[0].id === "watched" && !wrongVault.ok, "native bridge authorizes only the open bibliography vault");
-  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver", webTestCiteproc: true };
+  const citeOptions = { bibliography: (await window.desktop.bibliography(vault, "info")).value.csl, style: "vancouver" };
   const chapters = ["# First native chapter\n\nSource [@watched].\n", "# Second native chapter\n\nAgain [@watched].\n"];
   const outside = await window.desktop.exportConverted({ folder: `${vault}/unknown` }, "docx", chapters, "", citeOptions);
+  check(!outside.ok, "native bridge rejects project export from an unknown vault");
   const projectDocx = await window.desktop.exportConverted({ folder: vault }, "docx", chapters, "", citeOptions);
+  if (!projectDocx.ok) throw new Error(`Native cited project DOCX: ${projectDocx.error}`);
   const media = `<video preload="auto" src="${grammarOrigin}/project-export-media"></video>`;
   const projectPdf = await window.desktop.exportConverted({ folder: vault }, "pdf", [chapters[0] + "\n" + media, chapters[1]], "", citeOptions);
-  check(!outside.ok && projectDocx.ok && projectPdf.ok, "native bridge rejects unknown vaults and exports cited project DOCX and PDF");
+  if (!projectPdf.ok) throw new Error(`Native cited project PDF: ${projectPdf.error}`);
+  check(true, "native bridge exports cited project DOCX and PDF");
   check(
     location.protocol === "omarkie:" && window.desktop !== undefined,
     "bundled modules load through native WebKit scheme and bridge",

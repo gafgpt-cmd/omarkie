@@ -279,8 +279,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           let source = project == nil ? (try arg(args, 2, String.self)) : ""
           let chapters = project == nil ? nil : (try arg(args, 2, [String].self))
           let ext = ["latex":"tex", "revealjs":"html", "mediawiki":"wiki"][format] ?? format
+          let options = args.count > 4 ? args[4] as? [String: Any] ?? [:] : [:]
           #if WEBTEST
-          let artifact = (args.last as? [String: Any])?["webTestCiteproc"] as? Bool == true ? "native-project" : "native-project-ui"
+          let artifact = options["bibliography"] == nil ? "native-project-ui" : "native-project"
           let destination = project == nil
             ? store.dataDirectory.appendingPathComponent("native-converted." + ext)
             : store.dataDirectory.deletingLastPathComponent().appendingPathComponent(artifact + "." + ext)
@@ -297,7 +298,6 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
             if (try? destination.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true { throw NativeFailure("知识库路径无效") }
           }
           let directory = store.dataDirectory, working = doc?.path.map { URL(fileURLWithPath: $0).deletingLastPathComponent() } ?? directory
-          let options = args.count > 4 ? args[4] as? [String: Any] ?? [:] : [:]
           DispatchQueue.global(qos: .userInitiated).async {
             let result: [String: Any]
             do {
