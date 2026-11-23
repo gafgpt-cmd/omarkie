@@ -123,7 +123,8 @@ try {
     const require = process.getBuiltinModule("module").createRequire(process.cwd() + "/package.json");
     const assert = require("node:assert/strict");
     const { DocumentStore } = require("./electron/store.mjs");
-    const asset = DocumentStore.prototype.asset, fetch = net.fetch;
+    const { Readable } = require("node:stream");
+    const asset = DocumentStore.prototype.asset, fetch = net.fetch, fromWeb = Readable.fromWeb;
     const lookup = Promise.withResolvers(), missingStarted = Promise.withResolvers();
     const heldStarted = Promise.withResolvers();
     const opened = [];
@@ -145,12 +146,23 @@ try {
       const first = await request("held");
       const firstBody = first.arrayBuffer();
       const held = await Promise.race([heldStarted.promise, firstBody.then(() => assert.fail("held body finished early"))]);
+      const disconnected = Promise.withResolvers();
+      Readable.fromWeb = function (...args) {
+        const stream = fromWeb.apply(this, args);
+        stream.once("close", disconnected.resolve);
+        Readable.fromWeb = fromWeb;
+        return stream;
+      };
       const abandoned = await request("cancelled", AbortSignal.any([cancel.signal, AbortSignal.timeout(10_000)]));
       const surviving = await request("ready");
       assert.deepEqual(opened, ["held.jpg"], "waiting responses do not open files");
-      const cancelledBody = assert.rejects(abandoned.arrayBuffer());
+      const cancelledBody = assert.rejects(abandoned.arrayBuffer(), { name: "AbortError" });
       cancel.abort();
       await cancelledBody;
+      // Client rejection precedes Electron's asynchronous protocol disconnect.
+      await Promise.race([disconnected.promise, new Promise((_, reject) => {
+        AbortSignal.timeout(10_000).addEventListener("abort", () => reject(new Error("Cancelled client did not disconnect the protocol stream")));
+      })]);
       held.enqueue(Buffer.from(encoded, "base64"));
       held.close();
       assert.equal(Buffer.from(await firstBody).toString("base64"), encoded);
@@ -164,6 +176,7 @@ try {
       cancel.abort();
       lookup.resolve();
       net.fetch = fetch;
+      Readable.fromWeb = fromWeb;
       DocumentStore.prototype.asset = asset;
     }
   }, small.toString("base64"));
