@@ -187,19 +187,18 @@ Linux and Windows use Electron; the macOS release uses a native Swift/AppKit hos
 Feature-release correctness uses `npm run verify`: editor, desktop, export, startup and disabled-plugin checks remain mandatory.
 Strict timing is separate: `npm run test:perf` still fails any exceeded [budget](tests/perf-budgets.json). No targets or fixtures were relaxed.
 
-Last measured baseline, before the final correctness fixes:
+Eight paired Linux/Xvfb runs, alternating order with fresh profiles. Times are median (min–max), in ms.
 
-| Check | Target ms | Median ms | Status |
-| --- | ---: | ---: | --- |
-| Launch to readable note | 1000 | 1718.8 | Unmet |
-| 1.5 MB note readable | 1500 | 1589.8 | Unmet |
-| Big-note scroll | 300 | 137.2 | Met in that baseline |
-| First photo | 150 | 412.5 | Unmet |
+| Check | Target | Before | After |
+| --- | ---: | ---: | ---: |
+| Launch to readable note | 1000 | 1312 (1052–1822) | 1227 (1074–1878) |
+| 1.5 MB note readable | 1500 | 1138 (1080–1236) | 1061 (930–1423) |
+| Big-note scroll | 300 | 54 (48–63) | 39 (34–50) |
+| First cold photo | 150 | 265 (252–348) | 181 (163–283) |
 
 - Linux timing run: `flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run test:perf'`.
-- Launch, big-note and photo targets remain optimization work, not release-speed claims.
-- Preview, startup and lazy-plugin optimizations remain enabled.
-- No unproven original-JPEG transport candidate was adopted.
+- Launch did not improve consistently. Launch and cold photo still miss their targets.
+- Both builds decoded the original 6000 × 4000 pixels. Four photos loaded within three seconds on every run.
 
 ## Current limitations
 

@@ -88,6 +88,7 @@ export function rememberImageSizes(documentId: string, sizes: Record<string, [nu
 }
 export function markdownImageReferences(text: string) { return collectImages(md, text); }
 export function localImageSources(text: string) {
+  if (!text.includes("!") && !text.includes("<")) return [];
   return [...new Set(markdownImageReferences(text).map(image => image.url).filter(source => {
     const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(source)?.[1].toLowerCase();
     return !scheme || scheme.length === 1 || scheme === "file";
