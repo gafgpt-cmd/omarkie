@@ -200,10 +200,11 @@ module.exports = function readingCore(digest, translate = message => message) {
           const { from, to } = move;
           checkMove(from, to);
           if (entries.pending?.from !== from || entries.pending?.to !== to) throw invalid();
-          const moved = (entries.pending.files ?? [""]).map(suffix => suffix ? `${from}/${suffix}` : from)
+          const files = entries.pending.files ?? [""];
+          const moved = files.map(suffix => suffix ? `${from}/${suffix}` : from)
             .filter(file => entries.has(file)).map(file => [file, entries.get(file)]);
           delete entries.pending;
-          for (const file of entries.keys()) if (under(file, to)) entries.delete(file);
+          for (const suffix of files) entries.delete(suffix ? `${to}/${suffix}` : to);
           for (const [file] of moved) entries.delete(file);
           for (const [file, items] of moved) {
             const document = to + file.slice(from.length);

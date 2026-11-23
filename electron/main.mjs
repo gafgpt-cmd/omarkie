@@ -243,13 +243,18 @@ const handlers = {
     const result = await dialog.showSaveDialog(window, project ? { defaultPath, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : { defaultPath });
     if (result.canceled) return null;
     const destination = project ? await projectDestination(project, result.filePath, ext) : result.filePath;
-    return convertExport(profile, format, source, html, destination, options, async markup => {
-      const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, partition: "document-export-" + randomUUID() } });
+    return convertExport(profile, format, source, html, destination, options, async file => {
+      const localPage = pathToFileURL(file).href;
+      const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, javascript: false, partition: "document-export-" + randomUUID() } });
       try {
-        preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !request.url.startsWith("data:") }));
+        preview.webContents.session.webRequest.onBeforeRequest((request, callback) => callback({ cancel: !(request.resourceType === "mainFrame" && request.url === localPage || request.url.startsWith("data:")) }));
+        preview.webContents.on("will-navigate", event => event.preventDefault());
         preview.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
         const csp = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:";
-        await preview.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(`<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup));
+        if ((await stat(file)).size > 150 * 1024 * 1024) throw new Error(t("导出内容过大。"));
+        const markup = await readFile(file, "utf8");
+        await writeFile(file, `<meta http-equiv="Content-Security-Policy" content="${csp}">` + markup, "utf8");
+        await preview.loadFile(file);
         return await preview.webContents.printToPDF({ printBackground: true, pageSize: "A4" });
       } finally { preview.destroy(); }
     });

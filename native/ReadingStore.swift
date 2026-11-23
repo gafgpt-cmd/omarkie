@@ -106,19 +106,13 @@ final class NativeReadingStore {
                 _ = try self.call("checkMove", [from, to])
                 _ = try self.call("checkPending", [state.entries, from, true])
                 _ = try self.call("checkPending", [state.entries, to, true])
-                let files = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
+                let sourceFiles = try self.call("tracked", [state.entries, from]).toArray() as? [String] ?? []
+                let destinationFiles = try self.call("tracked", [state.entries, to]).toArray() as? [String] ?? []
+                let files = sourceFiles + destinationFiles.filter { !sourceFiles.contains($0) }
                 let move = ["from": from, "to": to]
                 let evidence = files.isEmpty ? (fingerprint: "", files: [String]()) : try Self.moveFingerprint(root, from, files, skipMissing: true)
                 guard let evidence else { throw NativeFailure(Self.unsafe) }
-                if evidence.files.isEmpty {
-                  let destinationHistory = try self.call("tracked", [state.entries, to]).toArray() ?? []
-                  if destinationHistory.isEmpty { try moveExclusive(source, destination); return }
-                  let detached = ["path": to, "id": UUID().uuidString]
-                  try append(["trash": detached])
-                  do { try moveExclusive(source, destination) }
-                  catch { try append(["restore": detached]); throw error }
-                  return
-                }
+                if evidence.files.isEmpty { try moveExclusive(source, destination); return }
                 guard try self.call("pending", [state.entries]).isNull else { throw NativeFailure(Self.unsafe) }
                 try append(["intent": ["from": from, "to": to, "fingerprint": evidence.fingerprint, "files": evidence.files] as [String: Any]])
                 do { try moveExclusive(source, destination) }
@@ -178,7 +172,9 @@ final class NativeReadingStore {
       let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
       defer { try? handle.close() }
       var metadata = stat()
-      guard fstat(fd, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFREG else { return nil }
+      guard fstat(fd, &metadata) == 0 else { throw NativeFailure(unsafe) }
+      if skipMissing && metadata.st_mode & S_IFMT == S_IFDIR { continue }
+      guard metadata.st_mode & S_IFMT == S_IFREG else { return nil }
       var hash = SHA256(), size = 0
       while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
         size += chunk.count

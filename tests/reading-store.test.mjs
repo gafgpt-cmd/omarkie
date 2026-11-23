@@ -172,7 +172,7 @@ test("reopening recovers both sides of an interrupted rename and releases the lo
 });
 
 test("folder moves transfer present history and clear stale destination history", async t => {
-  const { store, source } = await fixture(t);
+  const { store, source, log } = await fixture(t);
   const chapter = path.join(store.folder, "chapter");
   await mkdir(chapter);
   for (const name of ["stays.md", "gone.md"]) {
@@ -203,12 +203,16 @@ test("folder moves transfer present history and clear stale destination history"
   const incoming = await store.open(path.join(store.folder, "renamed", "incoming.md"));
   assert.deepEqual(await readingStore(store, incoming.id, { action: "list" }), []);
   await run({ action: "undo" });
-  assert.deepEqual(await owners(), { "stays.md": "chapter/stays.md", "stale-empty": "empty/incoming.md" });
+  assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "chapter/stays.md", "stale-empty": "empty/incoming.md" });
   await rm(path.join(chapter, "stays.md"));
   await run({ action: "rename", path: chapter, name: "empty" });
   assert.ok((await stat(path.join(store.folder, "empty"))).isDirectory());
-  assert.deepEqual(await owners(), { "stays.md": "chapter/stays.md" });
+  assert.deepEqual(await owners(), { "gone.md": "chapter/gone.md", "stays.md": "chapter/stays.md" });
   assert.deepEqual(await readingStore(store, incoming.id, { action: "list" }), []);
+  const commits = (await readFile(log, "utf8")).trimEnd().split("\n").map(JSON.parse);
+  assert.equal(commits.some(row => row.trash), false);
+  assert.deepEqual(commits.at(-2).intent.files, ["incoming.md"]);
+  assert.deepEqual(commits.at(-1).move, { from: "chapter", to: "empty" });
 });
 
 test("rating belongs to the reviewed card and survives unrelated path reuse", async t => {

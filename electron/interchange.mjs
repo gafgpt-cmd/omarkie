@@ -79,7 +79,7 @@ export async function convertExport(directory, format, source, html, destination
       }
       if (project) extra.push("--file-scope", "--from=markdown-yaml_metadata_block");
       await exec(pandoc, [...files, "--sandbox", "--to=" + (format === "pdf" ? "html5" : format), "--standalone", "--output=" + output, ...extra], { cwd: project ? temporary : undefined, timeout: 30000, maxBuffer: 50 * 1024 * 1024 });
-      if (format === "pdf") { if (!renderPdf) throw new Error(t("PDF 渲染器不可用")); await atomicWrite(destination, await renderPdf(await readFile(output, "utf8"))); }
+      if (format === "pdf") { if (!renderPdf) throw new Error(t("PDF 渲染器不可用")); await atomicWrite(destination, await renderPdf(output)); }
       else await atomicWrite(destination, await readFile(output));
     }
     else if (!project && !Object.keys(options).length && process.platform === "darwin" && ["docx", "odt", "rtf"].includes(format)) { const file = path.join(temporary, "input.html"); await writeFile(file, html); const { stdout } = await exec("/usr/bin/textutil", ["-convert", format, "-stdout", file], { encoding: "buffer", timeout: 30000, maxBuffer: 50 * 1024 * 1024 }); await atomicWrite(destination, stdout); }

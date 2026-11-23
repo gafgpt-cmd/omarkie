@@ -137,7 +137,7 @@ async function moveFingerprint(root, prefix, files, skipMissing = false) {
     const target = path.join(root, file);
     if (!within(root, target)) throw unsafe();
     const metadata = await lstat(target).catch(error => error.code === "ENOTDIR" ? null : missing(error));
-    if (!metadata && skipMissing) continue;
+    if ((!metadata || metadata.isDirectory()) && skipMissing) continue;
     if (!metadata?.isFile() || await realpath(target) !== target) return null;
     const handle = await open(target, constants.O_RDONLY | noFollow).catch(missing);
     if (!handle) { if (skipMissing) continue; return null; }
@@ -208,16 +208,10 @@ export async function moveReadingEntries(folder, execute, trashPath) {
       const from = relative(source), to = relative(destination);
       try { checkMove(from, to); } catch { throw invalid(); }
       checkPending(entries, from, true); checkPending(entries, to, true);
-      const files = tracked(entries, from);
+      const files = [...new Set([...tracked(entries, from), ...tracked(entries, to)])];
       const evidence = files.length ? await moveFingerprint(root, from, files, true) : { files: [] };
       if (!evidence) throw unsafe();
-      if (!evidence.files.length) {
-        if (!tracked(entries, to).length) return moveExclusive(source, destination);
-        const detached = { path: to, id: randomUUID() };
-        await append({ trash: detached });
-        try { return await moveExclusive(source, destination); }
-        catch (error) { await append({ restore: detached }); throw error; }
-      }
+      if (!evidence.files.length) return moveExclusive(source, destination);
       if (pending(entries)) throw unsafe();
       await append({ intent: { from, to, ...evidence } });
       try { await moveExclusive(source, destination); }

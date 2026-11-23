@@ -1,5 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
+import { crc32 } from "node:zlib";
 import { mkdtemp, mkdir, readFile, readdir, writeFile, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -100,8 +101,15 @@ try {
   for (const note of [first, second]) await mkdir(path.dirname(note), { recursive: true });
   const alternatePng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAEElEQVQI12P8zwAFTDAGAwATKQEDO7FpHgAAAABJRU5ErkJggg==", "base64");
   await writeFile(first, opening); await writeFile(second, ending);
-  await writeFile(path.join(path.dirname(first), "figure.png"), png);
-  await writeFile(path.join(path.dirname(second), "figure.png"), alternatePng);
+  const textChunk = Buffer.concat([Buffer.from("tEXtFixture\0"), Buffer.alloc(900 * 1024, 65)]);
+  const length = Buffer.alloc(4), checksum = Buffer.alloc(4);
+  length.writeUInt32BE(textChunk.length - 4);
+  checksum.writeUInt32BE(crc32(textChunk));
+  const withMetadata = image => Buffer.concat([image.subarray(0, -12), length, textChunk, checksum, image.subarray(-12)]);
+  const images = [withMetadata(png), withMetadata(alternatePng)];
+  assert.ok(images.reduce((size, image) => size + image.toString("base64").length, 0) > 2 * 1024 * 1024);
+  await writeFile(path.join(path.dirname(first), "figure.png"), images[0]);
+  await writeFile(path.join(path.dirname(second), "figure.png"), images[1]);
   await menu("Document tools…"); await dialog.getByRole("button", { name: "Writing and export", exact: true }).click();
   await application.evaluate(({ dialog }, directory) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [directory] }); }, project);
   await dialog.getByRole("button", { name: "Choose project folder…", exact: true }).click();
