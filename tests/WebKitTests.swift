@@ -298,10 +298,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let scope = try NativeReadingStore.scope(host.store, "webkit-fixture")
     let reopened = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
     let items = try await reopened.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]]
-    guard items?.map({ $0["type"] as? String ?? "" }) == ["note", "card", "answer"],
-          items?.last?["rating"] as? Int == 5,
+    guard items?.map({ $0["type"] as? String ?? "" }) == ["note", "card", "answer", "scrap"],
+          items?.first(where: { $0["id"] as? String == "native-answer" })?["rating"] as? Int == 5,
+          items?.last?["id"] as? String == "native-image",
           let markdown = try await reopened.perform(scope, ["action": "export"]) as? String,
-          markdown.contains("Native margin note."), markdown.contains("Synthetic question\n\nSynthetic answer") else {
+          markdown.contains("Native margin note."), markdown.contains("Synthetic question\n\nSynthetic answer"),
+          !markdown.contains("Fixture.png") else {
       throw NativeFailure("Native reading journal did not replay notes, cards and ratings into Markdown.")
     }
     let export = owner.directory.appendingPathComponent("native-reading.md")
@@ -311,7 +313,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
-    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "native-image", "parallel-a", "parallel-b"])
     let root = canonicalFileURL(owner.directory).appendingPathComponent("first-journal-vault")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     let file = root.appendingPathComponent("first.md"), source = root.appendingPathComponent("source.md")

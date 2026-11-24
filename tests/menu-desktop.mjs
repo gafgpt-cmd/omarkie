@@ -910,6 +910,16 @@ try {
     await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
     pass(`${action}: ${route}`, 'Actual document workflow surface opens without source edits');
   }
+  const learningToggle = page.getByTestId('learning-mode-toggle');
+  for (const route of ['menu', 'native', 'toolbar', 'shortcut']) {
+    await command('reading-layers', route);
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.study-rail')).toBeVisible();
+    await learningToggle.click();
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.study-rail')).toBeHidden();
+    pass(`reading-layers: ${route}`, 'Learning opens and the toolbar toggle closes it');
+  }
   for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
     await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     await command(action, route);
