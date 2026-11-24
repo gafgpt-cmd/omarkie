@@ -122,6 +122,10 @@ export default function App() {
   function openClean() {
     if (active && !editor()?.composing()) setCleanId(active.id);
   }
+  function toggleClean() {
+    if (cleanVisible) closeClean();
+    else openClean();
+  }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadSupported = !!window.desktop?.payloadRequest;
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
@@ -369,10 +373,7 @@ export default function App() {
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
-    else if (action === "clean-converted" && active) {
-      if (cleanVisible) closeClean();
-      else if (!readingVisible) openClean();
-    }
+    else if (action === "clean-converted" && active) toggleClean();
     else if (action === "collect-reading" && active) {
       const current = editor();
       if (current?.composing()) { session.setMessage(t("Finish composing text before collecting highlights and callouts.")); return; }
@@ -607,7 +608,7 @@ export default function App() {
                   rendered={record.id === session.activeId ? renderedView : rendered}
                   active={record.id === session.activeId}
                   readOnly={readOnly}
-                  reading={readingVisible && record.id === session.activeId}
+                  reading={learningEnabled}
                   citationVault={painted && record.id === session.activeId && host.bibliography ? session.folder ?? undefined : undefined}
                   preferences={preferences}
                   remoteImages={remoteImages}
@@ -639,11 +640,11 @@ export default function App() {
             ) : null)}
             {cleanVisible && <Suspense fallback={<p className="layers-clean-loading" role="status">{t("正在清理文本…")}</p>}><CleanLayer
               key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
-              canBake={!readingVisible && !readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
+              canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={learningSaved}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
               tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,

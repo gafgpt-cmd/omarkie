@@ -57,6 +57,7 @@ jobs:
           grep -qx 'Exec=omarkie %F' /usr/share/applications/omarkie.desktop
       - name: Start the installed package on Obsidian's Electron
         run: |
+          su builder -c "cd '$GITHUB_WORKSPACE' && node tests/packaged-axi.mjs omarkie-axi"
           su builder -c 'xvfb-run -a bash -se' <<'BASH'
             # The container cannot create Chromium sandbox namespaces.
             omarkie --no-sandbox &

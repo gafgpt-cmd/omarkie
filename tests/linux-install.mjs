@@ -20,6 +20,7 @@ const run = (command,args,options={}) => execFileSync(command,args,{stdio:"inher
 const exercise = async (executable,kind) => {
   const evidence = path.join(qa,kind); await mkdir(evidence,{recursive:true});
   const env = {...process.env, OMARKIE_EXECUTABLE:executable, OMARKIE_QA_DIR:evidence};
+  run(process.execPath, ["tests/packaged-axi.mjs", path.join(path.dirname(executable), "omarkie-axi")]);
   for (const file of ["desktop.mjs","electron-shell.mjs","parity-desktop.mjs","compatibility-desktop.mjs","ime-desktop.mjs","plugin-package-desktop.mjs"]) run(process.execPath,[`tests/${file}`],{env});
   const {dataDir} = JSON.parse(await readFile(path.join(evidence,"desktop-results.json"),"utf8"));
   const session = path.join(dataDir,"session.json");

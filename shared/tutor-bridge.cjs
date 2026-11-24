@@ -84,6 +84,7 @@ module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
     const ask = typeof id === "string" ? asks.get(id) : undefined;
     if (!ask) return send(fail("Ask not found in this vault."));
     if (op === "view") return send({ ask: view(ask) });
+    if (ask.status === "queued" && (op === "status" || op === "reply")) return send(fail("Poll to claim the ask first."));
     if (op === "status") {
       const to = receipts.indexOf(message.status), from = receipts.indexOf(ask.status);
       if (to < 1) return send(fail("Use seen, working, or done."));

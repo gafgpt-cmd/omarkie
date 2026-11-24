@@ -39,7 +39,11 @@
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
   border-radius: 5px; padding: 5px 7px; text-align: start; font: inherit;
 }
-.study-sheet { width: 100%; margin-bottom: 5px; color: var(--muted); }
+.study-sheet-row { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+.study-sheet { flex: 1; width: 100%; color: var(--muted); }
+.study-sheet-pencil { color: var(--muted); }
+.study-sheet-pencil[aria-pressed="true"] { color: var(--accent); }
+.layers-canvas { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .study-sheet[aria-pressed="true"], .study-actions button[aria-pressed="true"] { background: var(--selected); color: var(--ink); }
 .study-sheet small { margin-inline-start: auto; color: var(--muted); }
 .study-sheet[data-solo] { border-color: var(--accent); }

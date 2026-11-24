@@ -156,6 +156,10 @@ try {
   assert.match(requests.at(-1).body.messages[0].content, /^Rewrite only the supplied paragraph/);
   await bothWidths("proposal");
 
+  await expect(rich).toHaveAttribute("contenteditable", "false");
+  await rich.getByText(paragraph, { exact: true }).selectText();
+  await page.keyboard.insertText(changed);
+  await expect(rich.getByText(paragraph, { exact: true })).toBeVisible();
   await toggle.click();
   await expect(rich).toHaveAttribute("contenteditable", "true");
   await rich.getByText(paragraph, { exact: true }).selectText();

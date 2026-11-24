@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FolderOpen, Layers, Sparkles, StickyNote } from "lucide-react";
+import { FolderOpen, Layers, LockKeyhole, PencilLine, Sparkles, StickyNote } from "lucide-react";
 import { sourceLines } from "../../shared/source-lines.mjs";
 import type { ConfidenceLevel, ReadingAnchor, ReadingResults, ReadingTarget, SheetColour, StudyItem } from "../../shared/reading-store.ts";
 import type { EditorHandle } from "../editor/MarkdownEditor";
@@ -41,9 +41,10 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, tutor, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
+  cleanVisible: boolean; toggleClean(): void;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -51,6 +52,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   const [draftKind, setDraftKind] = useState<"note" | "doubt" | "ink">("note");
   const [study, setStudy] = useState(emptyStudy), [revision, invalidate] = useState(0);
   const [undo, setUndo] = useState<StudyItem>(), [picking, setPicking] = useState<Scrap>(), [peek, setPeek] = useState(false);
+  const [activeSheet, setActiveSheet] = useState("notes");
   const [solo, setSolo] = useState<string>();
   const [searching, setSearching] = useState(false);
   const [dragging, setDragging] = useState<string>();
@@ -503,11 +505,13 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     proposals={scraps.filter(scrap => scrap.kind === "proposal").map(proposalCard)} />, tutor.root);
   const counts = new Map<string, number>();
   for (const item of study.entries) if ("sheet" in item) counts.set(item.sheet, (counts.get(item.sheet) ?? 0) + 1);
-  const sheetButtons = sheets.map(sheet => <li key={sheet.id}><button type="button" className="study-sheet" data-colour={sheet.colour}
+  const cleanButton = <button type="button" aria-pressed={cleanVisible} onClick={toggleClean}>{t("清理转换文本…")}</button>;
+  const baseLayer = <span className="layers-canvas"><LockKeyhole size={14} /><small>L0</small>{t("源文档")}</span>;
+  const sheetButtons = sheets.map(sheet => <li key={sheet.id} className="study-sheet-row"><button type="button" className="study-sheet" data-colour={sheet.colour}
     aria-pressed={visibleSheet(sheet.id)} data-solo={solo === sheet.id || undefined} disabled={busy} onClick={event => {
       if (event.altKey) { setSolo(value => value === sheet.id ? undefined : sheet.id); return; }
       setSolo(undefined); void write({ ...sheet, visible: !sheet.visible }, sheet);
-    }}><span className="study-swatch" />{t(sheet.name)}<small aria-hidden="true">{counts.get(sheet.id) || ""}</small></button></li>);
+    }}><span className="study-swatch" />{t(sheet.name)}<small aria-hidden="true">{counts.get(sheet.id) || ""}</small></button><button type="button" className="study-sheet-pencil" aria-label={`${t("当前图层")}: ${t(sheet.name)}`} aria-pressed={activeSheet === sheet.id} onClick={() => setActiveSheet(sheet.id)}><PencilLine size={14} /></button></li>);
   const tools = <div className="study-actions study-tools">
     <button type="button" aria-pressed={peek} title={t("Hold to peek at the page")} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setPeek(true); }}
       onPointerUp={() => setPeek(false)} onLostPointerCapture={() => setPeek(false)}
@@ -530,15 +534,16 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   return <>
     {sheetsRoot && createPortal(<aside className="layers-rail study-rail" aria-label={t("Sheets")}>
       <header><h2><Layers size={15} />{t("Sheets")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
+      {baseLayer}{cleanButton}
       {saved ? <><ul>{sheetButtons}</ul>{tools}{understanding}
         {picking && <div className="study-move" role="status"><p>{t("Choose a paragraph, another scrap, or the loose tray.")}</p><button type="button" onClick={() => setPicking(undefined)}>{t("取消")}</button></div>}
       </> : <p>{t("请先打开文件夹并保存文档。")}</p>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </aside>, sheetsRoot)}
-    {saved && <div className="study-chips" role="group" aria-label={t("Sheets")}>
-      <div className="study-chip-row"><ul>{sheetButtons}</ul></div>{tools}{understanding}
+    <div className="study-chips" role="group" aria-label={t("Sheets")}>
+      <div className="study-chip-row">{baseLayer}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>{saved && <>{tools}{understanding}</>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
-    </div>}
+    </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}

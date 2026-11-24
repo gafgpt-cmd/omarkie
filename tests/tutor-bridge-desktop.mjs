@@ -110,6 +110,8 @@ try {
   assert.ok(!extra.includes(question));
   await snapshot("queued");
 
+  assert.equal((await run(["status", id, "working"])).status, 1);
+  assert.equal((await run(["reply", id, "--text", answer])).status, 1);
   const polled = await success("poll", "--doc", doc, "--owner", "Test agent");
   assert.equal(polled.ask.id, id);
   assert.equal(polled.ask.question, question);
