@@ -8,6 +8,7 @@ import test from "node:test";
 import readingCore from "../shared/reading-core.cjs";
 import { moveReadingEntries, readingMarkdown, readingStore, recoverReadingVault } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
+import { learningSearchTerms, matchLearningScraps } from "../shared/learning-search.mjs";
 import { searchLearning } from "../electron/learning-index.mjs";
 import { Workspace } from "../electron/workspace.mjs";
 import { t as translate } from "../electron/i18n.mjs";
@@ -35,9 +36,13 @@ async function fixture(t) {
 test("vault search sees current journal text without leaving a profile index", async t => {
   const { store, source, other } = await fixture(t);
   assert.deepEqual(await searchLearning(store, source.id, "meander"), []);
-  const scrap = { id: "river", type: "scrap", kind: "note", sheet: "notes", body: "Méander geometry", anchor: null, folded: false, stackOf: null };
+  const scrap = { id: "river", type: "scrap", kind: "answer", sheet: "tutor-answers", body: "Méander near a triangle", question: "Geometry?", anchor: { ...block(), quote: "distinct words" }, folded: false, stackOf: null };
   await readingStore(store, other.id, { action: "put", item: scrap });
-  assert.deepEqual((await searchLearning(store, source.id, "meander")).map(hit => hit.document), ["other.md"]);
+  const entries = await readingStore(store, source.id, { action: "list", scope: "vault", types: ["note", "scrap"], studyNotes: true });
+  for (const [phrase, expected] of [["meander geom distinct", ["other.md"]], ["angle", []]]) {
+    assert.deepEqual((await searchLearning(store, source.id, phrase)).map(hit => hit.document), expected);
+    assert.deepEqual(matchLearningScraps(entries, learningSearchTerms(phrase)).map(hit => hit.document), expected);
+  }
   await assert.rejects(stat(path.join(store.dataDir, "learning-index")), { code: "ENOENT" });
   await readingStore(store, other.id, { action: "put", item: { ...scrap, body: "River bend" } });
   assert.deepEqual(await searchLearning(store, source.id, "meander"), []);

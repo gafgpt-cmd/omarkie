@@ -42,8 +42,7 @@ export async function vaultProposals(root) {
 
 export async function studySearchSnapshot(root) {
   return queued(root, () => locked(root, false, exists => exists
-    ? transaction(root, false, entries => query(entries ?? [], "", { scope: "vault", types: ["scrap", "note"], studyNotes: true })
-      .filter(item => !item.image).map(item => item.type === "note" ? { ...item, kind: "note" } : item))
+    ? transaction(root, false, entries => query(entries ?? [], "", { scope: "vault", types: ["scrap", "note"], studyNotes: true }))
     : []));
 }
 

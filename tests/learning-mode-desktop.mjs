@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -11,10 +12,15 @@ const vault = path.join(home, "vault"), file = path.join(vault, "practice.md");
 const first = "Recall the answer before looking it up.";
 const second = "Leave a day before your next review.";
 const third = "A good question asks for one idea, not a list.";
-const source = `# Retrieval practice\r\n\r\n${first}\r\n\r\n${second}\r\n\r\n${third}\r\n`;
+let trackerHits = 0;
+const tracker = createServer((_, response) => { trackerHits++; response.writeHead(204).end(); });
+const source = `# Retrieval practice\r\n\r\n${first}\r\n\r\n${second}\r\n\r\n${third}\r\n\r\n![Remote sample](http://127.0.0.1:TRACKER/remote.png)\r\n`;
+await new Promise(resolve => tracker.listen(0, "127.0.0.1", resolve));
+tracker.unref();
+const documentText = source.replace("TRACKER", String(tracker.address().port));
 await mkdir(vault);
-await writeFile(file, source, "utf8");
-const record = { id: "fixture", path: file, name: "practice.md", content: source, savedContent: source, diskHash: createHash("sha256").update(source).digest("hex"), lineEnding: "\r\n" };
+await writeFile(file, documentText, "utf8");
+const record = { id: "fixture", path: file, name: "practice.md", content: documentText, savedContent: documentText, diskHash: createHash("sha256").update(documentText).digest("hex"), lineEnding: "\r\n" };
 await writeFile(path.join(home, "session.json"), JSON.stringify({ version: 1, activeId: record.id, folder: vault, documents: [record] }), "utf8");
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, OMARKIE_LANGUAGE: "en" });
 delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
@@ -68,6 +74,15 @@ try {
   await expect(sheets).toBeVisible();
   await expect(rich).toHaveAttribute("contenteditable", "false");
   await expect(key("Payload")).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+,");
+  const preferences = page.getByRole("dialog", { name: "Preferences", exact: true });
+  const remote = preferences.getByRole("checkbox", { name: "Show remote images", exact: true });
+  await remote.check();
+  await expect(rich.locator(".remote-image")).toContainText("Remote sample");
+  await expect(rich.getByRole("img", { name: "Remote sample" })).toHaveCount(0);
+  assert.equal(trackerHits, 0);
+  await remote.uncheck();
+  await preferences.getByRole("button", { name: "Done", exact: true }).click();
   await assert.rejects(stat(path.dirname(journal)), { code: "ENOENT" });
   if (qa) {
     await page.keyboard.press("ControlOrMeta+,");
@@ -130,7 +145,7 @@ try {
   await expect(sheets).toBeVisible();
   await expect(nested).toBeVisible();
   await expect(tray).toContainText(three);
-  assert.equal(await readFile(file, "utf8"), source);
+  assert.equal(await readFile(file, "utf8"), documentText);
   const rows = (await readFile(journal, "utf8")).trim().split("\n").map(JSON.parse);
   assert.ok(rows.some(row => row.entry.type === "mark" && row.entry.document === "practice.md" && row.entry.anchor.hash.length === 64));
   assert.ok(rows.some(row => row.entry.type === "sheet" && row.entry.id === "notes"));
@@ -140,4 +155,4 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(requests.filter(url => /^(https?|wss?):/i.test(url)), []);
   console.log("PASS: Learning mode, notes, visual highlights, fold, move, stack, peel, undo, peek, half tile, restart, unchanged Markdown");
-} finally { await app.close(); }
+} finally { await app.close(); tracker.close(); }

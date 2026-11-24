@@ -110,9 +110,6 @@ export default function App() {
   const readingSupported = !!window.desktop?.readingStore;
   const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
   const readingVisible = learningEnabled && !!active && !focus && painted;
-  const sidebarVisible = readingVisible && halfTile ? drawer : sidebar;
-  useEffect(() => { if (readingVisible && !halfTile) setSidebar(true); }, [readingVisible, halfTile]);
-  const filesVisible = sidebarVisible && (!readingVisible || showFiles);
   const cleanVisible = !!active && cleanId === active.id;
   function closeClean() {
     setCleanId(null);
@@ -135,6 +132,9 @@ export default function App() {
   const payloadAvailable = payloadEnabled && !tutorKey;
   const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
   const tutorOpen = !!tutorKey && tutor === tutorKey;
+  const sidebarVisible = readingVisible && halfTile ? drawer && !activePayload && !tutorOpen : sidebar;
+  const filesVisible = sidebarVisible && (!readingVisible || showFiles);
+  useEffect(() => { if (readingVisible && !halfTile) setSidebar(true); }, [readingVisible, halfTile]);
   useEffect(() => { if (tutor && tutor !== tutorKey) setTutor(null); }, [tutor, tutorKey]);
   function openTutor() {
     if (!tutorKey) return;
@@ -151,7 +151,7 @@ export default function App() {
   }, [payload, activePayload]);
   function openPayload(mode: "summary" | "question", selection?: string) {
     if (!active || !payloadAvailable) return;
-    if (readingVisible && halfTile) setDrawer(false);
+    if (learningEnabled && halfTile) setDrawer(false);
     const target = editor(), selected = selection ?? target?.selectionText(true);
     const source = selected || target?.markdown() || active.content;
     setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
@@ -327,7 +327,7 @@ export default function App() {
   }
   function toggleSidebar() {
     if (readingVisible && halfTile) {
-      if (drawer) setDrawer(false);
+      if (sidebarVisible) setDrawer(false);
       else openSidebar();
     } else setSidebar(value => !value);
   }

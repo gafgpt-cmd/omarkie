@@ -47,7 +47,7 @@
 - Tutor uses the right Payload slot. In a half tile, opening one drawer closes the other.
 - `Alt+Enter` focuses the selection actions. `N` note, `D` doubt, `W` correction, `A` ask, `E` explain back, `Q` quiz, `C` card, `P` propose.
 - **Understanding** cycles each paragraph through not rated, lost, shaky and solid. Quiz feedback can set the same rating. Ratings are stored with the anchor, not in Markdown.
-- **Search scraps** searches the whole vault. Electron indexes the current journal in memory per search. macOS searches the journal directly. Neither writes a separate index to disk.
+- **Search scraps** searches the whole vault. Electron and macOS match word prefixes across scrap text, questions, and anchor quotes in the current journal. Neither writes a separate index to disk.
 - Click a paper tab to fold or unfold a note. Drag its tab or header to another paragraph, onto a note to stack, or into **Loose scraps**. **Move** also lets you click a paragraph.
 - Drop a PNG, JPEG, GIF, or WebP onto the page, or paste a copied image. Drop to the left or right of the paragraph; text wraps around the picture.
 - Drag the picture or its grip to move it. Drag the resize handle on the inner edge. **Peel off** removes the scrap; **Undo** restores it.

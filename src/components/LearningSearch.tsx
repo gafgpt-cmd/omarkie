@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { Dialog } from "./Dialog";
-import { learningSearchTerms } from "../../shared/learning-search.mjs";
+import { learningSearchTerms, matchLearningScraps } from "../../shared/learning-search.mjs";
 import { host } from "../host";
 import { t } from "../i18n";
 import type { StudySearchMatch } from "../types";
@@ -38,11 +38,5 @@ export default function LearningSearch({ id, close, open }: {
 
 async function scanJournal(id: string, terms: string[]) {
   const entries = await host.readingStore!(id, { action: "list", scope: "vault", types: ["note", "scrap"], studyNotes: true });
-  const results: StudySearchMatch[] = [];
-  for (const item of entries) if ((item.type === "note" || item.type === "scrap" && !item.image) &&
-    terms.every(term => `${item.body}\n${item.anchor?.quote ?? ""}`.normalize("NFC").toLowerCase().includes(term))) {
-    results.push({ document: item.document, line: item.anchor?.line ?? null, kind: item.type === "scrap" ? item.kind : "note", text: item.body.slice(0, 320) });
-    if (results.length === 60) break;
-  }
-  return results;
+  return matchLearningScraps(entries, terms);
 }
