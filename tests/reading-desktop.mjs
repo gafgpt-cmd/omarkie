@@ -228,4 +228,3 @@ try {
 } finally { if (application) await application.close().catch(() => {}); }
 
 await import("./learning-mode-desktop.mjs");
-await import("./learning-images-desktop.mjs");

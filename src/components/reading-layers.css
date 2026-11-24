@@ -144,8 +144,8 @@
   .app-shell.learning-mode { grid-template-columns: 0 minmax(0, 1fr); }
   .app-shell.learning-mode:not(.sidebar-hidden):not(.tutor-open) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
   .app-shell.learning-mode:not(.sidebar-hidden) .sidebar { visibility: visible; position: relative; inset: auto; width: auto; box-shadow: none; }
-  .app-shell.tutor-open.payload-open, .app-shell.sidebar-hidden.tutor-open.payload-open { grid-template-columns: 0 minmax(0, 1fr) min(50%, 360px); }
-  .tutor-open .tutor-panel { grid-area: 2 / 3; justify-self: stretch; width: auto; }
+  .app-shell.learning-mode.payload-open.sidebar-hidden { grid-template-columns: 0 minmax(0, 1fr) min(50%, 360px); }
+  .learning-mode.payload-open.sidebar-hidden > :is(.tutor-panel, .payload-panel) { grid-area: 2 / 3; justify-self: stretch; width: auto; }
   .learning-mode .writing-area { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
   .study-chips { grid-area: 2 / 1; display: grid; gap: 5px; min-width: 0; padding: 5px 8px; background: var(--sidebar); border-block-end: 1px solid var(--border); }
   .study-chip-row { display: flex; gap: 8px; overflow-x: auto; }
@@ -159,7 +159,7 @@
   .study-right:has(.layers-cards) > .study-tray { display: none; }
 }
 @media screen and (max-width: 600px) {
-  .app-shell.tutor-open.payload-open, .app-shell.sidebar-hidden.tutor-open.payload-open { grid-template-columns: 0 minmax(0, 1fr); }
-  .tutor-open .tutor-panel { grid-area: 2 / 2; justify-self: end; width: min(100%, 360px); }
+  .app-shell.learning-mode.payload-open.sidebar-hidden { grid-template-columns: 0 minmax(0, 1fr); }
+  .learning-mode.payload-open.sidebar-hidden > :is(.tutor-panel, .payload-panel) { grid-area: 2 / 2; justify-self: end; width: min(100%, 360px); }
 }
 @media print { .layers-rail, .layers-right, .layers-selection, .study-chips, .study-overlay, .study-floats { display: none !important; } }

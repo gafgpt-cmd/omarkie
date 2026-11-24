@@ -144,14 +144,14 @@ export default function App() {
   function closeTutor() { setTutor(null); editor()?.focus(); }
   function openFilesRail() {
     setShowFiles(true);
-    if (readingVisible && halfTile) { setDrawer(true); setTutor(null); }
-    else setSidebar(true);
+    openSidebar();
   }
   useEffect(() => {
     if (payload && !activePayload) setPayload(null);
   }, [payload, activePayload]);
   function openPayload(mode: "summary" | "question", selection?: string) {
     if (!active || !payloadAvailable) return;
+    if (readingVisible && halfTile) setDrawer(false);
     const target = editor(), selected = selection ?? target?.selectionText(true);
     const source = selected || target?.markdown() || active.content;
     setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
@@ -163,14 +163,19 @@ export default function App() {
     const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
     if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
   }
-  const renderedView = rendered;
+  const [learningViews, setLearningViews] = useState<Record<string, boolean>>({});
+  const renderedFor = (id: string) => learningEnabled ? learningViews[id] ?? rendered : rendered;
+  const renderedView = active ? renderedFor(active.id) : rendered;
   const suppressRemoteImages = readingVisible || cleanVisible;
   const remoteImages = preferences.remoteImages && !suppressRemoteImages;
   useInsertionEffect(() => {
     // Rich editors read the parser policy in descendant layout effects.
     setMarkdownOptions({ ...preferences, remoteImages });
   }, [preferences, remoteImages]);
-  function setRenderedView(value: boolean) { setRendered(value); }
+  function setRenderedView(value: boolean) {
+    if (learningEnabled && active) setLearningViews(previous => ({ ...previous, [active.id]: value }));
+    else setRendered(value);
+  }
   useEffect(() => {
     setMountedDocuments(current => {
       let removed = false;
@@ -315,10 +320,15 @@ export default function App() {
       requestAnimationFrame(() => editor()?.focus());
     } else setFocus(false);
   }
+  function openSidebar() {
+    if (readingVisible && halfTile) {
+      setTutor(null); setPayload(null); closeFlashcards(); setDrawer(true);
+    } else setSidebar(true);
+  }
   function toggleSidebar() {
     if (readingVisible && halfTile) {
-      if (!drawer) { setTutor(null); closeFlashcards(); }
-      setDrawer(!drawer);
+      if (drawer) setDrawer(false);
+      else openSidebar();
     } else setSidebar(value => !value);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
@@ -605,7 +615,7 @@ export default function App() {
                     } else editors.current.delete(record.id);
                   }}
                   document={record}
-                  rendered={record.id === session.activeId ? renderedView : rendered}
+                  rendered={renderedFor(record.id)}
                   active={record.id === session.activeId}
                   readOnly={readOnly}
                   reading={learningEnabled}
@@ -646,6 +656,7 @@ export default function App() {
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
+              preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
               tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,
                 configure: () => setDialog("preferences") } : undefined}

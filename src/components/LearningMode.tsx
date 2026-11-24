@@ -41,9 +41,10 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
+  preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
   cleanVisible: boolean; toggleClean(): void;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
@@ -510,6 +511,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     proposals={scraps.filter(scrap => scrap.kind === "proposal").map(proposalCard)} />, tutor.root);
   const counts = new Map<string, number>();
   for (const item of study.entries) if ("sheet" in item) counts.set(item.sheet, (counts.get(item.sheet) ?? 0) + 1);
+  const previewButton = <button type="button" aria-pressed={preview} onClick={togglePreview}>{t("即时渲染")}</button>;
   const cleanButton = <button type="button" aria-pressed={cleanVisible} onClick={toggleClean}>{t("清理转换文本…")}</button>;
   const baseLayer = <span className="layers-canvas"><LockKeyhole size={14} /><small>L0</small>{t("源文档")}</span>;
   async function activateSheet(sheet: Sheet) {
@@ -544,14 +546,14 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   return <>
     {sheetsRoot && createPortal(<aside className="layers-rail study-rail" aria-label={t("Sheets")}>
       <header><h2><Layers size={15} />{t("Sheets")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
-      {baseLayer}{cleanButton}
+      {baseLayer}{previewButton}{cleanButton}
       {saved ? <><ul>{sheetButtons}</ul>{tools}{understanding}
         {picking && <div className="study-move" role="status"><p>{t("Choose a paragraph, another scrap, or the loose tray.")}</p><button type="button" onClick={() => setPicking(undefined)}>{t("取消")}</button></div>}
       </> : <p>{t("请先打开文件夹并保存文档。")}</p>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </aside>, sheetsRoot)}
     <div className="study-chips" role="group" aria-label={t("Sheets")}>
-      <div className="study-chip-row">{baseLayer}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>{saved && <>{tools}{understanding}</>}
+      <div className="study-chip-row">{baseLayer}{previewButton}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>{saved && <>{tools}{understanding}</>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}

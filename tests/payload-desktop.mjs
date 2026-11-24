@@ -102,10 +102,10 @@ try {
   assert.equal((await source.locator(".cm-line").allTextContents()).join("\n"), original.replaceAll("\r\n", "\n"));
   assert.equal(requests.length, 3);
   await panel.getByRole("button", { name: "Close Payload" }).click();
+  await page.getByRole("button", { name: "Live Preview", exact: true }).click();
   await page.getByRole("button", { name: "Learning mode", exact: true }).click();
   await expect(button).toBeVisible();
   await expect(page.getByRole("button", { name: "Tutor", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Live Preview", exact: true }).click();
   await expect(rich).toHaveAttribute("contenteditable", "false");
   await paragraph.selectText();
   await page.keyboard.press("Alt+Enter");
@@ -117,6 +117,22 @@ try {
   await expect(panel.getByRole("region", { name: "Payload answer" })).toHaveText("Three sides.");
   assert.deepEqual(requests.at(-1).body.messages.slice(1).map(message => message.content), [selection, "How many sides in Learning mode?"]);
   assert.equal(requests.length, 4);
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 900));
+  await expect.poll(() => page.evaluate(() => innerWidth)).toBe(720);
+  const sidebar = page.locator(".sidebar");
+  const drawer = page.getByRole("button", { name: "Toggle Sidebar", exact: true });
+  await drawer.click();
+  await expect(sidebar).toBeVisible();
+  await expect(panel).toHaveCount(0);
+  await button.click();
+  await expect(panel).toBeVisible();
+  await expect(sidebar).toBeHidden();
+  const preview = page.getByRole("group", { name: "Sheets", exact: true }).getByRole("button", { name: "Live Preview", exact: true });
+  await expect(preview).toHaveAttribute("aria-pressed", "true");
+  await preview.click();
+  await expect(source).toBeVisible();
+  await page.getByRole("button", { name: "Learning mode", exact: true }).click();
+  await expect(rich).toBeVisible();
   console.log("PASS: Payload opt-in and lazy load, origin allowance, explicit selection send, stateless questions and shared undo");
 } finally {
   await application?.close();
