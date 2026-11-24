@@ -8,6 +8,7 @@ import test from "node:test";
 import readingCore from "../shared/reading-core.cjs";
 import { moveReadingEntries, readingMarkdown, readingStore, recoverReadingVault } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
+import { searchLearning } from "../electron/learning-index.mjs";
 import { Workspace } from "../electron/workspace.mjs";
 import { t as translate } from "../electron/i18n.mjs";
 import { dueCards } from "../src/flashcards.ts";
@@ -30,6 +31,17 @@ async function fixture(t) {
   const sidecar = path.join(vault, ".omarkie");
   return { store, source, other, external, sidecar, log: path.join(sidecar, "store.jsonl"), index: path.join(sidecar, "index.json"), outside };
 }
+
+test("vault search sees current journal text without leaving a profile index", async t => {
+  const { store, source, other } = await fixture(t);
+  assert.deepEqual(await searchLearning(store, source.id, "meander"), []);
+  const scrap = { id: "river", type: "scrap", kind: "note", sheet: "notes", body: "Méander geometry", anchor: null, folded: false, stackOf: null };
+  await readingStore(store, other.id, { action: "put", item: scrap });
+  assert.deepEqual((await searchLearning(store, source.id, "meander")).map(hit => hit.document), ["other.md"]);
+  await assert.rejects(stat(path.join(store.dataDir, "learning-index")), { code: "ENOENT" });
+  await readingStore(store, other.id, { action: "put", item: { ...scrap, body: "River bend" } });
+  assert.deepEqual(await searchLearning(store, source.id, "meander"), []);
+});
 
 test("image scraps keep binary data outside the journal and reject unsafe blob reads", async t => {
   const { source, external, store, sidecar, log } = await fixture(t);

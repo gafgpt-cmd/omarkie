@@ -52,7 +52,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   const [draftKind, setDraftKind] = useState<"note" | "doubt" | "ink">("note");
   const [study, setStudy] = useState(emptyStudy), [revision, invalidate] = useState(0);
   const [undo, setUndo] = useState<StudyItem>(), [picking, setPicking] = useState<Scrap>(), [peek, setPeek] = useState(false);
-  const [activeSheet, setActiveSheet] = useState("notes");
+  const [activeSheet, setActiveSheet] = useState<string>();
   const [solo, setSolo] = useState<string>();
   const [searching, setSearching] = useState(false);
   const [dragging, setDragging] = useState<string>();
@@ -308,7 +308,8 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   }, [saved, ready]);
   useEffect(() => {
     if (!selection || !keyboardFocus.current) return;
-    keyboardFocus.current = false; popup.current?.querySelector("button")?.focus();
+    keyboardFocus.current = false;
+    (popup.current?.querySelector<HTMLButtonElement>("[data-layer-action]:enabled") ?? popup.current?.querySelector<HTMLButtonElement>("button:enabled"))?.focus();
   }, [selection]);
 
   const sheets = useMemo(() => {
@@ -400,7 +401,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
 
   function mark(colour: SheetColour) {
     if (!selection?.range || selection.range.start >= selection.range.end) return;
-    const item = { type: "mark", id: crypto.randomUUID(), sheet: "highlights", anchor: selection.target, colour, ...selection.range } as const;
+    const item = { type: "mark", id: crypto.randomUUID(), sheet: activeSheet ?? "highlights", anchor: selection.target, colour, ...selection.range } as const;
     void write(item, { ...item, deleted: true }, true);
   }
   function beginDraft(kind: typeof draftKind) { setDraftKind(kind); setDraft(""); }
@@ -408,8 +409,8 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     const body = draft?.trim(), anchor = selection?.target;
     if (!body || !anchor) return;
     const id = crypto.randomUUID();
-    const item = draftKind === "ink" ? { type: "ink", id, sheet: "notes", anchor, from: anchor.quote, to: body } as const
-      : { type: "scrap", id, sheet: draftKind === "doubt" ? "doubts" : "notes", kind: draftKind, anchor, body, stackOf: null, folded: false } as const;
+    const item = draftKind === "ink" ? { type: "ink", id, sheet: activeSheet ?? "notes", anchor, from: anchor.quote, to: body } as const
+      : { type: "scrap", id, sheet: activeSheet ?? (draftKind === "doubt" ? "doubts" : "notes"), kind: draftKind, anchor, body, stackOf: null, folded: false } as const;
     if (await write(item, { ...item, deleted: true }, !check) && check) tutorAt(anchor, "check", body);
   }
   function drag(event: React.DragEvent, scrap: Scrap) {
@@ -507,11 +508,16 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   for (const item of study.entries) if ("sheet" in item) counts.set(item.sheet, (counts.get(item.sheet) ?? 0) + 1);
   const cleanButton = <button type="button" aria-pressed={cleanVisible} onClick={toggleClean}>{t("清理转换文本…")}</button>;
   const baseLayer = <span className="layers-canvas"><LockKeyhole size={14} /><small>L0</small>{t("源文档")}</span>;
+  async function activateSheet(sheet: Sheet) {
+    if (!sheet.visible && !await write({ ...sheet, visible: true }, sheet)) return;
+    setSolo(undefined);
+    setActiveSheet(sheet.id);
+  }
   const sheetButtons = sheets.map(sheet => <li key={sheet.id} className="study-sheet-row"><button type="button" className="study-sheet" data-colour={sheet.colour}
     aria-pressed={visibleSheet(sheet.id)} data-solo={solo === sheet.id || undefined} disabled={busy} onClick={event => {
       if (event.altKey) { setSolo(value => value === sheet.id ? undefined : sheet.id); return; }
       setSolo(undefined); void write({ ...sheet, visible: !sheet.visible }, sheet);
-    }}><span className="study-swatch" />{t(sheet.name)}<small aria-hidden="true">{counts.get(sheet.id) || ""}</small></button><button type="button" className="study-sheet-pencil" aria-label={`${t("当前图层")}: ${t(sheet.name)}`} aria-pressed={activeSheet === sheet.id} onClick={() => setActiveSheet(sheet.id)}><PencilLine size={14} /></button></li>);
+    }}><span className="study-swatch" />{t(sheet.name)}<small aria-hidden="true">{counts.get(sheet.id) || ""}</small></button><button type="button" className="study-sheet-pencil" aria-label={`${t("当前图层")}: ${t(sheet.name)}`} aria-pressed={(activeSheet ?? "notes") === sheet.id} disabled={busy} onClick={() => void activateSheet(sheet)}><PencilLine size={14} /></button></li>);
   const tools = <div className="study-actions study-tools">
     <button type="button" aria-pressed={peek} title={t("Hold to peek at the page")} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setPeek(true); }}
       onPointerUp={() => setPeek(false)} onLostPointerCapture={() => setPeek(false)}
@@ -566,11 +572,11 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       style={{ left: Math.max(4, Math.min(selection.x, window.innerWidth - 284)), top: Math.max(4, Math.min(selection.y + 6, window.innerHeight - (draft === undefined ? 125 : 148))) }}
       onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); dismiss(true); } }}>
       {draft === undefined ? <>
-        <button type="button" disabled={busy} onClick={() => beginDraft("note")}><StickyNote size={15} />{t("Note")}</button>
-        <button type="button" disabled={busy} onClick={() => beginDraft("doubt")}>{t("Doubt")}</button>
+        <button type="button" disabled={busy} data-layer-action={!['doubts', 'highlights'].includes(activeSheet ?? '') || undefined} onClick={() => beginDraft("note")}><StickyNote size={15} />{t("Note")}</button>
+        <button type="button" disabled={busy} data-layer-action={activeSheet === "doubts" || undefined} onClick={() => beginDraft("doubt")}>{t("Doubt")}</button>
         <button type="button" disabled={busy} onClick={() => beginDraft("ink")}>{t("This is wrong")}</button>
         {selection.range && <div className="study-actions" role="group" aria-label={t("高亮")}>
-          {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
+          {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} data-layer-action={activeSheet === "highlights" || undefined} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
         </div>}
         <button type="button" onClick={() => { openCard(selection.target); dismiss(); }}>{t("制作卡片")}</button>
         {tutorParagraph && <button type="button" onClick={() => askTutor()}><Sparkles size={15} />{t("Ask Tutor")}</button>}

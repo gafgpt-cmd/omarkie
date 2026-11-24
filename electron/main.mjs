@@ -19,7 +19,7 @@ import { Workspace } from "./workspace.mjs";
 import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
-import { readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
 import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
@@ -483,6 +483,7 @@ app
     startupMark("main-process-ready");
     if (process.platform !== "darwin" && !app.hasSingleInstanceLock()) return;
     store = new DocumentStore(app.getPath("userData"));
+    await rm(path.join(store.dataDir, "learning-index"), { recursive: true, force: true }).catch(showError);
     workspace = new Workspace(app.getPath("userData"));
     if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
     applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());

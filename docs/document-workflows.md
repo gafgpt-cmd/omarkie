@@ -32,7 +32,7 @@
 
 ## Clean converted text
 
-- With Learning mode off, **File → Clean converted text** opens a read-only preview. **Back to source** or `Esc` closes it without applying. See [preview media](#preview-media).
+- **File → Clean converted text** opens a read-only preview. In Learning mode, use the same action in the Sheets rail or compact controls. **Back to source** or `Esc` closes it without applying. See [preview media](#preview-media).
 - Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
 - A change to the note or its disk revision requires a fresh preview.
 - Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
@@ -47,7 +47,7 @@
 - Tutor uses the right Payload slot. In a half tile, opening one drawer closes the other.
 - `Alt+Enter` focuses the selection actions. `N` note, `D` doubt, `W` correction, `A` ask, `E` explain back, `Q` quiz, `C` card, `P` propose.
 - **Understanding** cycles each paragraph through not rated, lost, shaky and solid. Quiz feedback can set the same rating. Ratings are stored with the anchor, not in Markdown.
-- **Search scraps** searches the whole vault. Electron builds its SQLite index in app data on demand and rebuilds it when the journal changes or the index goes missing. macOS searches the journal directly. Back up the journal, not the index.
+- **Search scraps** searches the whole vault. Electron indexes the current journal in memory per search. macOS searches the journal directly. Neither writes a separate index to disk.
 - Click a paper tab to fold or unfold a note. Drag its tab or header to another paragraph, onto a note to stack, or into **Loose scraps**. **Move** also lets you click a paragraph.
 - Drop a PNG, JPEG, GIF, or WebP onto the page, or paste a copied image. Drop to the left or right of the paragraph; text wraps around the picture.
 - Drag the picture or its grip to move it. Drag the resize handle on the inner edge. **Peel off** removes the scrap; **Undo** restores it.

@@ -40,14 +40,11 @@ export async function vaultProposals(root) {
   return result.filter(item => item.kind === "proposal");
 }
 
-export async function studySearchSnapshot(root, previous) {
-  const result = (entries, revision) => ({ revision, ...(revision === previous ? {} : {
-    entries: entries ? query(entries, "", { scope: "vault", types: ["scrap", "note"], studyNotes: true })
-      .filter(item => !item.image).map(item => item.type === "note" ? { ...item, kind: "note" } : item) : [],
-  }) });
+export async function studySearchSnapshot(root) {
   return queued(root, () => locked(root, false, exists => exists
-    ? transaction(root, false, (entries, _, __, revision) => result(entries, revision ?? "empty"))
-    : result(null, "empty")));
+    ? transaction(root, false, entries => query(entries ?? [], "", { scope: "vault", types: ["scrap", "note"], studyNotes: true })
+      .filter(item => !item.image).map(item => item.type === "note" ? { ...item, kind: "note" } : item))
+    : []));
 }
 
 async function directoryAt(root, directory, create = false) {

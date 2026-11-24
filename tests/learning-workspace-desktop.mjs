@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { _electron as electron, expect } from "playwright/test";
@@ -17,6 +17,9 @@ const source = `# Reading a topographic map\n\n${paragraph}\n\n${neighbor}\n`;
 const secondary = "# Reading rivers\n\nContour lines bend upstream where a river crosses them.\n";
 const record = { id: "fixture", name: "contours.md", path: file, content: source, savedContent: source, diskHash: createHash("sha256").update(source).digest("hex"), lineEnding: "\n" };
 await mkdir(vault);
+const legacyIndex = path.join(home, "learning-index");
+await mkdir(legacyIndex);
+await writeFile(path.join(legacyIndex, "legacy.sqlite"), "Legacy search excerpt");
 await writeFile(file, source); await writeFile(other, secondary);
 await writeFile(path.join(home, "session.json"), JSON.stringify({ version: 1, activeId: record.id, folder: vault, documents: [record] }));
 await readingStore({ folder: vault, require: () => ({ path: other }) }, "other", { action: "put", item: {
@@ -145,6 +148,19 @@ try {
   await toggleSidebar.press("Enter"); await expect(rail).toBeVisible(); await expect(panel).toHaveCount(0);
   assert.ok((await rail.boundingBox()).x + (await rail.boundingBox()).width <= (await rich.boundingBox()).x);
   await screenshot("720-sheets");
+  const doubts = button(rail, "Doubts");
+  await doubts.click();
+  await expect(doubts).toHaveAttribute("aria-pressed", "false");
+  await button(rail, "Active layer: Doubts").click();
+  await expect(doubts).toHaveAttribute("aria-pressed", "true");
+  await rich.getByText(paragraph, { exact: true }).selectText();
+  await page.keyboard.press("Alt+Enter");
+  await expect(button(selection, "Doubt")).toBeFocused();
+  await button(selection, "Note").click();
+  const routedNote = selection.getByRole("textbox", { name: "Note" });
+  await routedNote.fill("A note on the chosen sheet.");
+  await routedNote.press("Enter");
+  await expect.poll(async () => (await rows()).find(item => item?.body === "A note on the chosen sheet.")?.sheet).toBe("doubts");
   await tutor.press("Enter"); await expect(panel).toBeVisible(); await expect(rail).toBeHidden();
   await panel.press("Escape"); await expect(panel).toHaveCount(0);
   await button(look, "Search scraps").press("Enter");
@@ -153,10 +169,7 @@ try {
   await query.fill("meander upstream"); await query.press("Enter");
   const hit = search.getByRole("button", { name: /river\.md.*Méander geometry/ });
   await expect(hit).toBeVisible();
-  const dir = path.join(home, "learning-index"), [index] = (await readdir(dir)).filter(name => name.endsWith(".sqlite"));
-  assert.ok(index);
-  await rename(path.join(dir, index), path.join(home, "discarded-index.sqlite"));
-  await query.press("Enter"); await expect(hit).toBeVisible(); assert.ok((await readdir(dir)).includes(index));
+  await assert.rejects(stat(legacyIndex), { code: "ENOENT" });
   await readingStore({ folder: vault, require: () => ({ path: other }) }, "other", { action: "put", item: {
     id: "river-note", type: "scrap", kind: "note", sheet: "notes", body: "River bends and upstream flow.", folded: true, stackOf: null, anchor: null,
   } });
