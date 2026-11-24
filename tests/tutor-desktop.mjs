@@ -88,6 +88,12 @@ try {
   await expect(rich.getByRole("heading", { name: "Reading a contour map" })).toBeVisible();
   await expect(openTutor).toHaveCount(0);
   assert.ok(!loaded.some(url => /LearningMode-|PayloadPanel-|payload-controls/.test(url)));
+  await button(page, "More actions").click();
+  const autosave = page.getByRole("menuitemcheckbox", { name: "Auto-save existing files", exact: true });
+  await expect(autosave).toHaveAttribute("aria-checked", "true");
+  await autosave.click();
+  await expect(autosave).toHaveAttribute("aria-checked", "false");
+  await autosave.press("Escape");
   await toggle.click();
   await askAbout(paragraph);
   await button(panel, "Payload").click();

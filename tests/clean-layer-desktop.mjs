@@ -51,7 +51,7 @@ try {
 
   await page.getByRole("button", { name: "Learning mode", exact: true }).click();
   await expect(rich).toHaveAttribute("contenteditable", "false");
-  await page.locator(".study-rail").getByRole("button", { name: "Clean converted text…", exact: true }).click();
+  await page.getByRole("button", { name: "Clean converted text…", exact: true }).click();
   await expect(preview.getByRole("heading", { name: "Methods", exact: true })).toBeVisible();
   await bake.click();
   await expect(preview).toBeHidden();
