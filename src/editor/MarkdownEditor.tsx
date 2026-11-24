@@ -586,8 +586,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         insert: (text) => insert(text),
         selectionText: (markdown = false) => {
           if (activeMode.current) { const value = rich.current?.clipboard(); return (markdown ? value?.markdown : value?.plain) || ""; }
-          const selected = source.current?.state.selection.main;
-          return selected ? source.current!.state.sliceDoc(selected.from, selected.to) : "";
+          const view = source.current, native = window.getSelection();
+          if (view && native?.anchorNode && native.focusNode && !native.isCollapsed &&
+              view.contentDOM.contains(native.anchorNode) && view.contentDOM.contains(native.focusNode)) {
+            const anchor = view.posAtDOM(native.anchorNode, native.anchorOffset);
+            const head = view.posAtDOM(native.focusNode, native.focusOffset);
+            return view.state.sliceDoc(Math.min(anchor, head), Math.max(anchor, head));
+          }
+          const selected = view?.state.selection.main;
+          return selected ? view!.state.sliceDoc(selected.from, selected.to) : "";
         },
         readingText: fromCursor => {
           const doc = model.current, inRichMode = activeMode.current;

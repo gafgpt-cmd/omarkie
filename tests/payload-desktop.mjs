@@ -101,6 +101,22 @@ try {
   await expect(source).not.toContainText("Payload summary");
   assert.equal((await source.locator(".cm-line").allTextContents()).join("\n"), original.replaceAll("\r\n", "\n"));
   assert.equal(requests.length, 3);
+  await panel.getByRole("button", { name: "Close Payload" }).click();
+  await page.getByRole("button", { name: "Learning mode", exact: true }).click();
+  await expect(button).toBeVisible();
+  await expect(page.getByRole("button", { name: "Tutor", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Live Preview", exact: true }).click();
+  await expect(rich).toHaveAttribute("contenteditable", "false");
+  await paragraph.selectText();
+  await page.keyboard.press("Alt+Enter");
+  await page.getByRole("group", { name: "Selection actions" }).getByRole("button", { name: "Payload", exact: true }).click();
+  await expect(panel.getByText(`Sends the selected text to ${origin}.`, { exact: true })).toBeVisible();
+  assert.equal(requests.length, 3);
+  await question.fill("How many sides in Learning mode?");
+  await panel.getByRole("button", { name: "Send question" }).click();
+  await expect(panel.getByRole("region", { name: "Payload answer" })).toHaveText("Three sides.");
+  assert.deepEqual(requests.at(-1).body.messages.slice(1).map(message => message.content), [selection, "How many sides in Learning mode?"]);
+  assert.equal(requests.length, 4);
   console.log("PASS: Payload opt-in and lazy load, origin allowance, explicit selection send, stateless questions and shared undo");
 } finally {
   await application?.close();

@@ -41,14 +41,15 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
+  askPayload?(source: string): void;
   cleanVisible: boolean; toggleClean(): void;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
-  const [selection, select] = useState<StudySelection>(), [draft, setDraft] = useState<string>();
+  const [selection, select] = useState<StudySelection & { payloadSource?: string }>(), [draft, setDraft] = useState<string>();
   const [draftKind, setDraftKind] = useState<"note" | "doubt" | "ink">("note");
   const [study, setStudy] = useState(emptyStudy), [revision, invalidate] = useState(0);
   const [undo, setUndo] = useState<StudyItem>(), [picking, setPicking] = useState<Scrap>(), [peek, setPeek] = useState(false);
@@ -224,8 +225,9 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   const capture = useEffectEvent((surface: HTMLElement, keyboard: boolean, image?: HTMLImageElement) => {
     if (draft !== undefined || picking || busy) return false;
     const current = editor(), next = current && readingSelection(current, surface, image);
-    if (!next) return false;
-    keyboardFocus.current = keyboard; select(next); setError("");
+    const payloadSource = askPayload && !image ? current?.selectionText(true) : undefined;
+    if (!next || (!saved && !payloadSource)) return false;
+    keyboardFocus.current = keyboard; select({ ...next, payloadSource }); setError("");
     return true;
   });
   const clearPointer = useEffectEvent((target: EventTarget | null) => {
@@ -255,7 +257,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     }
   });
   useEffect(() => {
-    if (!saved || !ready) return;
+    if ((!saved && !askPayload) || !ready) return;
     const surface = (node: EventTarget | null) => {
       const parent = node instanceof Element ? node : node instanceof Node ? node.parentElement : null;
       const element = parent?.closest<HTMLElement>(".rich-document,.cm-content");
@@ -274,7 +276,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       const target = surface(event.target) || (keyboard ? surface(window.getSelection()?.focusNode ?? null) : null);
       if (target && (keyboard || event.shiftKey && /^(Arrow|Home|End|Page)/.test(event.key)) && capture(target, keyboard) && keyboard) event.preventDefault();
     };
-    const down = (event: KeyboardEvent) => handleKeys(event);
+    const down = (event: KeyboardEvent) => { if (saved) handleKeys(event); };
     const dismiss = (event: PointerEvent) => clearPointer(event.target);
     const blur = () => setPeek(false);
     const dragOver = (event: DragEvent) => {
@@ -289,10 +291,12 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     const drop = (event: DragEvent) => { if (event.dataTransfer) transfer(event, event.dataTransfer); };
     const paste = (event: ClipboardEvent) => { if (event.clipboardData) transfer(event, event.clipboardData); };
     const dragEnd = () => setDragging(undefined);
-    document.addEventListener("dragover", dragOver, true);
-    document.addEventListener("drop", drop, true);
-    document.addEventListener("paste", paste, true);
-    document.addEventListener("dragend", dragEnd);
+    if (saved) {
+      document.addEventListener("dragover", dragOver, true);
+      document.addEventListener("drop", drop, true);
+      document.addEventListener("paste", paste, true);
+      document.addEventListener("dragend", dragEnd);
+    }
     document.addEventListener("pointerup", point);
     document.addEventListener("pointerdown", dismiss, true);
     document.addEventListener("keyup", up);
@@ -305,7 +309,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       document.removeEventListener("dragover", dragOver, true); document.removeEventListener("drop", drop, true);
       document.removeEventListener("paste", paste, true); document.removeEventListener("dragend", dragEnd);
     };
-  }, [saved, ready]);
+  }, [saved, ready, !!askPayload]);
   useEffect(() => {
     if (!selection || !keyboardFocus.current) return;
     keyboardFocus.current = false;
@@ -572,14 +576,15 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       style={{ left: Math.max(4, Math.min(selection.x, window.innerWidth - 284)), top: Math.max(4, Math.min(selection.y + 6, window.innerHeight - (draft === undefined ? 125 : 148))) }}
       onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); dismiss(true); } }}>
       {draft === undefined ? <>
-        <button type="button" disabled={busy} data-layer-action={!['doubts', 'highlights'].includes(activeSheet ?? '') || undefined} onClick={() => beginDraft("note")}><StickyNote size={15} />{t("Note")}</button>
+        {saved && <><button type="button" disabled={busy} data-layer-action={!['doubts', 'highlights'].includes(activeSheet ?? '') || undefined} onClick={() => beginDraft("note")}><StickyNote size={15} />{t("Note")}</button>
         <button type="button" disabled={busy} data-layer-action={activeSheet === "doubts" || undefined} onClick={() => beginDraft("doubt")}>{t("Doubt")}</button>
         <button type="button" disabled={busy} onClick={() => beginDraft("ink")}>{t("This is wrong")}</button>
         {selection.range && <div className="study-actions" role="group" aria-label={t("高亮")}>
           {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} data-layer-action={activeSheet === "highlights" || undefined} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
         </div>}
         <button type="button" onClick={() => { openCard(selection.target); dismiss(); }}>{t("制作卡片")}</button>
-        {tutorParagraph && <button type="button" onClick={() => askTutor()}><Sparkles size={15} />{t("Ask Tutor")}</button>}
+        {tutorParagraph && <button type="button" onClick={() => askTutor()}><Sparkles size={15} />{t("Ask Tutor")}</button>}</>}
+        {askPayload && selection.payloadSource && <button type="button" onClick={() => { askPayload(selection.payloadSource!); dismiss(); }}><Sparkles size={15} />{t("Payload")}</button>}
       </> : <form onSubmit={event => { event.preventDefault(); void saveNote(); }}>
         <textarea aria-label={t(draftKind === "note" ? "Note" : draftKind === "doubt" ? "Doubt" : "Your correction")} autoFocus value={draft} maxLength={draftKind === "ink" ? 1000 : undefined} onChange={event => setDraft(event.target.value)}
           onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void saveNote(draftKind === "ink" && !!tutor && (event.metaKey || event.ctrlKey)); } }} />

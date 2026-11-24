@@ -129,11 +129,11 @@ export default function App() {
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadSupported = !!window.desktop?.payloadRequest;
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
-  const currentPayload = payload && payload.id === active?.id && payloadEnabled ? payload : null;
-  const activePayload = !readingVisible ? currentPayload : null;
   const learningSaved = readingVisible && !!active.path && !!session.folder &&
     active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"));
   const tutorKey = learningSaved && payloadSupported && activeEditorReady ? `${active.id}:${active.path}:${session.folder}` : null;
+  const payloadAvailable = payloadEnabled && !tutorKey;
+  const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
   const tutorOpen = !!tutorKey && tutor === tutorKey;
   useEffect(() => { if (tutor && tutor !== tutorKey) setTutor(null); }, [tutor, tutorKey]);
   function openTutor() {
@@ -148,11 +148,11 @@ export default function App() {
     else setSidebar(true);
   }
   useEffect(() => {
-    if (payload && !currentPayload) setPayload(null);
-  }, [payload, currentPayload]);
-  function openPayload(mode: "summary" | "question") {
-    if (!active || !payloadEnabled || readingVisible) return;
-    const target = editor(), selected = target?.selectionText(true);
+    if (payload && !activePayload) setPayload(null);
+  }, [payload, activePayload]);
+  function openPayload(mode: "summary" | "question", selection?: string) {
+    if (!active || !payloadAvailable) return;
+    const target = editor(), selected = selection ?? target?.selectionText(true);
     const source = selected || target?.markdown() || active.content;
     setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
   }
@@ -535,7 +535,7 @@ export default function App() {
         context={editor()?.context() || ""}
         learning={readingSupported ? learningEnabled : undefined}
         tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
-        payload={payloadEnabled && !readingVisible ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
+        payload={payloadAvailable ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
@@ -650,6 +650,7 @@ export default function App() {
               tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,
                 configure: () => setDialog("preferences") } : undefined}
               openFiles={openFilesRail} openCard={openFlashcards}
+              askPayload={payloadAvailable ? source => openPayload("question", source) : undefined}
               openSearchHit={async match => {
                 const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === match.document);
                 const record = file && await session.openToken(file.token);
