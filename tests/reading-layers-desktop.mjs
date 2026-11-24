@@ -65,6 +65,13 @@ async function selectFolder(folder) {
 async function capture(name) {
   if (qa) await page.screenshot({ path: path.join(qa, `reading-layers${name ? `-${name}` : ""}.png`) });
 }
+async function expectDiskText(text) {
+  const paragraph = page.locator(".rich-document").getByText(text, { exact: true });
+  const reload = page.getByRole("alert").getByRole("button", { name: "Reload", exact: true });
+  await expect(paragraph.or(reload).first()).toBeVisible();
+  if (await reload.isVisible()) await reload.click();
+  await expect(paragraph).toBeVisible();
+}
 async function selectWords(locator, text) {
   await locator.click();
   const { x, y, end } = await locator.evaluate((element, text) => {
@@ -238,10 +245,12 @@ try {
   await app.close();
   await writeFile(file, original.replace(body, `An inserted paragraph.\r\n\r\n${body.replace("spelling", "speling")}`), "utf8");
   await launch(); await expectRail(true);
+  await expectDiskText(body.replace("spelling", "speling"));
   await expect(page.locator(".layers-note button.layers-reference")).toHaveCount(2);
   await app.close();
   await writeFile(file, "# Reading\r\n\r\n## Section\r\n\r\nNo matching block.\r\n", "utf8");
   await launch(); await expectRail(true);
+  await expectDiskText("No matching block.");
   await expect(page.locator(".layers-orphans")).toContainText("Orphaned notes (2)");
   await expect(page.locator(".layers-orphans")).toContainText("Source selection note");
   assert.deepEqual(errors, []);
