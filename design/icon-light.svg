@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Omarkie</title>
+  <desc id="desc">An editorial margin, two lines of text, and a downward caret.</desc>
+  <path fill="#fffcf0" d="M96 54H928L970 96V928L928 970H96L54 928V96Z" stroke="#cecdc3" stroke-width="16"/>
+  <path fill="#205ea6" d="M232 244H326V780H232ZM435 574L555 687L675 574L740 643L555 817L370 643Z"/>
+  <path fill="#100f0f" d="M405 270H742V360H405ZM405 429H669V519H405Z"/>
+</svg>
