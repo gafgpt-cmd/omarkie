@@ -45,6 +45,10 @@
     transform: none;
     max-width: calc(100% - 500px);
   }
+  .toolbar:has(.menu-bar):has(.reading-layers-toggle) .document-title {
+    right: 190px;
+    max-width: calc(100% - 690px);
+  }
 }
 @media (max-width: 620px) {
   .toolbar:has(.menu-bar) .document-title {

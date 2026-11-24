@@ -23,8 +23,8 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const rail = page.getByRole("complementary", { name: "Reading Layers", exact: true });
-  const cards = page.getByRole("dialog", { name: "Study cards", exact: true });
-  const study = page.getByRole("dialog", { name: "Test me", exact: true });
+  const cards = page.getByRole("complementary", { name: "Study cards", exact: true });
+  const study = page.getByRole("complementary", { name: "Test me", exact: true });
   const reveal = study.getByRole("button", { name: "Show answer", exact: true });
   const closeCards = cards.getByRole("button", { name: "Close Study cards", exact: true });
   const journal = () => readFile(path.join(sidecar, "store.jsonl"), "utf8").then(text => text.trim().split("\n").map(row => JSON.parse(row).entry));
@@ -79,7 +79,7 @@ try {
   await closeCards.click();
   await page.reload();
   await expect(rich.getByRole("heading", { name: "Facts" })).toBeVisible();
-  await openRail();
+  await expect(rail).toBeVisible();
   await openCards();
   await cards.getByRole("button", { name: "Test me", exact: true }).click();
   await expect(study).toContainText("No new or due cards in this vault.");

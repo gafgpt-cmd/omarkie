@@ -56,7 +56,11 @@ for (const [language] of languages) {
     const margin = page.getByRole("complementary", { name: label("页边笔记"), exact: true });
     await expect(margin).toContainText(label("选择文本以添加页边笔记。"));
     await expect(button(margin, "导出笔记和卡片")).toBeVisible();
-    await expect(button(rail, "显示{{layer}}", { layer: label("问答摘要") })).toBeDisabled();
+    const panel = page.getByRole("complementary", { name: label("Payload"), exact: true });
+    await button(rail, "显示{{layer}}", { layer: label("问答摘要") }).click();
+    await expect(panel).toContainText(label("Enable Payload"));
+    await expect(button(panel, "Send question")).toBeDisabled();
+    await button(panel, "Close Payload").click();
     await button(rail, "显示{{layer}}", { layer: label("清理") }).click();
     const clean = page.getByRole("region", { name: label("清理图层预览"), exact: true });
     await button(clean, "查看差异").click();
@@ -64,7 +68,7 @@ for (const [language] of languages) {
     await expect(button(clean, "应用到源文档")).toBeEnabled();
     await button(clean, "返回源文档").click();
     await button(rail, "显示{{layer}}", { layer: label("卡片") }).click();
-    const cards = page.getByRole("dialog", { name: label("学习卡片"), exact: true });
+    const cards = page.getByRole("complementary", { name: label("学习卡片"), exact: true });
     await expect(cards).toContainText(label("本笔记卡片：{{total}} / {{limit}}", { total: 0, limit: 10 }));
     await button(cards, "从高亮和笔记生成卡片").click();
     await expect(cards.getByRole("textbox", { name: label("答案"), exact: true })).toHaveValue("Highlight fixture");
@@ -75,11 +79,13 @@ for (const [language] of languages) {
     await writeFile(path.join(sidecar, "store.jsonl"), JSON.stringify({ v: 1, intent }) + "\n");
     await button(cards, "保存选中卡片").click();
     await expect(cards.getByRole("alert")).toHaveText(pendingNotice[language]);
+    await cards.focus();
     await page.keyboard.press("Escape");
     await button(rail, "显示{{layer}}", { layer: label("卡片") }).click();
     await button(cards, "考考我").click();
-    const review = page.getByRole("dialog", { name: label("考考我"), exact: true });
+    const review = page.getByRole("complementary", { name: label("考考我"), exact: true });
     await expect(review).toContainText(label("资料库没有到期的新卡或复习卡。"));
+    await review.focus();
     await page.keyboard.press("Escape");
     await page.keyboard.press("ControlOrMeta+,");
     const preferences = page.getByRole("dialog");
@@ -90,7 +96,6 @@ for (const [language] of languages) {
     await preferences.getByLabel(label("Enable on-demand grammar checks")).check();
     await expect(preferences.getByLabel(label("LanguageTool check URL"))).toHaveValue("http://127.0.0.1:8081/v2/check");
     await page.keyboard.press("Escape");
-    const panel = page.getByRole("complementary", { name: label("Payload"), exact: true });
     const checkConsent = async notice => {
       await expect(panel.getByText(notice, { exact: true })).toBeVisible();
       await expect(panel.getByText(medicalWarning, { exact: true })).toBeVisible();

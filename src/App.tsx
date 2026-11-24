@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, FolderOpen, X, AlertCircle, Layers } from "lucide-react";
+import { FilePlus2, FolderOpen, X, AlertCircle } from "lucide-react";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -78,8 +78,8 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
-  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
-  const [readingOpen, setReadingOpen] = useState(false);
+  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean; vault?: string | null } | null>(null);
+  const [readingPreference, setReadingPreference] = useState<{ vault: string | null; open: boolean }>();
   const [readingViews, setReadingViews] = useState<Record<string, ReadingLayerState>>({});
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
@@ -100,6 +100,18 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const readingSupported = !!window.desktop?.readingStore;
+  const readingVault = session.folder;
+  const readingKey = readingSupported && readingVault ? `omarkie-reading-layers:${readingVault}` : null;
+  const readingOpen = useMemo(() => readingPreference?.vault === readingVault
+    ? readingPreference.open
+    : !!readingKey && localStorage.getItem(readingKey) === "true", [readingPreference, readingVault, readingKey]);
+  const readingVisible = readingOpen && !!active && !focus;
+  const filesVisible = sidebar && !readingVisible;
+  function setReadingOpen(open: boolean) {
+    if (readingKey) localStorage.setItem(readingKey, String(open));
+    setReadingPreference({ vault: readingVault, open });
+  }
   const cleanVisible = !!active && cleanId === active.id;
   function closeClean() {
     setCleanId(null);
@@ -110,18 +122,21 @@ export default function App() {
     if (active && !editor()?.composing()) setCleanId(active.id);
   }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
-  const payloadEnabled = preferences.payloadEnabled && !!window.desktop?.payloadRequest;
-  const activePayload = payloadEnabled && payload?.id === active?.id ? payload : null;
+  const payloadSupported = !!window.desktop?.payloadRequest;
+  const payloadEnabled = preferences.payloadEnabled && payloadSupported;
+  const currentPayload = payload && payload.id === active?.id &&
+    (payload.vault === undefined ? payloadEnabled : payload.vault === readingVault) ? payload : null;
+  const activePayload = currentPayload && (readingVisible || currentPayload.vault === undefined) ? currentPayload : null;
   useEffect(() => {
-    if (payload && (!payloadEnabled || payload.id !== active?.id)) setPayload(null);
-  }, [payloadEnabled, payload, active?.id]);
-  function openPayload(mode: "summary" | "question", selectedSource?: string) {
-    if (!payloadEnabled || !active) return;
+    if (payload && !currentPayload) setPayload(null);
+  }, [payload, currentPayload]);
+  function openPayload(mode: "summary" | "question", selectedSource?: string, inLayers = false) {
+    if (!active || !(inLayers ? payloadSupported : payloadEnabled)) return;
     const target = editor();
-    const selected = selectedSource ?? target?.selectionText(true);
+    const selected = selectedSource ?? (inLayers ? undefined : target?.selectionText(true));
     if (selectedSource !== undefined && !selectedSource.trim()) return;
     const source = selected || target?.markdown() || active.content;
-    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
+    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected, vault: inLayers ? readingVault : undefined }));
   }
   function appendPayload(summary: string) {
     const target = editor();
@@ -131,7 +146,6 @@ export default function App() {
     if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
   }
   const readingView = readingViews[session.activeId] || defaultReadingLayers;
-  const readingVisible = readingOpen && !!active && !focus;
   const renderedView = readingVisible ? readingView.visual : rendered;
   const suppressRemoteImages = readingVisible || cleanVisible;
   const remoteImages = preferences.remoteImages && !suppressRemoteImages;
@@ -203,7 +217,7 @@ export default function App() {
     return afterDocumentPaint(() => pluginRuntime.current?.documentChanged());
   }, [active?.id, active?.path, active?.content, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !renderedView); }, [renderedView]);
-  useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", sidebar); }, [sidebar]);
+  useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", filesVisible); }, [filesVisible]);
   async function installPlugin(folder = false) { const installed = await host.installPlugin(folder); if (installed) setInstalledPlugins(previous => [...previous.filter(item => item.id !== installed.id), { ...installed, description: t("本地插件，通过兼容接口运行。"), config: {} }]); }
   async function removePlugin(id: string) {
     const definition = pluginDefinitions.find(item => item.id === id); if (!definition || definition.builtin) return;
@@ -213,8 +227,8 @@ export default function App() {
   }
   const settledContent = useSettled(active?.content || "", active?.id);
   const headings = useMemo(
-    () => sidebar && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
-    [settledContent, preferences, sidebar, tab, active?.id],
+    () => filesVisible && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
+    [settledContent, preferences, filesVisible, tab, active?.id],
   );
   const characters = useMemo(
     () => countCharacters(settledContent),
@@ -232,9 +246,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: filesVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": readingVisible };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, renderedView, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, filesVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, filesVisible, renderedView, readingVisible, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -277,6 +291,18 @@ export default function App() {
     if (cleanVisible) closeClean();
     if (flashcardsVisible) closeFlashcards();
     setPayload(null);
+    requestAnimationFrame(() => editor()?.focus());
+  }
+  function toggleReading() {
+    if (!readingSupported || !active || !activeEditorReady || editor()?.composing()) return;
+    if (readingVisible) closeReading();
+    else { setFocus(false); setReadingOpen(true); }
+  }
+  function toggleSidebar() {
+    if (readingVisible) {
+      closeReading();
+      setSidebar(true);
+    } else setSidebar(value => !value);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setPreferences(next); }
@@ -358,8 +384,10 @@ export default function App() {
     else if (action === "close-window") void session.closeWindow();
     else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRenderedView(!renderedView);
-    else if (action === "sidebar") setSidebar((value) => !value);
+    else if (action === "reading-layers") toggleReading();
+    else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
+      if (readingVisible) closeReading();
       setTab(action === "file-tree" ? "tree" : action);
       setSidebar(true);
     } else if (action === "theme")
@@ -472,9 +500,14 @@ export default function App() {
         : active?.path
           ? t("已保存")
           : t("本地草稿");
+  const payloadView = activePayload && <Suspense fallback={null}><PayloadPanel
+    key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
+    followUp={readingVisible} preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
+    configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
+  /></Suspense>;
   return (
     <div
-      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
+      className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload && !readingVisible ? " payload-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -482,11 +515,12 @@ export default function App() {
         edited={!!active && active.content !== active.savedContent}
         rendered={renderedView}
         setRendered={setRenderedView}
-        sidebar={() => setSidebar(!sidebar)}
+        sidebar={toggleSidebar}
         command={(action) => commands.current({ action })}
         autosave={session.autosave}
         disabled={!active}
         context={editor()?.context() || ""}
+        reading={readingSupported && active ? { open: readingVisible, enabled: !!activeEditorReady } : undefined}
         payload={payloadEnabled ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
@@ -589,19 +623,23 @@ export default function App() {
                 />
               </div>
             ) : null)}
-            {cleanVisible && <Suspense fallback={<p role="status">{t("正在清理文本…")}</p>}><CleanLayer
+            {cleanVisible && <Suspense fallback={<p className="layers-clean-loading" role="status">{t("正在清理文本…")}</p>}><CleanLayer
               key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
-            {readingVisible && <Suspense fallback={null}><ReadingLayers
+            {readingVisible && painted && <Suspense fallback={null}><ReadingLayers
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               saved={readingSaved} state={readingView}
               change={value => setReadingViews(current => ({ ...current, [active.id]: value }))}
               actions={{
                 clean: { visible: cleanVisible, open: openClean, close: closeClean },
-                ask: payloadEnabled ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote), close: () => setPayload(null) } : undefined,
+                ask: payloadSupported ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote, true), close: () => setPayload(null) } : undefined,
                 card: readingSaved ? { visible: flashcardsVisible, open: openFlashcards, close: closeFlashcards } : undefined,
               }}
+              payload={payloadView}
+              cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
+                id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}
+              /></Suspense>}
               close={closeReading}
             /></Suspense>}
             <article
@@ -611,11 +649,7 @@ export default function App() {
           </>
         )}
       </main>
-      <Suspense fallback={null}>{activePayload && <PayloadPanel
-        key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
-        preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
-        configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
-      />}</Suspense>
+      {!readingVisible && payloadView}
       <footer className="statusbar">
         <button id="footer-word-count-label" onClick={() => setDialog("statistics")}
           title={t("{{status}} · 第 {{line}} 行，第 {{column}} 列 · Markdown · {{encoding}}", { status, line: cursor.line, column: cursor.column, encoding: encodingNames[active?.encoding || "utf-8"] })}
@@ -623,8 +657,6 @@ export default function App() {
         >
           {countUnit === "characters" ? t("{{count}} 字", { count: selection ? selectionCharacters : characters }) : t("{{count}} 词", { count: selection ? documentStatistics(selection, selection, preferences.readingSpeed).words : wholeStatistics?.words || 0 })}{selection && t("（选中）")}{exporting && t(" · 正在导出…")}
         </button>
-        {window.desktop?.readingStore && active && <button type="button" data-testid="reading-layers-toggle" aria-label={t("阅读图层")} title={t("阅读图层")}
-          aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => readingVisible ? closeReading() : setReadingOpen(true)}><Layers size={15} /></button>}
         {active && <button data-testid="text-encoding" aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
       </footer>
       {focus && (
@@ -640,10 +672,6 @@ export default function App() {
           </button>
         </div>
       )}
-      {flashcardsVisible && active && flashcardPanel && <Suspense fallback={null}><Flashcards
-        id={active.id} content={active.content} panel={flashcardPanel}
-        close={closeFlashcards}
-      /></Suspense>}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
         key={JSON.stringify([tools.id, tools.request, session.folder])} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}

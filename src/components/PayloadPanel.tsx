@@ -10,8 +10,8 @@ import "./payload.css";
 
 const preview = new MarkdownIt({ html: false, breaks: true }).use(mark).disable(["image", "link", "autolink", "reference"]);
 
-export default function PayloadPanel({ mode, source, selection, preferences, editable, append, configure, close }: {
-  mode: "summary" | "question"; source: string; selection: boolean; preferences: Preferences;
+export default function PayloadPanel({ mode, source, selection, followUp, preferences, editable, append, configure, close }: {
+  mode: "summary" | "question"; source: string; selection: boolean; followUp: boolean; preferences: Preferences;
   editable: boolean; append(markdown: string): void; configure(): void; close(): void;
 }) {
   const [summary, setSummary] = useState("");
@@ -25,7 +25,7 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
   useEffect(() => { panel.current?.focus(); }, []);
   const endpoint = payloadEndpoint(preferences.payloadBaseUrl);
   const allowed = endpoint && (endpoint.local || preferences.payloadAllowedOrigins.includes(endpoint.origin));
-  const configured = allowed && !!preferences.payloadModel.trim();
+  const configured = preferences.payloadEnabled && allowed && !!preferences.payloadModel.trim();
   const validSource = useMemo(() => source.length <= payloadInputBytes && !!source.trim() && new TextEncoder().encode(source).length <= payloadInputBytes, [source]);
   const summaryHtml = useMemo(() => summary ? preview.render(summary) : "", [summary]);
 
@@ -56,7 +56,7 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
       {configured && endpoint ? <div className="payload-notice" id="payload-send-notice">
         <p>{selection ? t("Sends the selected text to {{origin}}.", { origin: endpoint.origin }) : t("Sends this note’s text to {{origin}}.", { origin: endpoint.origin })}</p>
         <p>{t("Do not send identifiable medical data. Even a local server can forward requests.")}</p>
-      </div> : <p>{t("Configure and allow the Payload endpoint in Preferences.")} <button type="button" onClick={configure}>{t("偏好设置")}</button></p>}
+      </div> : <p>{t(preferences.payloadEnabled ? "Configure and allow the Payload endpoint in Preferences." : "Enable Payload")} <button type="button" onClick={configure}>{t("偏好设置")}</button></p>}
       {!validSource && <p className="form-error">{t("Select non-empty text up to 24 KB to use Payload.")}</p>}
       {mode === "summary" && !summary && <button type="button" className="primary-button" aria-describedby="payload-send-notice" disabled={!configured || !validSource || busy} onClick={() => void send(false)}>{t("Send text for summary")}</button>}
       {summary && <section aria-label={t("Payload summary")}>
@@ -66,7 +66,7 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
           catch (err) { setError((err as Error).message); }
         }}>{inserted ? t("Callout inserted") : t("Append as callout")}</button>
       </section>}
-      {(mode === "question" || summary) && <form aria-describedby="payload-send-notice" onSubmit={event => { event.preventDefault(); void send(true); }}>
+      {(followUp || mode === "question" || summary) && <form aria-describedby="payload-send-notice" onSubmit={event => { event.preventDefault(); void send(true); }}>
         <label className="workspace-field">{t("Ask one question about this text")}<input type="text" autoComplete="off" maxLength={payloadQuestionLength} value={question} onChange={event => setQuestion(event.target.value)} disabled={busy} /></label>
         <button className="primary-button" disabled={!configured || !validSource || busy || !question.trim()}>{t("Send question")}</button>
       </form>}

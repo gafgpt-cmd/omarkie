@@ -112,6 +112,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var focusMode = false
   var typewriterMode = false
   var sidebarVisible = true
+  var readingLayersVisible = false
   var tabGroupID: String?
   var rendererReady = false
   var pendingCommands = [[String: Any]]()
@@ -885,6 +886,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       return nil
     case "viewState":
       focusMode = try arg(args, 0, Bool.self); typewriterMode = try arg(args, 1, Bool.self); sidebarVisible = try arg(args, 2, Bool.self)
+      readingLayersVisible = (args.dropFirst(3).first as? [String: Bool])?["reading-layers"] == true
       return nil
     case "setDirty":
       window.isDocumentEdited = try arg(args, 0, Bool.self)
@@ -951,7 +953,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if key.hasPrefix("F"), let number = Int(key.dropFirst()), (1...20).contains(number) { key = String(UnicodeScalar(0xF703 + number)!) }
         if key == "Backspace" { key = "\u{8}" }
         let item = NSMenuItem(
-          title: ["clean-converted", "collect-reading"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
+          title: ["clean-converted", "collect-reading", "reading-layers"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
           action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
         if command.selector == nil { item.target = owner }
         item.representedObject = command.action
@@ -1182,6 +1184,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     if action == "focus" { item.state = current?.focusMode == true ? .on : .off }
     if action == "typewriter" { item.state = current?.typewriterMode == true ? .on : .off }
     if action == "sidebar" { item.state = current?.sidebarVisible == true ? .on : .off }
+    if action == "reading-layers" { item.state = current?.readingLayersVisible == true ? .on : .off }
     if let definition = commandGroups.flatMap({ $0.items }).first(where: { $0.action == action }), let context = definition.context {
       if current?.store.records.isEmpty != false { return false }
       if context == "rich" { return current?.richMode == true }

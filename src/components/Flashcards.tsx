@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { cardsPerNote, dueCards, sourceDraft, suggestCards, type CardDraft, type StoredCard } from "../flashcards";
 import type { RecallRating } from "../flashcard-schedule";
 import type { ReadingEntry, ReadingStore, ReadingTarget } from "../../shared/reading-store.ts";
 import { collectReadingItems } from "../../shared/reading-collector.ts";
 import { host } from "../host";
 import { t } from "../i18n";
-import { Dialog } from "./Dialog";
 import "./flashcards.css";
 
 export interface FlashcardPanel {
@@ -31,6 +31,7 @@ export default function Flashcards({ id, content, panel, close }: {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const locked = useRef(false), action = useRef<HTMLButtonElement>(null);
+  const region = useRef<HTMLElement>(null);
   const selected = drafts?.filter(draft => draft.selected) || [];
   const cards = entries?.filter(entry => entry.type === "card") ?? [];
   const card = session?.queue[0];
@@ -47,6 +48,8 @@ export default function Flashcards({ id, content, panel, close }: {
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
   }, [id, panel, store]);
+
+  useEffect(() => { region.current?.focus(); }, []);
 
   useEffect(() => { if (!busy) action.current?.focus(); }, [busy, card?.id, session?.revealed]);
 
@@ -90,7 +93,10 @@ export default function Flashcards({ id, content, panel, close }: {
   }
 
   const grades = [t("完全想不起来"), t("错误，看到答案才想起"), t("错误，但答案熟悉"), t("正确，但很费力"), t("正确，略有迟疑"), t("完全正确")];
-  return <Dialog title={session ? t("考考我") : t("学习卡片")} close={() => { if (!locked.current) close(); }}>
+  const title = session ? t("考考我") : t("学习卡片");
+  return <aside className="layers-cards" aria-label={title} ref={region} tabIndex={-1}
+    onKeyDown={event => { if (event.key === "Escape" && !locked.current) { event.stopPropagation(); close(); } }}>
+    <header><h2>{title}</h2><button type="button" disabled={busy} aria-label={t("关闭{{title}}", { title })} onClick={close}><X size={16} /></button></header>
     <div className="flashcards" aria-busy={loading || busy}>
       {loading && <p role="status">{t("正在读取卡片…")}</p>}
       {error && <p role="alert">{error}</p>}
@@ -139,5 +145,5 @@ export default function Flashcards({ id, content, panel, close }: {
         </div>
       </>}
     </div>
-  </Dialog>;
+  </aside>;
 }

@@ -102,6 +102,24 @@ svg {
   color: #aaa;
   font-weight: 400;
 }
+.reading-layers-toggle {
+  position: absolute;
+  inset: 2px 12px 2px auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--sidebar);
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.reading-layers-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--selected);
+}
 .icon-button {
   width: 28px;
   height: 28px;

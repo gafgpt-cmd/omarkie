@@ -13,9 +13,10 @@ import {
   Italic,
   Code2,
   Sparkles,
+  Layers,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { commandGroups, commandKey, shortcutLabel } from "../commands";
+import { commandGroups, commandKey, commandsByAction, shortcutLabel } from "../commands";
 import { MenuBar } from "./MenuBar";
 import { version } from "../../package.json";
 import { t } from "../i18n";
@@ -30,6 +31,7 @@ interface Props {
   disabled: boolean;
   context: string;
   checked?: Record<string, boolean>;
+  reading?: { open: boolean; enabled: boolean };
   payload?: { open: boolean; show(): void };
 }
 export function Toolbar(props: Props) {
@@ -70,6 +72,11 @@ export function Toolbar(props: Props) {
           {props.name || "Omarkie"}
           {props.edited && <span className="title-edited"> — {t("已编辑")}</span>}
         </span>
+        {props.reading && <button type="button" className="reading-layers-toggle" data-testid="reading-layers-toggle"
+          title={`${t("阅读图层")} (${shortcutLabel(commandKey(commandsByAction.get("reading-layers")!))})`}
+          aria-pressed={props.reading.open} disabled={!props.reading.enabled} onClick={() => props.command("reading-layers")}>
+          <Layers size={15} />{t("阅读图层")}
+        </button>}
       </header>
       <div className="quick-actions" aria-label={t("编辑操作")}>
         <button
@@ -141,7 +148,7 @@ export function Toolbar(props: Props) {
                 </button>)}
               </section>}
               {commandGroups.filter(group => ["段落", "表格", "格式", "显示", "编辑", "文件"].includes(group.title)).map(group => {
-                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction));
+                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction) && (item.action !== "reading-layers" || props.reading));
                 return <section className="command-group" key={group.title}><div className="menu-divider" /><p>{t(group.title)}</p>{extra.map(item => <button key={item.action} role={item.action in (props.checked || {}) ? "menuitemcheckbox" : "menuitem"} aria-checked={props.checked?.[item.action]} aria-label={t(item.label)} disabled={
                   !!item.context && (props.disabled || (["rich", "table"].includes(item.context) && !props.rendered) || (item.context === "table" && props.context !== "table_open"))
                 } onClick={() => { setOpen(false); props.command(item.action); }}><span className="menu-check">{props.checked?.[item.action] && <Check size={16} />}</span><span>{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}</section>;

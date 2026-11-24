@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState } from "react";
-import { Eye, EyeOff, Layers, LockKeyhole, PencilLine, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { Eye, EyeOff, Layers, LockKeyhole, PencilLine, X, StickyNote, Sparkles, Layers2 } from "lucide-react";
 import type { ReadingTarget } from "../../shared/reading-store.ts";
 import type { EditorHandle } from "../editor/MarkdownEditor";
 import { host } from "../host";
@@ -22,11 +22,13 @@ export interface ReadingLayerActions {
 }
 interface Selection { target: ReadingTarget; x: number; y: number }
 
-export default function ReadingLayers({ id, content, saved, state, change, editor, actions = {}, close }: {
+export default function ReadingLayers({ id, content, saved, state, change, editor, actions = {}, payload, cards, close }: {
   id: string; content: string; saved: boolean; state: ReadingLayerState;
   change(state: ReadingLayerState): void;
   editor(): EditorHandle | undefined;
   actions?: ReadingLayerActions;
+  payload: ReactNode;
+  cards: ReactNode;
   close(): void;
 }) {
   const [store] = useState(() => host.readingStore!);
@@ -128,19 +130,26 @@ export default function ReadingLayers({ id, content, saved, state, change, edito
         {rows.map(({ layer, code, label, available }) => {
           const on = visible(layer), active = state.active === layer, eyeLabel = on ? t("隐藏{{layer}}", { layer: label }) : t("显示{{layer}}", { layer: label });
           return <li key={layer} data-layer={code} data-active={active || undefined}>
-            <button type="button" disabled={!available} onClick={() => setVisible(layer, !on)} aria-label={eyeLabel} title={eyeLabel} aria-pressed={on}>{on ? <Eye size={17} /> : <EyeOff size={17} />}</button>
+            <button type="button" className="layers-eye" disabled={!available} onClick={() => setVisible(layer, !on)} aria-label={eyeLabel} title={eyeLabel} aria-pressed={on}>{on ? <Eye size={16} /> : <EyeOff size={16} />}</button>
             <button type="button" className="layers-row" aria-pressed={active} disabled={!available} onClick={() => activate(layer)}>
               <small>{code}</small><span>{label}</span>{active && <PencilLine size={14} aria-label={t("当前图层")} />}
             </button>
           </li>;
         })}
-        <li className="layers-canvas" data-layer="L0"><LockKeyhole size={16} /><small>L0</small><span>{t("源文档")}</span></li>
+        <li className="layers-canvas" data-layer="L0">
+          <span className="layers-eye"><Eye size={16} aria-hidden="true" /></span>
+          <span className="layers-row"><small>L0</small><span>{t("源文档")}</span><LockKeyhole size={14} /></span>
+        </li>
       </ul>
       <p>{t("眼睛切换显示，铅笔标记当前图层。")}</p>
     </aside>
-    {state.note && <Suspense fallback={<aside className="layers-margin" role="status">{t("正在读取页边笔记…")}</aside>}>
-      <MarginNotes id={id} content={content} revision={revision} enabled={saved} store={store} editor={editor} />
-    </Suspense>}
+    <div className="layers-right">
+      {payload}
+      {state.note && <Suspense fallback={<section className="layers-margin" role="status">{t("正在读取页边笔记…")}</section>}>
+        <MarginNotes id={id} content={content} revision={revision} enabled={saved} store={store} editor={editor} />
+      </Suspense>}
+      {cards}
+    </div>
     {selection && <div className="layers-selection" role="dialog" aria-label={t("选区操作")} ref={popover}
       style={{ left: `clamp(8px, ${selection.x}px, 100vw - min(18rem, 96vw) - 8px)`, top: `clamp(36px, ${selection.y + 8}px, calc(100dvh - ${draft ? 192 : 154}px))` }}
       onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); dismiss(true); } }}>
@@ -148,9 +157,9 @@ export default function ReadingLayers({ id, content, saved, state, change, edito
         <label>{t("给自己写笔记")}<textarea autoFocus value={draft.body} maxLength={65536} disabled={saving} onChange={event => setDraft({ ...draft, body: event.target.value })} /></label>
         <div><button type="button" disabled={saving} onClick={() => dismiss(true)}>{t("取消")}</button><button type="submit" disabled={saving || !draft.body.trim()}>{t("固定笔记")}</button></div>
       </form> : <>
-        <button type="button" disabled={!saved} data-layer-active={state.active === "note" || undefined} onClick={() => choose("note")}>{t("给自己写笔记")}</button>
-        <button type="button" disabled={!actions.ask} data-layer-active={state.active === "ask" || undefined} onClick={() => choose("ask")}>{t("询问选中内容")}</button>
-        <button type="button" disabled={!actions.card} data-layer-active={state.active === "card" || undefined} onClick={() => choose("card")}>{t("制作卡片")}</button>
+        <button type="button" disabled={!saved} data-layer-active={state.active === "note" || undefined} onClick={() => choose("note")}><StickyNote size={15} />{t("给自己写笔记")}</button>
+        <button type="button" disabled={!actions.ask} data-layer-active={state.active === "ask" || undefined} onClick={() => choose("ask")}><Sparkles size={15} />{t("询问选中内容")}</button>
+        <button type="button" disabled={!actions.card} data-layer-active={state.active === "card" || undefined} onClick={() => choose("card")}><Layers2 size={15} />{t("制作卡片")}</button>
       </>}
       {error && <p role="alert">{error}</p>}
     </div>}

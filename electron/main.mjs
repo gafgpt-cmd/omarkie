@@ -53,6 +53,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 let languageChoice = "auto", language = "zh", buildMenu = () => {}, remoteImages = false;
 let viewChecked = {};
+const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers"];
 let menuDefinitions = [], viewDisabled = true, viewContext = "";
 const commandEnabled = item => !item.context || !viewDisabled && (!["rich", "table"].includes(item.context) || !viewChecked.source) && (item.context !== "table" || viewContext === "table_open");
 function applyLanguage(choice) {
@@ -139,7 +140,7 @@ const handlers = {
     viewChecked = checked || {};
     viewDisabled = disabled === true;
     viewContext = context;
-    for (const action of ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"]) {
+    for (const action of checkedActions) {
       const item = Menu.getApplicationMenu()?.getMenuItemById(action);
       if (item) item.checked = checked?.[action] === true;
     }
@@ -644,7 +645,7 @@ app
     const accelerator = key => key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
     buildMenu = () => Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: "Omarkie", submenu: [{ label: t("关于 Omarkie"), click: command("about") }, { label: t("偏好设置…"), accelerator: "CommandOrControl+,", click: command("preferences") }, ...(process.platform === "darwin" ? [{ type: "separator" }, { role: "hide", label: t("隐藏 Omarkie") }, { role: "hideOthers", label: t("隐藏其他应用") }] : []), { type: "separator" }, { label: t("退出 Omarkie"), accelerator: "CommandOrControl+Q", click: command("quit") }] },
-      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"].includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
+      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(checkedActions.includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
       { role: "windowMenu", label: t("窗口") }
     ]));
     buildMenu();

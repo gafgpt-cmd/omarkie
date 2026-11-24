@@ -42,8 +42,10 @@
 
 ## Reading Layers
 
-- Open a vault folder and a saved Markdown file in either desktop app. Open **Reading Layers** in the status bar.
-- Eyes show or hide layers per document. The pencil marks the active layer. L0 is locked; close the rail to edit the source.
+- Open a vault and a saved Markdown file. Toggle **Reading Layers** in the toolbar or **Display**, or press `Ctrl+Shift+Y` (`⌘⇧Y` on macOS). The choice is remembered per vault.
+- Left: eyes show or hide layers per document. The pencil marks the active layer; L0 Source stays locked at the bottom.
+- Center: read the document. Close Reading Layers to edit.
+- Right: open **Ask / Summary**, **Margin notes**, or **Cards** using the eyes on the left.
 - Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
 - Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
 - **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
