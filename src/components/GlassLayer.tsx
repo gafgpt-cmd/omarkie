@@ -14,8 +14,6 @@ export default function GlassLayer({ editor, scroller }: { editor(): EditorHandl
   const measure = useEffectEvent(() => {
     const surface = layer.current;
     if (!surface) return;
-    surface.style.width = `${Math.max(scroller.clientWidth, scroller.scrollWidth)}px`;
-    surface.style.height = `${Math.max(scroller.clientHeight, scroller.scrollHeight)}px`;
     const document = scroller.querySelector<HTMLElement>(".rich-document");
     const blocks = document ? liveBlocks(editor()?.readingContext(), document) : [];
     const next: Box[] = [];

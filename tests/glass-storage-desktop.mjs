@@ -68,6 +68,7 @@ try {
   const cold = await axi("glass", "status");
   assert.equal(cold.initialized, false);
   assert.equal(cold.mode, null);
+  assert.equal((await axi("glass", "--on")).glass, "on");
   const added = await axi("glass", "add", "--note", doc, "--text", "debug magnet", "--kind", "debug", "--magnet", "m-debug");
   assert.equal(added.note, doc);
   assert.match(added.journal, /^glass\/map ~[a-z0-9]{6}\.jsonl$/);
@@ -103,6 +104,9 @@ try {
   const persisted = await axi("glass", "show", "--note", doc, "--magnet", "m-debug");
   assert.equal(persisted.magnet.fields.text, "debug magnet");
   assert.equal((await axi("glass", "list", "--note", doc)).magnets.length, 1);
+  assert.equal((await axi("glass")).glass, "on");
+  assert.equal((await axi("glass", "--off")).glass, "off");
+  assert.equal((await axi("glass", "show", "--note", doc, "--magnet", "m-debug")).magnet.fields.text, "debug magnet");
   assert.equal(await readFile(file, "utf8"), source);
 } finally { await reopened.app.close(); }
 

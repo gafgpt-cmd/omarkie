@@ -57,13 +57,20 @@ try {
       return Math.abs(box.y - block.y) > 2 || Math.abs(box.x - block.x) > 2 || Math.abs(box.width - block.width) > 2 ? JSON.stringify([box, block]) : "pinned";
     }).toBe("pinned");
   }
+  async function noExtraScrollbars() {
+    await expect.poll(() => rich.evaluate(page => {
+      const scroller = page.parentElement;
+      return [scroller.scrollWidth - scroller.clientWidth, scroller.scrollHeight - scroller.clientHeight];
+    }), { message: "Short document still fits with Glass on after resizing" }).toEqual([0, 0]);
+  }
   async function capture(name) {
     if (qa) await page.screenshot({ path: path.join(qa, `glass-${name}.png`) });
   }
-  async function setDisplay(label, on) {
+  async function setDisplay(label, on, screenshot) {
     await key("Display").click();
     const item = page.getByRole("menuitemcheckbox", { name: label, exact: true });
     const checked = (await item.getAttribute("aria-checked")) === "true";
+    if (screenshot) await capture(screenshot);
     await item.click();
     assert.equal(checked, !on, `${label} started ${checked ? "on" : "off"}`);
   }
@@ -72,8 +79,8 @@ try {
     const button = key("Learning mode");
     if ((await button.getAttribute("aria-pressed")) !== String(on)) await button.click();
   }
-  async function glassMenu(on) {
-    if (process.platform === "linux") return setDisplay("Glass overlay", on);
+  async function glassMenu(on, screenshot) {
+    if (process.platform === "linux") return setDisplay("Glass overlay", on, screenshot);
     if (((await glass.count()) > 0) !== on) await pressG();
   }
   async function pressG() {
@@ -99,7 +106,7 @@ try {
   await expect(rich).toHaveAttribute("contenteditable", "false");
   await expect(glass).toHaveCount(0);
   assert.equal((await axi("glass", "--vault", vault)).glass, "off");
-  await glassMenu(true);
+  await glassMenu(true, "light-1440-menu");
   await expect(glass).toHaveAttribute("data-glass", "on");
   await pinnedTo(first);
   await capture("light-1440-on");
@@ -112,8 +119,9 @@ try {
   await expect(debug).toBeVisible();
   await resize(720);
   await pinnedTo(first);
+  await noExtraScrollbars();
   await capture("light-720-on");
-  await pressG();
+  await glassMenu(false, "light-720-menu");
   await expect(glass).toHaveCount(0);
   await capture("light-720-off");
   await pressG();
@@ -165,15 +173,17 @@ try {
   await expect(glass).toHaveAttribute("data-glass", "on");
   await pinnedTo(first);
   await capture("dark-1440-on");
-  await pressG();
+  await glassMenu(false, "dark-1440-menu");
   await expect(glass).toHaveCount(0);
   await capture("dark-1440-off");
   await pressG();
   await expect(glass).toHaveCount(1);
   await resize(720);
   await pinnedTo(first);
+  await noExtraScrollbars();
   await capture("dark-720-on");
-  await pressG();
+  await glassMenu(false, "dark-720-menu");
+  await expect(glass).toHaveCount(0);
   await capture("dark-720-off");
   await resize(1440);
   const markdown = await readFile(file, "utf8");
