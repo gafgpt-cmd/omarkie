@@ -8,14 +8,14 @@ import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArg
 
 const data=await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-"));
 const qa=process.env.OMARKIE_QA_DIR || path.join(data,"evidence"); await mkdir(qa,{recursive:true});
-const file=path.join(data,"中文输入验收.md"), profile=path.join(data,"profile"); await mkdir(profile);
+const file=path.join(data,"中文输入验收.md"), repeatFile=path.join(data,'重复中文选区.md'), profile=path.join(data,"profile"); await mkdir(profile);
 const original='# IME acceptance\n\n输入区：end\n\n- 列表：end\n\n| A | B |\n| --- | --- |\n| 单元格：end | value |\n\n```text\n代码：end\n```\n';
 await writeFile(file,original);
 const pluginFile=path.join(data,"IME-probe.js");
 await writeFile(pluginFile,`class Probe extends BasePlugin {
   process() {
-    window.imeProbe={loads:0,edits:0};
-    this.utils.eventHub.on('fileContentLoaded',()=>window.imeProbe.loads++);
+    window.imeProbe={loads:[],edits:0};
+    this.utils.eventHub.on('fileContentLoaded',path=>window.imeProbe.loads.push(path));
     this.utils.eventHub.on('fileEdited',()=>window.imeProbe.edits++);
     this.utils.entities.eWrite.addEventListener('compositionstart',()=>setTimeout(()=>{
       this.utils.insertText('UNWANTED'); this.utils.editCurrentFile(text=>'UNWANTED'+text);
@@ -38,6 +38,7 @@ try {
   await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name:'打开文件',exact:true}).click();
   const surface=page.locator('.document-editor:not([hidden])'), root=surface.locator('.rich-document');
   await expect(root.getByRole('heading',{name:'IME acceptance',exact:true})).toBeVisible();
+  const fixtureLoads=()=>page.evaluate(files=>window.imeProbe.loads.filter(path=>files.includes(path)),[file,repeatFile]);
   console.log('IME: fixture and installed probe loaded');
   const cdp=await page.context().newCDPSession(page);
   await page.evaluate(()=>{window.imeEvents=[]; for(const type of ['compositionstart','compositionend','beforeinput','input']) document.addEventListener(type,event=>window.imeEvents.push({type,data:event.data,inputType:event.inputType,source:!!event.target.closest('.source-surface')}),true);});
@@ -88,9 +89,9 @@ try {
   await page.keyboard.press(`${mod}+Shift+z`); await saved('redo'+original); await page.keyboard.press(`${mod}+z`); await saved(original);
   checks.push('Cancelling source composition preserves the existing redo stack');
   await expect.poll(()=>page.evaluate(()=>window.imeProbe.edits)).toBeGreaterThan(0);
-  assert.equal(await page.evaluate(()=>window.imeProbe.loads),1);
+  await expect.poll(fixtureLoads).toEqual([file]);
   await page.getByRole('button',{name:'即时渲染',exact:true}).click();
-  const repeatFile=path.join(data,'重复中文选区.md'),prefix='# Replacement\n\n',repeatSource=prefix+'同\n\n同\n';await writeFile(repeatFile,repeatSource);
+  const prefix='# Replacement\n\n',repeatSource=prefix+'同\n\n同\n';await writeFile(repeatFile,repeatSource);
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},repeatFile);
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'打开文件',exact:true}).click();
   await expect(root.getByRole('heading',{name:'Replacement',exact:true})).toBeVisible();
@@ -100,6 +101,7 @@ try {
     await cdp.send('Input.insertText',{text:candidate});await expect.poll(()=>readFile(repeatFile,'utf8')).toBe(prefix+candidate+'\n');
     await page.keyboard.press(`${mod}+z`);await expect.poll(()=>readFile(repeatFile,'utf8')).toBe(repeatSource);
   }
+  await expect.poll(fixtureLoads).toEqual([file,repeatFile]);
   checks.push('Repeated Chinese and emoji replace the selected paragraphs, preserve the surrounding Markdown and undo once');
   assert.deepEqual(errors,[]); assert.equal(await page.locator('vite-error-overlay').count(),0);
   await page.screenshot({path:path.join(qa,'ime-and-plugins.png')});
