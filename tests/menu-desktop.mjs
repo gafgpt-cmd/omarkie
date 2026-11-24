@@ -808,7 +808,9 @@ try {
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
     const toggle = card.getByRole("checkbox"); await toggle.check();
-    await expect(card.getByRole("button", { name: t("插件命令…"), exact: true })).toBeEnabled();
+    const commands = card.getByRole("button", { name: t("插件命令…"), exact: true });
+    if (name === t("Learning mode")) await expect(commands).toHaveCount(0);
+    else await expect(commands).toBeEnabled();
     await expect(card.locator(".plugin-toggle")).toContainText(t("已启用"));
     await expect(card.getByRole("alert")).toHaveCount(0);
     if (name === t("只读模式")) await expect(rich()).toHaveAttribute("contenteditable", "false");
@@ -825,13 +827,13 @@ try {
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async (_window, options) => { globalThis.auditPluginDialogOptions = options; return { canceled: false, filePaths: [file] }; }; }, plugin);
   await install.click({ force: true });
   assert.deepEqual(await application.evaluate(() => globalThis.auditPluginDialogOptions.properties), ["openFile"]);
-  await expect(page.locator(".plugin-card")).toHaveCount(16);
+  await expect(page.locator(".plugin-card")).toHaveCount(17);
   const installed = page.locator(".plugin-card").last();
   await installed.getByRole("checkbox").check();
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
   await installed.getByRole("checkbox").uncheck();
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
-  await expect(page.locator(".plugin-card")).toHaveCount(15);
+  await expect(page.locator(".plugin-card")).toHaveCount(16);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toHaveCount(0);
   pass("Install and remove local plugin", "Trust gate, installed stylesheet and removal work");

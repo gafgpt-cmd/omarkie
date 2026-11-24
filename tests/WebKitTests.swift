@@ -221,10 +221,10 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Interrupted move assigned the card to the replacement.")
     }
     let study = try await reading.perform(moved, ["action": "study", "blocks": [] as [[String: Any]]]) as? [String: Any]
-    let entries = study?["entries"] as? [[String: Any]]
+    let studyEntries = study?["entries"] as? [[String: Any]]
     let locations = study?["locations"] as? [[String: Any]]
-    guard entries?.first?["type"] as? String == "sheet", entries?.last?["type"] as? String == "scrap",
-          entries?.last?["document"] as? String == "b.md", entries?.last?["body"] as? String == "A margin note",
+    guard studyEntries?.first?["type"] as? String == "sheet", studyEntries?.last?["type"] as? String == "scrap",
+          studyEntries?.last?["document"] as? String == "b.md", studyEntries?.last?["body"] as? String == "A margin note",
           locations?.first?["line"] is NSNull else {
       throw NativeFailure("Moved legacy note did not survive in the loose scraps tray.")
     }
