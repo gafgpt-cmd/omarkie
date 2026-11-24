@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -41,7 +42,9 @@ jobs:
           OMARKIE_REQUIRE_CONVERTERS: "1"
 
   macos-native:
-    if: github.event_name == 'pull_request'
+    # Fleet CI is Ubicloud Linux; the macOS runner is GitHub-hosted and runs
+    # only on manual dispatch.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 15
     steps:
