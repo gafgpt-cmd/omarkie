@@ -98,6 +98,14 @@ try {
   const undone = await window.desktop.fileOperation({ action: "undo" });
   const restoredEntries = await store({ action: "list" });
   check(undone.ok && restoredEntries.ok && restoredEntries.value.length === 3 && restoredEntries.value.every(item => item.document === "WebKit-fixture.md"), "native rename undo restores the reading paths");
+  const imageFixture = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVrcAAAAASUVORK5CYII=";
+  const imageScrap = await store({ action: "putImage", id: "native-image", name: "Fixture.png", bytes: imageFixture, anchor: { ...block, quote: "anchored sentence" }, side: "right", width: 240 });
+  const blob = imageScrap.ok && await store({ action: "readImage", hash: imageScrap.value.image.hash });
+  const placed = await store({ action: "study", blocks: [block] });
+  check(imageScrap.ok && imageScrap.value.image.hash === "a26e305a89e03b50f1d7b93f50b3cada4771395e3fe106a9b68c878b12e62dc6" &&
+    blob.ok && blob.value === `data:image/png;base64,${imageFixture}` &&
+    placed.ok && placed.value.locations.some(({ id, line }) => id === "native-image" && line === block.line),
+    "native image scrap keeps the blob separate and resolves its paragraph");
   const payload = { baseUrl: payloadBaseURL, confirmedOrigin: new URL(payloadBaseURL).origin, model: "native-fixture", source: "Synthetic source paragraph." };
   const rejected = await window.desktop.payloadRequest({ ...payload, confirmedOrigin: "https://example.invalid" });
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");

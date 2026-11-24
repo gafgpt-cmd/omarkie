@@ -31,6 +31,24 @@ async function fixture(t) {
   return { store, source, other, external, sidecar, log: path.join(sidecar, "store.jsonl"), index: path.join(sidecar, "index.json"), outside };
 }
 
+test("image scraps keep binary data outside the journal and reject unsafe blob reads", async t => {
+  const { source, external, store, sidecar, log } = await fixture(t);
+  const image = { action: "putImage", id: "clip", name: "Clip", anchor: { ...block(), quote: "distinct words" }, side: "left", width: 180,
+    bytes: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVrcAAAAASUVORK5CYII=" };
+  const send = request => readingStore(store, source.id, request);
+  await assert.rejects(() => send({ ...image, bytes: Buffer.from("<svg>not a raster image</svg>").toString("base64") }));
+  await assert.rejects(() => stat(sidecar), { code: "ENOENT" });
+  const row = await send(image), hash = digest(Buffer.from(image.bytes, "base64"));
+  const request = { action: "readImage", hash };
+  assert.equal(row.image.hash, hash);
+  assert.equal(await send(request), `data:image/png;base64,${image.bytes}`);
+  assert.ok(!(await readFile(log, "utf8")).includes(image.bytes));
+  await assert.rejects(() => send({ ...request, hash: "../store.jsonl" }));
+  await assert.rejects(() => readingStore(store, external.id, request));
+  await writeFile(path.join(sidecar, "scraps", hash), Buffer.from(image.bytes, "base64").fill(1, 14, 20));
+  await assert.rejects(() => send(request));
+});
+
 test("rename, folder move and undo transfer reading history without sharing it with replacements", async t => {
   const { source, store } = await fixture(t);
   const workspace = new Workspace(store.folder);

@@ -498,10 +498,19 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     case "payloadRequest":
       return try await owner.payload.request(arg(args, 0, [String: Any].self))
     case "readingStore":
-      let id = try arg(args, 0, String.self), request = try arg(args, 1, [String: Any].self)
+      let id = try arg(args, 0, String.self)
+      let request = try arg(args, 1, [String: Any].self)
       let scope = try NativeReadingStore.scope(store, id)
       let folder = store.folder
-      let result = try await owner.readingStore.perform(scope, request) { [weak self] in
+      var remoteImage: Data?
+      if request["action"] as? String == "putImage", let address = request["address"] {
+        guard request["bytes"] == nil, let raw = address as? String, raw.utf8.count <= 8192,
+              let parts = URLComponents(string: raw), parts.scheme?.lowercased() == "https",
+              parts.user == nil, parts.password == nil, let host = parts.host, !host.isEmpty,
+              let url = parts.url else { throw NativeFailure("图片路径不可用。") }
+        remoteImage = try await NativeEndpoint.response(URLRequest(url: url), timeout: 20, limit: DocumentStore.maxBytes)
+      }
+      let result = try await owner.readingStore.perform(scope, request, remoteImage: remoteImage) { [weak self] in
         DispatchQueue.main.sync {
           guard let self, self.store.folder == folder else { return false }
           return (try? self.store.require(id).path) == scope.file.path

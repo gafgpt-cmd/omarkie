@@ -11,8 +11,8 @@ export function imageName(source) {
   try { return path.basename(decodeURIComponent(new URL(source).pathname)) || "image.png"; }
   catch { return path.basename(decodeURIComponent(source)) || "image.png"; }
 }
-export async function downloadImage(source) {
-  const response = await fetch(source, {signal: AbortSignal.timeout(20000)});
+export async function downloadImage(source, options) {
+  const response = await fetch(source, { signal: AbortSignal.timeout(20000), ...options });
   const extension = imageTypes[response.headers.get("content-type")?.split(";")[0]];
   if (!response.ok || !extension || Number(response.headers.get("content-length")) > maximum) throw new Error(t("远程图片读取失败或超过 20 MB。"));
   const parts = []; let size = 0;

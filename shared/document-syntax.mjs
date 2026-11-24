@@ -4,13 +4,15 @@ export function imageAttributes(source) {
   const match = /^\{([^{}\n]*)\}/.exec(source);
   if (!match) return null;
   const entries = [], dimensions = {};
+  let float;
   for (const attribute of match[1].matchAll(/(?:^|\s)([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/gd)) {
     const name = attribute[1].toLowerCase(), value = attribute[2] ?? attribute[3] ?? attribute[4];
+    if (name === "float" && /^(left|right)$/.test(value)) { float = value; continue; }
     if (!['width', 'height'].includes(name) || !/^\d+(?:\.\d+)?(?:px|%)?$/.test(value)) continue;
     const [from, to] = attribute.indices[2] || attribute.indices[3] || attribute.indices[4];
     entries.push({ name, value, from: from + 1, to: to + 1 }); dimensions[name] = value.replace(/px$/, '');
   }
-  return entries.length ? { source: match[0], entries, ...dimensions } : null;
+  return entries.length || float ? { source: match[0], entries, ...dimensions, float } : null;
 }
 export function configureDocumentSyntax(md) {
   md.use(wikiSyntax);
@@ -51,6 +53,7 @@ export function configureDocumentSyntax(md) {
       for (const { name, value } of attributes.entries) {
         if (image.type === "wiki_embed") image.meta = { ...image.meta, [name]: value.replace(/px$/, "") }; else image.attrSet(name, value.replace(/px$/, ""));
       }
+      if (attributes.float) image.attrSet("data-image-float", attributes.float);
       image.meta = { ...image.meta, attributes: attributes.source }; next.content = next.content.slice(attributes.source.length);
     }
   });

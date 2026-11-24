@@ -4,6 +4,15 @@ module.exports = function readingCore(digest, translate = message => message) {
   const scrapKinds = new Set(["note", "doubt", "answer", "clip", "card", "exam", "evidence", "gloss"]);
   const colours = new Set(["amber", "blue", "rose", "green"]);
   const legacyNotePrefix = "legacy-note:";
+  const maxImageBytes = 20 * 1024 * 1024;
+  const imageHash = hash => typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash);
+  function imageType(prefix) {
+    if (prefix.startsWith("89504e470d0a1a0a")) return "png";
+    if (prefix.startsWith("ffd8ff")) return "jpeg";
+    if (/^47494638(?:37|39)61/.test(prefix)) return "gif";
+    if (/^52494646.{8}57454250/.test(prefix)) return "webp";
+    throw invalid();
+  }
   const invalid = () => new Error("阅读图层数据无效。");
   const normalize = text => text.normalize("NFC").replace(/\s+/gu, " ").trim();
   const identity = (block, section) => digest(JSON.stringify([block, section]));
@@ -107,9 +116,11 @@ module.exports = function readingCore(digest, translate = message => message) {
       case "sheet": return { ...base, name: text(item.name, 80), colour: colour(item.colour), order: number(item.order, 0, 1_000_000), visible: boolean(item.visible) };
       case "scrap": {
         if (!scrapKinds.has(item.kind) || item.stackOf === item.id) throw invalid();
+        if (item.image && (item.kind !== "clip" || !imageHash(item.image.hash) || !["left", "right"].includes(item.image.side))) throw invalid();
+        const image = item.image && { hash: item.image.hash, side: item.image.side, width: number(item.image.width, 96, 1600) };
         return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor: item.anchor === null ? null : target(item.anchor),
           body: text(item.body), stackOf: item.stackOf === null ? null : identifier(item.stackOf), folded: boolean(item.folded),
-          deleted: boolean(item.deleted ?? false) };
+          deleted: boolean(item.deleted ?? false), ...(image ? { image } : {}) };
       }
       case "mark": {
         const start = number(item.start, 0, 262_143), end = number(item.end, start + 1, 262_144);
@@ -119,8 +130,23 @@ module.exports = function readingCore(digest, translate = message => message) {
     }
   }
 
+  function imageItem(request, hash) {
+    return itemAt({ id: request.id, type: "scrap", kind: "clip", sheet: "images", anchor: request.anchor,
+      body: text(request.name, 200), stackOf: null, folded: false, image: { hash, side: request.side, width: request.width } });
+  }
+
   function validate(request) {
     if (!request || typeof request !== "object") throw invalid();
+    if (request.action === "readImage") {
+      if (!imageHash(request.hash)) throw invalid();
+      return { imageHash: request.hash };
+    }
+    if (request.action === "putImage") {
+      const bytes = request.bytes;
+      if (bytes === undefined && typeof request.address === "string") return { imageBytes: null };
+      if (typeof bytes !== "string" || bytes.length < 16 || bytes.length > Math.ceil(maxImageBytes / 3) * 4) throw invalid();
+      return { imageBytes: bytes };
+    }
     if (request.action === "put") {
       const item = itemAt(request.item);
       if (item.type === "answer" && !validPath(request.owner)) throw invalid();
@@ -296,7 +322,7 @@ module.exports = function readingCore(digest, translate = message => message) {
 
   function readingMarkdown(items) {
     const quote = text => text.replaceAll("\r", "").split("\n").map(line => `> ${line}`).join("\n");
-    return items.map(item => {
+    return items.filter(item => !item.image).map(item => {
       const source = quote([item.document, ...(item.anchor?.headings || [])].join(" › "));
       if (item.type === "note" || item.type === "scrap") {
         return `${source}${item.anchor ? `\n${quote(item.anchor.quote)}` : ""}\n\n${item.body}`;
@@ -305,5 +331,5 @@ module.exports = function readingCore(digest, translate = message => message) {
     }).join("\n\n---\n\n") + "\n";
   }
 
-  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, query, readingMarkdown, readingAnchor, resolveReadingAnchors };
+  return { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending: entries => entries.pending ?? null, badRows: entries => entries.badRows ?? 0, hasTrash: (entries, id) => entries.trash?.has(id) ?? false, query, readingMarkdown, readingAnchor, resolveReadingAnchors, imageType, imageItem, maxImageBytes };
 };

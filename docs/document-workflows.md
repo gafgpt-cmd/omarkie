@@ -45,11 +45,14 @@
 - Open a vault and a saved Markdown file. Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS).
 - **Sheets** occupies the left sidebar slot; it becomes chips at 820 px or less. Switch to Files without closing Learning mode.
 - Select text to add a note, highlight, or draft a card. `Alt+Enter` focuses the actions.
-- Click a paper tab to fold or unfold its note. Use **Move** and click another paragraph, **Stack here**, or **Move to tray**. **Peel off** removes the scrap; **Undo** restores it.
+- Click a paper tab to fold or unfold a note. Drag its tab or header to another paragraph, onto a note to stack, or into **Loose scraps**. **Move** also lets you click a paragraph.
+- Drop a PNG, JPEG, GIF, or WebP onto the page, or paste a copied image. Drop to the left or right of the paragraph; text wraps around the picture.
+- Drag the picture or its grip to move it. Drag the resize handle on the inner edge. **Peel off** removes the scrap; **Undo** restores it.
+- **Write into note… → Accept** imports the image as a note asset and inserts `![label](path){width=240 float=right}`. Save the note as usual. Other Markdown apps can still render the image.
 - Hold **Peek** to see the base page. Turn off Learning mode to edit Markdown.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
 - **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.
-- Back up `.omarkie` with the vault. Sheets, scraps, highlights, and cards live there, not in the source note.
+- Back up `.omarkie` with the vault. Image bytes live in `.omarkie/scraps/`; image placements and other study items live in `.omarkie/store.jsonl`.
 - Opening a vault does not create a journal. Reading writes, rename, move, Undo and Trash share a lock across Omarkie processes, even before the first journal entry.
 - File operations in writable subfolders can proceed if permissions prevent creating the lock and neither a journal nor a lock exists.
 - Trash and macOS Undo Trash update the journal before moving the file. A crash between those steps can leave the file and history out of sync.
@@ -62,6 +65,7 @@
 
 - Learning mode and Clean block remote media even if editing allows it.
 - Vault media and supported inline `data:` and page-created `blob:` media still render. In mixed image or audio/video sources, previews drop remote candidates and keep supported local fallbacks.
+- Dropping an HTTPS image URL asks before sending a direct request to its origin. No note data, credentials, or redirects. Limit: 20 MB per image.
 
 ## Study cards
 

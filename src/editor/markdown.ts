@@ -101,14 +101,15 @@ function mediaURL(source: string, documentId?: string) {
 }
 // One <img> for Markdown images and Obsidian embeds. Explicit sizes ({width=300}, |300x200) win;
 // a lone width keeps the natural aspect ratio when the natural size is known.
-function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string) {
+function imageHtml(source: string, alt: string, documentId: string | undefined, alone: boolean, width?: string, height?: string, float?: string | number | null) {
   const classified = normalizedURL(source);
   if (remoteURL(source) && !allowRemoteImages)
     return `<span class="remote-image">${alt}${t("（远程图片：{{source}}）", { source: md.utils.escapeHtml(source) })}</span>`;
   const url = /^data:/i.test(classified) && !/^data:image\/(?:png|jpeg|gif|webp);/i.test(classified) ? "" : mediaURL(source, documentId);
   if (!url) return `<span class="remote-image">${alt}（${md.utils.escapeHtml(source)}）</span>`;
   const natural = imageSizes.get(url), size = width && !width.endsWith("%") && !height && natural ? [width, String(Math.round(Number(width) * natural[1] / natural[0]))] : width || height ? [width, height] : natural?.map(String);
-  return `<img src="${md.utils.escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${alone ? ` class="md-standalone${width || height ? "" : " md-fit-image"}"` : ""} />`;
+  const position = float === "left" || float === "right" ? ` data-image-float="${float}"` : "";
+  return `<img src="${md.utils.escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async"${size?.[0] ? ` width="${md.utils.escapeHtml(size[0])}"` : ""}${size?.[1] ? ` height="${md.utils.escapeHtml(size[1])}"` : ""}${position}${alone && !position ? ` class="md-standalone${width || height ? "" : " md-fit-image"}"` : ""} />`;
 }
 // An image alone on its line is laid out as a centred figure.
 // The rich editor renders each image on its own and says whether it fills its line.
@@ -116,13 +117,13 @@ const standalone = (tokens: Token[], index: number, env: Record<string, unknown>
   typeof env?.standalone === "boolean" ? env.standalone : tokens.every((other, at) => at === index || other.type === "softbreak" || (other.type === "text" && !other.content.trim()));
 md.renderer.rules.image = (tokens, index, _options, env) => {
   const token = tokens[index];
-  return imageHtml(String(token.attrGet("src") || ""), md.utils.escapeHtml(token.content || t("图片")), typeof env?.documentId === "string" ? env.documentId : undefined, standalone(tokens, index, env), String(token.attrGet("width") ?? "") || undefined, String(token.attrGet("height") ?? "") || undefined);
+  return imageHtml(String(token.attrGet("src") || ""), md.utils.escapeHtml(token.content || t("图片")), typeof env?.documentId === "string" ? env.documentId : undefined, standalone(tokens, index, env), String(token.attrGet("width") ?? "") || undefined, String(token.attrGet("height") ?? "") || undefined, token.attrGet("data-image-float"));
 };
 // Obsidian embeds resolve like Obsidian: next to the note first, then anywhere in the vault (host side).
 md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
   const token = tokens[index], meta = (token.meta || {}) as { target?: string; width?: string; height?: string }, target = (meta.target || "").split("#")[0], documentId = typeof env?.documentId === "string" ? env.documentId : undefined;
   const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target.replaceAll("%", "%25"));
-  if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height);
+  if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height, token.attrGet("data-image-float"));
   const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
   return media && documentId
     ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`

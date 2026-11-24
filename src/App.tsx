@@ -612,6 +612,7 @@ export default function App() {
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               saved={!!active.path && !!session.folder && active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"))}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} showSheets={!filesVisible}
+              canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
               openFiles={() => { setShowFiles(true); setSidebar(true); }} openCard={openFlashcards}
               cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
                 id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}

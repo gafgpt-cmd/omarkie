@@ -9,7 +9,7 @@ export interface StudyOverlay { line: number; tabs: ReactNode; tucks: ReactNode;
 function quoteRange(block: HTMLElement, { anchor, start }: StudyMark) {
   const quote = anchor.quote;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, { acceptNode: node =>
-    node.parentElement?.closest('[aria-hidden="true"],.md-meta,.md-object-source') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
+    node.parentElement?.closest('[aria-hidden="true"],.md-meta,.md-object-source,.study-floats') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });
   const segments: { node: Text; start: number }[] = [];
   let rendered = "";
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -88,10 +88,12 @@ export function LearningOverlays({ root, nodes, groups }: { root: HTMLElement; n
     for (const { tuck } of slots) resize.observe(tuck);
     const mutation = new MutationObserver(schedule);
     mutation.observe(root, { subtree: true, childList: true, characterData: true });
+    root.addEventListener("load", schedule, true);
     update();
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect(); mutation.disconnect();
+      root.removeEventListener("load", schedule, true);
       for (const [block, old] of spaced) block.style.paddingBottom = old;
       if (CSS.highlights) for (const colour of highlightNames) CSS.highlights.delete(`study-${colour}`);
     };

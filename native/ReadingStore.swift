@@ -70,10 +70,10 @@ final class NativeReadingStore {
     return String(path.dropFirst(prefix.count))
   }
 
-  func perform(_ scope: Scope, _ request: [String: Any], current: @escaping () -> Bool = { true }) async throws -> Any {
+  func perform(_ scope: Scope, _ request: [String: Any], remoteImage: Data? = nil, current: @escaping () -> Bool = { true }) async throws -> Any {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
-        continuation.resume(with: Result { try self.operate(scope, request, current) })
+        continuation.resume(with: Result { try self.operate(scope, request, remoteImage, current) })
       }
     }
   }
@@ -234,12 +234,54 @@ final class NativeReadingStore {
     return Revision(metadata)
   }
 
-  private func operate(_ scope: Scope, _ incoming: [String: Any], _ current: () -> Bool) throws -> Any {
+  private func imagePath(_ root: URL, _ hash: String, create: Bool = false) throws -> URL {
+    let directory = root.appendingPathComponent(".omarkie/scraps")
+    if create, mkdir(directory.path, 0o700) != 0, errno != EEXIST { throw NativeFailure(Self.unsafe) }
+    var metadata = stat()
+    guard lstat(directory.path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFDIR,
+          canonicalFileURL(directory).path == directory.path else { throw NativeFailure(Self.unsafe) }
+    let file = directory.appendingPathComponent(hash)
+    if lstat(file.path, &metadata) == 0 { guard Self.regular(metadata) else { throw NativeFailure(Self.unsafe) } }
+    else if errno != ENOENT { throw NativeFailure(Self.unsafe) }
+    return file
+  }
+
+  private func readImage(_ file: URL, _ hash: String) throws -> Data {
+    let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+    guard fd >= 0 else { throw NativeFailure(Self.unsafe) }
+    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+    defer { try? handle.close() }
+    let size = try Self.revision(fd).size
+    guard size >= 12, size <= Int64(DocumentStore.maxBytes),
+          let bytes = try handle.read(upToCount: Int(size)), bytes.count == Int(size), hashData(bytes) == hash
+    else { throw NativeFailure(Self.invalid) }
+    return bytes
+  }
+
+  private func imageType(_ bytes: Data) throws -> String {
+    let prefix = bytes.prefix(12).map { String(format: "%02x", $0) }.joined()
+    guard let mime = try call("imageType", [prefix]).toString() else { throw NativeFailure(Self.invalid) }
+    return mime
+  }
+
+  private func operate(_ scope: Scope, _ incoming: [String: Any], _ remoteImage: Data?, _ current: () -> Bool) throws -> Any {
     let exporting = incoming["action"] as? String == "export"
     let studying = incoming["action"] as? String == "study"
     let request: [String: Any] = exporting ? ["action": "list", "scope": "vault", "types": ["note", "card", "scrap"], "studyNotes": true] : incoming
     let validated = try call("validate", [request])
-    let item = validated.forProperty("item")!
+    let encoded = validated.forProperty("imageBytes")!
+    let imageHash = validated.forProperty("imageHash")!
+    let item: JSValue
+    var bytes: Data?, hash: String?
+    if encoded.isUndefined { item = validated.forProperty("item")! }
+    else {
+      guard let data = remoteImage ?? encoded.toString().flatMap({ Data(base64Encoded: $0) }),
+            data.count >= 12, data.count <= DocumentStore.maxBytes else { throw NativeFailure(Self.invalid) }
+      _ = try imageType(data)
+      let digest = hashData(data)
+      item = try call("imageItem", [request, digest])
+      bytes = data; hash = digest
+    }
     let writing = !item.isUndefined
     let empty: Any
     if exporting { empty = "\n" }
@@ -249,11 +291,20 @@ final class NativeReadingStore {
       var source = stat()
       guard current(), canonicalFileURL(scope.file).path == scope.file.path,
             lstat(scope.file.path, &source) == 0, (source.st_mode & S_IFMT) == S_IFREG else { throw NativeFailure(Self.unsafe) }
+      if !imageHash.isUndefined, let hash = imageHash.toString() {
+        let data = try readImage(imagePath(scope.root, hash), hash)
+        return "data:image/\(try imageType(data));base64,\(data.base64EncodedString())"
+      }
       guard let state else { return empty }
       if writing {
         let document = try call("putDocument", [state.entries, scope.document, item, validated.forProperty("owner")!]).toString()
         guard var value = item.toDictionary() as? [String: Any] else { throw NativeFailure(Self.invalid) }
         value["document"] = document; value["at"] = timestamp.string(from: Date())
+        if let bytes, let hash {
+          let file = try imagePath(scope.root, hash, create: true)
+          if FileManager.default.fileExists(atPath: file.path) { _ = try readImage(file, hash) }
+          else { try atomicWrite(file, bytes) { _ = try self.imagePath(scope.root, hash) } }
+        }
         try append(["entry": value])
         return value
       }
