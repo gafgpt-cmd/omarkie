@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   checks:
-    runs-on: ubicloud-standard-4-ubuntu-2204
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

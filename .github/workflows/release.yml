@@ -25,7 +25,7 @@ env:
 
 jobs:
   arch:
-    runs-on: ubicloud-standard-4-ubuntu-2204
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 30
     container: archlinux:base-devel
     steps:
@@ -74,7 +74,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: ubicloud-standard-4-ubuntu-2204
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -230,7 +230,7 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
     needs: [macos, windows, linux, arch]
-    runs-on: ubicloud-standard-4-ubuntu-2204
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     permissions:
       contents: write
     env:
