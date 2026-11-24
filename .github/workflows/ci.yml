@@ -21,6 +21,13 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # npm cannot preserve the setuid bit Electron's SUID sandbox helper needs,
+      # and Ubuntu 24.04 restricts the user-namespace fallback, so configure the
+      # helper before any desktop test launches Electron.
+      - name: Enable the Electron sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - run: npx playwright install --with-deps chromium
       - run: npx tsc -b
       - name: Install desktop verification dependencies
