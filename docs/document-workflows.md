@@ -43,8 +43,11 @@
 ## Learning mode
 
 - Open a vault and a saved Markdown file. Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS).
-- **Sheets** occupies the left sidebar slot; it becomes chips at 820 px or less. Switch to Files without closing Learning mode.
-- Select text to add a note, highlight, or draft a card. `Alt+Enter` focuses the actions.
+- **Sheets** is a tab in the left sidebar. At 820 px or less, the same sheet controls appear above the page as chips. Alt-click a sheet to solo it.
+- Tutor uses the right Payload slot. In a half tile, opening one drawer closes the other.
+- `Alt+Enter` focuses the selection actions. `N` note, `D` doubt, `W` correction, `A` ask, `E` explain back, `Q` quiz, `C` card, `P` propose.
+- **Understanding** cycles each paragraph through not rated, lost, shaky and solid. Quiz feedback can set the same rating. Ratings are stored with the anchor, not in Markdown.
+- **Search scraps** searches the whole vault. Electron builds its SQLite index in app data on demand and rebuilds it when the journal changes or the index goes missing. macOS searches the journal directly. Back up the journal, not the index.
 - Click a paper tab to fold or unfold a note. Drag its tab or header to another paragraph, onto a note to stack, or into **Loose scraps**. **Move** also lets you click a paragraph.
 - Drop a PNG, JPEG, GIF, or WebP onto the page, or paste a copied image. Drop to the left or right of the paragraph; text wraps around the picture.
 - Drag the picture or its grip to move it. Drag the resize handle on the inner edge. **Peel off** removes the scrap; **Undo** restores it.
@@ -67,6 +70,9 @@
 - On Electron for Unix, **Local agent** is the default. Send the question, then run `omarkie-axi poll --wait` in the vault (or pass `--vault <dir>`). Only the paragraph, question, and local anchor go through the socket. No HTTP listener.
 - Switch to **Payload** to use its existing opt-in, approved origin and privacy notice. No automatic fallback.
 - One question at a time. **Stick on paragraph** saves the answer on the Tutor answers sheet.
+- **Still lost** asks for a simpler answer and stacks it on the original when pinned. **Explain back** pins your explanation with Tutor feedback. **Exam points** and **Glossary** have dedicated sheets.
+- **Check correction** opens Tutor with your proposed layer-only correction. A suggested base edit still requires **Accept into Markdown**.
+- **Quiz me** asks one retrieval question. **Answer quiz** checks your answer. **Make it a card** opens the existing card editor with the Tutor reply.
 - **Propose edit** saves a before/after draft on the Proposals sheet. **Reject** discards it. Only **Accept into Markdown** updates the note. Save as usual.
 - Accept checks the exact paragraph, its position, and disk changes. A stale draft cannot write. Use normal **Undo** to revert an accepted edit in one step.
 

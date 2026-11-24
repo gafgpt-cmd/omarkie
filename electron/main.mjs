@@ -224,6 +224,7 @@ const handlers = {
     catch { throw new Error(t("无法导出。请选择新的文件名。")); }
     return true;
   },
+  learningSearch: async (_, id, query) => (await import("./learning-index.mjs")).searchLearning(store, id, query),
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),

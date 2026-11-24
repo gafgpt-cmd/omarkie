@@ -1,4 +1,5 @@
 import type { ReadingStore, ReadingTarget } from "../shared/reading-store.ts";
+import type { TutorVerb } from "./components/tutor-verbs";
 
 export interface DocumentRecord {
   readingRecoveryWarning?: boolean;
@@ -72,6 +73,7 @@ export interface PayloadRequest {
   source: string;
   question?: string;
   proposal?: true;
+  tutorVerb?: Exclude<TutorVerb, "answer" | "propose">;
   modernLimit: boolean;
 }
 export interface CitationMatch { id: string; title: string; authors: string }
@@ -86,7 +88,7 @@ interface BibliographyOperations {
   open: void;
 }
 export type TutorBridgeRequest = { lease: string } & ({ action: "attach" | "detach" } | {
-  action: "submit"; target: ReadingTarget; question: string; verb: "answer" | "propose";
+  action: "submit"; target: ReadingTarget; question: string; verb: TutorVerb;
 });
 export type TutorReceipt = "queued" | "seen" | "working" | "done";
 export type TutorEvent = { lease: string } & (
@@ -94,10 +96,12 @@ export type TutorEvent = { lease: string } & (
   { type: "reply"; id: string; owner: string | null; text: string } |
   { type: "agent"; owner: string | null } | { type: "expired"; id: string } | { type: "refresh" }
 );
+export interface StudySearchMatch { document: string; line: number | null; kind: string; text: string }
 export interface Host {
   readingStore?: ReadingStore;
   tutorBridge?(id: string, request: TutorBridgeRequest): Promise<{ id?: string } | undefined>;
   onTutor?(callback: (event: TutorEvent) => void): () => void;
+  learningSearch?(id: string, query: string): Promise<StudySearchMatch[]>;
   vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
   bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;

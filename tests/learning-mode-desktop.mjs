@@ -26,6 +26,7 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   const toggle = page.getByRole("button", { name: "Learning mode", exact: true });
   const sheets = page.getByRole("complementary", { name: "Sheets", exact: true });
+  const sheetChips = page.getByRole("group", { name: "Sheets", exact: true });
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const tray = page.getByRole("complementary", { name: "Loose scraps", exact: true });
   const journal = path.join(vault, ".omarkie", "store.jsonl");
@@ -114,7 +115,9 @@ try {
   await key("Notes").click();
   await expect(tab(one)).toBeVisible();
   await resize(720);
-  const [chips, pageBox] = await Promise.all([sheets.boundingBox(), rich.boundingBox()]);
+  await expect(sheets).toBeHidden();
+  await expect(sheetChips.getByRole("button", { name: "Notes", pressed: true, exact: true })).toBeVisible();
+  const [chips, pageBox] = await Promise.all([sheetChips.boundingBox(), rich.boundingBox()]);
   assert.ok(chips.y + chips.height <= pageBox.y && chips.width > 600);
   if (qa) await capture("720");
   await resize(1440);

@@ -10,7 +10,7 @@ import { decodeText, digest } from "./store.mjs";
 
 const { readingAnchor, validPath } = readingCore(digest);
 const markdown = createMarkdown();
-const kinds = new Set(["note", "doubt", "answer", "evidence", "gloss"]);
+const kinds = new Set(["note", "doubt", "answer", "evidence", "exam", "gloss"]);
 const proposalSheet = "proposals";
 
 export async function vaultRoot(folder) {
@@ -69,8 +69,8 @@ export async function openStudy(root, name, parse = true) {
 }
 
 export async function putScrap(study, { block, quote, sheet = "notes", kind = "note", text }) {
-  if (!kinds.has(kind)) throw new Error("Scrap kind must be note, doubt, answer, evidence, or gloss.");
-  if (!["notes", "tutor-answers"].includes(sheet)) {
+  if (!kinds.has(kind)) throw new Error("Scrap kind must be note, doubt, answer, evidence, exam, or gloss.");
+  if (!["notes", "doubts", "exam", "glossary", "tutor-answers"].includes(sheet)) {
     const { entries } = await study.request({ action: "study", blocks: [] });
     if (!entries.some(entry => entry.type === "sheet" && entry.id === sheet && entry.id !== proposalSheet)) throw new Error("Choose an existing notes sheet ID.");
   }

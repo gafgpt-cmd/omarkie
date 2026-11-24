@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { encode } from "@toon-format/toon";
 import pkg from "../package.json" with { type: "json" };
+import tutorVerbs from "../shared/tutor-verbs.json" with { type: "json" };
 
 const live = "Read Omarkie Tutor asks and write study scraps or proposals. Only Omarkie can Accept a proposal.";
 const guide = [
@@ -24,7 +25,7 @@ const specs = {
   status: ["<id> <seen|working|done> [--vault <dir>]", "Mark an ask received or being worked on. Reply marks it done."],
   "doc view": ["<note.md> [--vault <dir>] [--blocks] [--full]", "Read Markdown or list paragraph hashes and previews."],
   "scraps list": ["--doc <note.md> [--vault <dir>] [--full]", "List live scraps with their sheet and a body preview."],
-  "scrap add": ["--doc <note.md> (--block <hash> | --quote <text>) --text <text> [--vault <dir>] [--sheet <id>] [--kind <kind>]", "Add a note, doubt, answer, evidence or gloss scrap; defaults to Notes and note."],
+  "scrap add": ["--doc <note.md> (--block <hash> | --quote <text>) --text <text> [--vault <dir>] [--sheet <id>] [--kind <kind>]", "Add a note, doubt, answer, evidence, exam or gloss scrap; defaults to Notes and note."],
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
@@ -58,7 +59,8 @@ async function bridgeExists(root) {
 function summaries(asks) { return asks.map(({ id, verb, doc, block, status }) => ({ id, verb, doc, block, status })); }
 function skim(ask, full = false) {
   return { id: ask.id, verb: ask.verb, doc: ask.doc, block: ask.block, status: ask.status,
-    quote: preview(ask.quote, full), paragraph: preview(ask.paragraph, full), headings: ask.headings.join(" › "), question: ask.question };
+    quote: preview(ask.quote, full), paragraph: preview(ask.paragraph, full), headings: ask.headings.join(" › "), question: ask.question,
+    ...(Object.hasOwn(tutorVerbs, ask.verb) ? { instruction: tutorVerbs[ask.verb] } : {}) };
 }
 
 export async function main(argv = process.argv.slice(2)) {

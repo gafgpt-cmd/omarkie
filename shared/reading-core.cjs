@@ -1,6 +1,6 @@
 // Also evaluated by the native host in an isolated JavaScriptCore context.
 module.exports = function readingCore(digest, translate = message => message) {
-  const kinds = new Set(["note", "card", "answer", "sheet", "scrap", "mark", "ink"]);
+  const kinds = new Set(["note", "card", "answer", "sheet", "scrap", "mark", "ink", "confidence"]);
   const scrapKinds = new Set(["note", "doubt", "answer", "clip", "card", "exam", "evidence", "gloss", "proposal"]);
   const colours = new Set(["amber", "blue", "rose", "green"]);
   const legacyNotePrefix = "legacy-note:";
@@ -121,7 +121,7 @@ module.exports = function readingCore(digest, translate = message => message) {
         const anchor = item.anchor === null ? null : target(item.anchor);
         const before = item.kind === "proposal" ? text(item.before, 24_000) : undefined;
         if (before !== undefined && (item.sheet !== "proposals" || item.stackOf !== null || anchor?.block !== normalize(before))) throw invalid();
-        const question = (item.kind === "answer" || item.kind === "proposal") && item.question !== undefined ? text(item.question, 1_000) : undefined;
+        const question = ["answer", "proposal", "exam", "gloss"].includes(item.kind) && item.question !== undefined ? text(item.question, 1_000) : undefined;
         return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor,
           body: text(item.body), stackOf: item.stackOf === null ? null : identifier(item.stackOf), folded: boolean(item.folded),
           deleted: boolean(item.deleted ?? false), ...(image ? { image } : {}), ...(before === undefined ? {} : { before }), ...(question === undefined ? {} : { question }) };
@@ -130,7 +130,8 @@ module.exports = function readingCore(digest, translate = message => message) {
         const start = number(item.start, 0, 262_143), end = number(item.end, start + 1, 262_144);
         return { ...base, sheet: identifier(item.sheet), anchor: target(item.anchor), start, end, colour: colour(item.colour), deleted: boolean(item.deleted ?? false) };
       }
-      case "ink": return { ...base, sheet: identifier(item.sheet), anchor: target(item.anchor), from: text(item.from), to: item.to === "" ? "" : text(item.to) };
+      case "ink": return { ...base, sheet: identifier(item.sheet), anchor: target(item.anchor), from: text(item.from), to: item.to === "" ? "" : text(item.to), deleted: boolean(item.deleted ?? false) };
+      case "confidence": return { ...base, anchor: target(item.anchor), level: number(item.level, 0, 3) };
     }
   }
 
@@ -300,7 +301,7 @@ module.exports = function readingCore(digest, translate = message => message) {
         const id = legacyNotePrefix + digest(item.id);
         if (items.has(`scrap:${id}`)) continue;
         entry = { ...item, id, type: "scrap", sheet: "notes", kind: "note", stackOf: null, folded: true };
-      } else if (!["scrap", "mark", "ink"].includes(item.type) || item.deleted) continue;
+      } else if (!["scrap", "mark", "ink", "confidence"].includes(item.type) || item.deleted) continue;
       study.push(entry);
       if (entry.anchor) anchored.push(entry);
     }

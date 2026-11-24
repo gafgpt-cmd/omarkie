@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createPortal } from "react-dom";
 import { FolderOpen, Layers, Sparkles, StickyNote } from "lucide-react";
 import { sourceLines } from "../../shared/source-lines.mjs";
-import type { ReadingAnchor, ReadingResults, ReadingTarget, SheetColour, StudyItem } from "../../shared/reading-store.ts";
+import type { ConfidenceLevel, ReadingAnchor, ReadingResults, ReadingTarget, SheetColour, StudyItem } from "../../shared/reading-store.ts";
 import type { EditorHandle } from "../editor/MarkdownEditor";
 import { sourceOffset } from "../editor/model";
 import { host } from "../host";
@@ -15,10 +15,18 @@ import type { Preferences } from "../preferences";
 import { safeProposal } from "../editor/markdown";
 import TutorCurtain, { ProposalDiff } from "./TutorCurtain";
 import { useLiveTutor } from "./tutor-live";
+import LearningSearch from "./LearningSearch";
+import type { StudySearchMatch } from "../types";
+import type { FlashcardPanel } from "./Flashcards";
+import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
 type Scrap = Extract<StudyItem<ReadingAnchor>, { type: "scrap" }>;
+type Confidence = Extract<StudyItem<ReadingAnchor>, { type: "confidence" }>;
+type Ink = Extract<StudyItem<ReadingAnchor>, { type: "ink" }>;
+const levels = ["Not rated", "Lost", "Shaky", "Solid"] as const;
+const keyVerb: Readonly<Record<string, TutorVerb>> = { a: "answer", p: "propose", e: "explain", q: "quiz" };
 const colours: SheetColour[] = ["amber", "blue", "rose", "green"];
 const defaultSheets: Sheet[] = [
   { type: "sheet", id: "notes", name: "Notes", colour: "blue", order: 0, visible: true },
@@ -26,24 +34,30 @@ const defaultSheets: Sheet[] = [
   { type: "sheet", id: "images", name: "Images", colour: "green", order: 2, visible: true },
   { type: "sheet", id: "tutor-answers", name: "Tutor answers", colour: "green", order: 3, visible: true },
   { type: "sheet", id: "proposals", name: "Proposals", colour: "rose", order: 4, visible: true },
+  { type: "sheet", id: "doubts", name: "Doubts", colour: "rose", order: 5, visible: true },
+  { type: "sheet", id: "exam", name: "Exam points", colour: "amber", order: 6, visible: true },
+  { type: "sheet", id: "glossary", name: "Glossary", colour: "blue", order: 7, visible: true },
 ];
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, saved, ready, rendered, showSheets, canWrite, tutor, openFiles, openCard, cards }: {
+export default function LearningMode({ id, content, editor, saved, ready, rendered, sheetsRoot, canWrite, tutor, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; saved: boolean; ready: boolean; rendered: boolean;
-  showSheets: boolean; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget): void; cards: ReactNode;
+  sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
   const [selection, select] = useState<StudySelection>(), [draft, setDraft] = useState<string>();
+  const [draftKind, setDraftKind] = useState<"note" | "doubt" | "ink">("note");
   const [study, setStudy] = useState(emptyStudy), [revision, invalidate] = useState(0);
   const [undo, setUndo] = useState<StudyItem>(), [picking, setPicking] = useState<Scrap>(), [peek, setPeek] = useState(false);
+  const [solo, setSolo] = useState<string>();
+  const [searching, setSearching] = useState(false);
   const [dragging, setDragging] = useState<string>();
   const [remote, setRemote] = useState<{ url: URL; anchor: ReadingTarget | null; side: "left" | "right" }>();
-  const [tutorSelection, setTutorSelection] = useState<ReadingTarget>();
+  const [tutorDraft, setTutorDraft] = useState<TutorDraft>();
   const tutorOpen = tutor?.open ?? false;
-  useEffect(() => { if (!tutorOpen) setTutorSelection(undefined); }, [tutorOpen]);
+  useEffect(() => { if (!tutorOpen) setTutorDraft(undefined); }, [tutorOpen]);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const popup = useRef<HTMLDivElement>(null), keyboardFocus = useRef(false);
   const pending = useRef(false);
@@ -54,14 +68,14 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     return () => { writable.current = false; };
   }, [canWrite]);
   const [tutorRoute, setTutorRoute] = useState<"local" | "payload">("local");
-  const live = useLiveTutor(id, saved && !!tutor, () => invalidate(value => value + 1), async reply => {
-    if (reply.body !== reply.anchor.block.trim()) {
-      if (!safeProposal(reply.body)) throw new Error("Tutor did not return a safe paragraph. Ask for a prose rewrite.");
-      await saveTutorReply(reply, true);
-    }
-  });
+  const live = useLiveTutor(id, saved && !!tutor, () => invalidate(value => value + 1), receiveTutor);
   const getContext = useEffectEvent(editor);
   const context = useMemo(() => ready ? editor()?.readingContext() : undefined, [ready, rendered, content]);
+  const paragraphs = useMemo(() => {
+    if (!context) return [];
+    const lines = new Set(context.nodes.filter(node => node.kind === "paragraph_open").map(node => node.line));
+    return readingBlocks(context).filter(block => lines.has(block.line));
+  }, [context]);
   useEffect(() => {
     if (!saved || !ready) return;
     const context = getContext()?.readingContext();
@@ -109,15 +123,27 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   }
   const tutorParagraph = tutor && selection?.range && context?.nodes.some(node => node.line === selection.target.line &&
     node.kind === "paragraph_open" && node.source === selection.target.block);
-  function askTutor() {
-    if (!tutorParagraph || !selection || !tutor) return;
-    setTutorSelection(selection.target); tutor.show(); dismiss();
+  function tutorAt(anchor: ReadingTarget, verb: TutorVerb = "answer", text?: string, parent?: string) {
+    if (!tutor) return;
+    setTutorDraft({ anchor, verb, text, parent }); tutor.show(); dismiss();
   }
-  function saveTutorReply({ anchor, question, body }: { anchor: ReadingTarget; question: string; body: string }, proposal: boolean) {
-    const item = { id: crypto.randomUUID(), type: "scrap", kind: proposal ? "proposal" : "answer",
-      sheet: proposal ? "proposals" : "tutor-answers", anchor, body, question, folded: true, stackOf: null,
-      ...(proposal ? { before: anchor.block } : {}) } as const;
+  function askTutor(verb: TutorVerb = "answer") { if (tutorParagraph && selection) tutorAt(selection.target, verb); }
+  function saveTutorReply(reply: TutorReply) {
+    const { id, anchor, body, verb, parent, text } = reply;
+    const kind = verb === "propose" ? "proposal" : verb === "exam" || verb === "quiz" ? "exam" : verb === "glossary" ? "gloss" : "answer";
+    const sheet = kind === "proposal" ? "proposals" : kind === "exam" ? "exam" : kind === "gloss" ? "glossary" : "tutor-answers";
+    const item = { id, type: "scrap", kind, sheet, anchor, body, ...(text?.trim() ? { question: text } : {}),
+      folded: true, stackOf: parent ?? null, ...(kind === "proposal" ? { before: anchor.block } : {}) } as const;
     return write(item, { ...item, deleted: true });
+  }
+  async function receiveTutor(reply: TutorReply) {
+    const replacement = reply.verb === "propose" ? reply.body : reply.replacement;
+    if (replacement && replacement !== reply.anchor.block.trim()) {
+      if (!safeProposal(replacement)) throw new Error("Tutor did not return a safe paragraph. Ask for a prose rewrite.");
+      await saveTutorReply({ ...reply, id: crypto.randomUUID(), parent: undefined, body: replacement, verb: "propose" });
+    }
+    if (reply.confidence) await setConfidence(reply.anchor, reply.confidence);
+    if (reply.verb === "quiz") await saveTutorReply(reply);
   }
   function addImages(local: ReturnType<typeof imageTransfer>["local"], anchor: ReadingTarget | null, side: "left" | "right") {
     void change(async () => {
@@ -214,15 +240,16 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     return true;
   });
   const handleKeys = useEffectEvent((event: KeyboardEvent) => {
-    if (event.isComposing || event.target instanceof HTMLElement && event.target.closest("input,textarea,button,select,[contenteditable=true]")) return;
+    if (event.isComposing || event.target instanceof HTMLElement && event.target.closest("input,textarea,select,[contenteditable=true]")) return;
     if (event.key === "Escape" && picking) { setPicking(undefined); return; }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === "`") { setPeek(true); event.preventDefault(); }
     else if (!picking && selection && !busy) {
-      if (event.key.toLowerCase() === "n") { event.preventDefault(); setDraft(""); }
-      else if (event.key.toLowerCase() === "c") { event.preventDefault(); openCard(selection.target); dismiss(); }
-      else if (/^[1-4]$/.test(event.key)) { event.preventDefault(); mark(colours[Number(event.key) - 1]); }
-      else if (event.key.toLowerCase() === "a" && tutorParagraph) { event.preventDefault(); askTutor(); }
+      const key = event.key.toLowerCase();
+      if (key === "n" || key === "d" || key === "w") { event.preventDefault(); beginDraft(key === "n" ? "note" : key === "d" ? "doubt" : "ink"); }
+      else if (key === "c") { event.preventDefault(); openCard(selection.target); dismiss(); }
+      else if (/^[1-4]$/.test(key)) { event.preventDefault(); mark(colours[Number(key) - 1]); }
+      else if (Object.hasOwn(keyVerb, key) && tutorParagraph) { event.preventDefault(); askTutor(keyVerb[key]); }
     }
   });
   useEffect(() => {
@@ -289,7 +316,8 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   }, [study]);
   const sheetById = new Map(sheets.map(sheet => [sheet.id, sheet]));
   const locations = new Map(study.locations.map(({ id, line }) => [id, line]));
-  const scraps = study.entries.filter((entry): entry is Scrap & { document: string; at: string } => entry.type === "scrap" && !!sheetById.get(entry.sheet)?.visible);
+  const visibleSheet = (id: string) => solo ? solo === id : sheetById.get(id)?.visible === true;
+  const scraps = study.entries.filter((entry): entry is Scrap & { document: string; at: string } => entry.type === "scrap" && visibleSheet(entry.sheet));
   const byId = new Map(scraps.map(scrap => [scrap.id, scrap]));
   const children = new Map<string, Scrap[]>();
   const roots: typeof scraps = [];
@@ -313,9 +341,26 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     else if (scrap.image) atLine(line).images.push(scrap);
     else atLine(line).scraps.push(scrap);
   }
-  for (const entry of study.entries) if (entry.type === "mark" && sheetById.get(entry.sheet)?.visible) {
+  for (const entry of study.entries) if (entry.type === "mark" && visibleSheet(entry.sheet)) {
     const line = locations.get(entry.id);
     if (line != null) atLine(line).marks.push(entry);
+  }
+  const ink = new Map<number, Ink[]>(), looseInk: Ink[] = [];
+  const confidence = new Map<number, Confidence & { at: string }>();
+  for (const item of study.entries) {
+    const line = locations.get(item.id);
+    if (item.type === "confidence" && line != null) {
+      const previous = confidence.get(line);
+      if (!previous || item.at >= previous.at) confidence.set(line, item);
+    } else if (item.type === "ink" && visibleSheet(item.sheet)) {
+      if (line == null || !rendered) looseInk.push(item);
+      else { const notes = ink.get(line); if (notes) notes.push(item); else ink.set(line, [item]); atLine(line); }
+    }
+  }
+  function setConfidence(anchor: ReadingTarget, level: ConfidenceLevel) {
+    const previous = confidence.get(anchor.line);
+    const item = { id: previous?.id ?? crypto.randomUUID(), type: "confidence", anchor, level } as const;
+    return write(item, previous ?? { ...item, level: 0 });
   }
 
   function acceptProposal(scrap: Scrap) {
@@ -356,11 +401,14 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     const item = { type: "mark", id: crypto.randomUUID(), sheet: "highlights", anchor: selection.target, colour, ...selection.range } as const;
     void write(item, { ...item, deleted: true }, true);
   }
-  function saveNote() {
-    const body = draft?.trim();
-    if (!body || !selection) return;
-    const item = { type: "scrap", id: crypto.randomUUID(), sheet: "notes", kind: "note", anchor: selection.target, body, stackOf: null, folded: false } as const;
-    void write(item, { ...item, deleted: true }, true);
+  function beginDraft(kind: typeof draftKind) { setDraftKind(kind); setDraft(""); }
+  async function saveNote(check = false) {
+    const body = draft?.trim(), anchor = selection?.target;
+    if (!body || !anchor) return;
+    const id = crypto.randomUUID();
+    const item = draftKind === "ink" ? { type: "ink", id, sheet: "notes", anchor, from: anchor.quote, to: body } as const
+      : { type: "scrap", id, sheet: draftKind === "doubt" ? "doubts" : "notes", kind: draftKind, anchor, body, stackOf: null, folded: false } as const;
+    if (await write(item, { ...item, deleted: true }, !check) && check) tutorAt(anchor, "check", body);
   }
   function drag(event: React.DragEvent, scrap: Scrap) {
     if (busy) { event.preventDefault(); return; }
@@ -408,6 +456,10 @@ export default function LearningMode({ id, content, editor, saved, ready, render
         {scrap.anchor && <q>{scrap.anchor.quote}</q>}
         {scrap.question && <p><strong>{scrap.question}</strong></p>}
         <p>{scrap.body}</p>
+        {scrap.anchor && tutor && (scrap.kind === "doubt" || scrap.kind === "answer") && <div className="study-actions">
+          <button type="button" disabled={busy} onClick={() => tutorAt(scrap.anchor!, "simplify", scrap.body.slice(0, 760), scrap.stackOf ?? scrap.id)}>{t("Still lost")}</button>
+          <button type="button" disabled={busy} onClick={() => void setConfidence(scrap.anchor!, 3)}>{t("Got it")}</button>
+        </div>}
         <div className="study-actions">
           {rendered && <button type="button" disabled={busy} onClick={() => setPicking(scrap)}>{t("Move")}</button>}
           {picking && !picking.image && picking.id !== scrap.id && !nested && !children.has(picking.id) && <button type="button" disabled={busy} onClick={() => void write({ ...picking, stackOf: scrap.id }, picking)}>{t("Stack here")}</button>}
@@ -419,52 +471,84 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       {scrap.folded && !nested && <p className="study-snippet">{scrap.body}</p>}
     </article>;
   }
+  function inkCard(item: Ink) {
+    return <article className="study-scrap" key={item.id} data-colour="blue" aria-label={t("Correction on the sheet")}>
+      <strong>{t("Correction on the sheet")}</strong>
+      <ProposalDiff before={item.from} after={item.to} />
+      <div className="study-actions">
+        {tutor && <button type="button" onClick={() => tutorAt(item.anchor, "check", item.to)}>{t("Check correction")}</button>}
+        <button type="button" disabled={busy} onClick={() => void write({ ...item, deleted: true }, item)}>{t("Peel off")}</button>
+      </div>
+    </article>;
+  }
   const groups: StudyOverlay[] = [];
-  if (!peek && rendered) for (const [line, { scraps, marks }] of byLine) if (scraps.length || marks.length) groups.push({
+  if (!peek && rendered) for (const [line, { scraps, marks }] of byLine) if (scraps.length || marks.length || ink.has(line)) groups.push({
     line, marks, tabs: scraps.map(scrap => <button key={scrap.id} type="button" className="study-tab" draggable={!busy && scrap.kind !== "proposal"} onDragStart={event => drag(event, scrap)} data-colour={sheetById.get(scrap.sheet)?.colour}
       aria-label={t("Fold or unfold: {{note}}", { note: scrap.body })} title={scrap.body} aria-expanded={!scrap.folded} disabled={busy}
       onClick={() => void write({ ...scrap, folded: !scrap.folded }, scrap)}><StickyNote size={13} />{children.has(scrap.id) ? 1 + children.get(scrap.id)!.length : null}</button>),
-    tucks: scraps.filter(scrap => !scrap.folded).map(scrap => scrapCard(scrap)),
+    tucks: [...(ink.get(line) ?? []).map(inkCard), ...scraps.filter(scrap => !scrap.folded).map(scrap => scrapCard(scrap))],
   });
   const root = context && rendered ? document.querySelector<HTMLElement>(".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden]) > .rich-document") : null;
   const floats = !peek && root && context ? context.nodes.flatMap(node => {
     const images = byLine.get(node.line)?.images;
     return images?.length ? [{ blockId: node.id, content: images.map(scrap => imageCard(scrap, true)) }] : [];
   }) : [];
-  const tutorTarget = useMemo(() => tutorOpen ? tutorSelection ?? defaultTutorTarget() : undefined, [tutorOpen, tutorSelection, context]);
+  const tutorTarget = useMemo(() => tutorOpen ? tutorDraft?.anchor ?? defaultTutorTarget() : undefined, [tutorOpen, tutorDraft, context]);
   const canPropose = !!tutorTarget && context?.nodes.some(node => node.line === tutorTarget.line && node.kind === "paragraph_open" && node.source === tutorTarget.block) === true;
-  const tutorView = tutor?.open && tutor.root && createPortal(<TutorCurtain target={tutorTarget} preferences={tutor.preferences}
+  const tutorView = tutor?.open && tutor.root && createPortal(<TutorCurtain target={tutorTarget} draft={tutorDraft} preferences={tutor.preferences}
     configure={tutor.configure} close={tutor.close} editable={canWrite} canPropose={canPropose} pendingWrites={busy}
     live={live} localRoute={!!live && tutorRoute === "local"} setRoute={setTutorRoute}
-    save={saveTutorReply} writeError={error}
+    save={saveTutorReply} receive={receiveTutor} writeError={error}
+    makeCard={reply => openCard(reply?.anchor ?? tutorTarget, reply ? { front: reply.text || reply.anchor.quote, back: reply.body } : undefined)}
     proposals={scraps.filter(scrap => scrap.kind === "proposal").map(proposalCard)} />, tutor.root);
+  const counts = new Map<string, number>();
+  for (const item of study.entries) if ("sheet" in item) counts.set(item.sheet, (counts.get(item.sheet) ?? 0) + 1);
+  const sheetButtons = sheets.map(sheet => <li key={sheet.id}><button type="button" className="study-sheet" data-colour={sheet.colour}
+    aria-pressed={visibleSheet(sheet.id)} data-solo={solo === sheet.id || undefined} disabled={busy} onClick={event => {
+      if (event.altKey) { setSolo(value => value === sheet.id ? undefined : sheet.id); return; }
+      setSolo(undefined); void write({ ...sheet, visible: !sheet.visible }, sheet);
+    }}><span className="study-swatch" />{t(sheet.name)}<small aria-hidden="true">{counts.get(sheet.id) || ""}</small></button></li>);
+  const tools = <div className="study-actions study-tools">
+    <button type="button" aria-pressed={peek} title={t("Hold to peek at the page")} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setPeek(true); }}
+      onPointerUp={() => setPeek(false)} onLostPointerCapture={() => setPeek(false)}
+      onKeyDown={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); setPeek(true); } }} onKeyUp={() => setPeek(false)} onBlur={() => setPeek(false)}>{t("Peek")}</button>
+    <button type="button" onClick={() => openCard()}>{t("学习卡片")}</button>
+    <button type="button" onClick={() => setSearching(true)}>{t("Search scraps")}</button>
+    <button type="button" disabled={busy} onClick={() => void store(id, { action: "export" }).catch(err => setError(t(err.message)))}>{t("导出笔记和卡片")}</button>
+    {undo && <button type="button" disabled={busy} onClick={() => void write(undo)}>{t("撤销")}</button>}
+  </div>;
+  const understanding = !peek && !!paragraphs.length && <section className="study-confidence" aria-label={t("Understanding")}>
+    <strong>{t("Understanding")}</strong><div>{paragraphs.map(block => {
+      const level = confidence.get(block.line)?.level ?? 0;
+      const label = t("Paragraph {{line}}: {{level}}", { line: block.line, level: t(levels[level]) });
+      return <button type="button" key={block.line} data-confidence={level} title={label} aria-label={label} disabled={busy} onClick={() => {
+        editor()?.jump(block.line);
+        void setConfidence({ ...block, quote: block.block.trim().slice(0, 240) }, ((level + 1) % 4) as ConfidenceLevel);
+      }} />;
+    })}</div>
+  </section>;
   return <>
-    <aside className="layers-rail study-rail" aria-label={t("Sheets")} hidden={!showSheets}>
+    {sheetsRoot && createPortal(<aside className="layers-rail study-rail" aria-label={t("Sheets")}>
       <header><h2><Layers size={15} />{t("Sheets")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
-      {saved ? <>
-        <ul>{sheets.map(sheet => <li key={sheet.id}><button type="button" className="study-sheet" data-colour={sheet.colour} aria-pressed={sheet.visible} disabled={busy} onClick={() => void write({ ...sheet, visible: !sheet.visible }, sheet)}>
-          <span className="study-swatch" />{t(sheet.name)}
-        </button></li>)}</ul>
-        <div className="study-actions study-tools">
-          <button type="button" aria-pressed={peek} title={t("Hold to peek at the page")} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); setPeek(true); }}
-            onPointerUp={() => setPeek(false)} onLostPointerCapture={() => setPeek(false)}
-            onKeyDown={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); setPeek(true); } }} onKeyUp={() => setPeek(false)} onBlur={() => setPeek(false)}>{t("Peek")}</button>
-          <button type="button" onClick={() => openCard()}>{t("学习卡片")}</button>
-          <button type="button" disabled={busy} onClick={() => void store(id, { action: "export" }).catch(err => setError(t(err.message)))}>{t("导出笔记和卡片")}</button>
-          {undo && <button type="button" disabled={busy} onClick={() => void write(undo)}>{t("撤销")}</button>}
-        </div>
+      {saved ? <><ul>{sheetButtons}</ul>{tools}{understanding}
         {picking && <div className="study-move" role="status"><p>{t("Choose a paragraph, another scrap, or the loose tray.")}</p><button type="button" onClick={() => setPicking(undefined)}>{t("取消")}</button></div>}
       </> : <p>{t("请先打开文件夹并保存文档。")}</p>}
-      {error && !tutor?.open && <p role="alert">{error}</p>}
-    </aside>
+      {error && !tutorOpen && <p role="alert">{error}</p>}
+    </aside>, sheetsRoot)}
+    {saved && <div className="study-chips" role="group" aria-label={t("Sheets")}>
+      <div className="study-chip-row"><ul>{sheetButtons}</ul></div>{tools}{understanding}
+      {error && !tutorOpen && <p role="alert">{error}</p>}
+    </div>}
+    {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}
-    {saved && !peek && !tutor?.open && (loose.length > 0 || picking || dragging || cards) && <div className="layers-right study-right" data-drop-only={!!dragging && !loose.length && !cards || undefined}>
-      {(loose.length > 0 || picking || dragging) && <aside className="study-tray" aria-label={t("Loose scraps")} data-dragging={!!dragging || undefined}>
-        <h2>{t("Loose scraps")} <small>{loose.length}</small></h2>
+    {saved && !peek && !tutor?.open && (loose.length > 0 || looseInk.length > 0 || picking || dragging || cards) && <div className="layers-right study-right" data-drop-only={!!dragging && !loose.length && !looseInk.length && !cards || undefined}>
+      {(loose.length > 0 || looseInk.length > 0 || picking || dragging) && <aside className="study-tray" aria-label={t("Loose scraps")} data-dragging={!!dragging || undefined}>
+        <h2>{t("Loose scraps")} <small>{loose.length + looseInk.length}</small></h2>
         {picking && <button type="button" disabled={busy} onClick={() => move(picking, null)}>{t("Move to tray")}</button>}
         {loose.map(scrap => scrap.image ? imageCard(scrap) : scrapCard(scrap))}
+        {looseInk.map(inkCard)}
       </aside>}
       {cards}
     </div>}
@@ -477,16 +561,20 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       style={{ left: Math.max(4, Math.min(selection.x, window.innerWidth - 284)), top: Math.max(4, Math.min(selection.y + 6, window.innerHeight - (draft === undefined ? 125 : 148))) }}
       onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); dismiss(true); } }}>
       {draft === undefined ? <>
-        <button type="button" disabled={busy} onClick={() => setDraft("")}><StickyNote size={15} />{t("Note")}</button>
+        <button type="button" disabled={busy} onClick={() => beginDraft("note")}><StickyNote size={15} />{t("Note")}</button>
+        <button type="button" disabled={busy} onClick={() => beginDraft("doubt")}>{t("Doubt")}</button>
+        <button type="button" disabled={busy} onClick={() => beginDraft("ink")}>{t("This is wrong")}</button>
         {selection.range && <div className="study-actions" role="group" aria-label={t("高亮")}>
           {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
         </div>}
         <button type="button" onClick={() => { openCard(selection.target); dismiss(); }}>{t("制作卡片")}</button>
-        {tutorParagraph && <button type="button" onClick={askTutor}><Sparkles size={15} />{t("Ask Tutor")}</button>}
-      </> : <form onSubmit={event => { event.preventDefault(); saveNote(); }}>
-        <textarea aria-label={t("Note")} autoFocus value={draft} onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); saveNote(); } }} />
-        <div><button type="button" disabled={busy} onClick={() => dismiss(true)}>{t("取消")}</button><button type="submit" disabled={busy || !draft.trim()}>{t("固定笔记")}</button></div>
+        {tutorParagraph && <button type="button" onClick={() => askTutor()}><Sparkles size={15} />{t("Ask Tutor")}</button>}
+      </> : <form onSubmit={event => { event.preventDefault(); void saveNote(); }}>
+        <textarea aria-label={t(draftKind === "note" ? "Note" : draftKind === "doubt" ? "Doubt" : "Your correction")} autoFocus value={draft} maxLength={draftKind === "ink" ? 1000 : undefined} onChange={event => setDraft(event.target.value)}
+          onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void saveNote(draftKind === "ink" && !!tutor && (event.metaKey || event.ctrlKey)); } }} />
+        <div><button type="button" disabled={busy} onClick={() => dismiss(true)}>{t("取消")}</button>
+          {draftKind === "ink" && tutor && <button type="button" disabled={busy || !draft.trim()} onClick={() => void saveNote(true)}>{t("Check correction")}</button>}
+          <button type="submit" disabled={busy || !draft.trim()}>{t(draftKind === "ink" ? "Keep on sheet" : "固定笔记")}</button></div>
       </form>}
     </div>, document.body)}
   </>;

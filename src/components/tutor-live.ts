@@ -1,18 +1,17 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import type { ReadingTarget } from "../../shared/reading-store.ts";
 import type { TutorReceipt } from "../types";
 import { host } from "../host";
 import { t } from "../i18n";
+import { tutorReply, type TutorDraft, type TutorReply } from "./tutor-verbs";
 
-export type TutorReply = { anchor: ReadingTarget; question: string; body: string };
-type Pending = { id?: string; anchor: ReadingTarget; question: string; proposal: boolean };
+type Pending = { id?: string; draft: TutorDraft; question: string };
 
-export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, receiveProposal: (reply: TutorReply) => Promise<void>) {
+export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, receive: (reply: TutorReply) => Promise<void>) {
   const supported = !!window.desktop?.tutorBridge && !!window.desktop.onTutor && enabled;
   const lease = useRef<string>(undefined), pending = useRef<Pending>(undefined);
   const [status, setStatus] = useState<TutorReceipt>(), [owner, setOwner] = useState<string | null>(null);
   const [reply, setReply] = useState<TutorReply>(), [problem, setProblem] = useState("");
-  const onRefresh = useEffectEvent(refresh), onProposal = useEffectEvent(receiveProposal);
+  const onRefresh = useEffectEvent(refresh), onReply = useEffectEvent(receive);
   useEffect(() => {
     const bridge = host.tutorBridge;
     if (!supported || !bridge) return;
@@ -29,9 +28,13 @@ export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, 
       pending.current = undefined;
       setStatus(event.type === "reply" ? "done" : undefined);
       if (event.type === "expired") { setProblem(t("Tutor request expired.")); return; }
-      const result = { anchor: ask.anchor, question: ask.question, body: event.text };
-      if (ask.proposal) void onProposal(result).catch(error => { if (lease.current === active) setProblem(t(error.message)); });
-      else setReply(result);
+      void (async () => {
+        try {
+          const result = tutorReply(ask.draft, ask.question, event.text);
+          await onReply(result);
+          if (lease.current === active && result.verb !== "propose") setReply(result);
+        } catch (error) { if (lease.current === active) setProblem(t((error as Error).message)); }
+      })();
     });
     void bridge(id, { action: "attach", lease: active }).catch(error => { if (lease.current === active) setProblem(t(error.message)); });
     return () => {
@@ -40,15 +43,14 @@ export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, 
     };
   }, [id, supported]);
 
-  async function send(anchor: ReadingTarget, question: string, proposal: boolean) {
-    const bridge = host.tutorBridge;
-    const active = lease.current;
+  async function send(draft: TutorDraft, question: string) {
+    const bridge = host.tutorBridge, active = lease.current;
     if (!active || !bridge || pending.current) return false;
-    const ask: Pending = { anchor, question, proposal };
+    const ask: Pending = { draft, question };
     pending.current = ask;
     setStatus("queued"); setReply(undefined); setProblem("");
     try {
-      const response = await bridge(id, { action: "submit", lease: active, target: anchor, question, verb: proposal ? "propose" : "answer" });
+      const response = await bridge(id, { action: "submit", lease: active, target: draft.anchor, question, verb: draft.verb });
       ask.id = response?.id;
       return lease.current === active;
     } catch (error) {

@@ -1,4 +1,4 @@
-// Shared by Electron and JavaScriptCore. No filesystem or network access.
+const verbs = require("./tutor-verbs.json");
 module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
   const documents = new Map(), asks = new Map();
   const receipts = ["queued", "seen", "working", "done"];
@@ -49,7 +49,7 @@ module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
   function submit(window, { question, target, verb } = {}) {
     expire(Date.now());
     const doc = documents.get(window);
-    if (!doc || !body(question, 1000) || !["answer", "propose"].includes(verb) || !target || !body(target.block, 24_000) ||
+    if (!doc || !body(question, 1000) || typeof verb !== "string" || !(verb === "answer" || verb === "propose" || Object.hasOwn(verbs, verb)) || !target || !body(target.block, 24_000) ||
         !body(target.quote, 24_000) || !Array.isArray(target.headings) || target.headings.length > 6 ||
         target.headings.some(heading => typeof heading !== "string" || heading.length > 4096) ||
         !Number.isInteger(target.line) || target.line < 1 || target.line > 20_000_000) return fail("Select a paragraph and enter a question.");

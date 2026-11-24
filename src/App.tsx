@@ -79,6 +79,15 @@ export default function App() {
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
+  const [sheetsRoot, setSheetsRoot] = useState<HTMLDivElement | null>(null);
+  const [halfTile, setHalfTile] = useState(() => window.matchMedia("(max-width: 820px)").matches);
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => {
+    const tile = window.matchMedia("(max-width: 820px)");
+    const changed = () => { setHalfTile(tile.matches); setDrawer(false); };
+    tile.addEventListener("change", changed);
+    return () => tile.removeEventListener("change", changed);
+  }, []);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -101,7 +110,9 @@ export default function App() {
   const readingSupported = !!window.desktop?.readingStore;
   const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
   const readingVisible = learningEnabled && !!active && !focus && painted;
-  const filesVisible = sidebar && (!readingVisible || showFiles);
+  const sidebarVisible = readingVisible && halfTile ? drawer : sidebar;
+  useEffect(() => { if (readingVisible && !halfTile) setSidebar(true); }, [readingVisible, halfTile]);
+  const filesVisible = sidebarVisible && (!readingVisible || showFiles);
   const cleanVisible = !!active && cleanId === active.id;
   function closeClean() {
     setCleanId(null);
@@ -124,12 +135,13 @@ export default function App() {
   function openTutor() {
     if (!tutorKey) return;
     setTutor(tutorKey); closeFlashcards();
-    if (window.innerWidth <= 820) setShowFiles(false);
+    if (halfTile) setDrawer(false);
   }
   function closeTutor() { setTutor(null); editor()?.focus(); }
   function openFilesRail() {
-    setShowFiles(true); setSidebar(true);
-    if (window.innerWidth <= 820) setTutor(null);
+    setShowFiles(true);
+    if (readingVisible && halfTile) { setDrawer(true); setTutor(null); }
+    else setSidebar(true);
   }
   useEffect(() => {
     if (payload && !currentPayload) setPayload(null);
@@ -246,9 +258,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar: filesVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, filesVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, filesVisible, renderedView, learningEnabled, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -281,16 +293,18 @@ export default function App() {
   const flashcardsVisible = !!flashcardPanel && flashcardPanel.id === active?.id
     && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
   const closeFlashcards = () => setFlashcardPanel(null);
-  function openFlashcards(target?: FlashcardPanel["target"]) {
+  function openFlashcards(target?: FlashcardPanel["target"], answer?: FlashcardPanel["answer"]) {
     if (window.desktop?.readingStore && active?.path && session.folder) {
       setTutor(null);
-      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
+      if (halfTile) setDrawer(false);
+      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target, answer });
     }
   }
   function toggleReading() {
     if (!readingSupported || editor()?.composing()) return;
     setPluginPreferences(previous => ({ ...previous, [learningPluginId]: { enabled: !learningEnabled } }));
     setShowFiles(false);
+    setDrawer(false);
     if (learningEnabled) {
       closeFlashcards();
       setTutor(null);
@@ -298,10 +312,9 @@ export default function App() {
     } else setFocus(false);
   }
   function toggleSidebar() {
-    if (readingVisible) {
-      if (!filesVisible && window.innerWidth <= 820) setTutor(null);
-      setShowFiles(!filesVisible);
-      setSidebar(!filesVisible);
+    if (readingVisible && halfTile) {
+      if (!drawer) { setTutor(null); closeFlashcards(); }
+      setDrawer(!drawer);
     } else setSidebar(value => !value);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
@@ -506,7 +519,7 @@ export default function App() {
   /></Suspense>;
   return (
     <div
-      ref={shell} className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload || tutorOpen ? " payload-open" : ""}${tutorOpen ? " tutor-open" : ""}`}
+      ref={shell} className={`app-shell ${sidebarVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${readingVisible ? " learning-mode" : ""}${activePayload || tutorOpen ? " payload-open" : ""}${tutorOpen ? " tutor-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -532,8 +545,8 @@ export default function App() {
         folder={session.folder}
         headings={headings}
         tab={tab}
-        setTab={setTab}
-        showSheets={readingVisible ? () => setShowFiles(false) : undefined}
+        setTab={value => { setTab(value); if (readingVisible) setShowFiles(true); }}
+        sheets={readingVisible ? { selected: !showFiles, show: () => setShowFiles(false), mount: setSheetsRoot } : undefined}
         select={session.setActiveId}
         openToken={session.openToken}
         openFolder={session.openFolder}
@@ -631,11 +644,18 @@ export default function App() {
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               saved={learningSaved}
-              ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} showSheets={!filesVisible}
+              ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
               tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,
                 configure: () => setDialog("preferences") } : undefined}
               openFiles={openFilesRail} openCard={openFlashcards}
+              openSearchHit={async match => {
+                const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === match.document);
+                const record = file && await session.openToken(file.token);
+                if (!record) return false;
+                if (match.line != null) jumpTo(record.id, match.line);
+                return true;
+              }}
               cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
                 id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}
               /></Suspense>}

@@ -40,6 +40,16 @@ export async function vaultProposals(root) {
   return result.filter(item => item.kind === "proposal");
 }
 
+export async function studySearchSnapshot(root, previous) {
+  const result = (entries, revision) => ({ revision, ...(revision === previous ? {} : {
+    entries: entries ? query(entries, "", { scope: "vault", types: ["scrap", "note"], studyNotes: true })
+      .filter(item => !item.image).map(item => item.type === "note" ? { ...item, kind: "note" } : item) : [],
+  }) });
+  return queued(root, () => locked(root, false, exists => exists
+    ? transaction(root, false, (entries, _, __, revision) => result(entries, revision ?? "empty"))
+    : result(null, "empty")));
+}
+
 async function directoryAt(root, directory, create = false) {
   let metadata = await info(directory);
   if (!metadata && create) {
@@ -222,7 +232,7 @@ async function transaction(root, writing, run) {
         await unlink(path.join(path.dirname(log), name));
       } catch { notice = true; }
     }
-    return await run(index.entries, append, notice);
+    return await run(index.entries, append, notice, index.signature);
   } finally { await handle.close(); }
 }
 

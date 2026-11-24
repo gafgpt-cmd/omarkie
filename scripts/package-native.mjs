@@ -57,6 +57,7 @@ await cp("shared/plugin-loader.js", path.join(resources, "plugin-loader.js"));
 await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
 await cp("shared/locales", path.join(resources, "locales"), { recursive: true });
 await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
+await cp("shared/tutor-verbs.json", path.join(resources, "tutor-verbs.json"));
 await cp("shared/tts-limit.json", path.join(resources, "tts-limit.json"));
 await cp("build/icon.icns", path.join(resources, "icon.icns"));
 await cp("LICENSE", path.join(resources, "LICENSE"));

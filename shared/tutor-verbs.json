@@ -1,0 +1,9 @@
+{
+  "simplify": "Explain this passage more simply. Use a short everyday example only if it does not add a factual claim.",
+  "check": "Check the learner's proposed correction against the passage. State uncertainty. Return JSON only: {\"feedback\":\"short verdict\",\"replacement\":null}. If supported and needed, set replacement to one complete Markdown prose paragraph with no links or HTML.",
+  "explain": "Assess the learner's explanation against the passage. Name what is right, what is missing, and one correction. Do not invent sources.",
+  "quiz": "Ask one short retrieval question about the passage. Return only the question. Do not give the answer yet.",
+  "grade": "Assess the learner's answer to the quiz against the passage. Return JSON only: {\"feedback\":\"brief explanation\",\"confidence\":2}. Confidence must be 1 (incorrect), 2 (partial), or 3 (correct).",
+  "exam": "List up to three testable exam points from the passage. State any limits or exceptions that affect an answer.",
+  "glossary": "Define one key term from the passage in plain language. State if the passage does not supply its meaning."
+}

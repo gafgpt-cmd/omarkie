@@ -96,6 +96,8 @@ try {
     markedBeforeChunk = await page.evaluate(() => window.firstLearningPaint);
     await route.continue();
   });
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
+  await page.waitForFunction(() => innerWidth > 820);
   await page.reload();
   await page.waitForSelector('.study-rail');
   assert.equal(markedBeforeChunk, true, 'Learning chunk is requested after the first document paint');

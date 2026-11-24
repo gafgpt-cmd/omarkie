@@ -41,7 +41,8 @@ try {
   const actualImage = label => rich().getByRole("img", { name: label, exact: true });
   const image = label => actualImage(label).locator("..");
   const button = (root, name) => root.getByRole("button", { name, exact: true });
-  const sheets = () => page.getByRole("complementary", { name: "Sheets", exact: true });
+  const sheets = () => page.getByRole("complementary", { name: "Sheets", exact: true })
+    .or(page.getByRole("group", { name: "Sheets", exact: true }));
   const sidecar = path.join(vault, ".omarkie"), blobs = path.join(sidecar, "scraps");
   const entries = async () => (await readFile(path.join(sidecar, "store.jsonl"), "utf8")).trim().split("\n").map(JSON.parse).map(row => row.entry);
   async function resize(width) {

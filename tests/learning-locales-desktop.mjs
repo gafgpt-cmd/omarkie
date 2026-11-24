@@ -61,8 +61,11 @@ for (const [language] of languages) {
     await expect(button(clean, "应用到源文档")).toBeEnabled();
     await button(clean, "返回源文档").click();
     await button(page, "Learning mode").click();
-    const rail = page.getByRole("complementary", { name: label("Sheets"), exact: true });
+    const rail = page.getByRole("complementary", { name: label("Sheets"), exact: true })
+      .or(page.getByRole("group", { name: label("Sheets"), exact: true }));
     await expect(button(rail, "导出笔记和卡片")).toBeVisible();
+    await expect(rail.getByRole("region", { name: label("Understanding"), exact: true })).toBeVisible();
+    await expect(button(rail, "Search scraps")).toBeEnabled();
     await button(rail, "学习卡片").click();
     const cards = page.getByRole("complementary", { name: label("学习卡片"), exact: true });
     await expect(cards).toContainText(label("本笔记卡片：{{total}} / {{limit}}", { total: 0, limit: 10 }));
@@ -88,6 +91,11 @@ for (const [language] of languages) {
     const selection = page.getByRole("group", { name: label("选区操作"), exact: true });
     await expect(button(selection, "Note")).toBeEnabled();
     await expect(button(selection, "制作卡片")).toBeEnabled();
+    await expect(button(selection, "Doubt")).toBeEnabled();
+    await page.keyboard.press("e");
+    const tutor = page.getByRole("complementary", { name: label("Tutor"), exact: true });
+    await expect(tutor.getByRole("textbox", { name: label("Your explanation"), exact: true })).toBeVisible();
+    await tutor.press("Escape");
     await button(page, "Learning mode").click();
     await rich.getByText(excerpt, { exact: true }).click();
     await page.keyboard.press("ControlOrMeta+,");

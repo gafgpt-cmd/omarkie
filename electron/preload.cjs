@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("tutor:event", listener);
     return () => ipcRenderer.removeListener("tutor:event", listener);
   },
+  learningSearch: (id, query) => call("learningSearch", id, query),
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),

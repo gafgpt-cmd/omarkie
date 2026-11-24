@@ -112,6 +112,7 @@ try {
   await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
   await cp("shared/locales", path.join(resources, "locales"), { recursive: true });
   await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
+  await cp("shared/tutor-verbs.json", path.join(resources, "tutor-verbs.json"));
   await cp("shared/tts-limit.json", path.join(resources, "tts-limit.json"));
   await cp("tests/fixtures/plugin-package", path.join(resources, "Plugin-package-fixture"), {recursive:true});
   await cp("tests/webkit.js", path.join(resources, "web-tests.js"));

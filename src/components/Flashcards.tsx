@@ -10,6 +10,7 @@ import "./flashcards.css";
 
 export interface FlashcardPanel {
   target?: ReadingTarget;
+  answer?: { front: string; back: string };
 }
 
 type Draft = CardDraft & { selected: boolean };
@@ -42,7 +43,7 @@ export default function Flashcards({ id, content, panel, close }: {
       if (!current) return;
       setEntries(items);
       if (panel.target && items.filter(item => item.type === "card").length < cardsPerNote) {
-        setDrafts([{ ...sourceDraft(panel.target, t("[…]"), fallback(panel.target)), id: crypto.randomUUID(), type: "card", selected: true }]);
+        setDrafts([{ ...sourceDraft(panel.target, t("[…]"), fallback(panel.target)), ...panel.answer, id: crypto.randomUUID(), type: "card", selected: true }]);
       }
     }).catch(error => { if (current) setError((error as Error).message); })
       .finally(() => { if (current) setLoading(false); });
