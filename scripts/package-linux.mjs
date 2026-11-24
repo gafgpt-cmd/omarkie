@@ -28,6 +28,7 @@ await build({
     extraMetadata: { version },
     directories: { app: application, output: "release/linux" },
     files: ["**/*"], asar: true, npmRebuild: false,
+    extraFiles: [{ from: path.resolve("packaging/omarkie-axi"), to: "omarkie-axi" }],
     electronVersion: pkg.devDependencies.electron,
     linux: {
       executableName: "omarkie", icon: "build/icon.png", category: "Office",

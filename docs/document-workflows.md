@@ -63,10 +63,21 @@
 
 ### Tutor
 
-- Open **Tutor** from the title bar, or select text and choose **Ask Tutor**. Tutor uses the same endpoint, opt-in, origin allowance, and privacy notice as Payload.
-- **Send question** sends only the displayed paragraph and question. One at a time, with no history. **Stick on paragraph** saves the reply on the Tutor answers sheet.
+- Open **Tutor** from the title bar, or select text and choose **Ask Tutor**.
+- On Electron for Unix, **Local agent** is the default. Send the question, then run `omarkie-axi poll --wait` in the vault (or pass `--vault <dir>`). Only the paragraph, question, and local anchor go through the socket. No HTTP listener.
+- Switch to **Payload** to use its existing opt-in, approved origin and privacy notice. No automatic fallback.
+- One question at a time. **Stick on paragraph** saves the answer on the Tutor answers sheet.
 - **Propose edit** saves a before/after draft on the Proposals sheet. **Reject** discards it. Only **Accept into Markdown** updates the note. Save as usual.
 - Accept checks the exact paragraph, its position, and disk changes. A stale draft cannot write. Use normal **Undo** to revert an accepted edit in one step.
+
+### Tutor CLI
+
+- Arch: `omarkie-axi` on PATH. Other Linux builds: `omarkie-axi` beside the installed binary. From source: `npm run --silent omarkie-axi -- --help`.
+- App closed: `doc view <note.md> --blocks` gives paragraph hashes. Use `scrap add`, `propose`, `scraps list`, or `proposals` against the same vault journal. No base Markdown writes.
+- App running: `poll --wait`, `ask view <id> --full`, `status <id> working`, `reply <id> --text <answer>`. `poll --takeover` replaces the active listener.
+- The socket starts on the first local ask and closes when leaving the document or turning off Learning mode. Open asks are session-only; saved scraps and proposals persist.
+- `omarkie-axi setup hooks --vault <dir>` opts that project into Claude Code, Codex, and OpenCode 2 notices. Optional: `--agent <name>`. Put `omarkie-axi` on PATH and review the Codex hook with `/hooks`.
+- Hooks announce pending ask count, not note text. The repo-local `omarkie-tutor` skill can be read with `omarkie-axi skill`.
 
 ### Preview media
 

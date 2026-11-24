@@ -25,12 +25,19 @@ const within = (root, file) => {
   return !!relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 };
 
-async function scope(store, id) {
+export async function readingScope(store, id) {
   const file = store.require(id).path, folder = store.folder;
   if (!file || !folder) throw new Error(t("请先打开文件夹并保存文档。"));
   const root = await realpath(folder), document = await realpath(file);
   if (!within(root, document) || document !== file || !(await lstat(document)).isFile()) throw unsafe();
   return { root, document: path.relative(root, document).split(path.sep).join("/"), current: () => store.folder === folder && store.require(id).path === file };
+}
+
+export async function vaultProposals(root) {
+  const result = await locked(root, false, exists => exists
+    ? transaction(root, false, entries => entries ? query(entries, "", { scope: "vault", types: ["scrap"], studyNotes: true }) : [])
+    : []);
+  return result.filter(item => item.kind === "proposal");
 }
 
 async function directoryAt(root, directory, create = false) {
@@ -346,7 +353,7 @@ async function queued(root, run) {
 
 export async function readingStore(store, id, request) {
   if (!request || typeof request !== "object") throw invalid();
-  const authorized = await scope(store, id);
+  const authorized = await readingScope(store, id);
   let remoteBytes;
   if (request.action === "putImage" && request.address !== undefined) {
     let address;

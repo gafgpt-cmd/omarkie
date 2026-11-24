@@ -12,7 +12,9 @@ import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } fro
 import { LearningOverlays, type StudyMark, type StudyOverlay } from "./learning-overlays.tsx";
 import { readingBlocks, readingSelection, type StudySelection } from "./reading-selection";
 import type { Preferences } from "../preferences";
-import TutorCurtain, { ProposalDiff, safeProposal } from "./TutorCurtain";
+import { safeProposal } from "../editor/markdown";
+import TutorCurtain, { ProposalDiff } from "./TutorCurtain";
+import { useLiveTutor } from "./tutor-live";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
@@ -51,6 +53,13 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     writable.current = canWrite;
     return () => { writable.current = false; };
   }, [canWrite]);
+  const [tutorRoute, setTutorRoute] = useState<"local" | "payload">("local");
+  const live = useLiveTutor(id, saved && !!tutor, () => invalidate(value => value + 1), async reply => {
+    if (reply.body !== reply.anchor.block.trim()) {
+      if (!safeProposal(reply.body)) throw new Error("Tutor did not return a safe paragraph. Ask for a prose rewrite.");
+      await saveTutorReply(reply, true);
+    }
+  });
   const getContext = useEffectEvent(editor);
   const context = useMemo(() => ready ? editor()?.readingContext() : undefined, [ready, rendered, content]);
   useEffect(() => {
@@ -334,6 +343,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     return <section className="study-scrap tutor-proposal" aria-label={t("Edit proposal")} data-colour="rose" key={scrap.id}>
       <h3>{t("Edit proposal")}</h3>
       <ProposalDiff before={scrap.before!} after={scrap.body} />
+      {scrap.question && <p>{scrap.question}</p>}
       <div className="study-actions">
         <button type="button" className="primary-button" disabled={busy || !canWrite} onClick={() => acceptProposal(scrap)}>{t("Accept into Markdown")}</button>
         <button type="button" disabled={busy} onClick={() => void write({ ...scrap, deleted: true }, scrap)}>{t("Reject")}</button>
@@ -425,6 +435,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
   const canPropose = !!tutorTarget && context?.nodes.some(node => node.line === tutorTarget.line && node.kind === "paragraph_open" && node.source === tutorTarget.block) === true;
   const tutorView = tutor?.open && tutor.root && createPortal(<TutorCurtain target={tutorTarget} preferences={tutor.preferences}
     configure={tutor.configure} close={tutor.close} editable={canWrite} canPropose={canPropose} pendingWrites={busy}
+    live={live} localRoute={!!live && tutorRoute === "local"} setRoute={setTutorRoute}
     save={saveTutorReply} writeError={error}
     proposals={scraps.filter(scrap => scrap.kind === "proposal").map(proposalCard)} />, tutor.root);
   return <>

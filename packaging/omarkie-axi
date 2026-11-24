@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+base=$(dirname "$(readlink -f "$0")")
+export ELECTRON_RUN_AS_NODE=1 OMARKIE_AXI_BIN="$0"
+exec "$base/omarkie" "$base/resources/app.asar/electron/omarkie-axi.mjs" "$@"

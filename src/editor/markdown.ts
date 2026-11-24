@@ -2,6 +2,7 @@ import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
 import { collectImages } from "../../shared/image-references.mjs";
 import { parserContext } from "../../shared/parser-context.mjs";
 import { sourceLines } from "../../shared/source-lines.mjs";
+import { markdownBlocks, plainProposal } from "../../shared/markdown-blocks.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
 export function loadHighlighting() { return highlighting ??= import("highlight.js/lib/common").then(module => { hljs = module.default; }); }
@@ -250,42 +251,9 @@ export function parseBlocks(
   source: string,
   environment: Record<string, unknown> = {},
 ): Block[] {
-  const { lines, offsets } = sourceLines(source), span = (from: number, to: number) => source.slice(offsets[from], offsets[to - 1] + lines[to - 1].length);
-  const blocks: Block[] = [];
-  let covered = 0;
-  if (/^(?:\uFEFF)?---[ \t]*$/.test(lines[0])) {
-    const end = lines
-      .slice(1)
-      .findIndex((line) => /^(?:---|\.\.\.)[ \t]*$/.test(line));
-    if (end >= 0) {
-      covered = end + 2;
-      blocks.push({
-        fromLine: 1,
-        toLine: covered,
-        source: span(0, covered),
-        kind: "frontmatter",
-      });
-    }
-  }
-  for (const token of md.parse(source, environment)) {
-    if (
-      !token.map ||
-      token.level !== 0 ||
-      token.map[0] < covered ||
-      token.type.endsWith("_close")
-    )
-      continue;
-    const [from, to] = token.map;
-    covered = to;
-    blocks.push({
-      fromLine: from + 1,
-      toLine: to,
-      source: span(from, to),
-      kind: token.type,
-    });
-  }
-  return blocks;
+  return markdownBlocks(md, source, environment);
 }
+export function safeProposal(text: string) { return plainProposal(md, text); }
 export function inlineTokens(
   source: string,
   environment: Record<string, unknown> = {},

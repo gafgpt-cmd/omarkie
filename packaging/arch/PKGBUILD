@@ -20,6 +20,7 @@ noextract=('ThirdPartyLicenses.tar')
 package() {
   install -Dm644 app.asar "$pkgdir/usr/lib/omarkie/app.asar"
   install -Dm755 omarkie "$pkgdir/usr/bin/omarkie"
+  ln -s omarkie "$pkgdir/usr/bin/omarkie-axi"
   install -Dm644 omarkie.desktop "$pkgdir/usr/share/applications/omarkie.desktop"
   install -Dm644 omarkie.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/omarkie.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/omarkie/LICENSE"

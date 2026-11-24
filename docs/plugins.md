@@ -34,7 +34,7 @@ The eight upstream files are included unchanged under `third-party/typora-plugin
 
 Disabled bundled plugins are never imported or evaluated. Enabling dynamically imports only that plugin; saved enabled plugins start after the first document paint, without blocking document startup. Heavy optional features must keep this boundary.
 
-**Learning mode** is a bundled renderer feature, not a Typora compatibility plugin. The Plugin Manager and title bar share the same switch. It starts after the first document paint, opens no listener, and keeps study data in the vault.
+**Learning mode** is a bundled renderer feature, not a Typora compatibility plugin. The Plugin Manager and title bar share the same switch. Study data stays in the vault. The optional local Tutor socket opens on the first local ask, never at startup.
 
 ## Installing another plugin
 

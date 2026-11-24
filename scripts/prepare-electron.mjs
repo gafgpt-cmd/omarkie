@@ -6,12 +6,13 @@ import { spellcheckDictionaries } from "./spellcheck-dictionaries.mjs";
 import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 // Folders the Electron host reads at runtime, at the same relative paths as in the repository.
-export const applicationFolders = ["dist", "electron", "shared", "docs/showcase", "third-party/csl"];
-export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi"];
+export const applicationFolders = ["dist", "electron", "shared", "docs/showcase", "third-party/csl", "skills/omarkie-tutor"];
+export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi", "@toon-format/toon",
+  "markdown-it", "markdown-it-task-lists", "markdown-it-mark", "markdown-it-sub", "markdown-it-sup", "markdown-it-emoji",
+  "entities", "linkify-it", "mdurl", "punycode.js", "uc.micro"];
 export const nativeBridgeModule = (platform = process.platform, arch = process.arch) => `@koromix/koffi-${platform === "windows" ? "win32" : platform}-${arch}`;
-// Ship only the Node file bridge's dependencies; Vite bundles the editor.
-export async function prepareElectronApplication(platform) {
-  const application = path.resolve(`build/${platform}-app`);
+// Ship Node bridge dependencies; Vite bundles the editor.
+export async function prepareElectronApplication(platform, application = path.resolve(`build/${platform}-app`)) {
   await rm(application, { recursive: true, force: true });
   await mkdir(application, { recursive: true });
   for (const folder of applicationFolders) await cp(folder, path.join(application, folder), { recursive: true });
@@ -27,7 +28,10 @@ export async function prepareElectronApplication(platform) {
     name: pkg.name, version: pkg.version, description: pkg.description,
     main: pkg.main, type: "module", license: pkg.license, author: pkg.author,
     ...(platform === "linux" ? { desktopName: "omarkie.desktop" } : {}),
-    homepage: pkg.homepage, dependencies: { "iconv-lite": pkg.dependencies["iconv-lite"], i18next: pkg.dependencies.i18next, "image-size": pkg.dependencies["image-size"], yaml: pkg.dependencies.yaml, koffi: pkg.dependencies.koffi, [nativeBridgeModule(platform)]: pkg.dependencies.koffi },
+    homepage: pkg.homepage, dependencies: Object.fromEntries([
+      ...nodeBridgeModules.filter(name => pkg.dependencies[name]).map(name => [name, pkg.dependencies[name]]),
+      [nativeBridgeModule(platform), pkg.dependencies.koffi],
+    ]),
   }, null, 2));
   return application;
 }

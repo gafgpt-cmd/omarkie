@@ -176,8 +176,8 @@ export const host: Host = window.desktop
       get(target, name: keyof Host) {
         if (name === "native") return true;
         if (name === "checkGrammar" && !window.desktop![name]) return undefined;
-        if (name === "bibliography" && !window.desktop?.bibliography) return undefined;
-        if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
+        if ((name === "bibliography" || name === "tutorBridge") && !window.desktop?.[name]) return undefined;
+        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];

@@ -40,6 +40,8 @@ function startupMark(name) {
 }
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
+let tutorSessions, tutorLoading;
+function detachTutor(contents) { if (tutorLoading) void tutorLoading.then(() => tutorSessions?.detach(contents)).catch(() => {}); }
 if (process.env.OMARKIE_DATA_DIR)
   app.setPath("userData", process.env.OMARKIE_DATA_DIR);
 app.setName("Omarkie");
@@ -206,6 +208,12 @@ const handlers = {
   readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  tutorBridge: async ({ sender }, id, request) => {
+    if (request?.action === "detach" && !tutorLoading) return;
+    tutorLoading ??= import("./tutor-session.mjs").then(module => { tutorSessions = module.tutorSessions(store); });
+    await tutorLoading;
+    return tutorSessions.request(sender, id, request);
+  },
   readingStore: async (_, id, request) => {
     const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
     if (request?.action !== "export") return readingStore(store, id, request);
@@ -609,7 +617,9 @@ app
         callback(false),
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-      created.webContents.on("render-process-gone", stopSpeech);
+      const contents = created.webContents;
+      contents.on("render-process-gone", () => { stopSpeech(); detachTutor(contents); });
+      contents.on("did-start-navigation", details => { if (details.isMainFrame && !details.isSameDocument) detachTutor(contents); });
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
       if (development) window.loadURL(development);
@@ -622,6 +632,7 @@ app
       });
       window.on("closed", () => {
         stopSpeech();
+        detachTutor(contents);
         window = null;
         rendererReady = false;
         releaseBibliography();

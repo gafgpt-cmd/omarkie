@@ -90,6 +90,7 @@ try {
   assert.ok(!loaded.some(url => /LearningMode-|PayloadPanel-|payload-controls/.test(url)));
   await toggle.click();
   await askAbout(paragraph);
+  await button(panel, "Payload").click();
   await expect(send).toBeDisabled();
   await button(panel, "Preferences").click();
   await preferences.getByLabel("Enable Payload").check();
@@ -162,6 +163,7 @@ try {
   await expect(rich.getByText(changed, { exact: true })).toBeVisible();
   await toggle.click();
   await askAbout(changed);
+  await button(panel, "Payload").click();
   await expect(diff).toBeVisible();
   await button(diff, "Accept into Markdown").click();
   await expect(panel.getByRole("alert")).toHaveText("The paragraph changed. Ask for a new proposal.");

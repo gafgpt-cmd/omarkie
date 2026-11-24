@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld("desktop", {
   showcase: () => call("showcase"),
   scan: () => call("scan"),
   readingStore: (id, request) => call("readingStore", id, request),
+  tutorBridge: (id, request) => call("tutorBridge", id, request),
+  onTutor: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("tutor:event", listener);
+    return () => ipcRenderer.removeListener("tutor:event", listener);
+  },
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),

@@ -1,4 +1,4 @@
-import type { ReadingStore } from "../shared/reading-store.ts";
+import type { ReadingStore, ReadingTarget } from "../shared/reading-store.ts";
 
 export interface DocumentRecord {
   readingRecoveryWarning?: boolean;
@@ -85,8 +85,19 @@ interface BibliographyOperations {
   suggest: CitationMatch[];
   open: void;
 }
+export type TutorBridgeRequest = { lease: string } & ({ action: "attach" | "detach" } | {
+  action: "submit"; target: ReadingTarget; question: string; verb: "answer" | "propose";
+});
+export type TutorReceipt = "queued" | "seen" | "working" | "done";
+export type TutorEvent = { lease: string } & (
+  { type: "receipt"; id: string; owner: string | null; status: TutorReceipt } |
+  { type: "reply"; id: string; owner: string | null; text: string } |
+  { type: "agent"; owner: string | null } | { type: "expired"; id: string } | { type: "refresh" }
+);
 export interface Host {
   readingStore?: ReadingStore;
+  tutorBridge?(id: string, request: TutorBridgeRequest): Promise<{ id?: string } | undefined>;
+  onTutor?(callback: (event: TutorEvent) => void): () => void;
   vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
   bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
