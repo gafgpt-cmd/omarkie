@@ -29,6 +29,10 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
+  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--magnet <id>] [--vault <dir>]", "Add a magnet to a note's glass journal."],
+  "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets on a note."],
+  "glass show": ["--note <note.md> [--magnet <id>] [--vault <dir>]", "Show one magnet, or the whole note glass."],
+  "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
@@ -54,7 +58,7 @@ async function folder(explicit, cwd) {
 }
 async function bridgeExists(root) {
   const { endpointExists } = await import("./tutor-transport.mjs");
-  return endpointExists(root);
+  return await endpointExists(root) || await endpointExists(root, "glass");
 }
 function summaries(asks) { return asks.map(({ id, verb, doc, block, status }) => ({ id, verb, doc, block, status })); }
 function skim(ask, full = false) {
@@ -66,7 +70,7 @@ function skim(ask, full = false) {
 export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { console.log(pkg.version); return; }
   let command = argv[0]?.startsWith("-") || !argv.length ? "home" : argv[0];
-  if (["ask", "doc", "scraps", "scrap", "setup"].includes(command) && argv[1] && !argv[1].startsWith("-")) command += ` ${argv[1]}`;
+  if (["ask", "doc", "scraps", "scrap", "setup", "glass"].includes(command) && argv[1] && !argv[1].startsWith("-")) command += ` ${argv[1]}`;
   const spec = Object.hasOwn(specs, command) ? specs[command] : null;
   if (argv.includes("--help")) {
     if (!spec || command === "home") emit({ description: live, commands: Object.keys(specs).filter(name => name !== "context").map(usage) });
@@ -110,7 +114,16 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "reply") requireArgument(Boolean(opts.text?.trim()) !== Boolean(opts.file), "Supply either --text or --file.");
     if (command === "status") requireArgument(["seen", "working", "done"].includes(args[1]), "Status must be seen, working, or done.");
     if (command === "poll") requireArgument(Boolean(opts["reply-to"]) === Boolean(opts["agent-reply"]), "Supply --reply-to with --agent-reply.");
+    if (command.startsWith("glass ")) requireArgument(command === "glass status" || Boolean(opts.note?.trim()), "--note is required.");
     const root = await folder(opts.vault, process.cwd());
+    if (command.startsWith("glass ")) {
+      const { requestBridge } = await import("./tutor-transport.mjs");
+      const state = await requestBridge(root, { op: "glass", action: command.slice(6), note: opts.note, text: opts.text,
+        kind: opts.kind, magnet: opts.magnet }, 30_000, "glass");
+      if (!state) throw new Error("Glass storage is not running in this vault. Open the folder in Omarkie first.");
+      emit(state);
+      return;
+    }
     const { requestBridge } = await import("./tutor-transport.mjs");
     const bridge = (op, value = {}) => requestBridge(root, { op, ...value }, op === "poll" && opts.wait ? 95_000 : 3_000);
     if (command === "home") {

@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("tutor:event", listener);
   },
   learningSearch: (id, query) => call("learningSearch", id, query),
+  glass: request => call("glass", request),
+  onGlassStorage: callback => {
+    const listener = (_, status) => callback(status);
+    ipcRenderer.on("glass:storage", listener);
+    return () => ipcRenderer.removeListener("glass:storage", listener);
+  },
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),

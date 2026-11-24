@@ -32,6 +32,8 @@ import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } f
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
+import { listenBridge } from "./tutor-transport.mjs";
+import { GlassService } from "./glass-service.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -126,6 +128,54 @@ ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== wi
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
 let bibliography;
+let glassRuntime = { folder: null, root: null, service: null, close: null, error: null };
+let glassQueue = Promise.resolve();
+function syncGlass(folder = store?.folder ?? null) {
+  const run = glassQueue.then(() => syncGlassNow(folder));
+  glassQueue = run.catch(() => {});
+  return run;
+}
+async function closeGlassRuntime() {
+  const current = glassRuntime;
+  glassRuntime = { folder: null, root: null, service: null, close: null, error: null };
+  await current.close?.().catch(() => {});
+  await current.service?.close().catch(() => {});
+}
+async function syncGlassNow(folder) {
+  if (glassRuntime.folder === folder) {
+    if (glassRuntime.error) throw glassRuntime.error;
+    return;
+  }
+  await closeGlassRuntime();
+  if (!folder) return;
+  glassRuntime.folder = folder;
+  try {
+    const root = await realpath(folder);
+    const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
+    if (glassRuntime.folder !== folder) { await service.close(); return; }
+    glassRuntime.root = root;
+    glassRuntime.service = service;
+    service.subscribe(status => window?.webContents.send("glass:storage", status));
+    try {
+      glassRuntime.close = await listenBridge(root, {
+        client(request, send) {
+          if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
+          if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
+          const { op: _, token: __, ...payload } = request;
+          Promise.resolve(glassRuntime.service.request(payload)).then(send, error => send({ error: error.message }));
+        },
+        stopWait() {}, bind() { return {}; }, unbind() { return 0; },
+      }, "glass");
+      service.bridgeState = "listening";
+    } catch (error) {
+      service.bridgeState = "unavailable";
+      console.warn("Glass bridge:", error.message);
+    }
+  } catch (error) {
+    glassRuntime.error = error;
+    throw error;
+  }
+}
 function releaseBibliography() { bibliography?.close(); bibliography = undefined; }
 async function vaultBibliography(folder) {
   if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -208,6 +258,12 @@ const handlers = {
   readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  glass: async (_, request) => {
+    if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
+    await syncGlass(store?.folder ?? null);
+    if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
+    return glassRuntime.service.request(request);
+  },
   tutorBridge: async ({ sender }, id, request) => {
     if (request?.action === "detach" && !tutorLoading) return;
     tutorLoading ??= import("./tutor-session.mjs").then(module => { tutorSessions = module.tutorSessions(store); });
@@ -579,7 +635,10 @@ app
         } catch (error) {
           return { ok: false, error: error.message, code: error.code };
         }
-        finally { if (bibliography && bibliography.root !== store.folder) releaseBibliography(); }
+        finally {
+          if (bibliography && bibliography.root !== store.folder) releaseBibliography();
+          try { await syncGlass(store?.folder ?? null); } catch { /* the glass handler reports its own error */ }
+        }
       });
     function createWindow() {
       window = new BrowserWindow({
@@ -672,6 +731,7 @@ app
     app.on("window-all-closed", () => {
       if (process.platform !== "darwin") app.quit();
     });
+    app.on("will-quit", () => { void closeGlassRuntime(); });
   })
   .catch((error) => {
     console.error(error);

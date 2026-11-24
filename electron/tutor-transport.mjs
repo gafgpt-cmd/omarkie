@@ -13,11 +13,11 @@ const frameLimit = 384 * 1024, pollTimeout = 90_000;
 const unavailable = () => new Error("Local Tutor bridge is unavailable in this vault.");
 let flock;
 
-export function endpoint(root) {
+export function endpoint(root, kind = "bridge") {
   const key = createHash("sha256").update(root).digest("hex");
   const directory = path.join(os.tmpdir(), `omarkie-${uid ?? "user"}`, key.slice(0, 32));
-  return { directory, discovery: path.join(directory, "bridge.json"), lock: path.join(directory, "bridge.lock"),
-    socket: win ? `\\\\.\\pipe\\omarkie-${key}` : path.join(directory, "bridge.sock") };
+  return { directory, discovery: path.join(directory, `${kind}.json`), lock: path.join(directory, `${kind}.lock`),
+    socket: win ? `\\\\.\\pipe\\omarkie-${key}${kind === "bridge" ? "" : `-${kind}`}` : path.join(directory, `${kind}.sock`) };
 }
 
 async function privateDirectory(directory, create) {
@@ -43,8 +43,8 @@ async function configuration(root, place) {
   } finally { await handle.close(); }
 }
 
-export async function endpointExists(root) {
-  const place = endpoint(root);
+export async function endpointExists(root, kind = "bridge") {
+  const place = endpoint(root, kind);
   return await privateDirectory(place.directory, false) && !!(await info(place.discovery));
 }
 
@@ -66,8 +66,8 @@ function frame(socket, accept, invalid) {
   socket.on("data", receive);
 }
 
-export async function requestBridge(root, input, timeout) {
-  const place = endpoint(root), config = await configuration(root, place);
+export async function requestBridge(root, input, timeout, kind = "bridge") {
+  const place = endpoint(root, kind), config = await configuration(root, place);
   if (!config) return null;
   if (!win) {
     const stat = await info(place.socket);
@@ -86,9 +86,9 @@ export async function requestBridge(root, input, timeout) {
   });
 }
 
-export async function listenBridge(root, broker) {
-  const place = endpoint(root);
-  if (!win && Buffer.byteLength(place.socket) >= 104) throw new Error("The temporary directory path is too long for the Tutor socket.");
+export async function listenBridge(root, broker, kind = "bridge") {
+  const place = endpoint(root, kind), label = kind === "bridge" ? "Tutor" : "Glass";
+  if (!win && Buffer.byteLength(place.socket) >= 104) throw new Error(`The temporary directory path is too long for the ${label} socket.`);
   await privateDirectory(place.directory, true);
   let lock, owned = false, discovery = false;
   const sockets = new Set(), code = randomBytes(32), encoded = code.toString("hex");
@@ -121,7 +121,7 @@ export async function listenBridge(root, broker) {
       const meta = await lock.stat();
       if (!meta.isFile() || meta.nlink !== 1 || !ownerOnly(meta, 0o600)) throw unavailable();
       flock ??= import("koffi").then(({ default: koffi }) => koffi.load(null).func("int flock(int fd, int operation)"));
-      if ((await flock)(lock.fd, 2 | 4) !== 0) throw new Error("Another Omarkie process owns the Tutor bridge for this vault.");
+      if ((await flock)(lock.fd, 2 | 4) !== 0) throw new Error(`Another Omarkie process owns the ${label} bridge for this vault.`);
       owned = true;
       const previous = await info(place.socket);
       if (previous && (!previous.isSocket() || previous.uid !== uid)) throw unavailable();
