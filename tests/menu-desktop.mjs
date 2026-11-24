@@ -657,6 +657,14 @@ try {
   await command("folder"); await command("files");
   await expect(page.getByRole("button", { name: "context.md", exact: true })).toBeVisible();
   pass("Open Folder", "Chosen directory populates file list");
+  for (const route of ["menu", "native"]) {
+    const glassChecked = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("glass").checked);
+    const before = await glassChecked();
+    await command("glass", route);
+    await expect.poll(glassChecked).toBe(!before);
+    pass(`Glass overlay: ${route}`, "Display checkbox and native menu agree on the per-vault toggle");
+  }
+  assert.equal(JSON.parse(await readFile(path.join(workspace, ".omarkie", "glass", "vault.json"), "utf8")).visible, false);
   for (const [action, name] of [["new-file", "menu-created.md"], ["new-folder", "menu-created-folder"]]) {
     await command(action);
     await page.getByRole("dialog").getByLabel(t("文件名称"), { exact: true }).fill(name);

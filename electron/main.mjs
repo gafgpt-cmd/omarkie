@@ -57,7 +57,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 let languageChoice = "auto", language = "zh", buildMenu = () => {}, remoteImages = false;
 let viewChecked = {};
-const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers"];
+const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers", "glass"];
 let menuDefinitions = [], viewDisabled = true, viewContext = "";
 const commandEnabled = item => !item.context || !viewDisabled && (!["rich", "table"].includes(item.context) || !viewChecked.source) && (item.context !== "table" || viewContext === "table_open");
 function applyLanguage(choice) {
@@ -176,6 +176,21 @@ async function syncGlassNow(folder) {
     throw error;
   }
 }
+let glassWatch = { folder: null, root: null, close: null };
+async function syncGlassWatch() {
+  const folder = store.folder;
+  if (glassWatch.folder === folder) return;
+  const close = glassWatch.close;
+  glassWatch = { folder, root: null, close: null };
+  await close?.();
+  if (!folder) return;
+  const root = await realpath(folder).catch(() => null);
+  if (!root) return;
+  const { watchGlass } = await import("./glass-state.mjs");
+  if (glassWatch.folder !== folder) return;
+  glassWatch.root = root;
+  glassWatch.close = await watchGlass(root, visible => { if (glassWatch.folder === folder) window?.webContents.send("glass:event", { visible }); });
+}
 function releaseBibliography() { bibliography?.close(); bibliography = undefined; }
 async function vaultBibliography(folder) {
   if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -269,6 +284,14 @@ const handlers = {
     tutorLoading ??= import("./tutor-session.mjs").then(module => { tutorSessions = module.tutorSessions(store); });
     await tutorLoading;
     return tutorSessions.request(sender, id, request);
+  },
+  glassState: async (_, request) => {
+    if (!request || !["read", "write"].includes(request.action)) throw new Error("Invalid Glass request.");
+    const { readGlass, writeGlass } = await import("./glass-state.mjs");
+    await syncGlassWatch();
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    if (request.action === "write" && typeof request.visible !== "boolean") throw new Error("Invalid Glass request.");
+    return { visible: request.action === "read" ? await readGlass(glassWatch.root) : await writeGlass(glassWatch.root, request.visible) };
   },
   readingStore: async (_, id, request) => {
     const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
@@ -714,7 +737,9 @@ app
     const groups = JSON.parse(await readFile(path.join(root, "shared/commands.json"), "utf8"));
     menuDefinitions = groups.flatMap(group => group.items);
     const roles = { "cut:": "cut", "copy:": "copy", "paste:": "paste", "selectAll:": "selectAll" };
-    const accelerator = key => key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
+    // A bare letter would become an application accelerator and swallow typing; the renderer
+    // binds those itself so text fields keep priority.
+    const accelerator = key => /^[A-Za-z]$/.test(key ?? "") ? undefined : key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
     buildMenu = () => Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: "Omarkie", submenu: [{ label: t("关于 Omarkie"), click: command("about") }, { label: t("偏好设置…"), accelerator: "CommandOrControl+,", click: command("preferences") }, ...(process.platform === "darwin" ? [{ type: "separator" }, { role: "hide", label: t("隐藏 Omarkie") }, { role: "hideOthers", label: t("隐藏其他应用") }] : []), { type: "separator" }, { label: t("退出 Omarkie"), accelerator: "CommandOrControl+Q", click: command("quit") }] },
       ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(checkedActions.includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),

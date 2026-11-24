@@ -33,6 +33,7 @@ const specs = {
   "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets on a note."],
   "glass show": ["--note <note.md> [--magnet <id>] [--vault <dir>]", "Show one magnet, or the whole note glass."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
+  glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
@@ -122,6 +123,13 @@ export async function main(argv = process.argv.slice(2)) {
         kind: opts.kind, magnet: opts.magnet }, 30_000, "glass");
       if (!state) throw new Error("Glass storage is not running in this vault. Open the folder in Omarkie first.");
       emit(state);
+      return;
+    }
+    if (command === "glass") {
+      requireArgument(!(opts.on && opts.off), "Use either --on or --off.");
+      const { readGlass, writeGlass, glassFile } = await import("./glass-state.mjs");
+      const visible = opts.on || opts.off ? await writeGlass(root, !!opts.on) : await readGlass(root);
+      emit({ vault: root, glass: visible ? "on" : "off", state: glassFile(root) });
       return;
     }
     const { requestBridge } = await import("./tutor-transport.mjs");

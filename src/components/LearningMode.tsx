@@ -8,6 +8,7 @@ import { sourceOffset } from "../editor/model";
 import { host } from "../host";
 import { t } from "../i18n";
 import { Dialog } from "./Dialog";
+import GlassLayer from "./GlassLayer";
 import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } from "./learning-images.tsx";
 import { LearningOverlays, type StudyMark, type StudyOverlay } from "./learning-overlays.tsx";
 import { readingBlocks, readingSelection, type StudySelection } from "./reading-selection";
@@ -41,12 +42,12 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void;
+  cleanVisible: boolean; toggleClean(): void; glass: boolean;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -497,6 +498,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
     tucks: [...(ink.get(line) ?? []).map(inkCard), ...scraps.filter(scrap => !scrap.folded).map(scrap => scrapCard(scrap))],
   });
   const root = context && rendered ? document.querySelector<HTMLElement>(".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden]) > .rich-document") : null;
+  const scroller = root?.parentElement instanceof HTMLElement ? root.parentElement : null;
   const floats = !peek && root && context ? context.nodes.flatMap(node => {
     const images = byLine.get(node.line)?.images;
     return images?.length ? [{ blockId: node.id, content: images.map(scrap => imageCard(scrap, true)) }] : [];
@@ -557,6 +559,7 @@ export default function LearningMode({ id, content, editor, saved, ready, render
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
+    {scroller && glass && <GlassLayer key={id} editor={editor} scroller={scroller} />}
     {root && context && groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}

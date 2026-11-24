@@ -85,6 +85,7 @@
 - The socket starts on the first local ask and closes when leaving the document or turning off Learning mode. Open asks are session-only; saved scraps and proposals persist.
 - `omarkie-axi setup hooks --vault <dir>` opts that project into Claude Code, Codex, and OpenCode 2 notices. Optional: `--agent <name>`. Put `omarkie-axi` on PATH and review the Codex hook with `/hooks`.
 - Hooks announce pending ask count, not note text. Read the `omarkie-tutor` skill with `omarkie-axi skill`.
+- Glass overlay state is per vault: `omarkie-axi glass [--on | --off] [--vault <dir>]` reads or sets `.omarkie/glass/vault.json` (the overlay toggle, beside the per-note magnet journals), and an open window follows the file live. `G` or the Display menu toggles the same state.
 
 ### Preview media
 

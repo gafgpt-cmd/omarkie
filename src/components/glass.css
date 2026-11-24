@@ -1,0 +1,38 @@
+/* Glass G1: transparent surface in the editor scroll container, above the page, below rails. */
+.glass-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  min-width: 100%;
+  min-height: 100%;
+  pointer-events: none;
+}
+/* Test fixture: marks the anchored paragraph without hiding its text. */
+.glass-debug {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--accent);
+  pointer-events: none;
+}
+.glass-debug::after {
+  content: "Glass G1";
+  position: absolute;
+  right: -1px;
+  bottom: 100%;
+  padding: 0 4px;
+  background: var(--paper);
+  color: var(--accent);
+  font: 11px/1.5 var(--interface-font, inherit);
+  white-space: nowrap;
+}
+.glass-debug[data-glass-status="orphan"] {
+  top: 8px;
+  left: 8px;
+  min-width: 84px;
+  min-height: 22px;
+}
+.glass-debug[data-glass-status="orphan"]::after {
+  position: static;
+  background: none;
+}
