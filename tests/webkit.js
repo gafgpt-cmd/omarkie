@@ -111,6 +111,8 @@ try {
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");
   const summary = await window.desktop.payloadRequest(payload);
   const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
+  const nativeProposal = await window.desktop.payloadRequest({ ...payload, question: "Rewrite this?", proposal: true });
+  check(nativeProposal.ok && nativeProposal.value === "Rewritten fixture paragraph.", "native Tutor proposal uses the existing allowed endpoint");
   const under = await window.desktop.payloadRequest({ ...payload, model: "fixture-under" });
   const over = await window.desktop.payloadRequest({ ...payload, model: "fixture-over" });
   const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });

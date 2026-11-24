@@ -49,6 +49,21 @@ test("image scraps keep binary data outside the journal and reject unsafe blob r
   await assert.rejects(() => send(request));
 });
 
+test("proposal scraps preserve the exact before text on journal replay and refuse retargeting", async t => {
+  const { store, source } = await fixture(t);
+  const before = "This text stays  exactly as written.\nAnd this line stays with it.";
+  const proposal = { type: "scrap", id: "proposal", kind: "proposal", sheet: "proposals", before, body: "A tighter paragraph.",
+    anchor: { ...block(before), quote: "exactly as written" }, stackOf: null, folded: true };
+  const send = request => readingStore(store, source.id, request);
+  await assert.rejects(() => send({ action: "put", item: { ...proposal, anchor: note("other").anchor } }));
+  await assert.rejects(() => send({ action: "put", item: { ...proposal, stackOf: "other" } }));
+  await send({ action: "put", item: proposal });
+  const study = await send({ action: "study", blocks: [block(before)] });
+  assert.equal(study.entries[0].before, before);
+  assert.equal(study.entries[0].body, proposal.body);
+  assert.deepEqual(study.locations, [{ id: "proposal", line: 4 }]);
+});
+
 test("rename, folder move and undo transfer reading history without sharing it with replacements", async t => {
   const { source, store } = await fixture(t);
   const workspace = new Workspace(store.folder);

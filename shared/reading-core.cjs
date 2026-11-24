@@ -1,7 +1,7 @@
 // Also evaluated by the native host in an isolated JavaScriptCore context.
 module.exports = function readingCore(digest, translate = message => message) {
   const kinds = new Set(["note", "card", "answer", "sheet", "scrap", "mark", "ink"]);
-  const scrapKinds = new Set(["note", "doubt", "answer", "clip", "card", "exam", "evidence", "gloss"]);
+  const scrapKinds = new Set(["note", "doubt", "answer", "clip", "card", "exam", "evidence", "gloss", "proposal"]);
   const colours = new Set(["amber", "blue", "rose", "green"]);
   const legacyNotePrefix = "legacy-note:";
   const maxImageBytes = 20 * 1024 * 1024;
@@ -118,9 +118,13 @@ module.exports = function readingCore(digest, translate = message => message) {
         if (!scrapKinds.has(item.kind) || item.stackOf === item.id) throw invalid();
         if (item.image && (item.kind !== "clip" || !imageHash(item.image.hash) || !["left", "right"].includes(item.image.side))) throw invalid();
         const image = item.image && { hash: item.image.hash, side: item.image.side, width: number(item.image.width, 96, 1600) };
-        return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor: item.anchor === null ? null : target(item.anchor),
+        const anchor = item.anchor === null ? null : target(item.anchor);
+        const before = item.kind === "proposal" ? text(item.before, 24_000) : undefined;
+        if (before !== undefined && (item.sheet !== "proposals" || item.stackOf !== null || anchor?.block !== normalize(before))) throw invalid();
+        const question = item.kind === "answer" && item.question !== undefined ? text(item.question, 1_000) : undefined;
+        return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor,
           body: text(item.body), stackOf: item.stackOf === null ? null : identifier(item.stackOf), folded: boolean(item.folded),
-          deleted: boolean(item.deleted ?? false), ...(image ? { image } : {}) };
+          deleted: boolean(item.deleted ?? false), ...(image ? { image } : {}), ...(before === undefined ? {} : { before }), ...(question === undefined ? {} : { question }) };
       }
       case "mark": {
         const start = number(item.start, 0, 262_143), end = number(item.end, start + 1, 262_144);
@@ -322,7 +326,7 @@ module.exports = function readingCore(digest, translate = message => message) {
 
   function readingMarkdown(items) {
     const quote = text => text.replaceAll("\r", "").split("\n").map(line => `> ${line}`).join("\n");
-    return items.filter(item => !item.image).map(item => {
+    return items.filter(item => !item.image && item.kind !== "proposal").map(item => {
       const source = quote([item.document, ...(item.anchor?.headings || [])].join(" › "));
       if (item.type === "note" || item.type === "scrap") {
         return `${source}${item.anchor ? `\n${quote(item.anchor.quote)}` : ""}\n\n${item.body}`;

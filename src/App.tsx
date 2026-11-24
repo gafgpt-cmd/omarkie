@@ -77,6 +77,7 @@ export default function App() {
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
+  const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
@@ -115,6 +116,21 @@ export default function App() {
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
   const currentPayload = payload && payload.id === active?.id && payloadEnabled ? payload : null;
   const activePayload = !readingVisible ? currentPayload : null;
+  const learningSaved = readingVisible && !!active.path && !!session.folder &&
+    active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"));
+  const tutorKey = learningSaved && payloadSupported && activeEditorReady ? `${active.id}:${active.path}:${session.folder}` : null;
+  const tutorOpen = !!tutorKey && tutor === tutorKey;
+  useEffect(() => { if (tutor && tutor !== tutorKey) setTutor(null); }, [tutor, tutorKey]);
+  function openTutor() {
+    if (!tutorKey) return;
+    setTutor(tutorKey); closeFlashcards();
+    if (window.innerWidth <= 820) setShowFiles(false);
+  }
+  function closeTutor() { setTutor(null); editor()?.focus(); }
+  function openFilesRail() {
+    setShowFiles(true); setSidebar(true);
+    if (window.innerWidth <= 820) setTutor(null);
+  }
   useEffect(() => {
     if (payload && !currentPayload) setPayload(null);
   }, [payload, currentPayload]);
@@ -266,8 +282,10 @@ export default function App() {
     && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
   const closeFlashcards = () => setFlashcardPanel(null);
   function openFlashcards(target?: FlashcardPanel["target"]) {
-    if (window.desktop?.readingStore && active?.path && session.folder)
+    if (window.desktop?.readingStore && active?.path && session.folder) {
+      setTutor(null);
       setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
+    }
   }
   function toggleReading() {
     if (!readingSupported || editor()?.composing()) return;
@@ -275,11 +293,13 @@ export default function App() {
     setShowFiles(false);
     if (learningEnabled) {
       closeFlashcards();
+      setTutor(null);
       requestAnimationFrame(() => editor()?.focus());
     } else setFocus(false);
   }
   function toggleSidebar() {
     if (readingVisible) {
+      if (!filesVisible && window.innerWidth <= 820) setTutor(null);
       setShowFiles(!filesVisible);
       setSidebar(!filesVisible);
     } else setSidebar(value => !value);
@@ -367,9 +387,8 @@ export default function App() {
     else if (action === "reading-layers") toggleReading();
     else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
-      if (readingVisible) setShowFiles(true);
+      openFilesRail();
       setTab(action === "file-tree" ? "tree" : action);
-      setSidebar(true);
     } else if (action === "theme")
       chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
     else if (action === "focus") setFocus((value) => !value);
@@ -487,7 +506,7 @@ export default function App() {
   /></Suspense>;
   return (
     <div
-      className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
+      ref={shell} className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload || tutorOpen ? " payload-open" : ""}${tutorOpen ? " tutor-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -501,6 +520,7 @@ export default function App() {
         disabled={!active}
         context={editor()?.context() || ""}
         learning={readingSupported ? learningEnabled : undefined}
+        tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
         payload={payloadEnabled && !readingVisible ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
@@ -610,10 +630,12 @@ export default function App() {
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={!!active.path && !!session.folder && active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"))}
+              saved={learningSaved}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} showSheets={!filesVisible}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
-              openFiles={() => { setShowFiles(true); setSidebar(true); }} openCard={openFlashcards}
+              tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,
+                configure: () => setDialog("preferences") } : undefined}
+              openFiles={openFilesRail} openCard={openFlashcards}
               cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
                 id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}
               /></Suspense>}

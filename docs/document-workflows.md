@@ -61,6 +61,13 @@
 - A rename or move reports an error if it contains an unreadable tracked note. Missing notes retain their history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
+### Tutor
+
+- Open **Tutor** from the title bar, or select text and choose **Ask Tutor**. Tutor uses the same endpoint, opt-in, origin allowance, and privacy notice as Payload.
+- **Send question** sends only the displayed paragraph and question. One at a time, with no history. **Stick on paragraph** saves the reply on the Tutor answers sheet.
+- **Propose edit** saves a before/after draft on the Proposals sheet. **Reject** discards it. Only **Accept into Markdown** updates the note. Save as usual.
+- Accept checks the exact paragraph, its position, and disk changes. A stale draft cannot write. Use normal **Undo** to revert an accepted edit in one step.
+
 ### Preview media
 
 - Learning mode and Clean block remote media even if editing allows it.

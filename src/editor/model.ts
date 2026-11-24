@@ -128,6 +128,9 @@ export class MarkdownDocument {
   get canRedo() {
     return this.redoStack.length > 0;
   }
+  readingHistory(redo = false) {
+    return (redo ? this.redoStack : this.undoStack).at(-1)?.kind === "reading-command";
+  }
   lineEnding: string;
   constructor(source: string, lineEnding = "\n") {
     this.lineEnding = lineEnding;

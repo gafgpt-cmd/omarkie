@@ -13,7 +13,7 @@ export function setPayloadKey(baseUrl, value) {
 }
 
 export async function requestPayload(request) {
-  const { baseUrl, confirmedOrigin, allowedOrigin, model, source, question, modernLimit } = request ?? {};
+  const { baseUrl, confirmedOrigin, allowedOrigin, model, source, question, modernLimit, proposal } = request ?? {};
   const endpoint = payloadEndpoint(baseUrl);
   if (!endpoint || endpoint.origin !== confirmedOrigin || (!endpoint.local && endpoint.origin !== allowedOrigin) || typeof model !== "string" || !model.trim() || model.length > 256) {
     throw new Error(t("Configure and allow the Payload endpoint in Preferences."));
@@ -21,11 +21,12 @@ export async function requestPayload(request) {
   if (typeof source !== "string" || source.length > payloadInputBytes || !source.trim() || Buffer.byteLength(source) > payloadInputBytes || (question !== undefined && (typeof question !== "string" || !question.trim() || question.length > payloadQuestionLength))) {
     throw new Error(t("Use non-empty text up to 24 KB and a question up to 1,000 characters."));
   }
+  if (proposal !== undefined && (proposal !== true || question === undefined)) throw new Error(t("Use non-empty text up to 24 KB and a question up to 1,000 characters."));
   if (pending) throw new Error(t("Wait for the current Payload request to finish."));
   pending = true;
   try {
     const messages = [
-      { role: "system", content: question === undefined ? recipe.summary : `${recipe.summary}\n${recipe.followUp}` },
+      { role: "system", content: proposal ? recipe.proposal : question === undefined ? recipe.summary : `${recipe.summary}\n${recipe.followUp}` },
       { role: "user", content: source },
     ];
     if (question !== undefined) messages.push({ role: "user", content: question });

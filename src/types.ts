@@ -71,6 +71,7 @@ export interface PayloadRequest {
   model: string;
   source: string;
   question?: string;
+  proposal?: true;
   modernLimit: boolean;
 }
 export interface CitationMatch { id: string; title: string; authors: string }

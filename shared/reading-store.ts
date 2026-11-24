@@ -13,11 +13,11 @@ export interface ReadingAnchor extends ReadingTarget {
 }
 
 export type SheetColour = "amber" | "blue" | "rose" | "green";
-export type ScrapKind = "note" | "doubt" | "answer" | "clip" | "card" | "exam" | "evidence" | "gloss";
+export type ScrapKind = "note" | "doubt" | "answer" | "clip" | "card" | "exam" | "evidence" | "gloss" | "proposal";
 export interface ScrapImage { hash: string; side: "left" | "right"; width: number }
 export type StudyItem<A = ReadingTarget> = { id: string } & (
   | { type: "sheet"; name: string; colour: SheetColour; order: number; visible: boolean }
-  | { type: "scrap"; sheet: string; kind: ScrapKind; anchor: A | null; body: string; stackOf: string | null; folded: boolean; deleted?: boolean; image?: ScrapImage }
+  | { type: "scrap"; sheet: string; kind: ScrapKind; anchor: A | null; body: string; stackOf: string | null; folded: boolean; deleted?: boolean; image?: ScrapImage; before?: string; question?: string }
   | { type: "mark"; sheet: string; anchor: A; start: number; end: number; colour: SheetColour; deleted?: boolean }
   | { type: "ink"; sheet: string; anchor: A; from: string; to: string }
 );

@@ -32,6 +32,7 @@ interface Props {
   context: string;
   checked?: Record<string, boolean>;
   learning?: boolean;
+  tutor?: { open: boolean; show(): void };
   payload?: { open: boolean; show(): void };
 }
 export function Toolbar(props: Props) {
@@ -72,11 +73,15 @@ export function Toolbar(props: Props) {
           {props.name || "Omarkie"}
           {props.edited && <span className="title-edited"> — {t("已编辑")}</span>}
         </span>
-        {props.learning !== undefined && <button type="button" className="reading-layers-toggle" data-testid="learning-mode-toggle"
-          title={`${t("Learning mode")} (${shortcutLabel(commandKey(commandsByAction.get("reading-layers")!))})`}
-          aria-pressed={props.learning} onClick={() => props.command("reading-layers")}>
-          <Layers size={15} />{t("Learning mode")}
-        </button>}
+        {props.learning !== undefined && <div className="study-toolbar">
+          {props.tutor && <button type="button" className="reading-layers-toggle tutor-toggle"
+            aria-expanded={props.tutor.open} onClick={props.tutor.show}><Sparkles size={14} />{t("Tutor")}</button>}
+          <button type="button" className="reading-layers-toggle" data-testid="learning-mode-toggle"
+            title={`${t("Learning mode")} (${shortcutLabel(commandKey(commandsByAction.get("reading-layers")!))})`}
+            aria-pressed={props.learning} onClick={() => props.command("reading-layers")}>
+            <Layers size={15} />{t("Learning mode")}
+          </button>
+        </div>}
       </header>
       <div className="quick-actions" aria-label={t("编辑操作")}>
         <button

@@ -126,8 +126,11 @@ try {
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 62, box.y + box.height / 2, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(async () => (await image(local).boundingBox())?.width).toBeGreaterThan(initialWidth + 40);
-  assert.ok((await entries()).at(-1).image.width > 280);
+  const savedWidth = Math.round(initialWidth) + 62;
+  const paragraphWidth = (await paragraph(first).boundingBox()).width;
+  await expect.poll(async () => (await entries()).at(-1).image.width).toBe(savedWidth);
+  await expect.poll(async () => (await image(local).boundingBox())?.width)
+    .toBeCloseTo(Math.min(savedWidth, paragraphWidth / 2 - 12), 0);
 
   const target = await paragraph(second).boundingBox();
   await actualImage(local).dragTo(paragraph(second), { targetPosition: { x: target.width - 14, y: 13 } });

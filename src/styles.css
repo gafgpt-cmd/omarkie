@@ -102,9 +102,13 @@ svg {
   color: #aaa;
   font-weight: 400;
 }
-.reading-layers-toggle {
+.study-toolbar {
   position: absolute;
   inset: 2px 12px 2px auto;
+  display: flex;
+  gap: 4px;
+}
+.reading-layers-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -116,7 +120,7 @@ svg {
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
-.reading-layers-toggle[aria-pressed="true"] {
+.reading-layers-toggle:is([aria-pressed="true"], [aria-expanded="true"]) {
   border-color: var(--accent);
   background: var(--selected);
 }
