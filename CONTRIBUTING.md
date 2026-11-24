@@ -66,14 +66,14 @@ Focused suites:
 | Command | Coverage | Environment |
 | --- | --- | --- |
 | `npm run test:native` | File bytes, atomic saves, recovery, conflicts, and workspace operations | macOS |
-| `npm run test:webkit` | WKWebView, native bridge, reader tools, cited-PDF path resolution, and document export, including project PDF from the UI. Checks stale snapshots after vault-note and Showcase opens, grant revocation on close, and local image decoding with remote media blocked in the editor. Reading Layers and Clean check vault, inline data and blob image decoding, local fallback retention, and zero remote fixture requests after an opted-in editing control. | macOS + Pandoc |
+| `npm run test:webkit` | WKWebView, native bridge, reader tools, cited-PDF path resolution, and document export, including project PDF from the UI. Checks stale snapshots after vault-note and Showcase opens, grant revocation on close, and local image decoding with remote media blocked in the editor. Learning mode and Clean check vault, inline data and blob image decoding, local fallback retention, and zero remote fixture requests after an opted-in editing control. | macOS + Pandoc |
 | `npm run test:browser` | Illustrated startup, decoded pictures, source roundtrip and restored drafts | Playwright Chromium; run `npm run build` first |
 | `npm run test:desktop` | Editing, images, saving, recovery, and export in Electron | macOS, Windows or Linux desktop |
 | `npm run test:parity` | Multi-line list/code indentation, table keyboard operations, legacy diagrams and portable HTML | Electron desktop |
 | `npm run test:kernel-desktop` | Code/formula editing, keyboard interactions, and shared rich/source history | Electron desktop |
 | `npm run test:features` | Menus, preferences, navigation, file workflows, PDF open, startup/plugin ordering, reading/document tools and packaged regressions | Electron + converters; Linux uses the invocation above |
 | `npm run test:reading` | Callout/table folding, image viewing/resizing, slash commands, width and right outline | Electron; included in `test:features` |
-| `npm run test:learning` | Clean, Payload, margin notes, study cards and five UI locales | Electron; included in `test:features` |
+| `npm run test:learning` | Clean, Payload, Tutor and its local bridge, study cards, Learning workspace and image placement, and five UI locales | Electron; included in `test:features` |
 | `npm run test:reader` | Speech hook with a synthetic engine, LanguageTool and `test:document-workflows` | Electron + Pandoc + Poppler; included in `test:features` |
 | `npm run test:document-workflows` | Properties, OKF, references, templates, Zotero, single-note and project export | Electron + Pandoc + `pdftotext` |
 | `npm run test:preserve` | Illustrated first launch, images, editing, menus, plugins, exports, session recovery, encoding and IME | Electron + Pandoc + LibreOffice |

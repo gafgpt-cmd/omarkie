@@ -42,9 +42,10 @@
 
 ## Learning mode
 
-- Open a vault and a saved Markdown file. Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS).
-- **Sheets** is a tab in the left sidebar. At 820 px or less, the same sheet controls appear above the page as chips. Alt-click a sheet to solo it.
-- Tutor uses the right Payload slot. In a half tile, opening one drawer closes the other.
+- Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS). Saving study items and using Tutor require a saved note inside an open vault.
+- Open **Sheets** in the left sidebar. At 820 px or less, sheet controls appear above the page as chips. Click a sheet to show or hide it, Alt-click to solo it, or click the pencil to make it active.
+- **Live Preview** in Sheets switches the current note between rendered view and source without changing the global preference. The base stays locked in Learning mode.
+- Tutor uses the right Payload slot. When Tutor is unavailable, including on a standalone note, enabled [Payload](#payload) still offers confirm-before-send questions. In a half tile, opening either right panel closes the Files drawer and vice versa.
 - `Alt+Enter` focuses the selection actions. `N` note, `D` doubt, `W` correction, `A` ask, `E` explain back, `Q` quiz, `C` card, `P` propose.
 - **Understanding** cycles each paragraph through not rated, lost, shaky and solid. Quiz feedback can set the same rating. Ratings are stored with the anchor, not in Markdown.
 - **Search scraps** searches the whole vault. Electron and macOS match word prefixes across scrap text, questions, and anchor quotes in the current journal. Neither writes a separate index to disk.
@@ -83,7 +84,7 @@
 - App running: `poll --wait`, `ask view <id> --full`, `status <id> working`, `reply <id> --text <answer>`. `poll --takeover` replaces the active listener.
 - The socket starts on the first local ask and closes when leaving the document or turning off Learning mode. Open asks are session-only; saved scraps and proposals persist.
 - `omarkie-axi setup hooks --vault <dir>` opts that project into Claude Code, Codex, and OpenCode 2 notices. Optional: `--agent <name>`. Put `omarkie-axi` on PATH and review the Codex hook with `/hooks`.
-- Hooks announce pending ask count, not note text. The repo-local `omarkie-tutor` skill can be read with `omarkie-axi skill`.
+- Hooks announce pending ask count, not note text. Read the `omarkie-tutor` skill with `omarkie-axi skill`.
 
 ### Preview media
 
