@@ -38,7 +38,7 @@ export default function Flashcards({ id, content, panel, close }: {
 
   useEffect(() => {
     let current = true;
-    void store(id, { action: "list", types: ["card", "note"] }).then(items => {
+    void store(id, { action: "list", types: ["card", "note"], studyNotes: true }).then(items => {
       if (!current) return;
       setEntries(items);
       if (panel.target && items.filter(item => item.type === "card").length < cardsPerNote) {

@@ -37,6 +37,7 @@ interface Props {
   search(): void;
   recent(): void;
   notify(message: string): void;
+  showSheets?(): void;
 }
 export function Sidebar(props: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; file: FileEntry | null } | null>(null);
@@ -97,6 +98,7 @@ export function Sidebar(props: Props) {
                 {tab === "files" ? t("文件", { context: "sidebar" }) : tab === "tree" ? t("文件树") : t("大纲")}
               </button>
             ))}
+            {props.showSheets && <button role="menuitemradio" aria-checked={false} onClick={() => { props.showSheets?.(); setSwitcher(false); }}>{t("Sheets")}</button>}
           </div>
         )}
       </div>

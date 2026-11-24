@@ -191,14 +191,13 @@ try {
   await remotePreference(true);
   const readingRecord = await openMedia("reading");
   const readingAsset = assetFor(readingRecord);
-  const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
+  const readingToggle = await wait(() => document.querySelector('[data-testid="learning-mode-toggle"]:enabled'), "Learning mode toggle did not become enabled");
   readingToggle.click();
-  await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
+  await wait(() => document.querySelector(".study-rail"), "Sheets panel did not open");
   await assertOffline("reading", root, readingAsset);
   await closeMedia("reading", readingAsset);
-  const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
-  readingClose.click();
-  await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
+  readingToggle.click();
+  await wait(() => !document.querySelector(".study-rail") && document.querySelector('[data-testid="learning-mode-toggle"][aria-pressed=false]'), "Learning mode did not close before Clean");
   const reopenedFromTree = await openMediaToken("reading");
   check(reopenedFromTree.id !== readingRecord.id, "file tree open issues a fresh grant after close");
   window.__omarkie.command({ action: "opened", document: reopenedFromTree });

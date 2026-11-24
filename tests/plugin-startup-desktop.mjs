@@ -56,6 +56,12 @@ try {
   await verifyPaint(page, 'rich', true);
   const implementations = new RegExp(`(?:${bundledPlugins.map(plugin => plugin.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})-[^/]+\\.js`);
   const pluginResources = async () => requested.filter(name => implementations.test(name));
+  const nodeListeners = () => application.evaluate(() => {
+    const { Server } = process.getBuiltinModule('node:net');
+    return process._getActiveHandles().filter(handle => handle instanceof Server && handle.listening).length;
+  });
+  assert.equal(await nodeListeners(), 0, 'no Learning mode listener when disabled');
+  assert.ok(!requested.some(url => /LearningMode-/.test(url)));
   assert.deepEqual(await pluginResources(), []);
   await page.evaluate(() => localStorage.setItem('omarkie-plugins-v1', JSON.stringify({ read_only: { enabled: true } })));
   await waitForSession(directory, file);
@@ -76,6 +82,26 @@ try {
   await verifyPaint(page, 'rich', true);
   const loaded = await pluginResources();
   assert.equal(loaded.length, 1); assert.match(loaded[0], /read_only/);
+  await page.evaluate(() => localStorage.setItem('omarkie-plugins-v1', JSON.stringify({ learning_mode: { enabled: true } })));
+  requested = [];
+  await page.addInitScript(() => {
+    const mark = performance.mark.bind(performance);
+    performance.mark = (name, options) => {
+      if (name === 'omarkie:first-document-painted') window.firstLearningPaint = !document.querySelector('.study-rail');
+      return mark(name, options);
+    };
+  });
+  let markedBeforeChunk = false;
+  await page.route(/\/LearningMode-[^/]+\.js$/, async route => {
+    markedBeforeChunk = await page.evaluate(() => window.firstLearningPaint);
+    await route.continue();
+  });
+  await page.reload();
+  await page.waitForSelector('.study-rail');
+  assert.equal(markedBeforeChunk, true, 'Learning chunk is requested after the first document paint');
+  assert.deepEqual(await pluginResources(), []);
+  assert.ok(!requested.some(url => /\/runtime-[^/]+\.js$/.test(url)), 'Learning mode does not boot the compatibility runtime');
+  assert.equal(await nodeListeners(), 0, 'offline Learning mode opens no listener when enabled');
   console.log('PASS: disabled bundled modules stay unloaded; enabled plugin follows document paint');
 } finally { await application.close(); }
 

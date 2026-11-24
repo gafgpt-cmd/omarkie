@@ -64,6 +64,48 @@ test("rename, folder move and undo transfer reading history without sharing it w
   assert.deepEqual((await list(source.id)).map(item => item.document), ["chapter/source.md", "chapter/source.md"]);
 });
 
+test("study sheets stay vault-wide while scraps follow moved notes and unresolved anchors survive in the tray", async t => {
+  const { source, other, store, log, sidecar } = await fixture(t);
+  const study = (id, blocks) => readingStore(store, id, { action: "study", blocks });
+  const put = item => readingStore(store, source.id, { action: "put", item });
+  assert.deepEqual(await study(source.id, [block()]), { entries: [], locations: [] });
+  await assert.rejects(stat(sidecar), { code: "ENOENT" });
+  const legacy = note("legacy");
+  await put(legacy);
+  const before = await readFile(log, "utf8");
+  const migrated = (await study(source.id, [block()])).entries[0];
+  assert.equal(migrated.kind, "note");
+  assert.equal(migrated.body, legacy.body);
+  assert.equal(await readFile(log, "utf8"), before);
+  const scrap = { type: "scrap", id: "scrap", sheet: "notes", kind: "note", body: "A separate scrap", anchor: legacy.anchor, stackOf: null, folded: true };
+  await put(scrap);
+  await put({ type: "sheet", id: "notes", name: "Notes", colour: "blue", order: 0, visible: false });
+  await put({ type: "mark", id: "mark", sheet: "highlights", colour: "amber", anchor: legacy.anchor, start: 31, end: 45 });
+  await put({ type: "ink", id: "ink", sheet: "notes", anchor: legacy.anchor, from: "words", to: "terms" });
+  const workspace = new Workspace(store.folder);
+  const apply = async operation => {
+    const change = await moveReadingEntries(store.folder, move => workspace.execute(operation, store, undefined, move));
+    workspace.apply(change, store);
+  };
+  await apply({ action: "rename", path: source.path, name: "renamed.md" });
+  const subfolder = path.join(store.folder, "chapter");
+  await mkdir(subfolder);
+  const edited = body.replace("distinct", "distnct");
+  await writeFile(path.join(store.folder, "renamed.md"), edited, "utf8");
+  await apply({ action: "move", path: path.join(store.folder, "renamed.md"), target: subfolder });
+  const reanchored = await study(source.id, [block("new paragraph", 4), block(edited, 7)]);
+  assert.deepEqual(reanchored.locations.map(location => location.line), [7, 7, 7, 7]);
+  assert.ok(reanchored.entries.filter(entry => entry.type !== "sheet").every(entry => entry.document === "chapter/renamed.md"));
+  assert.deepEqual((await study(other.id, [])).entries.map(({ type, visible }) => [type, visible]), [["sheet", false]]);
+  const orphaned = await study(source.id, [block("No similar paragraph.")]);
+  assert.deepEqual(orphaned.locations.map(location => location.line), [null, null, null, null]);
+  assert.equal(orphaned.entries.find(entry => entry.id === "scrap").body, scrap.body);
+  await put({ ...migrated, deleted: true });
+  const notes = await readingStore(store, source.id, { action: "list", types: ["note"], studyNotes: true });
+  assert.deepEqual(notes.map(note => note.body), [scrap.body]);
+  assert.equal(await readFile(path.join(subfolder, "renamed.md"), "utf8"), edited);
+});
+
 function startWorker(t, root, file, code) {
   const worker = `
     import { once } from "node:events";

@@ -201,6 +201,9 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let reading = NativeReadingStore(script)
     let scope = NativeReadingStore.Scope(root: root, file: source, document: "a.md")
     _ = try await reading.perform(scope, ["action": "put", "item": ["type": "card", "id": "original-card", "front": "Q", "back": "A"]])
+    let anchor: [String: Any] = ["block": "Original", "quote": "Original", "line": 1, "headings": [] as [String]]
+    _ = try await reading.perform(scope, ["action": "put", "item": ["type": "note", "id": "legacy", "body": "A margin note", "anchor": anchor] as [String: Any]])
+    _ = try await reading.perform(scope, ["action": "put", "item": ["type": "sheet", "id": "notes", "name": "Notes", "colour": "blue", "order": 0, "visible": true] as [String: Any]])
     let journal = root.appendingPathComponent(".omarkie/store.jsonl")
     let handle = try FileHandle(forWritingTo: journal)
     try handle.seekToEnd()
@@ -216,6 +219,14 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let replacement = try await reading.perform(scope, ["action": "list"]) as? [[String: Any]]
     guard original?.first?["id"] as? String == "original-card", replacement?.isEmpty == true else {
       throw NativeFailure("Interrupted move assigned the card to the replacement.")
+    }
+    let study = try await reading.perform(moved, ["action": "study", "blocks": [] as [[String: Any]]]) as? [String: Any]
+    let entries = study?["entries"] as? [[String: Any]]
+    let locations = study?["locations"] as? [[String: Any]]
+    guard entries?.first?["type"] as? String == "sheet", entries?.last?["type"] as? String == "scrap",
+          entries?.last?["document"] as? String == "b.md", entries?.last?["body"] as? String == "A margin note",
+          locations?.first?["line"] is NSNull else {
+      throw NativeFailure("Moved legacy note did not survive in the loose scraps tray.")
     }
     let chapter = root.appendingPathComponent("chapter"), renamed = root.appendingPathComponent("renamed")
     try FileManager.default.createDirectory(at: chapter, withIntermediateDirectories: false)

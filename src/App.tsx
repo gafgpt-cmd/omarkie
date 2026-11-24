@@ -39,15 +39,13 @@ import { countCharacters } from "./characters";
 import type { PluginRuntime } from "./plugins/runtime";
 import { t } from "./i18n";
 import { afterDocumentPaint } from "./plugins/startup";
-import { bundledPlugins, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
+import { bundledPlugins, learningPluginId, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
 import type { PluginDefinition, PluginState } from "./plugins/types";
 const PluginsDialog = lazy(() => import("./components/PluginsDialog").then(module => ({ default: module.PluginsDialog })));
 import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
-import type { ReadingLayerState } from "./components/ReadingLayers";
-const ReadingLayers = lazy(() => import("./components/ReadingLayers"));
-const defaultReadingLayers: ReadingLayerState = { active: "note", note: true, visual: true };
+const LearningMode = lazy(() => import("./components/LearningMode"));
 export default function App() {
   const [painted, setPainted] = useState(false);
   const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
@@ -78,9 +76,8 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
-  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean; vault?: string | null } | null>(null);
-  const [readingPreference, setReadingPreference] = useState<{ vault: string | null; open: boolean }>();
-  const [readingViews, setReadingViews] = useState<Record<string, ReadingLayerState>>({});
+  const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -101,17 +98,9 @@ export default function App() {
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
   const readingSupported = !!window.desktop?.readingStore;
-  const readingVault = session.folder;
-  const readingKey = readingSupported && readingVault ? `omarkie-reading-layers:${readingVault}` : null;
-  const readingOpen = useMemo(() => readingPreference?.vault === readingVault
-    ? readingPreference.open
-    : !!readingKey && localStorage.getItem(readingKey) === "true", [readingPreference, readingVault, readingKey]);
-  const readingVisible = readingOpen && !!active && !focus;
-  const filesVisible = sidebar && !readingVisible;
-  function setReadingOpen(open: boolean) {
-    if (readingKey) localStorage.setItem(readingKey, String(open));
-    setReadingPreference({ vault: readingVault, open });
-  }
+  const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
+  const readingVisible = learningEnabled && !!active && !focus && painted;
+  const filesVisible = sidebar && (!readingVisible || showFiles);
   const cleanVisible = !!active && cleanId === active.id;
   function closeClean() {
     setCleanId(null);
@@ -124,19 +113,16 @@ export default function App() {
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadSupported = !!window.desktop?.payloadRequest;
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
-  const currentPayload = payload && payload.id === active?.id &&
-    (payload.vault === undefined ? payloadEnabled : payload.vault === readingVault) ? payload : null;
-  const activePayload = currentPayload && (readingVisible || currentPayload.vault === undefined) ? currentPayload : null;
+  const currentPayload = payload && payload.id === active?.id && payloadEnabled ? payload : null;
+  const activePayload = !readingVisible ? currentPayload : null;
   useEffect(() => {
     if (payload && !currentPayload) setPayload(null);
   }, [payload, currentPayload]);
-  function openPayload(mode: "summary" | "question", selectedSource?: string, inLayers = false) {
-    if (!active || !(inLayers ? payloadSupported : payloadEnabled)) return;
-    const target = editor();
-    const selected = selectedSource ?? (inLayers ? undefined : target?.selectionText(true));
-    if (selectedSource !== undefined && !selectedSource.trim()) return;
+  function openPayload(mode: "summary" | "question") {
+    if (!active || !payloadEnabled || readingVisible) return;
+    const target = editor(), selected = target?.selectionText(true);
     const source = selected || target?.markdown() || active.content;
-    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected, vault: inLayers ? readingVault : undefined }));
+    setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
   }
   function appendPayload(summary: string) {
     const target = editor();
@@ -145,18 +131,14 @@ export default function App() {
     const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
     if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
   }
-  const readingView = readingViews[session.activeId] || defaultReadingLayers;
-  const renderedView = readingVisible ? readingView.visual : rendered;
+  const renderedView = rendered;
   const suppressRemoteImages = readingVisible || cleanVisible;
   const remoteImages = preferences.remoteImages && !suppressRemoteImages;
   useInsertionEffect(() => {
     // Rich editors read the parser policy in descendant layout effects.
     setMarkdownOptions({ ...preferences, remoteImages });
   }, [preferences, remoteImages]);
-  function setRenderedView(value: boolean) {
-    if (readingVisible) setReadingViews(current => ({ ...current, [session.activeId]: { ...readingView, visual: value } }));
-    else setRendered(value);
-  }
+  function setRenderedView(value: boolean) { setRendered(value); }
   useEffect(() => {
     setMountedDocuments(current => {
       let removed = false;
@@ -168,8 +150,10 @@ export default function App() {
   const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
   pluginContext.current = { active, editor, preferences, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
+  const runtimeDefinitions = useMemo(() => pluginDefinitions.filter(definition => !definition.renderer), [pluginDefinitions]);
+  const runtimeEnabled = runtimeDefinitions.some(definition => pluginPreferences[definition.id]?.enabled);
   useEffect(() => {
-    if (!painted || !Object.values(pluginPreferences).some(value => value.enabled)) { setRuntimeReady(false); return; }
+    if (!painted || !runtimeEnabled) { setRuntimeReady(false); return; }
     let cancelled = false;
     let loaded: PluginRuntime | null = null;
     void import("./plugins/runtime").then(({ PluginRuntime }) => {
@@ -196,7 +180,7 @@ export default function App() {
     loaded = runtime; pluginRuntime.current = runtime; setRuntimeReady(true);
     }).catch(error => session.setMessage(error.message));
     return () => { cancelled = true; pluginRuntime.current = null; void loaded?.destroy(); };
-  }, [painted, Object.values(pluginPreferences).some(value => value.enabled)]);
+  }, [painted, runtimeEnabled]);
   useEffect(() => {
     if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
@@ -204,12 +188,12 @@ export default function App() {
   useEffect(() => { localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences)); }, [pluginPreferences]);
   useEffect(() => {
     if (!session.ready || !active) return;
-    for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
-    if (!activeEditorReady || paintedDocument !== active.id || !pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    for (const definition of runtimeDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
+    if (!activeEditorReady || paintedDocument !== active.id || !runtimeEnabled) return;
     return afterDocumentPaint(() => {
-      for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
+      for (const definition of runtimeDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
     });
-  }, [pluginDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady]);
+  }, [runtimeDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady, runtimeEnabled]);
   useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(remoteImages).catch(() => {}); }, [remoteImages]);
   useEffect(() => {
@@ -246,9 +230,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar: filesVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": readingVisible };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: filesVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, filesVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, filesVisible, renderedView, readingVisible, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, filesVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, filesVisible, renderedView, learningEnabled, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -285,23 +269,19 @@ export default function App() {
     if (window.desktop?.readingStore && active?.path && session.folder)
       setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
   }
-  const readingSaved = !!active?.path && !!session.folder;
-  function closeReading() {
-    setReadingOpen(false);
-    if (cleanVisible) closeClean();
-    if (flashcardsVisible) closeFlashcards();
-    setPayload(null);
-    requestAnimationFrame(() => editor()?.focus());
-  }
   function toggleReading() {
-    if (!readingSupported || !active || !activeEditorReady || editor()?.composing()) return;
-    if (readingVisible) closeReading();
-    else { setFocus(false); setReadingOpen(true); }
+    if (!readingSupported || editor()?.composing()) return;
+    setPluginPreferences(previous => ({ ...previous, [learningPluginId]: { enabled: !learningEnabled } }));
+    setShowFiles(false);
+    if (learningEnabled) {
+      closeFlashcards();
+      requestAnimationFrame(() => editor()?.focus());
+    } else setFocus(false);
   }
   function toggleSidebar() {
     if (readingVisible) {
-      closeReading();
-      setSidebar(true);
+      setShowFiles(!filesVisible);
+      setSidebar(!filesVisible);
     } else setSidebar(value => !value);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
@@ -358,7 +338,7 @@ export default function App() {
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
     else if (action === "clean-converted" && active) {
       if (cleanVisible) closeClean();
-      else openClean();
+      else if (!readingVisible) openClean();
     }
     else if (action === "collect-reading" && active) {
       const current = editor();
@@ -387,7 +367,7 @@ export default function App() {
     else if (action === "reading-layers") toggleReading();
     else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
-      if (readingVisible) closeReading();
+      if (readingVisible) setShowFiles(true);
       setTab(action === "file-tree" ? "tree" : action);
       setSidebar(true);
     } else if (action === "theme")
@@ -502,12 +482,12 @@ export default function App() {
           : t("本地草稿");
   const payloadView = activePayload && <Suspense fallback={null}><PayloadPanel
     key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
-    followUp={readingVisible} preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
+    preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
     configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
   /></Suspense>;
   return (
     <div
-      className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload && !readingVisible ? " payload-open" : ""}`}
+      className={`app-shell ${filesVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -520,8 +500,8 @@ export default function App() {
         autosave={session.autosave}
         disabled={!active}
         context={editor()?.context() || ""}
-        reading={readingSupported && active ? { open: readingVisible, enabled: !!activeEditorReady } : undefined}
-        payload={payloadEnabled ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
+        learning={readingSupported ? learningEnabled : undefined}
+        payload={payloadEnabled && !readingVisible ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
@@ -533,6 +513,7 @@ export default function App() {
         headings={headings}
         tab={tab}
         setTab={setTab}
+        showSheets={readingVisible ? () => setShowFiles(false) : undefined}
         select={session.setActiveId}
         openToken={session.openToken}
         openFolder={session.openFolder}
@@ -625,22 +606,16 @@ export default function App() {
             ) : null)}
             {cleanVisible && <Suspense fallback={<p className="layers-clean-loading" role="status">{t("正在清理文本…")}</p>}><CleanLayer
               key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
-              canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
+              canBake={!readingVisible && !readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
-            {readingVisible && painted && <Suspense fallback={null}><ReadingLayers
+            {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={readingSaved} state={readingView}
-              change={value => setReadingViews(current => ({ ...current, [active.id]: value }))}
-              actions={{
-                clean: { visible: cleanVisible, open: openClean, close: closeClean },
-                ask: payloadSupported ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote, true), close: () => setPayload(null) } : undefined,
-                card: readingSaved ? { visible: flashcardsVisible, open: openFlashcards, close: closeFlashcards } : undefined,
-              }}
-              payload={payloadView}
+              saved={!!active.path && !!session.folder && active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"))}
+              ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} showSheets={!filesVisible}
+              openFiles={() => { setShowFiles(true); setSidebar(true); }} openCard={openFlashcards}
               cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
                 id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}
               /></Suspense>}
-              close={closeReading}
             /></Suspense>}
             <article
               className="print-document"
@@ -649,7 +624,7 @@ export default function App() {
           </>
         )}
       </main>
-      {!readingVisible && payloadView}
+      {payloadView}
       <footer className="statusbar">
         <button id="footer-word-count-label" onClick={() => setDialog("statistics")}
           title={t("{{status}} · 第 {{line}} 行，第 {{column}} 列 · Markdown · {{encoding}}", { status, line: cursor.line, column: cursor.column, encoding: encodingNames[active?.encoding || "utf-8"] })}

@@ -22,7 +22,8 @@ export function readingBlocks(context: ReadingContext): ReadingBlock[] {
   return blocks;
 }
 
-export function readingSelection(editor: EditorHandle, surface: HTMLElement, image?: HTMLImageElement): { target: ReadingTarget; x: number; y: number } | undefined {
+export interface StudySelection { target: ReadingTarget; x: number; y: number; range?: { start: number; end: number } }
+export function readingSelection(editor: EditorHandle, surface: HTMLElement, image?: HTMLImageElement): StudySelection | undefined {
   const rich = surface.matches(".rich-document"), native = window.getSelection(), context = editor.readingContext();
   if (!context) return;
   let quote: string, rect: { bottom: number; left: number } | null;
@@ -50,5 +51,8 @@ export function readingSelection(editor: EditorHandle, surface: HTMLElement, ima
   const line = node?.line ?? 1 + (text.slice(0, start).match(/\n/g)?.length ?? 0);
   const block = node?.source || text.slice(start, end < 0 ? undefined : end);
   if (!block.trim()) return;
-  return { target: { block, line, headings: paths(context)(line), quote }, x: rect.left, y: rect.bottom };
+  const blockStart = node?.from ?? start, blockEnd = node?.to ?? (end < 0 ? text.length : end);
+  const offset = (position: number) => text.slice(blockStart, position).normalize("NFC").replace(/\s+/gu, " ").trimStart().length;
+  return { target: { block, line, headings: paths(context)(line), quote }, x: rect.left, y: rect.bottom,
+    range: to <= blockEnd && from >= blockStart ? { start: offset(from), end: offset(to) } : undefined };
 }

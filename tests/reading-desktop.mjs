@@ -227,4 +227,4 @@ try {
   throw error;
 } finally { if (application) await application.close().catch(() => {}); }
 
-await import("./reading-layers-desktop.mjs");
+await import("./learning-mode-desktop.mjs");

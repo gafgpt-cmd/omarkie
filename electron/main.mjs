@@ -209,7 +209,7 @@ const handlers = {
   readingStore: async (_, id, request) => {
     const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
     if (request?.action !== "export") return readingStore(store, id, request);
-    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card"] });
+    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card", "scrap"], studyNotes: true });
     const result = await dialog.showSaveDialog(window, { defaultPath: t("阅读笔记.md"), filters: [{ name: "Markdown", extensions: ["md"] }] });
     if (result.canceled) return false;
     try { await writeFile(result.filePath, readingMarkdown(entries), { encoding: "utf8", flag: "wx", mode: 0o600 }); }

@@ -10,8 +10,8 @@ import "./payload.css";
 
 const preview = new MarkdownIt({ html: false, breaks: true }).use(mark).disable(["image", "link", "autolink", "reference"]);
 
-export default function PayloadPanel({ mode, source, selection, followUp, preferences, editable, append, configure, close }: {
-  mode: "summary" | "question"; source: string; selection: boolean; followUp: boolean; preferences: Preferences;
+export default function PayloadPanel({ mode, source, selection, preferences, editable, append, configure, close }: {
+  mode: "summary" | "question"; source: string; selection: boolean; preferences: Preferences;
   editable: boolean; append(markdown: string): void; configure(): void; close(): void;
 }) {
   const [summary, setSummary] = useState("");
@@ -66,7 +66,7 @@ export default function PayloadPanel({ mode, source, selection, followUp, prefer
           catch (err) { setError((err as Error).message); }
         }}>{inserted ? t("Callout inserted") : t("Append as callout")}</button>
       </section>}
-      {(followUp || mode === "question" || summary) && <form aria-describedby="payload-send-notice" onSubmit={event => { event.preventDefault(); void send(true); }}>
+      {(mode === "question" || summary) && <form aria-describedby="payload-send-notice" onSubmit={event => { event.preventDefault(); void send(true); }}>
         <label className="workspace-field">{t("Ask one question about this text")}<input type="text" autoComplete="off" maxLength={payloadQuestionLength} value={question} onChange={event => setQuestion(event.target.value)} disabled={busy} /></label>
         <button className="primary-button" disabled={!configured || !validSource || busy || !question.trim()}>{t("Send question")}</button>
       </form>}

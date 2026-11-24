@@ -278,12 +278,13 @@ async function operate({ root, document, current }, request) {
   let validated;
   try { validated = validate(request); } catch { throw invalid(); }
   const { item } = validated, writing = !!item;
+  const empty = validated.study ? { entries: [], locations: [] } : [];
   return locked(root, writing, exists => {
-    if (!exists) return [];
+    if (!exists) return empty;
     return transaction(root, writing, async (entries, append) => {
       const source = path.join(root, document);
       if (!current() || await realpath(source) !== source || !(await lstat(source)).isFile() || !current()) throw unsafe();
-      if (!entries) return [];
+      if (!entries) return empty;
       if (!item) return query(entries, document, validated);
       const entry = { ...item, document: putDocument(entries, document, item, validated.owner), at: new Date().toISOString() };
       await append({ entry });

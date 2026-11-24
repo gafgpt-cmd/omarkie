@@ -32,7 +32,7 @@
 
 ## Clean converted text
 
-- File → Clean converted text, or Reading Layers → Clean, opens a read-only preview. Back to source or Esc hides it without applying. See [preview media](#preview-media).
+- With Learning mode off, **File → Clean converted text** opens a read-only preview. **Back to source** or `Esc` closes it without applying. See [preview media](#preview-media).
 - Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
 - A change to the note or its disk revision requires a fresh preview.
 - Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
@@ -40,16 +40,16 @@
 - The hook runs the installed Stage 2 p01–p07 CLI on a private UTF-8 scratch copy: `source.md --passes 1,2,3,4,5,6,7 --report report.json`. No pipeline code is bundled or copied.
 - The hook receives no original path. Asset-dependent repairs cannot inspect the source folder. Failed hooks leave the document untouched; unset the hook to use the built-in cleanup alone.
 
-## Reading Layers
+## Learning mode
 
-- Open a vault and a saved Markdown file. Toggle **Reading Layers** in the toolbar or **Display**, or press `Ctrl+Shift+Y` (`⌘⇧Y` on macOS). The choice is remembered per vault.
-- Left: eyes show or hide layers per document. The pencil marks the active layer; L0 Source stays locked at the bottom.
-- Center: read the document. Close Reading Layers to edit.
-- Right: open **Ask / Summary**, **Margin notes**, or **Cards** using the eyes on the left.
-- Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
-- Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
-- **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
-- Include the hidden `.omarkie` folder when backing up the vault. The reading index is built in memory.
+- Open a vault and a saved Markdown file. Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS).
+- **Sheets** occupies the left sidebar slot; it becomes chips at 820 px or less. Switch to Files without closing Learning mode.
+- Select text to add a note, highlight, or draft a card. `Alt+Enter` focuses the actions.
+- Click a paper tab to fold or unfold its note. Use **Move** and click another paragraph, **Stack here**, or **Move to tray**. **Peel off** removes the scrap; **Undo** restores it.
+- Hold **Peek** to see the base page. Turn off Learning mode to edit Markdown.
+- Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
+- **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.
+- Back up `.omarkie` with the vault. Sheets, scraps, highlights, and cards live there, not in the source note.
 - Opening a vault does not create a journal. Reading writes, rename, move, Undo and Trash share a lock across Omarkie processes, even before the first journal entry.
 - File operations in writable subfolders can proceed if permissions prevent creating the lock and neither a journal nor a lock exists.
 - Trash and macOS Undo Trash update the journal before moving the file. A crash between those steps can leave the file and history out of sync.
@@ -60,19 +60,19 @@
 
 ### Preview media
 
-- Reading Layers and Clean block remote media even if editing allows it.
+- Learning mode and Clean block remote media even if editing allows it.
 - Vault media and supported inline `data:` and page-created `blob:` media still render. In mixed image or audio/video sources, previews drop remote candidates and keep supported local fallbacks.
 
-## Study cards (L5)
+## Study cards
 
-- Open a folder and a saved note. Select **Reading Layers → Cards**.
+- Open a folder and a saved note. Select **Learning mode → Study cards**.
 - **Make cards from highlights and notes** drafts up to 10 per note. Aim for 5–10; fewer distinct sources produce fewer cards.
 - Edit the questions and answers. Save only the selected cards.
-- For a single card, select text in Reading Layers and choose **Make it a card**. Opening the composer saves nothing.
+- For a single card, select text in Learning mode and choose **Make it a card**. Opening the composer saves nothing.
 - **Test me** queues new and due cards across the open folder. Recall before revealing; then rate from 0 to 5.
 - Ratings below 4 repeat in the session. Ratings below 3 restart the [SM-2](https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method) schedule.
 - Cards and ratings stay in `.omarkie/store.jsonl`. The schedule is replayed from ratings. Source Markdown stays untouched.
-- To save a Markdown copy, see [Reading Layers](#reading-layers).
+- To save a Markdown copy, see [Learning mode](#learning-mode).
 - [Obsidian Spaced Repetition](https://stephenmwangi.com/obsidian-spaced-repetition/flashcards/reviewing/) (MIT): review UI ideas only; no code copied.
 
 ## Reading images

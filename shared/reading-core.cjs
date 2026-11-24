@@ -1,6 +1,9 @@
 // Also evaluated by the native host in an isolated JavaScriptCore context.
 module.exports = function readingCore(digest, translate = message => message) {
-  const kinds = new Set(["note", "card", "answer"]);
+  const kinds = new Set(["note", "card", "answer", "sheet", "scrap", "mark", "ink"]);
+  const scrapKinds = new Set(["note", "doubt", "answer", "clip", "card", "exam", "evidence", "gloss"]);
+  const colours = new Set(["amber", "blue", "rose", "green"]);
+  const legacyNotePrefix = "legacy-note:";
   const invalid = () => new Error("阅读图层数据无效。");
   const normalize = text => text.normalize("NFC").replace(/\s+/gu, " ").trim();
   const identity = (block, section) => digest(JSON.stringify([block, section]));
@@ -76,6 +79,14 @@ module.exports = function readingCore(digest, translate = message => message) {
     if (!Number.isInteger(value) || value < min || value > max) throw invalid();
     return value;
   }
+  function boolean(value) {
+    if (typeof value !== "boolean") throw invalid();
+    return value;
+  }
+  function colour(value) {
+    if (!colours.has(value)) throw invalid();
+    return value;
+  }
   function blockAt(value) {
     if (!value || !Array.isArray(value.headings) || value.headings.length > 6 || value.headings.some(heading => typeof heading !== "string" || heading.length > 262_144)) throw invalid();
     if (typeof value.block !== "string" || value.block.length > 20_000_000) throw invalid();
@@ -93,6 +104,18 @@ module.exports = function readingCore(digest, translate = message => message) {
       case "note": return { ...base, body: text(item.body), anchor: target(item.anchor) };
       case "card": return { ...base, front: text(item.front), back: text(item.back), ...(item.anchor === undefined ? {} : { anchor: target(item.anchor) }) };
       case "answer": return { ...base, cardId: identifier(item.cardId), rating: number(item.rating, 0, 5) };
+      case "sheet": return { ...base, name: text(item.name, 80), colour: colour(item.colour), order: number(item.order, 0, 1_000_000), visible: boolean(item.visible) };
+      case "scrap": {
+        if (!scrapKinds.has(item.kind) || item.stackOf === item.id) throw invalid();
+        return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor: item.anchor === null ? null : target(item.anchor),
+          body: text(item.body), stackOf: item.stackOf === null ? null : identifier(item.stackOf), folded: boolean(item.folded),
+          deleted: boolean(item.deleted ?? false) };
+      }
+      case "mark": {
+        const start = number(item.start, 0, 262_143), end = number(item.end, start + 1, 262_144);
+        return { ...base, sheet: identifier(item.sheet), anchor: target(item.anchor), start, end, colour: colour(item.colour), deleted: boolean(item.deleted ?? false) };
+      }
+      case "ink": return { ...base, sheet: identifier(item.sheet), anchor: target(item.anchor), from: text(item.from), to: item.to === "" ? "" : text(item.to) };
     }
   }
 
@@ -103,10 +126,10 @@ module.exports = function readingCore(digest, translate = message => message) {
       if (item.type === "answer" && !validPath(request.owner)) throw invalid();
       return { item, owner: request.owner };
     }
-    if (request.action === "resolve") {
+    if (request.action === "resolve" || request.action === "study") {
       if (!Array.isArray(request.blocks) || request.blocks.length > 250_000) throw invalid();
       let size = 0;
-      return { blocks: request.blocks.map(input => {
+      return { study: request.action === "study", blocks: request.blocks.map(input => {
         const block = blockAt(input);
         size += block.block.length + block.headings.reduce((total, heading) => total + heading.length, 0);
         if (size > 40_000_000) throw invalid();
@@ -116,12 +139,16 @@ module.exports = function readingCore(digest, translate = message => message) {
     if (request.action === "list") {
       if (request.scope !== undefined && request.scope !== "document" && request.scope !== "vault") throw invalid();
       if (request.types !== undefined && (!Array.isArray(request.types) || request.types.length > kinds.size || request.types.some(kind => !kinds.has(kind)))) throw invalid();
-      return { scope: request.scope, types: request.types };
+      return { scope: request.scope, types: request.types, studyNotes: request.studyNotes === true };
     }
     throw invalid();
   }
 
   function indexEntry(entries, entry) {
+    if (entry.type === "sheet") {
+      (entries.sheets ??= new Map()).set(entry.id, entry);
+      return;
+    }
     let items = entries.get(entry.document);
     if (!items) entries.set(entry.document, items = new Map());
     items.set(`${entry.type}:${entry.id}`, entry);
@@ -149,6 +176,7 @@ module.exports = function readingCore(digest, translate = message => message) {
       checkPending(entries, owner);
       return owner;
     }
+    if (item.type === "sheet") return document;
     checkPending(entries, document);
     if (item.type !== "card") return document;
     const items = entries.get(document);
@@ -226,23 +254,54 @@ module.exports = function readingCore(digest, translate = message => message) {
           return;
         }
         if (!validPath(entry.document) || typeof entry.at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.at) || !Number.isFinite(Date.parse(entry.at)) || new Date(entry.at).toISOString() !== entry.at) throw invalid();
-        checkPending(entries, entry.document);
+        if (entry.type !== "sheet") checkPending(entries, entry.document);
         indexEntry(entries, { ...itemAt(entry), document: entry.document, at: entry.at });
       } catch { entries.badRows = (entries.badRows ?? 0) + 1; }
   }
 
   const allEntries = entries => Array.from(entries.values()).flatMap(items => [...items.values()]);
-  function query(entries, document, { scope, types, blocks }) {
+  function studyEntries(entries, document, blocks) {
+    const items = entries.get(document);
+    const study = [...(entries.sheets?.values() ?? [])];
+    const anchored = [];
+    for (const item of items?.values() ?? []) {
+      let entry = item;
+      if (item.type === "note") {
+        const id = legacyNotePrefix + digest(item.id);
+        if (items.has(`scrap:${id}`)) continue;
+        entry = { ...item, id, type: "scrap", sheet: "notes", kind: "note", stackOf: null, folded: true };
+      } else if (!["scrap", "mark", "ink"].includes(item.type) || item.deleted) continue;
+      study.push(entry);
+      if (entry.anchor) anchored.push(entry);
+    }
+    return { entries: study, locations: resolveReadingAnchors(anchored, blocks) };
+  }
+
+  function query(entries, document, { scope, types, blocks, study, studyNotes }) {
+    if (study) return studyEntries(entries, document, blocks);
     const items = scope === "vault" ? allEntries(entries) : [...(entries.get(document)?.values() ?? [])];
     if (blocks) return resolveReadingAnchors(items.filter(entry => entry.type === "note"), blocks);
-    return types ? items.filter(entry => types.includes(entry.type)) : items;
+    if (types?.includes("sheet")) items.push(...(entries.sheets?.values() ?? []));
+    if (!studyNotes) return types ? items.filter(entry => types.includes(entry.type)) : items;
+    const result = [];
+    for (const item of items) {
+      if (item.type === "note" && entries.get(item.document).has(`scrap:${legacyNotePrefix}${digest(item.id)}`)) continue;
+      if (item.type === "scrap" && item.deleted) continue;
+      if (types?.includes("note") && item.type === "scrap" && item.kind === "note" && item.anchor) {
+        result.push({ ...item, type: "note" });
+      } else if (!types || types.includes(item.type)) result.push(item);
+    }
+    return result;
   }
 
   function readingMarkdown(items) {
     const quote = text => text.replaceAll("\r", "").split("\n").map(line => `> ${line}`).join("\n");
     return items.map(item => {
       const source = quote([item.document, ...(item.anchor?.headings || [])].join(" › "));
-      return item.type === "note" ? `${source}\n${quote(item.anchor.quote)}\n\n${item.body}` : `${source}\n\n${item.front}\n\n${item.back}`;
+      if (item.type === "note" || item.type === "scrap") {
+        return `${source}${item.anchor ? `\n${quote(item.anchor.quote)}` : ""}\n\n${item.body}`;
+      }
+      return `${source}\n\n${item.front}\n\n${item.back}`;
     }).join("\n\n---\n\n") + "\n";
   }
 

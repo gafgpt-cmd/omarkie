@@ -236,11 +236,15 @@ final class NativeReadingStore {
 
   private func operate(_ scope: Scope, _ incoming: [String: Any], _ current: () -> Bool) throws -> Any {
     let exporting = incoming["action"] as? String == "export"
-    let request = exporting ? ["action": "list", "scope": "vault", "types": ["note", "card"]] : incoming
+    let studying = incoming["action"] as? String == "study"
+    let request: [String: Any] = exporting ? ["action": "list", "scope": "vault", "types": ["note", "card", "scrap"], "studyNotes": true] : incoming
     let validated = try call("validate", [request])
     let item = validated.forProperty("item")!
     let writing = !item.isUndefined
-    let empty: Any = exporting ? "\n" : [] as [[String: Any]]
+    let empty: Any
+    if exporting { empty = "\n" }
+    else if studying { empty = ["entries": [], "locations": []] as [String: [[String: Any]]] }
+    else { empty = [] as [[String: Any]] }
     return try transaction(scope.root, writing: writing) { state, append, _ in
       var source = stat()
       guard current(), canonicalFileURL(scope.file).path == scope.file.path,
@@ -255,6 +259,7 @@ final class NativeReadingStore {
       }
       let result = try call("query", [state.entries, scope.document, validated])
       if exporting { return try call("readingMarkdown", [result]).toString() ?? "\n" }
+      if studying { return result.toDictionary() ?? [:] }
       return result.toArray() ?? []
     }
   }
