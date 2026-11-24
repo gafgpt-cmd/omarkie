@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld("desktop", {
   showcase: () => call("showcase"),
   scan: () => call("scan"),
   readingStore: (id, request) => call("readingStore", id, request),
+  glassState: request => call("glassState", request),
+  onGlass: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("glass:event", listener);
+    return () => ipcRenderer.removeListener("glass:event", listener);
+  },
   tutorBridge: (id, request) => call("tutorBridge", id, request),
   onTutor: callback => {
     const listener = (_, event) => callback(event);

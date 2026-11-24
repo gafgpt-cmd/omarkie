@@ -29,6 +29,7 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
+  glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
@@ -111,6 +112,13 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "status") requireArgument(["seen", "working", "done"].includes(args[1]), "Status must be seen, working, or done.");
     if (command === "poll") requireArgument(Boolean(opts["reply-to"]) === Boolean(opts["agent-reply"]), "Supply --reply-to with --agent-reply.");
     const root = await folder(opts.vault, process.cwd());
+    if (command === "glass") {
+      requireArgument(!(opts.on && opts.off), "Use either --on or --off.");
+      const { readGlass, writeGlass, glassFile } = await import("./glass-state.mjs");
+      const visible = opts.on || opts.off ? await writeGlass(root, !!opts.on) : await readGlass(root);
+      emit({ vault: root, glass: visible ? "on" : "off", state: glassFile(root) });
+      return;
+    }
     const { requestBridge } = await import("./tutor-transport.mjs");
     const bridge = (op, value = {}) => requestBridge(root, { op, ...value }, op === "poll" && opts.wait ? 95_000 : 3_000);
     if (command === "home") {

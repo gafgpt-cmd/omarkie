@@ -124,6 +124,7 @@
     {"label":"Reset text size","action":"text-reset","key":"Mod-0","context":"document"},
     {"label":"源码模式","action":"source","key":"Mod-/","context":"document"},
     {"label":"Learning mode","action":"reading-layers","key":"Mod-Shift-Y"},
+    {"label":"Glass overlay","action":"glass","key":"G"},
     {"label":"专注模式","action":"focus","key":"F8","context":"document"},
     {"label":"打字机模式","action":"typewriter","key":"F9","context":"document"},
     {"label":"显示／隐藏侧栏","action":"sidebar","key":"Mod-Shift-L"},

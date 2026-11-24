@@ -108,6 +108,27 @@ export default function App() {
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
   const readingSupported = !!window.desktop?.readingStore;
+  const glassSupported = !!window.desktop?.glassState;
+  const [glassOn, setGlassOn] = useState(false);
+  useEffect(() => {
+    if (!glassSupported) return;
+    let current = true;
+    void window.desktop!.glassState({ action: "read" }).then((response: { ok: boolean; value?: { visible?: boolean } }) => {
+      if (current && response?.ok) setGlassOn(response.value?.visible === true);
+    }).catch(() => {});
+    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => setGlassOn(event?.visible === true));
+    return () => { current = false; stop?.(); };
+  }, [glassSupported, session.folder]);
+  function toggleGlass() {
+    if (!glassSupported) return;
+    const visible = !glassOn;
+    if (visible) performance.mark("omarkie:glass-toggle");
+    setGlassOn(visible);
+    void window.desktop!.glassState({ action: "write", visible }).then((response: { ok: boolean; error?: string; value?: { visible?: boolean } }) => {
+      if (response?.ok) setGlassOn(response.value?.visible === true);
+      else { setGlassOn(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
+    }).catch((error: Error) => { setGlassOn(!visible); session.setMessage(error.message); });
+  }
   const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
   const readingVisible = learningEnabled && !!active && !focus && painted;
   const cleanVisible = !!active && cleanId === active.id;
@@ -267,9 +288,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, glass: glassOn };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, glassOn, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -409,6 +430,7 @@ export default function App() {
     else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRenderedView(!renderedView);
     else if (action === "reading-layers") toggleReading();
+    else if (action === "glass") toggleGlass();
     else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
       openFilesRail();
@@ -495,6 +517,8 @@ export default function App() {
         setAbout(false);
       }
       const action = commandForKey(event);
+      const printable = action ? commandsByAction.get(action)?.key : undefined;
+      if (printable && /^[A-Za-z]$/.test(printable) && event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (window.desktop?.windowAction && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
       if (action) {
         event.preventDefault();
@@ -654,7 +678,7 @@ export default function App() {
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
