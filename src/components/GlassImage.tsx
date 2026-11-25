@@ -18,11 +18,13 @@ interface Props {
   onLiveSize(width: number, height: number): void;
   maxWidth?: number;
   onDelete(): void;
+  onMerge?(): void;
+  onJump?(): void;
 }
 
 // A photo on the glass: drag to place, corner to stretch (Shift keeps the ratio), handle to tilt.
 // "Behind text" paints the picture in the layer under the page and keeps this frame as its handle.
-export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, maxWidth }: Props) {
+export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, onMerge, onJump, maxWidth }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const paint = useRef<HTMLImageElement>(null);
   const [source, setSource] = useState<string>();
@@ -171,6 +173,10 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
       <button type="button" className="glass-image-tool" data-glass-lock aria-label={image.locked ? "Unlock image" : "Lock image"}
         title={image.locked ? "Unlock image" : "Lock image"} aria-pressed={image.locked} onClick={() => onPatch({ locked: !image.locked }, true)}>
         {image.locked ? <Lock size={13} /> : <LockOpen size={13} />}</button>
+      {onJump && image.source && <button type="button" className="glass-image-tool" data-glass-jump aria-label="Jump to source" title="Jump to source"
+        onClick={onJump}>↩</button>}
+      {onMerge && <button type="button" className="glass-image-tool" data-glass-merge={image.id} aria-label="Merge down" title="Merge down into the page"
+        onClick={onMerge}>⇩</button>}
       <button type="button" className="glass-image-tool" data-glass-trash-image aria-label="Move image to trash" title="Move image to trash"
         onClick={onDelete}><Trash2 size={13} /></button>
     </div>}

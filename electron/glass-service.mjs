@@ -12,12 +12,18 @@ import {
 } from "../shared/glass-core.mjs";
 import {
   assetFile, convertible, displayFile, extensionFor, imageDefaults, imageFields, imageTypeOf, mimeFor,
-  orientationSize, scrapImageMagnet,
+  orientationSize, scrapImageMagnet, validSource,
 } from "../shared/glass-images.mjs";
 import {
   inkColors, inkWidths, validInkBox, validInkColor, validInkParts, validInkSize, validInkTool,
 } from "../shared/ink-core.mjs";
 import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validArrowEnd, validStickerImage } from "../shared/glass-marks.mjs";
+import {
+  decodeNote, encodeNote, inkSvg, insertBlock, mergeAnchorOf, mergeDiff, mergeKindLabel, mergeLines,
+  mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
+} from "../shared/glass-merge.mjs";
+import { markdownElements } from "../shared/element-model.mjs";
+import { findInVault, vaultRoot } from "./vault.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -934,6 +940,270 @@ export class GlassService {
       unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
+  // Where the vault says attachments go and how its links look; read only, never written.
+  async mergeSettingsFor(file, name) {
+    let root = this.root;
+    try { root = await vaultRoot(path.dirname(file), this.root); } catch { root = this.root; }
+    let notePath = relative(root, file);
+    if (!notePath || notePath.startsWith("..") || path.isAbsolute(notePath)) { root = this.root; notePath = name; }
+    const obsidian = await directory(path.join(root, ".obsidian"));
+    const appJson = obsidian ? await readJson(path.join(root, ".obsidian", "app.json")) ?? {} : null;
+    return { root, notePath, ...noteMergeSettings({ appJson, notePath }) };
+  }
+
+  attachmentDir(root, folder) {
+    const dir = folder ? path.resolve(root, ...folder.split("/")) : root;
+    const inside = path.relative(root, dir);
+    if (inside.startsWith("..") || path.isAbsolute(inside)) throw new Error("The vault's attachment folder sits outside the vault.");
+    return dir;
+  }
+
+  async mergeImageMapping({ kind, fields, magnet, journal, settings }) {
+    const directory = this.attachmentDir(settings.root, settings.attachmentFolder);
+    const taken = new Set(await readdir(directory).catch(() => []));
+    let bytes, base, extension;
+    if (kind === "ink") {
+      bytes = Buffer.from(inkSvg(fields), "utf8");
+      base = `ink-${String(magnet.id).replace(/^m-/, "").slice(0, 8) || "stroke"}`;
+      extension = "svg";
+    } else {
+      if (typeof fields.asset !== "string" || !fields.asset || /[/\\]/.test(fields.asset)) throw new Error("The picture has no stored copy.");
+      const source = path.join(this.assetDir(journal), fields.asset);
+      const metadata = await info(source);
+      if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("The picture file is missing from the glass.");
+      bytes = await readFile(source);
+      base = fields.name || fields.asset;
+      extension = path.extname(fields.asset).slice(1).toLowerCase() || "png";
+    }
+    const assetName = assetFile(base, extension, taken);
+    const assetPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
+    const mapping = mergeLines(kind, fields, { settings, assetPath, assetName: kind === "ink" ? "Ink" : fields.name || assetName });
+    return { ...mapping, asset: { bytes, name: assetName, base, extension, rel: assetPath, abs: path.join(directory, assetName) } };
+  }
+
+  async buildMerge(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertReady();
+    const { note: name, file } = await this.validateNote(request.note);
+    const note = await this.identify(name);
+    const journal = this.journalFor(note);
+    const replay = await this.readJournal(journal);
+    const magnet = replay.magnets.get(String(request.magnet ?? ""));
+    if (!magnet || magnet.deleted?.active) throw new Error("Glass magnet not found.");
+    const view = magnetViewFromMap(magnet);
+    const fields = view.fields;
+    const kind = fields.kind;
+    if (!mergeableKinds.includes(kind)) throw new Error("Only sticky notes, pictures, ink and cards can merge down.");
+    const anchor = mergeAnchorOf(fields);
+    if (!anchor) throw new Error("This magnet has no paragraph anchor to merge into.");
+    const before = await readFile(file);
+    const { bom, text } = decodeNote(before);
+    const eol = noteLineEnding(text);
+    const elements = markdownElements(text);
+    let resolved;
+    if (fields.source && typeof fields.source.line === "number") {
+      const exact = elements.find(element => element.kind === fields.source.kind && element.line === fields.source.line)
+        ?? elements.find(element => element.id === fields.source.element);
+      if (exact) resolved = { element: exact, tier: "source", confidence: 1 };
+    }
+    resolved ??= resolveMergeElement(elements, anchor);
+    if (!resolved) throw new Error("Merge down could not find the paragraph this magnet points at. Move it onto a paragraph and try again.");
+    const settings = await this.mergeSettingsFor(file, name);
+    const mapping = kind === "image" || kind === "ink"
+      ? await this.mergeImageMapping({ kind, fields, magnet: view, journal, settings })
+      : mergeLines(kind, fields, { settings });
+    const diff = mergeDiff(text, resolved.element.to, mapping.lines, eol);
+    const buffer = encodeNote({ bom, text: diff.next });
+    return { name, file, note, journal, magnet: view, kind, fields, mapping, settings, element: resolved.element,
+      confidence: resolved.confidence, tier: resolved.tier, bom, eol, baseHash: hashBytes(before), afterHash: hashBytes(buffer),
+      beforeBuffer: before, buffer, diff };
+  }
+
+  publicMerge(built) {
+    return { id: null, note: built.name, magnet: built.magnet.id, kind: built.kind, label: built.mapping.label ?? mergeKindLabel(built.kind, built.fields),
+      style: built.mapping.style ?? "markdown", element: { id: built.element.id, kind: built.element.kind, line: built.element.line,
+        headings: [...built.element.headings] }, confidence: built.confidence, tier: built.tier,
+      baseHash: built.baseHash, baseSize: built.beforeBuffer.length, eol: built.eol === "\r\n" ? "CRLF" : "LF", bom: built.bom,
+      diff: built.diff.rows, added: built.mapping.lines, removed: built.diff.removed, attachment: built.mapping.asset?.rel ?? null,
+      linkStyle: built.settings.linkStyle, attachmentFolder: built.settings.attachmentFolder };
+  }
+
+  async mergePreview(request) {
+    const built = await this.buildMerge(request);
+    return { ...this.describe(built.note, built.file), merge: this.publicMerge(built) };
+  }
+
+  async mergeAccept(request) {
+    if (!request.approved) {
+      const preview = await this.buildMerge(request);
+      return { ...this.describe(preview.note, preview.file), needsUser: true, preview: this.publicMerge(preview),
+        message: "Preview only. The user presses Accept in Omarkie; an agent never writes the page." };
+    }
+    this.assertWritable();
+    const built = await this.buildMerge(request);
+    if (typeof request.expectedHash === "string" && request.expectedHash && request.expectedHash !== built.baseHash) {
+      return { ...this.describe(built.note, built.file), stale: true, preview: this.publicMerge(built) };
+    }
+    const fresh = await readFile(built.file);
+    if (hashBytes(fresh) !== built.baseHash) {
+      const again = await this.buildMerge(request);
+      return { ...this.describe(again.note, again.file), stale: true, preview: this.publicMerge(again) };
+    }
+    const mergeId = typeof request.mergeId === "string" && /^mg-[a-z0-9]{6,32}$/.test(request.mergeId) ? request.mergeId : `mg-${randomBytes(6).toString("hex")}`;
+    const undoRel = `assets/${path.basename(built.journal, ".jsonl")}/undo-${mergeId}.md`;
+    const undoAbs = path.join(this.storeDir, ...undoRel.split("/"));
+    await mkdir(path.dirname(undoAbs), { recursive: true, mode: 0o700 });
+    await writeBytesAtomic(undoAbs, built.beforeBuffer);
+    let assetWritten = false;
+    let mapping = built.mapping, buffer = built.buffer, diff = built.diff;
+    try {
+      if (mapping.asset) {
+        await mkdir(path.dirname(mapping.asset.abs), { recursive: true, mode: 0o700 });
+        const existing = await readFile(mapping.asset.abs).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+        if (existing && !existing.equals(mapping.asset.bytes)) {
+          // Someone put a different file with that name since the preview: pick a free name, never clobber.
+          const taken = new Set(await readdir(path.dirname(mapping.asset.abs)));
+          const assetName = assetFile(mapping.asset.base, mapping.asset.extension, taken);
+          const assetPath = built.settings.attachmentFolder ? `${built.settings.attachmentFolder}/${assetName}` : assetName;
+          mapping = { ...mergeLines(built.kind, built.fields, { settings: built.settings, assetPath, assetName: built.fields.name || assetName }),
+            asset: { ...mapping.asset, name: assetName, rel: assetPath, abs: path.join(path.dirname(mapping.asset.abs), assetName) } };
+          diff = mergeDiff(decodeNote(built.beforeBuffer).text, built.element.to, mapping.lines, built.eol);
+          buffer = encodeNote({ bom: built.bom, text: diff.next });
+        }
+        if (!existing || !existing.equals(mapping.asset.bytes)) {
+          await writeBytesAtomic(mapping.asset.abs, mapping.asset.bytes);
+          assetWritten = true;
+        }
+      }
+      await this.appendRecord(built.journal, { op: "merge", mergeId, magnetId: built.magnet.id, kind: built.kind,
+        line: built.element.line, baseHash: built.baseHash, afterHash: hashBytes(buffer), undo: undoRel,
+        ...(mapping.asset ? { attachment: mapping.asset.rel } : {}), hlc: this.clock.next(), device: this.deviceName });
+      await writeBytesAtomic(built.file, buffer);
+    } catch (error) {
+      if (assetWritten && mapping.asset) await unlink(mapping.asset.abs).catch(() => {});
+      await this.appendRecord(built.journal, { op: "merge-undo", mergeId, automatic: true, hlc: this.clock.next(), device: this.deviceName }).catch(() => {});
+      throw error;
+    }
+    await this.appendRecord(built.journal, { op: "delete", magnetId: built.magnet.id, hlc: this.clock.next(), device: this.deviceName });
+    await this.identify(built.name).catch(() => {});
+    const next = await this.readJournal(built.journal);
+    const updated = next.magnets.get(built.magnet.id);
+    this.notify();
+    const merge = { id: mergeId, magnet: built.magnet.id, kind: built.kind, attachment: mapping.asset?.rel ?? null,
+      baseHash: built.baseHash, afterHash: hashBytes(buffer), undone: false, at: null };
+    return { ...this.describe(built.note, built.file), merged: true, merge, lines: mapping.lines, diff: diff.rows,
+      magnet: updated ? magnetViewFromMap(updated) : null, history: await this.mergeHistoryOf(built.journal) };
+  }
+
+  async mergeHistoryOf(journal) {
+    const text = await readFile(journal, "utf8").catch(error => { if (error.code === "ENOENT") return ""; throw error; });
+    return replayMerges(text);
+  }
+
+  async mergeHistory(request) {
+    const { note: name, file } = await this.validateNote(request.note);
+    if (!this.initialized) return { note: name, merges: [] };
+    const note = this.notesByPath.get(name);
+    if (!note) return { note: name, merges: [] };
+    const merges = await this.mergeHistoryOf(this.journalFor(note));
+    return { ...this.describe(note, this.journalFor(note)), note: name, merges };
+  }
+
+  async mergeUndo(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { note: name, file } = await this.validateNote(request.note);
+    const note = this.notesByPath.get(name);
+    if (!note) throw new Error("Glass note not found.");
+    const journal = this.journalFor(note);
+    const history = await this.mergeHistoryOf(journal);
+    const target = request.merge ? history.find(entry => entry.id === request.merge) : history.find(entry => !entry.undone);
+    if (!target || target.undone) throw new Error("There is no merge to undo on this note.");
+    const inside = path.relative(this.storeDir, path.resolve(this.storeDir, ...String(target.undo).split("/")));
+    if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) throw new Error("The merge undo copy is outside the glass store.");
+    const bytes = await readFile(path.join(this.storeDir, ...target.undo.split("/"))).catch(error => {
+      throw error.code === "ENOENT" ? new Error("The merge undo copy is missing.") : error;
+    });
+    const currentHash = hashBytes(await readFile(file));
+    if (target.afterHash && currentHash !== target.afterHash && !request.force) {
+      return { ...this.describe(note, journal), undoStale: true, merge: target, currentHash,
+        message: "The note changed after the merge; choose whether to restore it anyway." };
+    }
+    await writeBytesAtomic(file, bytes);
+    await this.appendRecord(journal, { op: "merge-undo", mergeId: target.id, force: request.force === true,
+      hlc: this.clock.next(), device: this.deviceName });
+    const replay = await this.readJournal(journal);
+    const magnet = replay.magnets.get(target.magnet);
+    let restored = false;
+    if (magnet?.deleted?.active) {
+      await this.appendRecord(journal, { op: "restore", magnetId: target.magnet, hlc: this.clock.next(), device: this.deviceName });
+      restored = true;
+    }
+    await this.identify(name).catch(() => {});
+    this.notify();
+    return { ...this.describe(note, journal), undone: true, merge: { ...target, undone: true }, restoredMagnet: restored,
+      history: await this.mergeHistoryOf(journal) };
+  }
+
+  async liftUp(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { note: name, file } = await this.validateNote(request.note);
+    if (typeof request.element !== "string" || !request.element.trim()) throw new Error("--element is required.");
+    const note = await this.identify(name);
+    const journal = this.journalFor(note);
+    const text = decodeNote(await readFile(file)).text;
+    const elements = markdownElements(text);
+    const element = elements.find(item => item.id === request.element);
+    if (!element) throw new Error("That element is not in this note.");
+    const source = { element: element.id, kind: element.kind, line: element.line, path: name };
+    const id = newMagnetId();
+    let fields;
+    if (element.kind === "image" || element.kind === "embed") {
+      const reference = imageReferenceOf(element.markdown);
+      if (!reference) throw new Error("That picture has no file reference to lift.");
+      const sourceFile = await this.resolveImageReference(reference, file);
+      if (!sourceFile) throw new Error("The picture file could not be found in this vault.");
+      const metadata = await info(sourceFile);
+      if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("The picture file could not be found in this vault.");
+      Object.assign(fields = {}, await this.imageAsset({ file: journal, image: { path: sourceFile, name: path.basename(sourceFile) }, width: 320 }));
+      // Place on the nearest text block: an image line has no block text the glass index can match.
+      const at = elements.findIndex(item => item.id === element.id);
+      const neighbour = [...elements.slice(0, at)].reverse().find(item => item.text.trim())
+        ?? elements.slice(at + 1).find(item => item.text.trim()) ?? element;
+      Object.assign(fields, { anchor: { version: 2, landmarks: [
+        { kind: "block", block: neighbour.markdown, headings: [...neighbour.headings], line: neighbour.line },
+        ...(Array.isArray(element.landmarks?.landmarks) ? element.landmarks.landmarks : []),
+      ] }, x: 0, y: 0, source });
+    } else {
+      if (!element.text.trim()) throw new Error("That element is empty.");
+      fields = { kind: "sticky", text: element.text.slice(0, 20_000), color: stickyColors[0],
+        anchor: { version: 2, landmarks: [{ kind: "block", block: element.markdown, headings: [...element.headings], line: element.line }] },
+        x: 0, y: 0, w: 232, h: 168, folded: false, source };
+    }
+    const values = validateMagnetFields(fields.kind, fields, false);
+    for (const [field, value] of Object.entries(values))
+      await this.appendRecord(journal, { op: "set", magnetId: id, field, value, hlc: this.clock.next(), device: this.deviceName });
+    const replay = await this.readJournal(journal);
+    const magnet = replay.magnets.get(id);
+    this.notify();
+    return { ...this.describe(note, journal), lifted: true, source, magnet: magnet ? magnetViewFromMap(magnet) : null };
+  }
+
+  async resolveImageReference(reference, noteFile) {
+    const clean = String(reference).replace(/^<|>$/g, "").trim();
+    if (!clean) return null;
+    const settings = await this.mergeSettingsFor(noteFile, "");
+    const candidates = [path.resolve(path.dirname(noteFile), clean), path.resolve(settings.root, clean)];
+    for (const candidate of candidates) {
+      const inside = path.relative(settings.root, candidate);
+      if (inside.startsWith("..") || path.isAbsolute(inside)) continue;
+      const metadata = await info(candidate);
+      if (metadata?.isFile() && !metadata.isSymbolicLink()) return candidate;
+    }
+    return findInVault(settings.root, clean).catch(() => undefined);
+  }
+
   describe(note, file) {
     return { vaultId: this.vaultId, mode: this.mode, readOnly: this.readOnly, note: note.path, id: note.id,
       journal: relative(this.storeDir, file), location: this.mode === "inside" ? ".omarkie" : this.storeDir };
@@ -956,9 +1226,15 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display",
+      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
-    if (["set", "delete", "restore", "asset", "asset-display"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (["set", "delete", "restore", "asset", "asset-display", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (input.action === "merge-preview") return this.mergePreview(input);
+    if (input.action === "merge-accept") return this.mergeAccept(input);
+    if (input.action === "merge-undo") return this.mergeUndo(input);
+    if (input.action === "merge-history") return this.mergeHistory(input);
+    if (input.action === "lift-up") return this.liftUp(input);
     if (input.action === "asset") return this.magnetAsset(input);
     if (input.action === "asset-display") return this.assetDisplay(input);
     return this[input.action](input);
@@ -1041,8 +1317,14 @@ function magnetViewFromMap(magnet) {
   return { id: magnet.id, fields, kind: fields.kind ?? null, deleted: !!magnet.deleted?.active };
 }
 
-const stickyFieldNames = new Set(["kind", "text", "color", "anchor", "x", "y", "w", "h", "folded"]);
+const stickyFieldNames = new Set(["kind", "text", "color", "anchor", "x", "y", "w", "h", "folded", "source"]);
 const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+
+function sourceField(value) {
+  const source = validSource(value);
+  if (!source) throw new Error("A lifted copy needs its source element and line.");
+  return source;
+}
 
 export function stickyFields(fields) {
   const values = {};
@@ -1063,6 +1345,8 @@ export function stickyFields(fields) {
     } else if (field === "folded") {
       if (typeof value !== "boolean") throw new Error("Sticky folded must be true or false.");
       values.folded = value;
+    } else if (field === "source") {
+      values.source = sourceField(value);
     } else {
       const limits = field === "w" || field === "h" ? [72, 4000] : [-200_000, 200_000];
       if (!finite(value, limits[0], limits[1])) throw new Error(`Sticky ${field} must be a number between ${limits[0]} and ${limits[1]}.`);
@@ -1278,6 +1562,28 @@ async function writeFileAtomic(file, content) {
     try { await handle.writeFile(content); await handle.sync(); } finally { await handle.close(); }
     await rename(temporary, file);
   } finally { await unlink(temporary).catch(() => {}); }
+}
+
+// Merge down writes bytes, not strings: a note may carry any encoding, BOM and line endings.
+async function writeBytesAtomic(file, bytes) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  const existing = await info(file).catch(() => undefined);
+  try {
+    const handle = await open(temporary, "wx", existing ? existing.mode & 0o777 : 0o600);
+    try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+    await rename(temporary, file);
+  } finally { await unlink(temporary).catch(() => {}); }
+}
+
+function hashBytes(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function imageReferenceOf(markdown) {
+  const embed = /!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/u.exec(String(markdown ?? ""));
+  if (embed) return embed[1].trim();
+  const link = /!\[[^\]]*\]\(\s*(<[^>]*>|[^)\s]+)/u.exec(String(markdown ?? ""));
+  return link ? link[1].replace(/^<|>$/g, "").trim() : null;
 }
 
 async function atomicJson(file, value) {

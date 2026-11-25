@@ -338,7 +338,7 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     cancelAnimationFrame(liveFrame.current);
     liveFrame.current = 0;
     live.current?.setAttribute("d", "");
-    if (gesture && !gesture.eraser) finishDraw(gesture);
+    if (gesture && !gesture.eraser) { finishDraw(gesture); reload.current = true; }
     if (reload.current) { reload.current = false; void reloadInk(); }
   }, [finishDraw, reloadInk]);
 

@@ -41,11 +41,28 @@ interface Layout {
   loaded?: boolean;
 }
 interface Reply { ok: boolean; value?: GlassReply; error?: string }
+interface MergeRow { kind: "context" | "add" | "remove"; text: string }
+interface MergePreview {
+  note: string; magnet: string; kind: string; label: string; baseHash: string; baseSize: number; eol: string; bom: boolean;
+  diff: MergeRow[]; added: string[]; removed: string[]; attachment: string | null; linkStyle: string; attachmentFolder: string;
+  element: { id: string; kind: string; line: number; headings: string[] }; confidence: number; tier: string;
+}
+interface MergeHistoryEntry { id: string; magnet: string | null; kind: string | null; undone: boolean; at: string | null; attachment: string | null }
 interface GlassReply {
   magnets?: GlassMagnet[];
   trash?: GlassMagnet[];
   magnet?: GlassMagnet | null;
   saved?: boolean;
+  merge?: MergePreview;
+  preview?: MergePreview;
+  history?: MergeHistoryEntry[];
+  merges?: MergeHistoryEntry[];
+  merged?: boolean;
+  stale?: boolean;
+  undone?: boolean;
+  undoStale?: boolean;
+  needsUser?: boolean;
+  message?: string;
 }
 interface Viewport { top: number; height: number; width: number; page: number }
 const comingSoon = [
@@ -89,9 +106,10 @@ const magnetLabel = (magnet: GlassMagnet) => {
 };
 
 // One sticky note: paper, six colours, fold to a dot, delete to the trash, typing saved as it settles.
-function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, onFold, onColor, onDelete }: {
+function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, onFold, onColor, onDelete, onMerge, onJump }: {
   note: StickyNote; place: GlassPlacement; selected: boolean; editing: boolean; onSelect(): void; onEdit(editing: boolean): void;
   onText(text: string): void; onFold(folded: boolean): void; onColor(color: StickyNote["color"]): void; onDelete(): void;
+  onMerge(): void; onJump?(): void;
 }) {
   const [draft, setDraft] = useState(note.text);
   const committed = useRef(note.text), latest = useRef(note.text), text = useRef<HTMLTextAreaElement>(null);
@@ -137,6 +155,8 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
         {stickyColors.map(colour => <button type="button" key={colour} className="glass-note-colour" data-colour={colour}
           aria-label={`${colour} note`} aria-pressed={note.color === colour} onClick={() => onColor(colour)} />)}
         <button type="button" className="glass-note-tool" aria-label="Fold note" title="Fold note" onClick={() => onFold(true)}>–</button>
+        {onJump && note.source && <button type="button" className="glass-note-tool" data-glass-jump aria-label="Jump to source" title="Jump to source" onClick={onJump}>↩</button>}
+        <button type="button" className="glass-note-tool" data-glass-merge={note.id} aria-label="Merge down" title="Merge down into the page" onClick={onMerge}>⇩</button>
         <button type="button" className="glass-note-tool" aria-label="Move note to trash" title="Move to trash" onClick={onDelete}>×</button>
       </div>
       <span className="glass-note-grip glass-note-grip-right" data-grip="right" aria-hidden="true" />
@@ -145,9 +165,17 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
   </div>;
 }
 
-export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, pin }: {
+function MergeDiff({ rows, stamp }: { rows: MergeRow[]; stamp: string }) {
+  return <pre className="glass-merge-diff" data-glass-merge-diff={stamp}>
+    {rows.map((row, index) => <div key={index} data-diff={row.kind}>
+      <span aria-hidden="true">{row.kind === "add" ? "+" : row.kind === "remove" ? "-" : " "}</span>{row.text || " "}
+    </div>)}
+  </pre>;
+}
+
+export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, pin, reloadNote }: {
   editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
-  live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
+  live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>; reloadNote?(): void | Promise<unknown>;
 }) {
   const scroller = root.parentElement!;
   const layer = useRef<HTMLDivElement>(null);
@@ -181,6 +209,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [openTrash, setOpenTrash] = useState(false);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [notice, setNotice] = useState("");
+  const [mergeOpen, setMergeOpen] = useState<MergePreview>();
+  const [mergeStale, setMergeStale] = useState<MergePreview>();
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeHistory, setMergeHistory] = useState<MergeHistoryEntry[]>([]);
+  const [mergeDone, setMergeDone] = useState<MergeHistoryEntry>();
+  const [undoPending, setUndoPending] = useState<string>();
   const [underHost, setUnderHost] = useState<HTMLDivElement | null>(null);
   const blocks = useRef<GlassBlock[]>([]), index = useRef<BlockIndex>(indexBlocks([]));
   const spacers = useRef(new Map<string, HTMLSpanElement>());
@@ -369,6 +403,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
         setTrash(value.trash ?? []);
         setSaved("saved");
+        const history = await glassCall({ note: path, action: "merge-history" }).catch(() => undefined);
+        if (Array.isArray(history?.merges)) setMergeHistory(history.merges);
       } catch (error) { setSaved("error"); setNotice(message(error)); }
     });
     queue.current = run;
@@ -379,7 +415,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     void load();
     const subscribe = window.desktop?.onGlassChanged;
     const stop = subscribe?.((event: { note?: string; action?: string } | undefined) => {
-      if (event && (event.note === latest.current.note || event.action === "bring" && !event.note)) void load();
+      if (event && (event.note === latest.current.note || event.action === "bring" && !event.note)) {
+        setMergeDone(undefined);
+        void load();
+      }
     });
     const onFocus = () => { if (loaded.current) void load(); };
     window.addEventListener("focus", onFocus);
@@ -787,6 +826,107 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setOpenTrash(false);
   }, [load, send]);
 
+  // Merge down is the only path into the page: preview first, the user presses Accept, the page is reloaded.
+  const openMerge = useCallback(async (magnet: string) => {
+    if (!latest.current.note) return;
+    if (!documentSaved) { setNotice("Save the note before merging down."); return; }
+    setMergeBusy(true);
+    try {
+      const value = await glassCall({ note: latest.current.note, action: "merge-preview", magnet });
+      if (value?.merge) { setMergeOpen(value.merge); setMergeStale(undefined); setUndoPending(undefined); }
+    } catch (error) { setNotice(message(error)); }
+    finally { setMergeBusy(false); }
+  }, [documentSaved]);
+
+  const acceptMerge = useCallback(async (preview: MergePreview) => {
+    if (!latest.current.note) return;
+    setMergeBusy(true);
+    try {
+      const value = await glassCall({ note: latest.current.note, action: "merge-accept", magnet: preview.magnet,
+        expectedHash: preview.baseHash, approved: true });
+      if (value?.stale && value.preview) { setMergeStale(value.preview); return; }
+      if (!value?.merged) return;
+      setMergeOpen(undefined);
+      setMergeStale(undefined);
+      setMergeDone(Array.isArray(value.history) ? value.history.find(entry => !entry.undone) : undefined);
+      setMergeHistory(Array.isArray(value.history) ? value.history : []);
+      await reloadNote?.();
+      await load();
+    } catch (error) { setNotice(message(error)); }
+    finally { setMergeBusy(false); }
+  }, [load, reloadNote]);
+
+  const undoMerge = useCallback(async (id?: string) => {
+    if (!latest.current.note) return;
+    const key = id ?? "latest";
+    const force = undoPending === key;
+    try {
+      const value = await glassCall({ note: latest.current.note, action: "merge-undo", ...(id ? { merge: id } : {}), ...(force ? { force: true } : {}) });
+      if (value?.undoStale) {
+        setUndoPending(key);
+        setNotice("The note changed after the merge. Press Undo again to restore it anyway.");
+        return;
+      }
+      if (!value?.undone) return;
+      setNotice("Merge undone. The page is byte-identical to before.");
+      setMergeDone(undefined);
+      setUndoPending(undefined);
+      setMergeHistory(Array.isArray(value.history) ? value.history : []);
+      await reloadNote?.();
+      await load();
+    } catch (error) { setNotice(message(error)); }
+  }, [load, reloadNote, undoPending]);
+
+  const jumpToSource = useCallback((source: { line: number }) => {
+    editor()?.jump(source.line);
+  }, [editor]);
+
+  const liftUp = useCallback(async (detail: { id?: string }) => {
+    if (!latest.current.note || !detail.id) return;
+    if (!documentSaved) { setNotice("Save the note before lifting an element."); return; }
+    try {
+      const value = await glassCall({ note: latest.current.note, action: "lift-up", element: detail.id });
+      if (!value?.magnet) return;
+      await load();
+      setNotice("Lifted onto the glass. The page is unchanged.");
+    } catch (error) { setNotice(message(error)); }
+  }, [documentSaved, load]);
+
+  useEffect(() => {
+    const onAction = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.action === "lift") void liftUp(detail);
+    };
+    window.addEventListener("omarkie:element-action", onAction);
+    return () => window.removeEventListener("omarkie:element-action", onAction);
+  }, [liftUp]);
+
+  useEffect(() => {
+    if (!documentSaved && mergeOpen) {
+      setMergeOpen(undefined);
+      setMergeStale(undefined);
+      setNotice("Save the note before merging down.");
+    }
+  }, [documentSaved, mergeOpen]);
+
+  useEffect(() => {
+    if (!mergeOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMergeOpen(undefined);
+      setMergeStale(undefined);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mergeOpen]);
+
+  useEffect(() => {
+    if (!mergeDone) return;
+    const timer = setTimeout(() => setMergeDone(undefined), 8_000);
+    return () => clearTimeout(timer);
+  }, [mergeDone]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -833,6 +973,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onPatch={(patch, persist) => patchImage(image.id, patch, persist)}
       onDrop={drop => imageDrop(image, drop)}
       onLiveSize={(width, height) => liveImageSize(image.id, width, height)}
+      onMerge={() => void openMerge(image.id)}
+      {...(image.source ? { onJump: () => jumpToSource(image.source!) } : {})}
       onDelete={() => removeMark(image.id)} />;
   };
 
@@ -897,6 +1039,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-ink-redo aria-label="Redo ink" title="Redo ink" disabled={!inkHistory.redo}
       onClick={() => inkApi.current?.redo()}><Redo2 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
+    {ink.length > 0 && <button type="button" data-glass-merge-ink aria-label="Merge ink down" title="Merge the newest ink stroke into the page"
+      onClick={() => void openMerge(ink[ink.length - 1].id)}>⇩</button>}
+    {mergeHistory.some(entry => !entry.undone) && <button type="button" data-glass-merge-undo aria-label="Undo last merge" title="Undo the last merge down"
+      onClick={() => void undoMerge()}>↺</button>}
+    <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-trash aria-expanded={openTrash} aria-haspopup="dialog" aria-label={`Glass trash, ${trash.length}`}
       title="Glass trash" onClick={() => setOpenTrash(open => !open)}><Trash2 size={15} /><span className="glass-tray-count" data-glass-trash-count>{trash.length}</span></button>
     <span className="glass-tray-status" data-glass-saved={saved} role="status">{statusLabel}</span>
@@ -931,13 +1078,46 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       <span>{arrow.label.trim() ? `Arrow: ${snippet(arrow.label.trim())}` : "Arrow with a lost end"}</span>
       <button type="button" aria-label="Move orphan arrow to trash" onClick={() => removeMark(arrow.id)}>×</button>
     </span>)}
-  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}</>;
+  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}
+  {mergeDone && <div className="glass-merge-done" role="status" data-glass-merge-done>
+    <span>Merged into the page.</span>
+    <button type="button" data-glass-merge-undo={mergeDone.id} onClick={() => void undoMerge(mergeDone.id)}>Undo</button>
+  </div>}</>;
+  const mergeDialog = mergeOpen && <div className="glass-merge-dialog" role="dialog" aria-modal="true" aria-label="Merge down preview" data-glass-merge-dialog>
+    <header>
+      <div><strong>{mergeOpen.label}</strong><span>{mergeOpen.element.kind} · line {mergeOpen.element.line}</span></div>
+      <button type="button" className="glass-merge-close" aria-label="Cancel merge" data-glass-merge-cancel
+        onClick={() => { setMergeOpen(undefined); setMergeStale(undefined); }}>×</button>
+    </header>
+    <p className="glass-merge-meta">
+      {["image", "ink"].includes(mergeOpen.kind) ? `${mergeOpen.linkStyle === "wikilink" ? "Vault links use ![[…]]" : "Vault links use ![](…)"} · attachment folder ${mergeOpen.attachmentFolder || "next to the note"} · ` : ""}{Math.round((mergeOpen.confidence <= 1 ? mergeOpen.confidence * 100 : mergeOpen.confidence))}% match
+    </p>
+    <p className="glass-merge-counts">{mergeOpen.added.length} line{mergeOpen.added.length === 1 ? "" : "s"} added, {mergeOpen.removed.length} removed, everything else stays byte-identical.</p>
+    <MergeDiff rows={mergeOpen.diff} stamp="preview" />
+    {mergeStale ? <section className="glass-merge-stale" data-glass-merge-stale>
+      <p role="alert">The note changed since this preview. Nothing has been written. Choose which version to merge into.</p>
+      <p className="glass-merge-counts">Your preview was based on {mergeOpen.baseSize} bytes; the note now has {mergeStale.baseSize} bytes.</p>
+      <h4>Your preview</h4>
+      <MergeDiff rows={mergeOpen.diff} stamp="old" />
+      <h4>The note now</h4>
+      <MergeDiff rows={mergeStale.diff} stamp="current" />
+      <div className="glass-merge-actions">
+        <button type="button" className="glass-merge-accept" disabled={mergeBusy} data-glass-merge-accept={mergeStale.magnet}
+          onClick={() => void acceptMerge(mergeStale)}>Merge into the updated note</button>
+        <button type="button" data-glass-merge-cancel onClick={() => { setMergeOpen(undefined); setMergeStale(undefined); }}>Cancel</button>
+      </div>
+    </section> : <div className="glass-merge-actions">
+      <button type="button" className="glass-merge-accept" disabled={mergeBusy} data-glass-merge-accept={mergeOpen.magnet}
+        onClick={() => void acceptMerge(mergeOpen)}>Accept</button>
+      <button type="button" data-glass-merge-cancel onClick={() => { setMergeOpen(undefined); setMergeStale(undefined); }}>Cancel</button>
+    </div>}
+  </div>;
 
   return <>
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pin} magnets={comments} reload={load} />}
-    {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
+    {createPortal(<><div className="glass-layer" ref={layer} data-glass="on">
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
@@ -957,6 +1137,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         onText={text => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, text } : item)); void send({ action: "set", magnet: stickie.id, fields: { text } }); }}
         onFold={folded => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, folded } : item)); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
         onColor={color => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, color } : item)); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
+        onMerge={() => void openMerge(stickie.id)}
+        {...(stickie.source ? { onJump: () => jumpToSource(stickie.source!) } : {})}
         onDelete={() => removeMark(stickie.id)} />)}
       {above.map(frame)}
       {under.map(frame)}
@@ -973,7 +1155,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         tool={tool === "arrow"} style={arrowStyle} color={arrowColor} scroller={scroller} hitTest={hitTest}
         onCreate={createArrow} onSelect={id => { setSelectedArrow(id); if (id) setSelected(undefined); }}
         onDelete={removeMark} onUpdate={updateArrow} onMissing={() => setNotice("Start on a paragraph or a sticker.")} />}
-    </div>, scroller)}
+    </div></>, scroller)}
+    {mergeDialog && createPortal(mergeDialog, document.body)}
     {createPortal(<div className="glass-under" data-glass-under><div className="glass-under-host" ref={setUnderHost} /></div>, scroller)}
     {createPortal(panel, document.body)}
   </>;

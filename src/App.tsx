@@ -741,6 +741,7 @@ export default function App() {
               note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
               glassSaved={active.content === active.savedContent}
+              reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}

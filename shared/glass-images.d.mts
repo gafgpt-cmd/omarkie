@@ -21,6 +21,9 @@ export function assetFile(wanted: unknown, extension: string, taken?: Set<string
 export function displayFile(asset: string): string;
 export function isAssetName(value: unknown): boolean;
 export function imageFields(input?: Record<string, unknown>, options?: { partial?: boolean }): Record<string, unknown>;
+
+export type ImageSource = { element: string; line: number; path: string; kind?: string };
+export function validSource(value: unknown): ImageSource | null;
 export function scrapImageMagnet(input: {
   scrap: { id?: string; body?: string; image?: { side?: string; width?: number; name?: string }; anchor?: { line?: number } };
   asset: string;

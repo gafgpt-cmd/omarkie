@@ -250,6 +250,7 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     {selected && <div className="element-halo-pill" ref={pill} role="group" aria-label={t("Element actions")}>
       <button type="button" data-element-action="change" onClick={() => emit("change")}>{t("Change")}</button>
       <button type="button" data-element-action="comment" onClick={() => emit("comment")}>{t("Comment")}</button>
+      {(selected.kind === "paragraph" || selected.kind === "image") && <button type="button" data-element-action="lift" onClick={() => emit("lift")}>{t("Lift to glass")}</button>}
     </div>}
     <p className="element-halo-live" role="status" aria-live="polite">{announce}</p>
   </div>, scroller);
