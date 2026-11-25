@@ -1,4 +1,6 @@
 import { cardDefaults, cardKinds, cardTitle, parseCardLink, type CardChoice, type CardKind } from "../../shared/glass-cards.mjs";
+import { calcLimits, normalizeCalcInputs, normalizePrecision, type CalcInput } from "../../shared/calc-model.mjs";
+import { normalizeFlow, type FlowNode } from "../../shared/flow-model.mjs";
 import { anchorFrom } from "./glass-state";
 import type { GlassAnchor } from "./anchor-map";
 import type { GlassMagnet } from "./glass-model";
@@ -14,6 +16,13 @@ export interface GlassCard {
   answer: string;
   answerAt: string;
   choices: CardChoice[];
+  formula: string;
+  inputs: CalcInput[];
+  unit: string;
+  citation: string;
+  precision: number;
+  flow?: FlowNode;
+  proposed: boolean;
   anchor: GlassAnchor;
   x: number;
   y: number;
@@ -42,19 +51,34 @@ export function cardFromMagnet(magnet: GlassMagnet): GlassCard | undefined {
   if (!cardKinds.includes(fields.card as CardKind)) return;
   const anchor = anchorFrom(fields.anchor);
   if (!anchor) return;
+  const kind = fields.card as CardKind;
+  let inputs: CalcInput[] = [], flow: FlowNode | undefined;
+  try {
+    if (kind === "calc") inputs = normalizeCalcInputs(fields.inputs);
+    if (kind === "flow") flow = normalizeFlow(fields.flow);
+  } catch { return; }
   const card = {
-    card: fields.card as CardKind,
+    card: kind,
     title: text(fields.title, cardDefaults.titleLimit),
     link: text(fields.link, cardDefaults.linkLimit),
     question: text(fields.question, cardDefaults.questionLimit),
     answer: text(fields.answer, cardDefaults.answerLimit),
     choices: choicesOf(fields.choices),
+    formula: text(fields.formula, calcLimits.formula),
+    inputs,
+    unit: text(fields.unit, calcLimits.unit),
+    citation: text(fields.citation, cardDefaults.citationLimit),
+    flow,
+    proposed: fields.proposed === true,
   };
+  if (kind === "calc" && (!card.formula || !card.unit || !card.citation || !card.inputs.length)) return;
+  if (kind === "flow" && (!card.flow || !card.citation)) return;
   return {
     id: magnet.id,
     ...card,
     title: cardTitle(card),
     answerAt: text(fields.answerAt, cardDefaults.atLimit),
+    precision: number(fields.precision, calcLimits.defaultPrecision, 0, calcLimits.precision),
     anchor,
     x: number(fields.x, 0, -cardDefaults.offsetLimit, cardDefaults.offsetLimit),
     y: number(fields.y, 0, -cardDefaults.offsetLimit, cardDefaults.offsetLimit),
@@ -70,6 +94,9 @@ export function cardFieldsOf(card: GlassCard): Record<string, unknown> {
     ...(card.card === "static" ? { link: card.link } : {}),
     ...(card.card === "ai" ? { question: card.question } : {}),
     ...(card.card === "menu" ? { choices: card.choices } : {}),
+    ...(card.card === "calc" ? { formula: card.formula, inputs: card.inputs, unit: card.unit, citation: card.citation, precision: card.precision } : {}),
+    ...(card.card === "flow" ? { flow: card.flow, citation: card.citation } : {}),
+    proposed: card.proposed,
     anchor: card.anchor, x: card.x, y: card.y, w: card.w, folded: card.folded,
   };
 }

@@ -26,6 +26,7 @@ import { labelFields } from "../shared/glass-labels.mjs";
 import {
   cardId, cardView, dueStudyCards, normalizeGrade, parseStudyText, previewGrade, srsDefaults, studySummary,
 } from "../shared/srs-core.mjs";
+import { assertCalcDefinition, calcLimits, evaluateCalc } from "../shared/calc-model.mjs";
 import {
   decodeNote, encodeNote, inkSvg, insertBlock, mergeAnchorOf, mergeDiff, mergeKindLabel, mergeLines,
   mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
@@ -517,6 +518,11 @@ export class GlassService {
     if (kind === "card" && fields.card !== undefined && fields.card !== magnet.fields.get("card")?.value)
       throw new Error("A card keeps its card kind.");
     const values = validateMagnetFields(kind, fields, true);
+    if (kind === "card" && Object.keys(values).some(field => ["card", "formula", "inputs", "unit", "citation", "precision"].includes(field))) {
+      const current = {};
+      for (const [field, entry] of magnet.fields) if (!entry.removed) current[field] = entry.value;
+      await checkCardDefinition({ ...current, ...values });
+    }
     for (const [field, value] of Object.entries(values)) {
       await this.appendRecord(file, { op: "set", magnetId: magnet.id, field, value, hlc: this.clock.next(), device: this.deviceName });
     }
@@ -734,6 +740,7 @@ export class GlassService {
     }
     if (!Object.keys(fields).length) Object.assign(fields, { kind: "debug", text: "Glass debug magnet", x: 0, y: 0 });
     const values = validateMagnetFields(fields.kind, fields, false);
+    await checkCardDefinition(values);
     if (Object.keys(values).length > 100) throw new Error("A magnet holds at most 100 fields.");
     for (const [field, value] of Object.entries(values)) {
       if (!field || field.length > 200 || /[\u0000-\u001f]/.test(field)) throw new Error("Invalid magnet field.");
@@ -1456,6 +1463,12 @@ export class GlassService {
       const resolved = await this.resolveCardLink(name, fields.link);
       return { ...this.describe(note, file), magnet: magnet.id, card: "static", title: fields.title ?? "", ...resolved };
     }
+    if (request.mode === "eval") {
+      if (fields.card !== "calc") throw new Error("Only a calculator card evaluates.");
+      const values = request.values && typeof request.values === "object" && !Array.isArray(request.values) ? request.values : {};
+      return { ...this.describe(note, file), magnet: magnet.id, card: "calc",
+        evaluation: await evaluateCalc(fields, values) };
+    }
     if (request.mode !== "page") throw new Error("Unknown card request.");
     this.assertWritable();
     const card = { card: fields.card, title: fields.title, link: fields.link, question: fields.question, answer: fields.answer, choices: fields.choices };
@@ -1815,6 +1828,12 @@ export function arrowFields(fields, partial) {
   return values;
 }
 
+// A calculator only saves when maths can read its formula and every unit.
+async function checkCardDefinition(fields) {
+  if (fields?.card !== "calc" || !fields.formula || !fields.unit || !fields.inputs?.length) return;
+  await assertCalcDefinition({ formula: fields.formula, inputs: fields.inputs, unit: fields.unit });
+}
+
 // Other magnet kinds stay open for later slices; each mark is validated field by field.
 function validateMagnetFields(kind, fields, partial) {
   if (kind === "image") {
@@ -1855,6 +1874,18 @@ function validateMagnetFields(kind, fields, partial) {
       if (values.card === "static" && !values.link) throw new Error("A static card needs a link.");
       if (values.card === "ai" && !values.question?.trim()) throw new Error("An AI card needs a question.");
       if (values.card === "menu" && !values.choices?.length) throw new Error("A menu card needs at least one choice.");
+      if (values.card === "calc") {
+        if (!values.formula?.trim()) throw new Error("A calculator card needs a formula.");
+        if (!values.inputs?.length) throw new Error("A calculator card needs its inputs.");
+        if (!values.unit) throw new Error("A calculator card needs an output unit.");
+        if (!values.citation?.trim()) throw new Error("A calculator card needs a citation.");
+        values.precision ??= calcLimits.defaultPrecision;
+      }
+      if (values.card === "flow") {
+        if (!values.flow) throw new Error("A flow card needs its decision steps.");
+        if (!values.citation?.trim()) throw new Error("A flow card needs a citation.");
+      }
+      values.proposed ??= false;
     }
     return values;
   }

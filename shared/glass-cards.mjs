@@ -1,17 +1,19 @@
-// Glass cards: a static section embed, a cached AI answer or a menu of choices.
-// Pure functions only; electron/glass-service.mjs owns the disk and the vault.
+// Glass cards: a static section embed, a cached AI answer, a menu of choices, a live
+// calculator or a decision flow. Pure functions only; electron/glass-service.mjs owns the disk.
 
 import { sanitizeTitle, validAnchor } from "./glass-core.mjs";
+import { calcLimits, normalizeCalcInputs, normalizePrecision } from "./calc-model.mjs";
+import { flowOutline, normalizeFlow } from "./flow-model.mjs";
 
-export const cardKinds = ["static", "ai", "menu"];
+export const cardKinds = ["static", "ai", "menu", "calc", "flow"];
 export const cardLayer = "ai-cards";
 export const cardDefaults = {
   w: 300, minW: 220, maxW: 420, titleLimit: 200, linkLimit: 2048, questionLimit: 4000,
   answerLimit: 48_000, atLimit: 40, choiceCount: 24, labelLimit: 300, bodyLimit: 20_000, offsetLimit: 200_000,
-  headingLimit: 300, pageBytes: 512 * 1024,
+  headingLimit: 300, pageBytes: 512 * 1024, citationLimit: calcLimits.citation,
 };
 export const cardFieldNames = new Set(["kind", "card", "layer", "title", "link", "question", "answer", "answerAt",
-  "choices", "anchor", "x", "y", "w", "folded", "marked"]);
+  "choices", "anchor", "x", "y", "w", "folded", "marked", "formula", "inputs", "unit", "citation", "precision", "flow", "proposed"]);
 
 const text = (value, limit, empty = true) => typeof value === "string" && value.length <= limit
   && !value.includes("\u0000") && (empty || value.trim().length > 0);
@@ -116,6 +118,24 @@ export function cardFields(fields) {
       values.answerAt = value;
     } else if (field === "choices") {
       values.choices = normalizeChoices(value);
+    } else if (field === "formula") {
+      if (!text(value, calcLimits.formula, false)) throw new Error(`A card formula must be text up to ${calcLimits.formula} characters.`);
+      values.formula = value.trim();
+    } else if (field === "inputs") {
+      values.inputs = normalizeCalcInputs(value);
+    } else if (field === "unit") {
+      if (!text(value, calcLimits.unit, false)) throw new Error(`A card output unit must be text up to ${calcLimits.unit} characters.`);
+      values.unit = value.trim();
+    } else if (field === "citation") {
+      if (!text(value, cardDefaults.citationLimit, false)) throw new Error(`A card citation is required, up to ${cardDefaults.citationLimit} characters.`);
+      values.citation = value.trim();
+    } else if (field === "precision") {
+      values.precision = normalizePrecision(value);
+    } else if (field === "flow") {
+      values.flow = normalizeFlow(value);
+    } else if (field === "proposed") {
+      if (typeof value !== "boolean") throw new Error("Card proposed must be true or false.");
+      values.proposed = value;
     } else if (field === "anchor") {
       if (!validAnchor(value)) throw new Error("A card needs a valid anchor.");
       values.anchor = value;
@@ -146,6 +166,8 @@ export function cardTitle(card) {
   if (explicit) return explicit.slice(0, cardDefaults.titleLimit);
   if (card?.card === "ai") return firstLine(card.question) || "AI answer";
   if (card?.card === "menu") return firstLine(card.choices?.[0]?.label) || "Menu";
+  if (card?.card === "calc") return firstLine(card.formula, 60) || "Calculator";
+  if (card?.card === "flow") return firstLine(card.flow?.question, 80) || "Decision flow";
   const parsed = parseCardLink(card?.link ?? "");
   if (!parsed) return "Card";
   if (parsed.section) return parsed.section.slice(0, cardDefaults.titleLimit);
@@ -153,7 +175,11 @@ export function cardTitle(card) {
 }
 
 export function cardIcon(card) {
-  return card?.card === "ai" ? "sparkles" : card?.card === "menu" ? "list" : "book";
+  if (card?.card === "ai") return "sparkles";
+  if (card?.card === "menu") return "list";
+  if (card?.card === "calc") return "calculator";
+  if (card?.card === "flow") return "flow";
+  return "book";
 }
 
 // The new note is plain Markdown a person can read later; the source note is never touched.
@@ -167,6 +193,19 @@ export function cardPageMarkdown(card, { markdown = "" } = {}) {
   } else if (card.card === "ai") {
     if (card.question?.trim()) lines.push(`**Q:** ${card.question.trim()}`, "");
     if (card.answer?.trim()) lines.push(card.answer.trim(), "");
+  } else if (card.card === "calc") {
+    lines.push("> Live calculator card. Results are computed in Omarkie from the inputs and are never stored.", "");
+    if (card.formula?.trim()) lines.push(`**Formula:** \`${card.formula.trim()}\` → ${card.unit ?? ""}`.trim(), "");
+    if (Array.isArray(card.inputs) && card.inputs.length) {
+      lines.push("**Inputs**", "");
+      for (const input of card.inputs) lines.push(`- ${input.label || input.key} (${input.key}): ${input.min ?? "…"} – ${input.max ?? "…"} ${input.unit}`);
+      lines.push("");
+    }
+    if (card.citation?.trim()) lines.push(`**Citation:** ${card.citation.trim()}`, "");
+  } else if (card.card === "flow") {
+    lines.push("> Live decision flow. Walks in Omarkie; no answer is stored in the note.", "");
+    if (card.flow) lines.push("```text", ...flowOutline(card.flow), "```", "");
+    if (card.citation?.trim()) lines.push(`**Citation:** ${card.citation.trim()}`, "");
   } else {
     for (const choice of card.choices ?? []) {
       lines.push(`## ${choice.label}`, "");
