@@ -77,6 +77,7 @@
   "Unlock layer": "解锁图层",
   "{{layer}} opacity": "{{layer}}不透明度",
   "{{layer}} layer, {{count}} marks": "{{layer}}图层，{{count}} 个标记",
+  "{{layer}} layer, {{count}} marks_other": "{{layer}}图层，{{count}} 个标记",
   "Could not change the layer.": "无法更改图层。",
   "Notes": "笔记",
   "Highlights": "高亮",

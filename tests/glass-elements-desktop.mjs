@@ -126,9 +126,25 @@ try {
   async function hover(name) {
     const target = targets[name]();
     await target.scrollIntoViewIfNeeded();
-    const box = await target.boundingBox();
+    let box = await target.boundingBox();
     assert.ok(box, `${name} box`);
-    await page.mouse.move(box.x + Math.min(box.width / 2, 60), box.y + Math.min(box.height / 2, 12));
+    // A floating toolbar may sit over the element: hover an exposed point, then leave and return so
+    // the move always fires even when the cursor already rests there.
+    const point = await target.evaluate(async element => {
+      element.scrollIntoView({ block: "center" });
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const rect = element.getBoundingClientRect();
+      for (const left of [0.5, 0.3, 0.7, 0.15, 0.85]) for (const top of [0.5, 0.25, 0.75]) {
+        const x = rect.left + rect.width * left, y = rect.top + rect.height * top;
+        const node = document.elementFromPoint(x, y);
+        if (node && element.contains(node)) return { x, y };
+      }
+      return null;
+    });
+    assert.ok(point, `${name}: an exposed point to hover`);
+    await page.mouse.move(box.x + 2, Math.max(2, box.y - 8));
+    await page.mouse.move(point.x, point.y);
+    box = (await target.boundingBox()) ?? box;
     await expect(hoverLabel).toHaveText(labels[name]);
     return box;
   }
