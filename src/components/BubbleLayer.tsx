@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { autoUpdate, computePosition, flip, offset, shift, type Placement } from "@floating-ui/dom";
 import type { EditorHandle } from "../editor/MarkdownEditor";
@@ -7,6 +7,7 @@ import { bubbleBundle, bubblePayload, findIdentifiers, payloadText, type BubbleB
 import { markdownElements, type PageElement } from "../../shared/element-model.mjs";
 import { captureAnchor, liveBlocks, resolveAnchor, type GlassAnchor } from "../glass/anchor-map";
 import { anchorFrom } from "../glass/glass-state";
+import type { GlassMagnet } from "../glass/glass-model";
 import { elementNode } from "../glass/element-node";
 import { elementKindName } from "../glass/element-label";
 import { t } from "../i18n";
@@ -18,7 +19,6 @@ import "./bubble.css";
 // G5: a comment bubble is a magnet on the glass. The bubble is the request surface;
 // the Tutor bridge is the only channel and nothing leaves before an explicit Send.
 interface Entry { role: "you" | "agent"; text: string; at: string }
-interface Magnet { id: string; kind: string | null; fields: Record<string, unknown> }
 interface Bubble {
   id: string; element: string; elementKind: string; line: number; headings: string[]; text: string; thread: Entry[]; anchor: GlassAnchor;
   selection?: string;
@@ -44,7 +44,7 @@ function threadOf(value: unknown): Entry[] | undefined {
   return entries;
 }
 
-function bubbleFrom(magnet: Magnet): Bubble | undefined {
+function bubbleFrom(magnet: GlassMagnet): Bubble | undefined {
   const { fields } = magnet, anchor = anchorFrom(fields.anchor);
   if (magnet.kind !== "comment" || typeof fields.element !== "string" || typeof fields.elementKind !== "string" ||
       typeof fields.line !== "number" || !Number.isFinite(fields.line)) return;
@@ -78,16 +78,18 @@ function Anchored({ node, placement, gap, along = 0, children }: { node: HTMLEle
   return <div className="bubble-anchor" ref={box}>{children}</div>;
 }
 
-export default function BubbleLayer({ root, editor, note, live, pin }: {
-  root: HTMLElement; editor(): EditorHandle | undefined; note?: string; live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
+export default function BubbleLayer({ root, editor, note, live, pin, magnets, reload }: {
+  root: HTMLElement; editor(): EditorHandle | undefined; note: string; live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
+  magnets: GlassMagnet[]; reload(): Promise<void> | undefined;
 }) {
   const scroller = root.parentElement!;
   const cache = useRef<{ text: string; elements: PageElement[] } | undefined>(undefined);
-  const [saved, setSaved] = useState<Bubble[]>([]), [draft, setDraft] = useState<Bubble>();
+  const saved = useMemo(() => magnets.flatMap(magnet => bubbleFrom(magnet) ?? []), [magnets]);
+  const [draft, setDraft] = useState<Bubble>();
   const [openId, setOpenId] = useState<string>(), [question, setQuestion] = useState(""), [sentText, setSentText] = useState("");
   const [xray, setXray] = useState(false), [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [asking, setAsking] = useState(false), [error, setError] = useState(""), [pinned, setPinned] = useState<Set<string>>(new Set());
-  const [revision, setRevision] = useState(0), [tick, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const frame = useRef(0), textarea = useRef<HTMLTextAreaElement>(null);
 
   function model() {
@@ -98,17 +100,6 @@ export default function BubbleLayer({ root, editor, note, live, pin }: {
     return cache.current.elements;
   }
 
-  async function reload() {
-    if (!note || !window.desktop?.glass) { setSaved([]); return; }
-    const response = await window.desktop.glass({ action: "list", note });
-    if (!response?.ok) return;
-    const magnets: Magnet[] = response.value?.magnets ?? [];
-    setSaved(magnets.flatMap(magnet => {
-      const bubble = bubbleFrom(magnet);
-      return bubble ? [bubble] : [];
-    }));
-  }
-
   async function store(bubble: Bubble, create = false) {
     if (!note || !window.desktop?.glass) throw new Error(t("Glass storage is unavailable."));
     const fields = { kind: "comment", text: bubble.text, element: bubble.element, elementKind: bubble.elementKind,
@@ -117,7 +108,6 @@ export default function BubbleLayer({ root, editor, note, live, pin }: {
     const response = await window.desktop.glass({ action: "add", note, magnet: bubble.id, ...(create ? { anchor: bubble.anchor } : {}), fields });
     if (!response?.ok) throw new Error(response?.error || t("The bubble could not be saved."));
     await reload();
-    setRevision(value => value + 1);
   }
 
   function open(bubble: Bubble, text: string) {
@@ -177,18 +167,10 @@ export default function BubbleLayer({ root, editor, note, live, pin }: {
       window.removeEventListener("omarkie:comment-request", onRequest);
     };
   }, []);
+  const hasBubbles = !!draft || saved.length > 0;
 
   useEffect(() => {
-    let current = true;
-    const load = () => { if (current) void reload().catch(() => {}); };
-    load();
-    const timer = setInterval(load, 2500), focus = () => load();
-    window.addEventListener("focus", focus);
-    document.addEventListener("visibilitychange", focus);
-    return () => { current = false; clearInterval(timer); window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", focus); };
-  }, [note, revision]);
-
-  useEffect(() => {
+    if (!hasBubbles) return;
     const schedule = () => { if (!frame.current) frame.current = requestAnimationFrame(() => { frame.current = 0; setTick(value => value + 1); }); };
     const observer = new MutationObserver(schedule);
     observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["data-line"] });
@@ -198,7 +180,7 @@ export default function BubbleLayer({ root, editor, note, live, pin }: {
       if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
       observer.disconnect(); sizes.disconnect();
     };
-  }, [root, scroller]);
+  }, [hasBubbles, root, scroller]);
 
   useEffect(() => {
     if (!openId) return;
@@ -211,10 +193,10 @@ export default function BubbleLayer({ root, editor, note, live, pin }: {
     return () => document.removeEventListener("keydown", escape, true);
   }, [openId, draft, question, saved]);
 
-  const context = editor()?.readingContext();
-  const elements = model();
-  const blocks = context ? liveBlocks(context, root) : [];
   const bubbles = draft ? [...saved.filter(item => item.id !== draft.id), draft] : saved;
+  const context = bubbles.length ? editor()?.readingContext() : undefined;
+  const elements = context ? model() : [];
+  const blocks = context ? liveBlocks(context, root) : [];
   const shown: Shown[] = [];
   for (const bubble of bubbles) {
     const resolution = resolveAnchor(bubble.anchor, blocks);

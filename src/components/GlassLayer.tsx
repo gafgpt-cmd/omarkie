@@ -6,6 +6,9 @@ import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
 import { fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
 import GlassLandmarks, { landmarkSeeds } from "./GlassLandmarks";
+import BubbleLayer from "./BubbleLayer";
+import type { LiveTutor } from "./tutor-live";
+import type { TutorReply } from "./tutor-verbs";
 import type { StudyOverlay } from "./learning-overlays";
 import {
   anchorOf, nearestBlock, newStickyId, offsetIn, snapped, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
@@ -97,14 +100,16 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
   </div>;
 }
 
-export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved }: {
+export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, pin }: {
   editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
+  live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
 }) {
   const scroller = root.parentElement!;
   const layer = useRef<HTMLDivElement>(null);
   const fixture = useMemo(glassFixture, []);
   const seeds = useMemo(landmarkSeeds, []);
   const [landmarks, setLandmarks] = useState<GlassMagnet[]>([]);
+  const [comments, setComments] = useState<GlassMagnet[]>([]);
   const [magnets, setMagnets] = useState<StickyNote[]>([]);
   const [trash, setTrash] = useState<StickyNote[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {} });
@@ -183,9 +188,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       try {
         const value = await glassCall({ note: path, action: "list" });
         loaded.current = true;
-        setMagnets(storable(value.magnets));
-        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky" && magnet.kind !== "comment");
+        const stickies: StickyNote[] = [], incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [];
+        for (const magnet of value.magnets ?? []) {
+          if (magnet.kind === "sticky") {
+            const sticky = stickyFromMagnet(magnet);
+            if (sticky) stickies.push(sticky);
+          } else if (magnet.kind === "comment") nextComments.push(magnet);
+          else incoming.push(magnet);
+        }
+        setMagnets(stickies);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
+        setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setTrash(storable(value.trash));
         setSaved("saved");
       } catch (error) { setSaved("error"); setNotice(message(error)); }
@@ -197,10 +210,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   useEffect(() => {
     void load();
     const subscribe = window.desktop?.onGlassChanged;
-    if (!subscribe) return;
-    return subscribe((event: { note?: string; action?: string } | undefined) => {
+    const stop = subscribe?.((event: { note?: string; action?: string } | undefined) => {
       if (event && (event.note === latest.current.note || event.action === "bring" && !event.note)) void load();
     });
+    const onFocus = () => { if (loaded.current) void load(); };
+    window.addEventListener("focus", onFocus);
+    return () => { stop?.(); window.removeEventListener("focus", onFocus); };
   }, [load]);
 
   useEffect(() => {
@@ -392,6 +407,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   return <>
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
+    {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pin} magnets={comments} reload={load} />}
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
       {tool === "sticky" && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
         if (event.button !== 0) return;

@@ -300,7 +300,7 @@ const handlers = {
     await syncGlass(store?.folder ?? null);
     if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
     const result = await glassRuntime.service.request(request);
-    if (request.action === "bring" || request.action === "add" && request.anchor !== undefined) announceGlass(request);
+    if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request);
     return result;
   },
   tutorBridge: async ({ sender }, id, request) => {
