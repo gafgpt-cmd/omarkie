@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { GlassService } from "../electron/glass-service.mjs";
-import { imageLink, inkSvg, mergeDiff, mergeLines, noteMergeSettings } from "../shared/glass-merge.mjs";
+import { imageLink, inkSvg, mergeDiff, mergeKindLabel, mergeLines, noteMergeSettings } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
 
 const scratch = [];

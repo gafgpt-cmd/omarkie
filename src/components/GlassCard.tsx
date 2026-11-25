@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, ChevronDown, ExternalLink, ListChecks, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDownToLine, BookMarked, ChevronDown, ExternalLink, ListChecks, Sparkles, Trash2 } from "lucide-react";
 import { findIdentifiers } from "../../shared/bubble-context.mjs";
 import type { CardKind } from "../../shared/glass-cards.mjs";
 import { anchorOf, nearestBlock } from "../glass/glass-model";
@@ -51,7 +51,7 @@ function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, 
       <small className="glass-card-kind">{kindLabel(card.card)}</small>
       <ChevronDown size={12} className="glass-card-chevron" aria-hidden="true" />
     </button>
-    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} />}
+    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} onMerge={onMerge} />}
   </div>;
 }
 
@@ -60,8 +60,8 @@ export default memo(GlassCardView, (previous, next) =>
   previous.card === next.card && previous.note === next.note && previous.live === next.live
   && previous.place.x === next.place.x && previous.place.y === next.place.y && previous.place.width === next.place.width);
 
-function CardBody({ card, note, live, onCached, onDelete }: {
-  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void;
+function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
+  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
 }) {
   const [staticState, setStaticState] = useState<StaticState>({ status: "ok" });
   const [choice, setChoice] = useState<number>();
@@ -128,6 +128,9 @@ function CardBody({ card, note, live, onCached, onDelete }: {
       <div className="glass-card-actions">
         <button type="button" data-card-open-page title={t("Open as its own note")} onClick={() => void openPage()}>
           <ExternalLink size={13} aria-hidden="true" /><span>{t("Open as page")}</span>
+        </button>
+        <button type="button" data-card-merge={card.id} title="Merge down into the page" onClick={onMerge}>
+          <ArrowDownToLine size={13} aria-hidden="true" /><span>Merge down</span>
         </button>
         <button type="button" data-card-delete aria-label={t("Move card to trash")} title={t("Move to trash")} onClick={onDelete}>
           <Trash2 size={13} aria-hidden="true" />

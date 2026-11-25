@@ -254,5 +254,5 @@ try {
   await expect(dialog).toHaveCount(0);
   await resize(app, page, 1440);
   assert.deepEqual(errors, []);
-  console.log("PASS: merge preview/cancel/accept for sticky, picture and ink; stale choice, undo, lift paragraph and picture");
+  console.log("PASS: merge preview/cancel/accept for sticky, picture, ink and cards; stale choice, undo, lift paragraph and picture");
 } finally { await app.close(); }
