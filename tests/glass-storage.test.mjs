@@ -166,6 +166,45 @@ test("ENOSPC keeps ops in memory, reports status, and saves after space returns"
   } finally { await reopened.close(); }
 });
 
+test("a short write is failure: the line is never torn, the op stays queued, retry saves it", async () => {
+  const environment = await vault();
+  const service = await open(environment);
+  let journal;
+  try {
+    const first = await service.request({ action: "add", note: "map.md", magnet: "m-short", text: "first" });
+    journal = path.join(environment.folder, ".omarkie", first.journal);
+    const before = await readFile(journal, "utf8");
+    assert.match(JSON.parse(before.trim()).opId, /^[0-9a-f]{16}$/);
+    service.faults.write = async (handle, line) => {
+      const bytes = Buffer.from(line, "utf8");
+      const { bytesWritten } = await handle.write(bytes, 0, Math.max(1, bytes.length - 9), null);
+      return bytesWritten;
+    };
+    const second = await service.request({ action: "set", note: "map.md", magnet: "m-short", fields: { text: "second" } });
+    assert.equal(second.saved, false);
+    assert.equal(service.status().error.code, "SHORT_WRITE");
+    assert.match(service.status().error.message, /not saved/);
+    assert.ok(service.status().pending >= 1);
+    assert.equal(await readFile(journal, "utf8"), before, "rolled back to the last complete line");
+    assert.equal((await service.request({ action: "list", note: "map.md" })).magnets[0].fields.text, "second");
+
+    service.faults.write = null;
+    const flushed = await service.request({ action: "flush" });
+    assert.equal(flushed.pending, 0);
+    assert.equal(flushed.error, null);
+    const lines = (await readFile(journal, "utf8")).trim().split("\n");
+    assert.equal(lines.length, 2);
+    for (const line of lines) assert.equal(JSON.parse(line).opId.length, 16);
+    assert.equal(JSON.parse(lines[1]).value, "second");
+    assert.ok((await readFile(journal, "utf8")).endsWith("\n"));
+  } finally { await service.close(); }
+
+  const reopened = await open(environment);
+  try {
+    assert.equal((await reopened.request({ action: "show", note: "map.md", magnet: "m-short" })).magnet.fields.text, "second");
+  } finally { await reopened.close(); }
+});
+
 test("only one writer; a second instance is read-only until the first closes", async () => {
   const environment = await vault();
   const first = await open(environment);

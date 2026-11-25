@@ -19,10 +19,11 @@ My Vault/
 ```
 
 - One journal per note, flat, even for 50,000 notes. The short id decides identity; the title is for people and is sanitized for Windows and exFAT (NFC, no `<>:"/\|?*`, no reserved names like `CON`, at most 120 bytes).
-- Each journal line is one change: `{op, magnetId, field, value, hlc, device}`. Lines are appended and fsynced one by one. A half-written last line is ignored on open. `field: "anchor"` holds the versioned landmark stack; see `glass-anchors.md`.
-- Conflicts resolve per field by hybrid logical clock (time + counter + device), not wall time.
-- `op: "delete"` is a tombstone with `op: "restore"` as its undo. The newest delete or restore wins, so an older device merging a late delete cannot resurrect a note the user already undid. Unknown operation kinds are kept and ignored, never rewritten.
-- `.gitattributes` gives git a line union merge for every JSONL file, so two devices can both keep their lines.
+- Each journal line is one change: `{opId, op, magnetId, field, value, hlc, device}`. `opId` is deterministic (device + clock + op + magnet + field), so a duplicated line from a union merge or a sync copy applies once. Lines are appended and fsynced one by one. A half-written last line is ignored on open. `field: "anchor"` holds the versioned landmark stack; see `glass-anchors.md`.
+- Conflicts resolve per field by hybrid logical clock (time + counter + device), not wall time. Clocks compare at fixed width, so a legacy short clock keeps its order without being rewritten.
+- `op: "delete"` is a tombstone with `op: "restore"` as its undo. The newest delete or restore wins, so an older device merging a late delete cannot resurrect a note the user already undid, and a field edit never clears a tombstone. Unknown operation kinds are kept and ignored, never rewritten.
+- A repeated `opId` with a different payload is quarantined whole: neither copy is applied, the lines stay on disk, and the open reports the count and logs it. A line that does not parse is quarantined the same way, including mid-file.
+- `.gitattributes` gives git a line union merge for every JSONL file, so two devices can both keep their lines. Union is only transport: dedupe, HLC order and tombstones all happen in the reader.
 
 ## Modes
 
@@ -40,8 +41,9 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 ## Failure behavior
 
 - Disk full or any append error: the operation stays in memory, status reports the error and pending count, and the same line is retried with backoff. No existing byte is truncated.
+- Every append checks the byte count returned by the write. A short write (a full disk can return fewer bytes with no exception) is a failure: the file is truncated back to the last complete line, the operation stays queued, and the status says the change was not saved. A torn line is never left behind.
 - A partial append is rolled back to the previous complete line before retry.
-- Crash or `kill -9`: the next open ignores the incomplete tail and repairs it before the next append.
+- Crash or `kill -9`: the next open ignores the incomplete tail and repairs it before the next append. An unparsable line anywhere else is quarantined, not applied.
 - Saving later works without restarting Omarkie.
 
 ## Sticky notes
@@ -147,3 +149,5 @@ Opening another vault that contains notes this computer already has glass for sh
 ## Privacy and backups
 
 Glass journals are plain files inside the vault, so the vault's existing git, Syncthing, Drive or backup setup carries them. The local index and previews live in Omarkie's cache, outside the vault, and can always be rebuilt. No network request is made for storage.
+
+Secrets never live in `.omarkie/`: that folder syncs to every device and backup. A future sync token belongs in the OS keychain, and the app refuses to open a store whose settings carry one.
