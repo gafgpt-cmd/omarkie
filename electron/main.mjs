@@ -296,6 +296,7 @@ const handlers = {
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
   glass: async (_, request) => {
+    if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
     if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
     await syncGlass(store?.folder ?? null);
     if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));

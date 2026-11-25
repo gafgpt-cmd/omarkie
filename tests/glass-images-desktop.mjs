@@ -187,6 +187,8 @@ await writeFile(path.join(home, "session.json"), JSON.stringify(session(vault, d
   const { app, page, env, errors } = await boot();
   try {
     const rich = await openGlass(page, app);
+    const localPath = await page.evaluate(() => window.desktop.glass({ action: "add", image: { path: "unapproved.png" } }));
+    assert.deepEqual({ ok: localPath.ok, error: localPath.error }, { ok: false, error: "Desktop image magnets require image bytes." });
     await resize(app, page, 1440);
     const secondBlock = await blockFor(page, second);
     const baseLines = await lines(page, second);
