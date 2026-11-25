@@ -1222,5 +1222,14 @@
   "What will be sent": "Què s'enviarà",
   "X-ray preview": "Vista de raigs X",
   "names only, bytes stay on this machine": "només noms, les dades no surten d'aquest equip",
-  "Identifiers found": "Identificadors trobats"
+  "Identifiers found": "Identificadors trobats",
+  "Glass brought for {{count}} notes.": "Vidre portat per a {{count}} notes.",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notes d'aquí ja tenen vidre en aquest equip.",
+  "Mark for exam": "Marcar per a examen",
+  "Marked for exam": "Marcat per a examen",
+  "Review": "Repàs",
+  "due": "venç",
+  "Spaced repetition: due cards in this vault": "Repetició espaiada: targetes pendents en aquesta cambra",
+  "No window to capture.": "No hi ha cap finestra per capturar.",
+  "The capture came back empty.": "La captura ha arribat buida."
 }

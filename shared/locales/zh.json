@@ -362,5 +362,14 @@
   "What will be sent": "将发送的内容",
   "X-ray preview": "发送预览",
   "names only, bytes stay on this machine": "仅显示名称，文件不会离开此设备",
-  "Identifiers found": "发现身份信息"
+  "Identifiers found": "发现身份信息",
+  "Glass brought for {{count}} notes.": "已为 {{count}} 篇笔记带入玻璃。",
+  "{{count}} notes here already have glass on this computer.": "这里有 {{count}} 篇笔记在这台电脑上已有玻璃。",
+  "Mark for exam": "标记为考试",
+  "Marked for exam": "已标记为考试",
+  "Review": "复习",
+  "due": "到期",
+  "Spaced repetition: due cards in this vault": "间隔重复：此库中到期的卡片",
+  "No window to capture.": "没有可截取的窗口。",
+  "The capture came back empty.": "截图结果为空。"
 }

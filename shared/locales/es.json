@@ -1222,5 +1222,14 @@
   "What will be sent": "Qué se enviará",
   "X-ray preview": "Vista de rayos X",
   "names only, bytes stay on this machine": "solo nombres, los datos no salen de este equipo",
-  "Identifiers found": "Identificadores encontrados"
+  "Identifiers found": "Identificadores encontrados",
+  "Glass brought for {{count}} notes.": "Cristal traído para {{count}} notas.",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notas de aquí ya tienen cristal en este equipo.",
+  "Mark for exam": "Marcar para examen",
+  "Marked for exam": "Marcado para examen",
+  "Review": "Repaso",
+  "due": "vence",
+  "Spaced repetition: due cards in this vault": "Repetición espaciada: tarjetas pendientes en esta bóveda",
+  "No window to capture.": "No hay ventana para capturar.",
+  "The capture came back empty.": "La captura llegó vacía."
 }

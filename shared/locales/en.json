@@ -1208,5 +1208,14 @@
   "What will be sent": "What will be sent",
   "X-ray preview": "X-ray preview",
   "names only, bytes stay on this machine": "names only, bytes stay on this machine",
-  "Identifiers found": "Identifiers found"
+  "Identifiers found": "Identifiers found",
+  "Glass brought for {{count}} notes.": "Glass brought for {{count}} notes.",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notes here already have glass on this computer.",
+  "Mark for exam": "Mark for exam",
+  "Marked for exam": "Marked for exam",
+  "Review": "Review",
+  "due": "due",
+  "Spaced repetition: due cards in this vault": "Spaced repetition: due cards in this vault",
+  "No window to capture.": "No window to capture.",
+  "The capture came back empty.": "The capture came back empty."
 }

@@ -1222,5 +1222,14 @@
   "What will be sent": "Ce se va trimite",
   "X-ray preview": "Previzualizare cu raze X",
   "names only, bytes stay on this machine": "doar nume, datele rămân pe acest calculator",
-  "Identifiers found": "Identificatori găsiți"
+  "Identifiers found": "Identificatori găsiți",
+  "Glass brought for {{count}} notes.": "Sticlă adusă pentru {{count}} de note.",
+  "{{count}} notes here already have glass on this computer.": "{{count}} de note de aici au deja sticlă pe acest computer.",
+  "Mark for exam": "Marchează pentru examen",
+  "Marked for exam": "Marcat pentru examen",
+  "Review": "Recapitulare",
+  "due": "scadent",
+  "Spaced repetition: due cards in this vault": "Repetiție spațiată: cartonașe scadente în acest seif",
+  "No window to capture.": "Nu există fereastră de capturat.",
+  "The capture came back empty.": "Captura a revenit goală."
 }
