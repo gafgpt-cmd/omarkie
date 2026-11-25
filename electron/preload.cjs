@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   learningSearch: (id, query) => call("learningSearch", id, query),
   glass: request => call("glass", request),
+  sync: request => call("sync", request),
   captureRegion: rect => call("captureRegion", rect),
   ocrAvailable: () => call("ocrAvailable"),
   glassOcr: request => call("glassOcr", request),

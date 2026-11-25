@@ -9,6 +9,7 @@ import {
   shell,
   session,
   clipboard,
+  safeStorage,
 } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -36,6 +37,8 @@ import { listenBridge } from "./tutor-transport.mjs";
 import { GlassService } from "./glass-service.mjs";
 import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
 import { GlassSync } from "./glass-sync.mjs";
+import { GitSync } from "./git-sync.mjs";
+import { SyncTokenStore } from "./sync-token.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -146,8 +149,19 @@ async function glassOcrRegion(payload) {
   return runOcr(bytes);
 }
 
+let glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
+let syncTokens;
+function tokenStore() {
+  syncTokens ??= new SyncTokenStore({ file: path.join(app.getPath("userData"), "sync-tokens.json"), safeStorage });
+  return syncTokens;
+}
+function syncEngine() {
+  if (!glassRuntime.root) throw new Error("Open a note folder before syncing.");
+  glassRuntime.syncEngine ??= new GitSync({ root: glassRuntime.root, appData: app.getPath("userData"), service: glassRuntime.service, tokenStore: tokenStore() });
+  return glassRuntime.syncEngine;
+}
 function announceGlass(request) {
-  if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "merge-accept", "merge-undo", "lift-up",
+  if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "board", "merge-accept", "merge-undo", "lift-up",
     "srs-card", "srs-answer", "srs-review", "study-set"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
 
@@ -176,7 +190,7 @@ async function closeGlassRuntime() {
   if (glassRetry) { clearTimeout(glassRetry); glassRetry = null; }
   glassRetries = 0;
   const current = glassRuntime;
-  glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
+  glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
   await current.close?.().catch(() => {});
   await current.sync?.close().catch(() => {});
   await current.service?.close().catch(() => {});
@@ -211,6 +225,27 @@ async function syncGlassNow(folder) {
     try {
       glassRuntime.close = await listenBridge(root, {
         client(request, send) {
+          if (request?.op === "sync") {
+            if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
+            let engine;
+            try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
+            const job = request.action === "status" ? engine.status() : engine.syncNow();
+            Promise.resolve(job).then(async result => {
+              if (request.action === "now" && (result.pulled || result.journals?.length)) {
+                await glassRuntime.service?.reloadStore().catch(() => {});
+                void glassRuntime.sync?.scan("sync").catch(() => {});
+              }
+              send(result);
+            }, error => send({ error: error.message, code: error.code }));
+            return;
+          }
+          if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
+            if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
+            if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
+            send({ opened: true, note: request.note, magnet: request.magnet });
+            window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
+            return;
+          }
           if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
           const { op: _, token: __, ...payload } = request;
           if (payload.action === "ocr") {
@@ -359,6 +394,26 @@ const handlers = {
       finally { voiceRuns.delete(id); }
     }
     throw new Error("Unknown voice action.");
+  },
+  sync: async (_, request = {}) => {
+    const engine = syncEngine();
+    const action = request?.action ?? "status";
+    if (action === "status") return engine.status();
+    if (action === "configure") return engine.setRemote(request.remote, request.branch || null);
+    if (action === "token") {
+      await engine.saveToken(request.token, { remember: request.remember !== false });
+      return engine.status();
+    }
+    if (action === "clear-token") { await engine.clearToken(); return engine.status(); }
+    if (action === "now") {
+      const result = await engine.syncNow();
+      if (result.pulled || result.journals?.length) {
+        await glassRuntime.service?.reloadStore().catch(() => {});
+        void glassRuntime.sync?.scan("sync").catch(() => {});
+      }
+      return result;
+    }
+    throw new Error("Sync action must be status, configure, token, clear-token or now.");
   },
   glass: async (_, request) => {
     if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
@@ -771,7 +826,14 @@ app
     });
     protocol.handle("omarkie", async request => {
       try {
-        if (new URL(request.url).searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
+        const url = new URL(request.url);
+        if (url.host === "app" && url.pathname.startsWith("/excalidraw-assets/")) {
+          const dist = path.resolve(root, "dist"), file = path.resolve(dist, decodeURIComponent(url.pathname.slice(1)));
+          if (!file.startsWith(dist + path.sep)) throw new Error("Resource path invalid.");
+          const mime = { ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".css": "text/css" }[path.extname(file).toLowerCase()] ?? "application/octet-stream";
+          return new Response(await readFile(file), { headers: { "Content-Type": mime, "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" } });
+        }
+        if (url.searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
         const { bytes, mime } = await pluginResource(request.url, store.dataDir);
         const headers = { "Content-Type": mime, "X-Content-Type-Options": "nosniff" };
         const origin = request.headers.get("origin");
@@ -858,7 +920,7 @@ app
         try {
           return { ok: true, value: await handler(event, ...args) };
         } catch (error) {
-          return { ok: false, error: error.message, code: error.code };
+          return { ok: false, error: error.message, code: error.code, ...(Array.isArray(error.conflicts) ? { conflicts: error.conflicts } : {}) };
         }
         finally {
           if (bibliography && bibliography.root !== store.folder) releaseBibliography();

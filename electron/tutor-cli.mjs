@@ -83,6 +83,10 @@ const specs = {
   "voice transcribe": ["--wav <file> [--mode <dictation|memo|lecture|ask>] [--language <tag|auto>] [--vault <dir>]", "Transcribe one 16 kHz mono WAV with the local OMARKIE_STT hook; no network."],
   "memo list": ["--note <note.md> [--full] [--vault <dir>]", "List voice memos: transcript, duration, language and stored audio."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
+  "sync status": ["[--vault <dir>]", "Show git sync state without reading any token."],
+  "sync now": ["[--vault <dir>]", "Commit local glass ops, fetch, merge journals, push. No token access."],
+  "board add": ["--note <note.md> (--near <quote> | --anchor <json>) [--magnet <id>] [--title <text>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--vault <dir>]", "Add one Media-layer board (Excalidraw scene) to a note."],
+  "board open": ["--note <note.md> --magnet <id> [--vault <dir>]", "Ask the open Omarkie window to show a board."],
   glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
   "glass shared": ["[--vault <dir>] [--on | --off]", "Read or set the other person's read-only glass layer for a vault."],
   export: ["--note <note.md> --mode <page|flat|handout|cheatsheet|bundle> --out <path> [--order <ids>] [--target <github|obsidian>] [--vault <dir>]", "Export the page, the page with glass, a glass handout, a cheatsheet in your order, or a re-importable bundle. Writes new files only."],
@@ -236,6 +240,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { console.log(pkg.version); return; }
   let command = argv[0]?.startsWith("-") || !argv.length ? "home" : argv[0];
   if (["doc", "element", "exam", "vault", "scrap", "scraps", "setup", "glass", "ask", "srs", "compare", "measure", "voice", "memo"].includes(command) && argv[1] && !argv[1].startsWith("-")) {
+  if (["doc", "element", "exam", "vault", "scrap", "scraps", "setup", "glass", "ask", "srs", "compare", "measure", "sync", "board"].includes(command) && argv[1] && !argv[1].startsWith("-")) {
     command += ` ${argv[1]}`;
     if (["glass bubble", "glass layers", "glass card", "glass label", "glass ink", "glass tracing"].includes(command) && argv[2] && !argv[2].startsWith("-")) command += ` ${argv[2]}`;
   }
@@ -358,7 +363,38 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "glass edit") requireArgument(["text", "color", "folded", "unfold", "wrap", "rot", "tape", "no-tape", "lock", "unlock", "sticker", "rotate", "style", "head", "label"].some(name => opts[name] !== undefined), "Supply a magnet field to edit.");
     if (["glass add", "glass edit"].includes(command) && opts.wrap !== undefined) requireArgument(wraps.includes(opts.wrap), `--wrap must be ${wraps.join(", ")}.`);
     for (const name of ["rot", "rotate"]) if (opts[name] !== undefined) requireArgument(Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== "", `--${name} must be a number.`);
+    if (command === "board add") requireArgument(Boolean(opts.note?.trim()), "--note is required.");
+    if (command === "board add") requireArgument(Boolean(opts.near?.trim() || opts.anchor !== undefined), "--near <quote> or --anchor is required for a board.");
+    if (command === "board open") requireArgument(Boolean(opts.note?.trim() && opts.magnet?.trim()), "--note and --magnet are required.");
+    for (const name of ["x", "y", "w", "h"]) if (opts[name] !== undefined) requireArgument(Number.isFinite(Number(opts[name])), `--${name} must be a number.`);
     const root = await folder(opts.vault, process.cwd());
+    if (command === "sync status" || command === "sync now") {
+      const { requestBridge } = await import("./tutor-transport.mjs");
+      const state = await requestBridge(root, { op: "sync", action: command === "sync now" ? "now" : "status" }, 120_000, "glass");
+      if (!state) throw new Error("Sync runs in Omarkie. Open this vault in the app first.");
+      if (state.error) throw new Error(state.error);
+      emit(state);
+      return;
+    }
+    if (command === "board add" || command === "board open") {
+      const { requestBridge } = await import("./tutor-transport.mjs");
+      if (command === "board open") {
+        const state = await requestBridge(root, { op: "glass", action: "board", mode: "open", note: opts.note, magnet: opts.magnet }, 60_000, "glass");
+        if (!state) throw new Error("Open Omarkie to open a board.");
+        if (state.error) throw new Error(state.error);
+        emit({ document: opts.note, magnet: opts.magnet, opened: state.opened === true });
+        return;
+      }
+      const anchor = opts.anchor !== undefined ? JSON.parse(opts.anchor) : await stickyAnchor(root, opts.note, opts.near);
+      const request = { op: "glass", action: "board", mode: "add", note: opts.note, anchor,
+        ...(opts.magnet ? { magnet: opts.magnet } : {}), ...(opts.title ? { title: opts.title, name: opts.title } : {}),
+        ...Object.fromEntries(["x", "y", "w", "h"].filter(name => opts[name] !== undefined).map(name => [name, Number(opts[name])])) };
+      const state = await requestBridge(root, request, 60_000, "glass");
+      if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
+      if (state.error) throw new Error(state.error);
+      emit({ document: opts.note, magnet: state.magnet?.id, asset: state.asset, name: state.magnet?.fields?.name ?? "Board" });
+      return;
+    }
     if (command.startsWith("element ")) {
       const { openStudy, vaultRoot } = await import("./tutor-store.mjs");
       const { markdownElements, elementById } = await import("../shared/element-model.mjs");

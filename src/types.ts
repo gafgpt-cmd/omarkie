@@ -60,6 +60,8 @@ export interface Command {
   document?: DocumentRecord;
   anchor?: string;
   line?: number;
+  note?: string;
+  magnet?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }
@@ -176,6 +178,7 @@ export interface Host {
   importGlass?(): Promise<{ note: string; file: string } | null>;
   sharedGlass?(note: string): Promise<{ note: string; magnets: { id: string; fields: Record<string, unknown>; kind?: string | null }[]; readOnly: boolean }>;
   sharedGlassState?(request: { action: "read" | "write"; shared?: boolean }): Promise<{ shared: boolean }>;
+  sync?(request?: Record<string, unknown>): Promise<any>;
   onGlassStorage?(callback: (status: { bring?: { count: number; notes?: { path: string; title?: string }[] } | null } | null) => void): () => void;
   onCommand(callback: (command: Command) => void): () => void;
   payloadRequest?(request: PayloadRequest): Promise<string>;

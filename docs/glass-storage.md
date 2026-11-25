@@ -15,7 +15,9 @@ My Vault/
    ├─ glass/
    │  └─ Note title ~a1b2c3.jsonl          one append-only journal per note with glass
    └─ assets/
-      └─ Note title ~a1b2c3/              that note's glass images
+      ├─ Note title ~a1b2c3/              that note's glass images
+      └─ boards/
+         └─ <magnet>.excalidraw.json       optional Excalidraw scenes
 ```
 
 - One journal per note, flat, even for 50,000 notes. The short id decides identity; the title is for people and is sanitized for Windows and exFAT (NFC, no `<>:"/\|?*`, no reserved names like `CON`, at most 120 bytes).
@@ -148,6 +150,6 @@ Opening another vault that contains notes this computer already has glass for sh
 
 ## Privacy and backups
 
-Glass journals are plain files inside the vault, so the vault's existing git, Syncthing, Drive or backup setup carries them. The local index and previews live in Omarkie's cache, outside the vault, and can always be rebuilt. No network request is made for storage.
+Glass journals are plain files inside the vault, so the vault's existing git, Syncthing, Drive or backup setup carries them. The local index and previews live in Omarkie's cache, outside the vault, and can always be rebuilt. No network request is made for storage. Sync is explicit: it runs only when the user presses **Sync** or calls `omarkie-axi sync now`; see [git sync](git-sync.md).
 
-Secrets never live in `.omarkie/`: that folder syncs to every device and backup. A future sync token belongs in the OS keychain, and the app refuses to open a store whose settings carry one.
+Secrets never live in `.omarkie/`: that folder syncs to every device and backup. A sync token belongs in the OS keychain, and the app refuses to open a store whose settings carry one.

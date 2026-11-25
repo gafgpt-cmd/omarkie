@@ -24,6 +24,7 @@ const kindLayers = {
   clip: "notes",
   "extra-page": "notes",
   cutout: "media",
+  board: "media",
   card: "cards",
   comment: "comments",
 };
