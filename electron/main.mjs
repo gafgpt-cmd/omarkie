@@ -593,6 +593,41 @@ app
     if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
     applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());
     ipcMain.on("app:language", event => { event.returnValue = event.sender === window?.webContents ? { language, choice: languageChoice } : null; });
+    const preferenceFile = path.join(store.dataDir, "preferences.json");
+    let savedPreferences = await readFile(preferenceFile, "utf8").catch(error => {
+      if (error.code !== "ENOENT") console.error(error);
+      return null;
+    });
+    let pendingPreferences = savedPreferences, preferenceWrite, quitAfterPreferences = false;
+    ipcMain.on("app:preferences", (event, update) => {
+      if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) {
+        event.returnValue = null;
+        return;
+      }
+      if (update === undefined) { event.returnValue = pendingPreferences; return; }
+      event.returnValue = null;
+      if (typeof update !== "string" || update.length > 128 * 1024) return;
+      try {
+        const value = JSON.parse(update);
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      } catch { return; }
+      pendingPreferences = update;
+      if (pendingPreferences === savedPreferences || preferenceWrite) return;
+      preferenceWrite = (async () => {
+        while (pendingPreferences !== savedPreferences) {
+          const snapshot = pendingPreferences;
+          await atomicWrite(preferenceFile, snapshot);
+          savedPreferences = snapshot;
+        }
+      })().catch(showError).finally(() => { preferenceWrite = undefined; });
+    });
+    app.on("before-quit", event => {
+      if (!preferenceWrite) return;
+      event.preventDefault();
+      if (quitAfterPreferences) return;
+      quitAfterPreferences = true;
+      void preferenceWrite.then(() => { quitAfterPreferences = false; app.quit(); });
+    });
     protocol.handle("omarkie", async request => {
       try {
         if (new URL(request.url).searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));

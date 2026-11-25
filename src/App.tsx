@@ -71,6 +71,7 @@ export default function App() {
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
+  const initialPreferences = useRef(preferences);
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
   const [background,setBackground] = useState<BackgroundAsset | null>(null);
   const backgroundRequest = useRef(0);
@@ -319,8 +320,13 @@ export default function App() {
   const statistics = useMemo(() => dialog === "statistics" && selection ? documentStatistics(selection, selection, preferences.readingSpeed) : wholeStatistics, [dialog, selection, wholeStatistics]);
   const selectionCharacters = useMemo(() => Array.from(selection.replace(/\s/g, "")).length, [selection]);
   useEffect(() => { localStorage.setItem("omarkie-count-unit", countUnit); }, [countUnit]);
+  useLayoutEffect(() => {
+    if (window.desktop?.savePreferences) {
+      if (preferences !== initialPreferences.current || localStorage.getItem("omarkie-preferences") !== null)
+        window.desktop.savePreferences(JSON.stringify(preferences));
+    } else localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
+  }, [preferences]);
   useEffect(() => {
-    localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
     document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
     document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
@@ -416,7 +422,7 @@ export default function App() {
     const sync = (event: StorageEvent) => {
       if (event.key === pluginPreferenceKey) setPluginPreferences(loadPluginPreferences());
       if (event.key === "omarkie-theme") setTheme(event.newValue || "light");
-      if (event.key === "omarkie-preferences") setPreferences(loadPreferences());
+      if (event.key === "omarkie-preferences" && !window.desktop?.savePreferences) setPreferences(loadPreferences());
       if (event.key === backgroundRevisionKey) void refreshBackground().catch(error => session.setMessage(error.message));
     };
     window.addEventListener("storage", sync); return () => window.removeEventListener("storage", sync);

@@ -23,7 +23,7 @@ export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defau
   payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false };
 export function loadPreferences(): Preferences {
   try {
-    const saved = JSON.parse(localStorage.getItem("omarkie-preferences") || "{}");
+    const saved = JSON.parse(globalThis.window?.desktop?.loadPreferences?.() ?? localStorage.getItem("omarkie-preferences") ?? "{}");
     const next = { ...defaultPreferences };
     if (Number.isFinite(saved.backgroundOpacity)) next.backgroundOpacity = Math.max(0,Math.min(100,saved.backgroundOpacity));
     if (Number.isFinite(saved.backgroundBlur)) next.backgroundBlur = Math.max(0,Math.min(30,saved.backgroundBlur));

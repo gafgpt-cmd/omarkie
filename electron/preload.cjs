@@ -3,6 +3,9 @@ const call = (name, ...args) => ipcRenderer.invoke(`document:${name}`, ...args);
 contextBridge.exposeInMainWorld("desktop", {
   viewState: (focus, typewriter, sidebar, checked, disabled, context) => call("viewState", focus, typewriter, sidebar, checked, disabled, context),
   language: () => ipcRenderer.sendSync("app:language"), setLanguage: choice => call("setLanguage", choice),
+  loadPreferences: () => ipcRenderer.sendSync("app:preferences"),
+  // Hand off before the renderer can close. Main writes to disk asynchronously.
+  savePreferences: value => ipcRenderer.sendSync("app:preferences", value),
   payloadRequest: request => call("payloadRequest", request),
   payloadKey: (baseUrl, value) => call("payloadKey", baseUrl, value),
   readResource: (address, project) => call("readResource", address, project),
