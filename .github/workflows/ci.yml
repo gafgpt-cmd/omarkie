@@ -4,13 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   checks:
-    runs-on: ubicloud-standard-4-ubuntu-2204
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -21,6 +22,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # Electron 44 fetches its binary lazily on first require, and npm can never
+      # restore the setuid bit its SUID sandbox helper needs. Fetch it up front,
+      # then configure the helper before any desktop test launches Electron.
+      - name: Fetch Electron and enable its sandbox helper
+        run: |
+          node -e "require('electron')"
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
       - run: npx playwright install --with-deps chromium
       - run: npx tsc -b
       - name: Install desktop verification dependencies
@@ -34,7 +43,9 @@ jobs:
           OMARKIE_REQUIRE_CONVERTERS: "1"
 
   macos-native:
-    if: github.event_name == 'pull_request'
+    # Fleet CI is Ubicloud Linux; the macOS runner is GitHub-hosted and runs
+    # only on manual dispatch.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 15
     steps:
