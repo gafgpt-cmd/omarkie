@@ -10,6 +10,7 @@ import { _electron as playwright } from "playwright/test";
 import electron from "electron";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import { GlassService } from "../electron/glass-service.mjs";
+import { GlassFinder } from "../electron/glass-finder.mjs";
 
 if (process.platform === "win32") process.exit(0);
 const temp = await realpath(await mkdtemp(path.join(tmpdir(), "omarkie-glass-moves-")));
@@ -109,8 +110,14 @@ for (let chunk = 0; chunk < 50_000; chunk += 500)
 const lastNote = "# Note 49999\n\nUnique body 49999.\n";
 await mkdir(bigData, { recursive: true });
 await session(bigData, big, "Note 49999.md", lastNote);
-const finder = { op: "see", hash: createHash("sha256").update(lastNote).digest("hex"), size: Buffer.byteLength(lastNote), vaultId: "other-vault", store: path.join(temp, "other-store"), journal: "Note 49999 ~abc123.jsonl", noteId: "abc123", title: "Note 49999", path: "Note 49999.md", mode: "inside", at: new Date().toISOString() };
-await writeFile(path.join(bigData, "glass-finder.jsonl"), `${JSON.stringify(finder)}\n`);
+const origin = path.join(temp, "origin");
+await fixture(origin, { "Original.md": lastNote });
+const source = await new GlassService({ root: origin, appData: bigData, device: "desktop-test" }).open();
+source.finder = await new GlassFinder({ file: path.join(bigData, "glass-finder.jsonl") }).load();
+const copied = await source.request({ action: "add", note: "Original.md", kind: "note", text: "original magnet" });
+const originalJournal = path.join(source.storeDir, copied.journal);
+const originalBytes = await readFile(originalJournal);
+await source.close();
 {
   const { app, page } = await launch(bigData);
   try {
@@ -143,6 +150,18 @@ await writeFile(path.join(bigData, "glass-finder.jsonl"), `${JSON.stringify(find
     await page.locator(".glass-banner").waitFor({ timeout: 60_000 });
     await shoot(page, app, 1440, 900, "banner-dark-1440");
     await shoot(page, app, 720, 720, "banner-dark-720");
+    const banner = page.getByRole("status").filter({ hasText: "1 note here already has glass on this computer." });
+    await banner.getByRole("button", { name: "Dismiss", exact: true }).click();
+    await banner.waitFor({ state: "hidden" });
+    const target = "Note 49999.md";
+    assert.equal((await axiIn(big, "glass", "list", "--note", target)).magnets.length, 0);
+    await page.reload();
+    await banner.waitFor({ timeout: 30_000 });
+    await banner.getByRole("button", { name: "Bring glass", exact: true }).click();
+    await waitFor(async () => (await axiIn(big, "glass", "list", "--note", target)).magnets[0]?.fields.text === "original magnet");
+    await banner.waitFor({ state: "hidden" });
+    assert.deepEqual(await readFile(originalJournal), originalBytes);
+    assert.equal(await readFile(path.join(big, target), "utf8"), lastNote);
   } finally { await app.close(); }
 }
 

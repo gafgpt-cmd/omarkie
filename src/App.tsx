@@ -600,9 +600,7 @@ export default function App() {
       />
       {glassOffer && (
         <div className="glass-banner" role="status">
-          <span>{glassOffer.count === 1
-            ? t("1 note here already has glass on this computer.")
-            : t("{{count}} notes here already have glass on this computer.", { count: glassOffer.count })}</span>
+          <span>{t("{{count}} notes here already have glass on this computer.", { count: glassOffer.count })}</span>
           <button disabled={glassBusy} onClick={() => void bringGlass()}>{t("Bring glass")}</button>
           <button className="glass-banner-dismiss" aria-label={t("Dismiss")} onClick={() => setGlassOffer(null)}><X size={15} /></button>
         </div>

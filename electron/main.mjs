@@ -130,6 +130,9 @@ function prepareOperation(phase, change) { return new Promise((resolve, reject) 
 let operationRunning = false;
 let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
+function announceGlass(request) {
+  if (["add", "set", "delete", "restore"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
+}
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
   const run = glassQueue.then(() => syncGlassNow(folder));
@@ -176,7 +179,7 @@ async function syncGlassNow(folder) {
           if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
           if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
           const { op: _, token: __, ...payload } = request;
-          Promise.resolve(glassRuntime.service.request(payload)).then(send, error => send({ error: error.message }));
+          Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
         },
         stopWait() {}, bind() { return {}; }, unbind() { return 0; },
       }, "glass");
@@ -296,7 +299,9 @@ const handlers = {
     if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
     await syncGlass(store?.folder ?? null);
     if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
-    return glassRuntime.service.request(request);
+    const result = await glassRuntime.service.request(request);
+    announceGlass(request);
+    return result;
   },
   tutorBridge: async ({ sender }, id, request) => {
     if (request?.action === "detach" && !tutorLoading) return;

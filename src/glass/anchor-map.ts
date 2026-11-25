@@ -301,10 +301,47 @@ export function matchBlock(anchor: GlassAnchor, blocks: readonly GlassBlock[]): 
   if (elsewhere.size === 1) return [...elsewhere][0];
   if (elsewhere.size > 1) return null;
   if (!block) return null;
+  return matchFuzzy(text, blocks.filter(candidate => !!section && sectionKey(candidate.headings) === section));
+}
+
+// One index per measure pass: 200 magnets on a long note must not rescan every block.
+export interface BlockIndex {
+  texts: Map<string, GlassBlock[]>;
+  sections: Map<string, GlassBlock[]>;
+}
+
+export function indexBlocks(blocks: readonly GlassBlock[]): BlockIndex {
+  const texts = new Map<string, GlassBlock[]>(), sections = new Map<string, GlassBlock[]>();
+  const push = (map: Map<string, GlassBlock[]>, key: string, block: GlassBlock) => {
+    const list = map.get(key);
+    if (list) list.push(block); else map.set(key, [block]);
+  };
+  for (const block of blocks) {
+    const text = normalizeText(block.block);
+    if (!text) continue;
+    push(texts, text, block);
+    push(sections, sectionKey(block.headings), block);
+  }
+  return { texts, sections };
+}
+
+export function matchIndexed(index: BlockIndex, anchor: GlassAnchor): number | null {
+  const landmark = anchor.landmarks.find(landmark => landmark.kind === "block");
+  if (!landmark) return null;
+  const text = normalizeText(landmark.block), section = sectionKey(landmark.headings);
+  const exact = (index.texts.get(text) ?? []).filter(block => sectionKey(block.headings) === section);
+  if (exact.length === 1) return exact[0].line;
+  if (exact.length > 1) return null;
+  const elsewhere = index.texts.get(text) ?? [];
+  if (elsewhere.length === 1) return elsewhere[0].line;
+  if (elsewhere.length > 1) return null;
+  return matchFuzzy(text, index.sections.get(section) ?? []);
+}
+
+function matchFuzzy(text: string, candidates: readonly GlassBlock[]) {
   const counts = grams(text);
   let best = 0, line: number | null = null;
-  for (const candidate of blocks) {
-    if (!section || sectionKey(candidate.headings) !== section) continue;
+  for (const candidate of candidates) {
     const score = similarity(text, normalizeText(candidate.block), counts);
     if (score >= 0.8 && score > best) {
       line = candidate.line;

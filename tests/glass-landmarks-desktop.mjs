@@ -201,7 +201,7 @@ try {
   await expect(second.page.getByRole("status").filter({ hasText: "Click the paragraph this magnet belongs to." })).toBeVisible();
   await capture(second.page, "light-1440-placing");
   await second.rich.locator('[data-cid]', { hasText: "Delta paragraph about mixing problem types." }).click();
-  await expect(second.page.locator(".glass-tray")).toHaveCount(0);
+  await expect(second.page.getByRole("complementary", { name: "Check placement" })).toHaveCount(0);
   await expect(second.page.locator(".glass-magnet")).toHaveCount(5);
   const moved = await second.page.locator('[data-glass-object="m-g2b-5"]').getAttribute("data-glass-confidence");
   assert.equal(moved, "placed", "clicking a paragraph re-anchors the tray magnet");

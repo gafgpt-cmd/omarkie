@@ -323,7 +323,16 @@ export class GlassSync {
     if (this.magnetTimer) clearTimeout(this.magnetTimer);
     this.magnetTimer = setTimeout(() => {
       this.magnetTimer = null;
-      this.publishMagnets().catch(error => { if (!this.closed) this.fail(error); });
+      const publish = async () => {
+        if (this.closed) return;
+        try { await this.publishMagnets(); }
+        catch (error) {
+          if (this.closed || this.error === error.message) return;
+          this.error = error.message;
+          this.notify();
+        }
+      };
+      this.queue = this.queue.then(publish, publish);
     }, 250);
     this.magnetTimer.unref?.();
   }
@@ -332,8 +341,8 @@ export class GlassSync {
     const magnets = await this.service.magnetsForIndex().catch(() => []);
     const signature = magnets.map(magnet => `${magnet.id}:${magnet.text}:${magnet.noteId}`).join("\n");
     if (signature === this.magnetSignature) return;
-    this.magnetSignature = signature;
     await this.index.request("magnets", { magnets });
+    this.magnetSignature = signature;
   }
 
   async updateOffer() {

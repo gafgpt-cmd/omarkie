@@ -1,256 +1,415 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import interact from "interactjs";
+import { ArrowUpRight, Highlighter, MousePointer2, PenLine, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
-import { captureAnchor, liveBlocks, normalizeText, placeAnchor, resolveAnchor, type GlassAnchor, type GlassPlacement, type GlassResolution } from "../glass/anchor-map";
-import { anchorFrom, fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
-import { LearningOverlays, type StudyOverlay } from "./learning-overlays";
+import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
+import { fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
+import GlassLandmarks, { landmarkSeeds } from "./GlassLandmarks";
+import type { StudyOverlay } from "./learning-overlays";
+import {
+  anchorOf, nearestBlock, newStickyId, offsetIn, snapped, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
+  type GlassMagnet, type StickyNote,
+} from "../glass/glass-model";
 import "./glass.css";
 
-interface Box { id: string; placement: GlassPlacement }
-interface Magnet { id: string; kind: string | null; fields: Record<string, unknown> }
-interface Item { id: string; line: number; label: string; context: string; state: "placed" | "check" | "tray"; confidence: number; tier: GlassResolution["tier"] }
-interface Seed { text: string; label?: string }
-
-const magnetsKey = "omarkie-glass-magnets";
-const confidenceCheck = 0.8, confidenceTray = 0.5;
-
-function testMagnets(): Seed[] | undefined {
-  if (!glassFixture()) return;
-  try {
-    const value = JSON.parse(localStorage.getItem(magnetsKey) || "null");
-    if (!Array.isArray(value) || !value.length || value.length > 20) return;
-    const seeds = value.flatMap(item => {
-      const text = typeof item === "string" ? item : item && typeof item.text === "string" ? item.text : undefined;
-      if (!text?.trim()) return [];
-      return [{ text, ...(typeof item?.label === "string" ? { label: item.label } : {}) }];
-    });
-    return seeds.length === value.length ? seeds : undefined;
-  } catch { return; }
+interface Layout { places: Record<string, GlassPlacement>; fixture?: GlassPlacement; loaded?: boolean }
+interface Reply { ok: boolean; value?: GlassReply; error?: string }
+interface GlassReply {
+  magnets?: GlassMagnet[];
+  trash?: GlassMagnet[];
+  magnet?: GlassMagnet | null;
+  saved?: boolean;
+}
+const comingSoon = [
+  { id: "ink", label: "Ink", icon: PenLine },
+  { id: "highlighter", label: "Highlighter", icon: Highlighter },
+  { id: "sticker", label: "Sticker", icon: Star },
+  { id: "arrow", label: "Arrow", icon: ArrowUpRight },
+  { id: "card", label: "Card", icon: SquareStack },
+  { id: "scissors", label: "Scissors", icon: Scissors },
+] as const;
+async function glassCall(request: Record<string, unknown>): Promise<GlassReply> {
+  const api = window.desktop?.glass;
+  if (!api) throw new Error("Glass storage is not available here.");
+  const reply: Reply = await api(request);
+  if (!reply?.ok) throw new Error(reply?.error ?? "Glass storage refused the change.");
+  return reply.value ?? {};
 }
 
-function magnetAnchor(magnet: Magnet) {
-  return anchorFrom(magnet.fields.anchor);
+const storable = (magnets: GlassMagnet[] | undefined) => (magnets ?? []).flatMap(magnet => stickyFromMagnet(magnet) ?? []);
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+// One sticky note: paper, six colours, fold to a dot, delete to the trash, typing saved as it settles.
+function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, onFold, onColor, onDelete }: {
+  note: StickyNote; place: GlassPlacement; selected: boolean; editing: boolean; onSelect(): void; onEdit(editing: boolean): void;
+  onText(text: string): void; onFold(folded: boolean): void; onColor(color: StickyNote["color"]): void; onDelete(): void;
+}) {
+  const [draft, setDraft] = useState(note.text);
+  const committed = useRef(note.text), latest = useRef(note.text), text = useRef<HTMLTextAreaElement>(null);
+  latest.current = draft;
+  const flush = useCallback(() => {
+    if (latest.current === committed.current) return;
+    committed.current = latest.current;
+    onText(latest.current);
+  }, [onText]);
+  useEffect(() => () => { if (latest.current !== committed.current) { committed.current = latest.current; onText(latest.current); } }, [onText]);
+  useEffect(() => {
+    if (draft === committed.current) return;
+    const timer = setTimeout(flush, 400);
+    return () => clearTimeout(timer);
+  }, [draft, flush]);
+  // Another hand (an agent, another device) can rewrite the note; adopt it unless typing is pending here.
+  useEffect(() => {
+    if (note.text === committed.current || latest.current !== committed.current) return;
+    committed.current = note.text;
+    setDraft(note.text);
+  }, [note.text]);
+  useEffect(() => { if (editing) text.current?.focus(); }, [editing]);
+  if (place.status === "orphan") return null;
+  return <div className="glass-note" data-magnet={note.id} data-colour={note.color} data-folded={note.folded || undefined}
+    data-selected={selected || undefined} data-editing={editing || undefined} tabIndex={0} aria-label={`Sticky note, ${note.color}`}
+    style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${note.folded ? stickyDefaults.folded : place.width}px`, height: `${note.folded ? stickyDefaults.folded : place.height}px` }}
+    onPointerDown={onSelect} onDoubleClick={() => onEdit(true)} onKeyDown={event => {
+      if (event.target !== event.currentTarget) return;
+      if (event.key === "Enter") { event.preventDefault(); onEdit(true); }
+      else if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); onDelete(); }
+      else if (event.key === "f" || event.key === "F") { event.preventDefault(); onFold(!note.folded); }
+      else if (event.key === "Escape") event.currentTarget.blur();
+    }}>
+    {note.folded ? <button type="button" className="glass-note-dot" aria-label="Unfold note" title="Unfold note" onClick={() => onFold(false)} /> : <>
+      <span className="glass-note-head" aria-hidden="true" />
+      <span className="glass-note-mark" aria-hidden="true" />
+      <textarea ref={text} className="glass-note-text" aria-label="Sticky note text" value={draft} maxLength={stickyDefaults.textLimit} placeholder="Write a note"
+        onChange={event => setDraft(event.target.value)} onBlur={flush} onFocus={() => onEdit(true)}
+        onKeyDown={event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.blur(); } }} />
+      <div className="glass-note-tools" role="group" aria-label="Sticky note">
+        {stickyColors.map(colour => <button type="button" key={colour} className="glass-note-colour" data-colour={colour}
+          aria-label={`${colour} note`} aria-pressed={note.color === colour} onClick={() => onColor(colour)} />)}
+        <button type="button" className="glass-note-tool" aria-label="Fold note" title="Fold note" onClick={() => onFold(true)}>–</button>
+        <button type="button" className="glass-note-tool" aria-label="Move note to trash" title="Move to trash" onClick={onDelete}>×</button>
+      </div>
+      <span className="glass-note-grip glass-note-grip-right" data-grip="right" aria-hidden="true" />
+      <span className="glass-note-grip glass-note-grip-bottom" data-grip="bottom" aria-hidden="true" />
+    </>}
+  </div>;
 }
 
-function anchorContext(anchor: GlassAnchor | undefined) {
-  if (!anchor) return "";
-  for (const landmark of anchor.landmarks) {
-    if (landmark.kind === "quote") return normalizeText(landmark.value.exact);
-    if (landmark.kind === "block") return normalizeText(landmark.block);
-  }
-  return "";
-}
-
-export default function GlassLayer({ editor, root, nodes, groups, note, saved = false }: {
-  editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved?: boolean;
+export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved }: {
+  editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
 }) {
   const scroller = root.parentElement!;
-  const layer = useRef<HTMLDivElement>(null), fingerprint = useRef(""), mounted = useRef(false);
-  const [boxes, setBoxes] = useState<Box[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
-  const [magnets, setMagnets] = useState<Magnet[]>([]);
-  const [revision, setRevision] = useState(0);
-  const [placing, setPlacing] = useState<string>();
-  const [writeError, setWriteError] = useState<string>();
-  const frame = useRef(0), seeded = useRef(false), saving = useRef(false), dirty = useRef(false), previousSaved = useRef(saved);
-  const stopTracking = useRef<(() => void) | undefined>(undefined);
-  const mapped = useRef(new Map<string, number>()), live = useRef(new Set<string>());
+  const layer = useRef<HTMLDivElement>(null);
   const fixture = useMemo(glassFixture, []);
-  const seeds = useMemo(testMagnets, []);
-  const schedule = useEffectEvent(() => { if (!frame.current) frame.current = requestAnimationFrame(() => { frame.current = 0; measure(); }); });
+  const seeds = useMemo(landmarkSeeds, []);
+  const [landmarks, setLandmarks] = useState<GlassMagnet[]>([]);
+  const [magnets, setMagnets] = useState<StickyNote[]>([]);
+  const [trash, setTrash] = useState<StickyNote[]>([]);
+  const [layout, setLayout] = useState<Layout>({ places: {} });
+  const [tool, setTool] = useState<"select" | "sticky">("select");
+  const [selected, setSelected] = useState<string>();
+  const [editing, setEditing] = useState<string>();
+  const [openTrash, setOpenTrash] = useState(false);
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [notice, setNotice] = useState("");
+  const blocks = useRef<GlassBlock[]>([]), index = useRef<BlockIndex>(indexBlocks([]));
+  const latest = useRef({ magnets, note, tool });
+  const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
+  const queue = useRef(Promise.resolve<unknown>(undefined));
+  latest.current = { magnets, note, tool };
 
-  function reload() { setRevision(value => value + 1); }
-  async function store(request: Record<string, unknown>) {
-    if (!note || !window.desktop?.glass) throw new Error("Glass storage is unavailable.");
-    const response = await window.desktop.glass({ ...request, note });
-    if (!response?.ok) throw new Error(response?.error || "Glass could not save the anchor.");
-  }
-
-  useEffect(() => {
-    if (!note || !window.desktop?.glass) { setMagnets([]); return; }
-    let current = true;
-    void window.desktop.glass({ action: "list", note }).then((response: { ok?: boolean; value?: { magnets?: Magnet[] } }) => {
-      if (current && response?.ok) setMagnets(response.value?.magnets ?? []);
-    }).catch(() => {});
-    return () => { current = false; };
-  }, [note, revision]);
-
-  useEffect(() => {
-    mapped.current.clear();
-    live.current.clear();
-  }, [magnets, note]);
-
-  useEffect(() => () => { stopTracking.current?.(); stopTracking.current = undefined; }, []);
-
-  useEffect(() => {
-    if (!placing) return;
-    const place = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-cid]") : null;
-      if (!target || !root.contains(target)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const blocks = liveBlocks(editor()?.readingContext(), root);
-      const block = blocks.find(item => item.element === target) ?? blocks.find(item => !!item.element && item.element.dataset.cid === target.dataset.cid);
-      if (!block) return;
-      const id = placing;
-      setPlacing(undefined);
-      setWriteError(undefined);
-      void store({ action: "add", magnet: id, anchor: captureAnchor(block, blocks) }).then(reload, error => {
-        setWriteError(error.message);
-        setPlacing(id);
-      });
-    };
-    scroller.addEventListener("click", place, true);
-    return () => scroller.removeEventListener("click", place, true);
-  }, [placing, scroller, note, root, editor]);
-
-  useEffect(() => {
-    const changed = saved && !previousSaved.current;
-    previousSaved.current = saved;
-    if (!changed || !dirty.current || !note || saving.current || !magnets.length) return;
-    const context = editor()?.readingContext();
-    if (!context) return;
-    const blocks = liveBlocks(context, root), byLine = new Map(blocks.map(block => [block.line, block]));
-    saving.current = true;
-    dirty.current = false;
-    void Promise.all(magnets.flatMap(magnet => {
-      const anchor = magnetAnchor(magnet), char = live.current.has(magnet.id) ? mapped.current.get(magnet.id) : undefined;
-      if (!anchor || char === undefined) return [];
-      const { line, confidence } = resolveAnchor(anchor, blocks, { liveChar: char });
-      const block = line === null ? undefined : byLine.get(line);
-      return block && confidence >= confidenceCheck ? [store({ action: "add", magnet: magnet.id, anchor: captureAnchor(block, blocks) })] : [];
-    })).then(reload, error => { dirty.current = true; setWriteError(error.message); })
-      .finally(() => { saving.current = false; });
-  }, [saved, magnets, note, root, editor]);
-
-  const measure = useEffectEvent(async () => {
-    const surface = layer.current, context = editor()?.readingContext();
+  const measure = useCallback(() => {
+    const surface = layer.current;
     if (!surface) return;
-    const blocks = context ? liveBlocks(context, root) : [];
-    if (!stopTracking.current) {
-      const handle = editor();
-      if (handle) stopTracking.current = handle.trackChanges(map => {
-        if (!mapped.current.size) return;
-        for (const [id, char] of mapped.current) { mapped.current.set(id, map(char)); live.current.add(id); }
-        dirty.current = true;
-        schedule();
-      });
+    blocks.current = liveBlocks(editor()?.readingContext(), root);
+    index.current = indexBlocks(blocks.current);
+    const byLine = new Map(blocks.current.map(block => [block.line, block]));
+    const frame = surface.getBoundingClientRect();
+    const places: Record<string, GlassPlacement> = {};
+    for (const stickie of latest.current.magnets) {
+      const line = matchIndexed(index.current, stickie.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[stickie.id] = { status: "orphan" }; continue; }
+      const rect = element.getBoundingClientRect();
+      places[stickie.id] = { status: "resolved", x: rect.left - frame.left + stickie.x, y: rect.top - frame.top + stickie.y, width: stickie.w, height: stickie.h };
     }
-    if (seeds?.length && note && !seeded.current && blocks.length) {
-      seeded.current = true;
-      const key = `omarkie-glass-seeded:${note}`;
-      let done = false;
-      try { done = localStorage.getItem(key) === "true"; } catch { /* storage unavailable */ }
-      if (!done) {
-        const created = await Promise.all(seeds.map(async (seed, index) => {
-          const wanted = normalizeText(seed.text);
-          const block = blocks.find(candidate => normalizeText(candidate.block) === wanted) ?? blocks.find(candidate => normalizeText(candidate.block).includes(wanted));
-          if (!block) return false;
-          try {
-            await window.desktop!.glass({ action: "add", note, magnet: `m-g2b-${index + 1}`, kind: "debug", text: seed.label ?? seed.text, anchor: captureAnchor(block, blocks) });
-            return true;
-          } catch { return false; }
-        }));
-        try { if (created.every(Boolean)) localStorage.setItem(key, "true"); } catch { /* storage unavailable */ }
-        reload();
-      }
-    }
-    const next: Box[] = [];
+    let marker: GlassPlacement | undefined;
     if (fixture && !seeds?.length) {
       let anchor = fixtureAnchor();
       if (!anchor) {
-        const paragraph = blocks.find(block => block.element?.tagName === "P" && !!block.element.textContent?.trim());
-        if (paragraph) {
-          anchor = captureAnchor(paragraph, blocks);
-          rememberFixtureAnchor(anchor);
-        }
+        const paragraph = blocks.current.find(block => block.element?.tagName === "P" && !!block.element.textContent?.trim());
+        if (paragraph) { anchor = captureAnchor(paragraph, blocks.current); rememberFixtureAnchor(anchor); }
       }
-      if (anchor) next.push({ id: "fixture", placement: placeAnchor(anchor, { x: 0, y: 0 }, blocks, surface) });
+      if (anchor) marker = placeAnchor(anchor, { x: 0, y: 0 }, blocks.current, surface);
     }
-    const resolved: Item[] = [];
-    const byLine = magnets.length ? new Map(blocks.map(block => [block.line, block])) : undefined;
-    for (const magnet of magnets) {
-      const anchor = magnetAnchor(magnet);
-      const char = live.current.has(magnet.id) ? mapped.current.get(magnet.id) : undefined;
-      const result = anchor ? resolveAnchor(anchor, blocks, { liveChar: char }) : { confidence: 0, tier: "none" as const, line: null };
-      const state = result.line === null || result.confidence < confidenceTray ? "tray" : result.confidence >= confidenceCheck ? "placed" : "check";
-      if (state === "placed" && char === undefined && result.line !== null) {
-        const start = byLine?.get(result.line)?.from;
-        if (start !== undefined) mapped.current.set(magnet.id, start);
-      }
-      const label = typeof magnet.fields.text === "string" && magnet.fields.text.trim() ? magnet.fields.text : magnet.kind ?? magnet.id;
-      resolved.push({ id: magnet.id, line: result.line ?? 0,
-        label, context: anchorContext(anchor), state,
-        confidence: result.confidence, tier: result.tier });
-    }
-    if (!mounted.current) {
-      mounted.current = true;
-      performance.mark("omarkie:glass-mounted");
-    }
-    const serialized = JSON.stringify([next, resolved]);
+    if (!mounted.current) { mounted.current = true; performance.mark("omarkie:glass-mounted"); }
+    const serialized = JSON.stringify([places, marker ?? null, loaded.current]);
     if (serialized === fingerprint.current) return;
     fingerprint.current = serialized;
-    setBoxes(next);
-    setItems(resolved);
-  });
+    setLayout({ places, fixture: marker, loaded: loaded.current });
+  }, [editor, fixture, root, seeds]);
+
+  useLayoutEffect(() => {
+    if (layout.loaded && !ready.current) { ready.current = true; performance.mark("omarkie:glass-ready"); }
+  }, [layout.loaded]);
+
+  // One write at a time, in the order the hand made them: a fresh note must exist before its text lands.
+  const send = useCallback((request: Record<string, unknown>) => {
+    const path = latest.current.note;
+    if (!path) return Promise.resolve(undefined);
+    const run = queue.current.then(async () => {
+      setSaved("saving");
+      try {
+        const value = await glassCall({ note: path, ...request });
+        if (Array.isArray(value.trash)) setTrash(storable(value.trash));
+        setSaved("saved");
+        return value;
+      } catch (error) {
+        setSaved("error");
+        setNotice(message(error));
+        return undefined;
+      }
+    });
+    queue.current = run;
+    return run;
+  }, []);
+
+  const load = useCallback(async () => {
+    const path = latest.current.note;
+    if (!path) { loaded.current = true; return; }
+    try {
+      const value = await glassCall({ note: path, action: "list" });
+      setMagnets(storable(value.magnets));
+      const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky");
+      setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
+      setTrash(storable(value.trash));
+      setSaved("saved");
+    } catch (error) { setSaved("error"); setNotice(message(error)); }
+    loaded.current = true;
+  }, []);
 
   useEffect(() => {
-    const scheduleLocal = () => schedule();
+    void load();
+    const subscribe = window.desktop?.onGlassChanged;
+    if (!subscribe) return;
+    return subscribe((event: { note?: string } | undefined) => {
+      if (event?.note === latest.current.note) void load();
+    });
+  }, [load]);
+
+  useEffect(() => {
+    const surface = layer.current;
+    if (!surface) return;
+    let frame = 0;
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); }); };
     measure();
-    const sizes = new ResizeObserver(scheduleLocal);
+    const sizes = new ResizeObserver(schedule);
     sizes.observe(scroller);
     sizes.observe(root);
     // Our own boxes are React output; their mutations must not schedule another pass.
-    const edits = new MutationObserver(records => { if (records.every(record => layer.current?.contains(record.target))) return; schedule(); });
+    const edits = new MutationObserver(records => { if (records.every(record => surface.contains(record.target))) return; schedule(); });
     edits.observe(scroller, { childList: true, subtree: true, characterData: true });
-    scroller.addEventListener("scroll", scheduleLocal, { passive: true });
-    window.addEventListener("resize", scheduleLocal);
+    window.addEventListener("resize", schedule);
     return () => {
-      if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
+      if (frame) cancelAnimationFrame(frame);
       sizes.disconnect();
       edits.disconnect();
-      scroller.removeEventListener("scroll", scheduleLocal);
-      window.removeEventListener("resize", scheduleLocal);
+      window.removeEventListener("resize", schedule);
     };
-  }, [root, scroller, measure, fixture, schedule]);
+  }, [scroller, root, measure]);
 
-  const tray = items.filter(item => item.state === "tray");
-  const grouped = new Map<number, Item[]>();
-  for (const item of items) if (item.state !== "tray") {
-    const badges = grouped.get(item.line);
-    if (badges) badges.push(item);
-    else grouped.set(item.line, [item]);
-  }
-  const overlays = new Map(groups.map(group => [group.line, group]));
-  for (const [line, badges] of grouped) {
-    const group = overlays.get(line);
-    overlays.set(line, { line, tabs: group?.tabs, marks: group?.marks ?? [], tucks: <>
-      <div className="glass-magnet-row">{badges.map(item =>
-        <span className="glass-magnet" key={item.id} data-glass-object={item.id} data-glass-status="resolved"
-          data-glass-confidence={item.state} data-glass-tier={item.tier} title={`${item.label} (${item.confidence.toFixed(2)})`}>
-          <span>{item.label}</span>{item.state === "check" && <small>check me</small>}
-        </span>)}</div>
-      {group?.tucks}
-    </> });
-  }
+  useEffect(() => { measure(); }, [magnets, measure]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 3_000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  const update = useCallback((id: string, patch: Partial<StickyNote>) => {
+    setMagnets(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+  }, []);
+
+  useEffect(() => {
+    const surface = layer.current;
+    if (!surface) return;
+    // interact hands listeners the interactable element, not the note under the pointer, so remember it.
+    let downSource: Element | null = null;
+    const track = (event: Event) => { downSource = event.target as Element; };
+    surface.addEventListener("pointerdown", track, true);
+    const noteElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note") ?? target) as HTMLElement;
+    const instance = interact(surface);
+    instance.draggable({
+      allowFrom: ".glass-note, .glass-note-head",
+      ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot",
+      listeners: {
+        start(event) {
+          const element = noteElement(event.target);
+          const stickie = latest.current.magnets.find(item => item.id === element.dataset.magnet);
+          if (!stickie) return;
+          dragging.current = true;
+          element.classList.add("is-lifting");
+          element.dataset.drag = JSON.stringify({ id: stickie.id, left: parseFloat(element.style.left) || 0, top: parseFloat(element.style.top) || 0,
+            x: stickie.x, y: stickie.y, pageX: event.pageX, pageY: event.pageY });
+        },
+        move(event) {
+          const element = noteElement(event.target), drag = element.dataset.drag;
+          if (!drag) return;
+          const start = JSON.parse(drag);
+          element.style.left = `${start.left + event.pageX - start.pageX}px`;
+          element.style.top = `${start.top + event.pageY - start.pageY}px`;
+        },
+        end(event) {
+          const element = noteElement(event.target), drag = element.dataset.drag;
+          dragging.current = false;
+          element.classList.remove("is-lifting");
+          if (!drag) return;
+          const start = JSON.parse(drag);
+          delete element.dataset.drag;
+          const stickie = latest.current.magnets.find(item => item.id === start.id);
+          if (!stickie) return;
+          const x = snapped(start.x + event.pageX - start.pageX), y = snapped(start.y + event.pageY - start.pageY);
+          update(stickie.id, { x, y });
+          void send({ action: "set", magnet: stickie.id, fields: { x, y } });
+        },
+      },
+    }).resizable({
+      edges: { right: ".glass-note-grip-right", bottom: ".glass-note-grip-bottom" },
+      listeners: {
+        start(event) {
+          const element = noteElement(event.target);
+          const stickie = latest.current.magnets.find(item => item.id === element.dataset.magnet);
+          if (!stickie) return;
+          dragging.current = true;
+          const rect = element.getBoundingClientRect();
+          element.dataset.resize = JSON.stringify({ id: stickie.id, width: rect.width, height: rect.height, pageX: event.pageX, pageY: event.pageY });
+        },
+        move(event) {
+          const element = noteElement(event.target), drag = element.dataset.resize;
+          if (!drag) return;
+          const start = JSON.parse(drag);
+          const width = Math.max(stickyDefaults.minW, start.width + event.pageX - start.pageX), height = Math.max(stickyDefaults.minH, start.height + event.pageY - start.pageY);
+          element.style.width = `${width}px`;
+          element.style.height = `${height}px`;
+          element.dataset.size = JSON.stringify({ width, height });
+        },
+        end(event) {
+          const element = noteElement(event.target), drag = element.dataset.resize;
+          dragging.current = false;
+          if (!drag) return;
+          const start = JSON.parse(drag), size = JSON.parse(element.dataset.size ?? "null");
+          delete element.dataset.resize;
+          delete element.dataset.size;
+          const stickie = latest.current.magnets.find(item => item.id === start.id);
+          if (!stickie || !size) return;
+          const width = snapped(size.width), height = snapped(size.height);
+          update(stickie.id, { w: width, h: height });
+          void send({ action: "set", magnet: stickie.id, fields: { w: width, h: height } });
+        },
+      },
+    });
+    return () => { surface.removeEventListener("pointerdown", track, true); instance.unset(); };
+  }, [send, update]);
+
+  const create = useCallback((point: { x: number; y: number }) => {
+    const surface = layer.current;
+    if (!surface || !latest.current.note) return;
+    const block = nearestBlock(blocks.current, point);
+    if (!block) return;
+    const offset = offsetIn(block, point);
+    const stickie: StickyNote = {
+      id: newStickyId(), text: "", color: stickyColors[0], anchor: anchorOf(block),
+      x: offset.x, y: offset.y, w: stickyDefaults.w, h: stickyDefaults.h, folded: false,
+    };
+    setMagnets(current => [...current, stickie]);
+    setSelected(stickie.id);
+    setEditing(stickie.id);
+    void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
+  }, [send]);
+
+  const createAtCenter = useCallback(() => {
+    const surface = layer.current;
+    if (!surface) return;
+    const rect = surface.getBoundingClientRect();
+    create({ x: rect.left + rect.width / 2 - stickyDefaults.w / 2, y: rect.top + Math.min(rect.height / 2, 320) });
+  }, [create]);
+
+  const remove = useCallback((stickie: StickyNote) => {
+    setMagnets(current => current.filter(item => item.id !== stickie.id));
+    setTrash(current => [stickie, ...current]);
+    if (selected === stickie.id) setSelected(undefined);
+    void send({ action: "delete", magnet: stickie.id });
+  }, [selected, send]);
+
+  const restore = useCallback(async (stickie: StickyNote) => {
+    const value = await send({ action: "restore", magnet: stickie.id });
+    if (!value) return;
+    const magnet = value.magnet && stickyFromMagnet(value.magnet);
+    if (magnet) setMagnets(current => [...current, magnet]);
+    setOpenTrash(false);
+  }, [send]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, [contenteditable='true'], .cm-content")) return;
+      if (event.key === "n" || event.key === "N") { event.preventDefault(); createAtCenter(); }
+      else if (event.key === "Escape") { setSelected(undefined); setEditing(undefined); setOpenTrash(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createAtCenter]);
+
+  const orphans = magnets.filter(stickie => layout.places[stickie.id]?.status === "orphan");
+  const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
+  const statusLabel = !note ? "Save this note first" : saved === "saving" ? "Saving" : saved === "error" ? "Not saved" : saved === "saved" ? "Saved" : "Glass";
+  const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
+    <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
+    <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
+    <span className="glass-tray-rule" aria-hidden="true" />
+    {comingSoon.map(({ id, label, icon: Icon }) => <button type="button" key={id} data-glass-coming={id} aria-disabled="true"
+      aria-label={label} title={`${label} — coming soon`} onClick={() => setNotice(`${label} is coming soon.`)}><Icon size={15} /></button>)}
+    <span className="glass-tray-rule" aria-hidden="true" />
+    <button type="button" data-glass-trash aria-expanded={openTrash} aria-haspopup="dialog" aria-label={`Glass trash, ${trash.length}`}
+      title="Glass trash" onClick={() => setOpenTrash(open => !open)}><Trash2 size={15} /><span className="glass-tray-count" data-glass-trash-count>{trash.length}</span></button>
+    <span className="glass-tray-status" data-glass-saved={saved} role="status">{statusLabel}</span>
+  </div>;
+  const panel = <>{tray}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+    <strong>Glass trash</strong>
+    {trash.length ? <ul>{trash.map(stickie => <li key={stickie.id}>
+      <span>{stickie.text.trim() ? stickie.text.trim().slice(0, 48) : "Empty note"}</span>
+      <button type="button" data-glass-restore={stickie.id} onClick={() => void restore(stickie)}>Undo</button>
+    </li>)}</ul> : <p>Nothing deleted.</p>}
+  </div>}{orphans.length > 0 && <div className="glass-orphans" role="group" aria-label="Notes whose paragraph is gone">
+    <strong>Anchor lost</strong>
+    {orphans.map(stickie => <span key={stickie.id} data-glass-orphan={stickie.id}>
+      <span>{stickie.text.trim().slice(0, 32) || "Empty note"}</span>
+      <button type="button" aria-label="Move orphan to trash" onClick={() => remove(stickie)}>×</button>
+    </span>)}
+  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}</>;
+
   return <>
-    {overlays.size > 0 && <LearningOverlays root={root} nodes={nodes} groups={[...overlays.values()]} />}
+    <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
+      saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
-    {boxes.map(box => box.placement.status === "resolved"
-      ? <div className="glass-debug" key={box.id} data-glass-object={box.id} data-glass-status="resolved"
-          style={{ left: `${box.placement.x}px`, top: `${box.placement.y}px`, width: `${box.placement.width}px`, height: `${box.placement.height}px` }} />
-      : <div className="glass-debug" key={box.id} data-glass-object={box.id} data-glass-status="orphan" />)}
-    {tray.length > 0 && <aside className="glass-tray" data-glass-tray aria-label="Check placement">
-      <header><h2>Check placement</h2><span>{tray.length}</span></header>
-      <ul>{tray.map(item => <li key={item.id} data-glass-tray-item={item.id}>
-        <p title={item.context}>{item.context || item.label}</p>
-        <button type="button" onClick={() => setPlacing(placing === item.id ? undefined : item.id)}>
-          {placing === item.id ? "Click a paragraph" : "Place"}
-        </button>
-      </li>)}</ul>
-      {placing && <p role="status">Click the paragraph this magnet belongs to.</p>}
-      {writeError && <p role="alert">{writeError}</p>}
-    </aside>}
+      {tool === "sticky" && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        create({ x: event.clientX, y: event.clientY });
+      }} />}
+      {layout.fixture && (layout.fixture.status === "resolved"
+        ? <div className="glass-debug" data-glass-object="fixture" data-glass-status="resolved"
+            style={{ left: `${layout.fixture.x}px`, top: `${layout.fixture.y}px`, width: `${layout.fixture.width}px`, height: `${layout.fixture.height}px` }} />
+        : <div className="glass-debug" data-glass-object="fixture" data-glass-status="orphan" />)}
+      {visible.map(stickie => <StickyView key={stickie.id} note={stickie} place={layout.places[stickie.id]} selected={selected === stickie.id}
+        editing={editing === stickie.id} onSelect={() => { setSelected(stickie.id); setEditing(undefined); }}
+        onEdit={editingNow => setEditing(editingNow ? stickie.id : undefined)}
+        onText={text => { update(stickie.id, { text }); void send({ action: "set", magnet: stickie.id, fields: { text } }); }}
+        onFold={folded => { update(stickie.id, { folded }); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
+        onColor={color => { update(stickie.id, { color }); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
+        onDelete={() => remove(stickie)} />)}
     </div>, scroller)}
+    {createPortal(panel, document.body)}
   </>;
 }

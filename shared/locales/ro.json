@@ -1127,9 +1127,12 @@
   "Comment": "Comentează",
   "Element actions": "Acțiuni pentru element",
   "Selected {{kind}}: {{text}}": "Selectat {{kind}}: {{text}}",
-  "{{count}} notes here already have glass on this computer.": "{{count}} note de aici au deja sticlă pe acest computer.",
-  "1 note here already has glass on this computer.": "1 notă de aici are deja sticlă pe acest computer.",
+  "{{count}} notes here already have glass on this computer._one": "{{count}} notă de aici are deja sticlă pe acest computer.",
+  "{{count}} notes here already have glass on this computer._few": "{{count}} note de aici au deja sticlă pe acest computer.",
+  "{{count}} notes here already have glass on this computer._other": "{{count}} de note de aici au deja sticlă pe acest computer.",
   "Bring glass": "Adu sticla",
-  "Glass brought for {{count}} notes.": "Sticlă adusă pentru {{count}} note.",
+  "Glass brought for {{count}} notes._one": "Sticlă adusă pentru {{count}} notă.",
+  "Glass brought for {{count}} notes._few": "Sticlă adusă pentru {{count}} note.",
+  "Glass brought for {{count}} notes._other": "Sticlă adusă pentru {{count}} de note.",
   "Dismiss": "Închide"
 }

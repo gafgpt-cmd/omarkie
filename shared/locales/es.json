@@ -1127,9 +1127,12 @@
   "Comment": "Comentar",
   "Element actions": "Acciones del elemento",
   "Selected {{kind}}: {{text}}": "Seleccionado {{kind}}: {{text}}",
-  "{{count}} notes here already have glass on this computer.": "{{count}} notas de aquí ya tienen cristal en este equipo.",
-  "1 note here already has glass on this computer.": "1 nota de aquí ya tiene cristal en este equipo.",
+  "{{count}} notes here already have glass on this computer._one": "{{count}} nota de aquí ya tiene cristal en este equipo.",
+  "{{count}} notes here already have glass on this computer._other": "{{count}} notas de aquí ya tienen cristal en este equipo.",
+  "{{count}} notes here already have glass on this computer._many": "{{count}} de notas de aquí ya tienen cristal en este equipo.",
   "Bring glass": "Traer cristal",
-  "Glass brought for {{count}} notes.": "Cristal traído para {{count}} notas.",
+  "Glass brought for {{count}} notes._one": "Cristal traído para {{count}} nota.",
+  "Glass brought for {{count}} notes._other": "Cristal traído para {{count}} notas.",
+  "Glass brought for {{count}} notes._many": "Cristal traído para {{count}} de notas.",
   "Dismiss": "Descartar"
 }

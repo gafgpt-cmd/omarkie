@@ -5,7 +5,8 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
-  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseJournalText, replayJournalText, replayNotesText, validAnchor, visibleMagnets,
+  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
+  replayJournalText, replayNotesText, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
@@ -459,6 +460,71 @@ export class GlassService {
     return line;
   }
 
+  async set(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const stale = await this.readJournal(file), magnet = stale.magnets.get(request.magnet);
+    if (!magnet) throw new Error("Glass magnet not found.");
+    if (magnet.deleted?.active) throw new Error("Glass magnet is in the trash; restore it first.");
+    const fields = request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? { ...request.fields } : {};
+    if (request.text !== undefined) fields.text = request.text;
+    if (request.color !== undefined) fields.color = request.color;
+    if (request.folded !== undefined) fields.folded = request.folded;
+    if (request.x !== undefined) fields.x = request.x;
+    if (request.y !== undefined) fields.y = request.y;
+    if (request.w !== undefined) fields.w = request.w;
+    if (request.h !== undefined) fields.h = request.h;
+    if (!Object.keys(fields).length) throw new Error("Nothing to change.");
+    const kind = magnet.fields.get("kind")?.value ?? null;
+    const values = validateMagnetFields(kind, fields, true);
+    for (const [field, value] of Object.entries(values)) {
+      await this.appendRecord(file, { op: "set", magnetId: magnet.id, field, value, hlc: this.clock.next(), device: this.deviceName });
+    }
+    const replay = await this.readJournal(file);
+    const updated = replay.magnets.get(magnet.id);
+    return { ...this.describe(note, file), magnet: updated ? magnetViewFromMap(updated) : null, pending: this.pending.length, saved: this.pending.length === 0 };
+  }
+
+  async delete(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet) throw new Error("Glass magnet not found.");
+    const trashed = magnet.deleted?.active !== true;
+    if (trashed) await this.appendRecord(file, { op: "delete", magnetId: magnet.id, hlc: this.clock.next(), device: this.deviceName });
+    const next = await this.readJournal(file);
+    const updated = next.magnets.get(magnet.id);
+    return { ...this.describe(note, file), deleted: true, changed: trashed,
+      magnet: updated ? magnetViewFromMap(updated) : null, trash: this.trashOf(next), pending: this.pending.length, saved: this.pending.length === 0 };
+  }
+
+  async restore(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet) throw new Error("Glass magnet not found.");
+    const trashed = magnet.deleted?.active === true;
+    if (trashed) await this.appendRecord(file, { op: "restore", magnetId: magnet.id, hlc: this.clock.next(), device: this.deviceName });
+    const next = await this.readJournal(file);
+    const updated = next.magnets.get(magnet.id);
+    return { ...this.describe(note, file), restored: true, changed: trashed,
+      magnet: updated ? magnetViewFromMap(updated) : null, trash: this.trashOf(next), pending: this.pending.length, saved: this.pending.length === 0 };
+  }
+
+  trashOf(replay) {
+    return [...replay.magnets.values()]
+      .filter(magnet => magnet.deleted?.active)
+      .map(magnet => ({ ...magnetViewFromMap(magnet), clock: parseClock(magnet.deleted.hlc) ?? { t: 0, c: 0 } }))
+      .sort((left, right) => right.clock.t - left.clock.t || right.clock.c - left.clock.c)
+      .map(({ clock: _, ...magnet }) => magnet);
+  }
+
   enqueueWrite(file, line) {
     const run = this.tail.then(() => this.writeLine(file, line));
     this.tail = run.catch(() => {});
@@ -594,17 +660,16 @@ export class GlassService {
     const magnetId = request.magnet ?? newMagnetId();
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
-    if (request.text !== undefined) fields.text = request.text;
-    if (request.kind !== undefined) fields.kind = request.kind;
-    if (request.anchor !== undefined) {
-      if (!validAnchor(request.anchor)) throw new Error("Invalid Glass anchor.");
-      fields.anchor = { ...request.anchor, version: request.anchor.version ?? anchorVersion };
+    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded"])
+      if (request[key] !== undefined) fields[key] = request[key];
+    if (fields.anchor !== undefined && fields.kind !== "sticky") {
+      if (!validAnchor(fields.anchor)) throw new Error("Invalid Glass anchor.");
+      fields.anchor = { ...fields.anchor, version: fields.anchor.version ?? anchorVersion };
     }
-    if (request.x !== undefined) fields.x = request.x;
-    if (request.y !== undefined) fields.y = request.y;
     if (!Object.keys(fields).length) Object.assign(fields, { kind: "debug", text: "Glass debug magnet", x: 0, y: 0 });
-    if (Object.keys(fields).length > 100) throw new Error("A magnet holds at most 100 fields.");
-    for (const [field, value] of Object.entries(fields)) {
+    const values = validateMagnetFields(fields.kind, fields, false);
+    if (Object.keys(values).length > 100) throw new Error("A magnet holds at most 100 fields.");
+    for (const [field, value] of Object.entries(values)) {
       if (!field || field.length > 200 || /[\u0000-\u001f]/.test(field)) throw new Error("Invalid magnet field.");
       if (value === undefined) throw new Error("Magnet values must be JSON values.");
       const record = { op: "set", magnetId, field, value, hlc: this.clock.next(), device: this.deviceName };
@@ -620,31 +685,31 @@ export class GlassService {
     this.assertReady();
     const { note: name } = await this.validateNote(request.note);
     if (!this.initialized && await this.existingStore()) await this.initialize();
-    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], initialized: false, pending: 0, status: this.status() };
+    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], trash: [], initialized: false, pending: 0, status: this.status() };
     const note = this.notesByPath.get(name);
-    if (!note) return { note: name, id: null, journal: null, magnets: [], pending: this.pending.length, status: this.status() };
+    if (!note) return { note: name, id: null, journal: null, magnets: [], trash: [], pending: this.pending.length, status: this.status() };
     const file = this.journalFor(note);
     const replay = await this.readJournal(file);
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), unknownOps: replay.unknown.length,
-      invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay),
+      unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
   async show(request) {
     this.assertReady();
     const { note: name } = await this.validateNote(request.note);
     if (!this.initialized && await this.existingStore()) await this.initialize();
-    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], initialized: false, pending: 0 };
+    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], trash: [], initialized: false, pending: 0 };
     const note = this.notesByPath.get(name);
-    if (!note) return { note: name, id: null, journal: null, magnets: [], pending: this.pending.length };
+    if (!note) return { note: name, id: null, journal: null, magnets: [], trash: [], pending: this.pending.length };
     const file = this.journalFor(note);
     const replay = await this.readJournal(file);
     if (request.magnet) {
       const magnet = replay.magnets.get(request.magnet);
       return { ...this.describe(note, file), magnet: magnet ? magnetViewFromMap(magnet) : null,
-        deleted: !!magnet?.deleted, pending: this.pending.length };
+        deleted: !!magnet?.deleted?.active, pending: this.pending.length };
     }
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), unknownOps: replay.unknown.length,
-      invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay),
+      unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
   describe(note, file) {
@@ -669,8 +734,9 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "list", "show"].includes(input.action)) throw new Error("Unknown Glass action.");
-    if (input.action !== "add" && (typeof input.note !== "string" || !input.note.trim())) throw new Error("--note is required.");
+    if (!["add", "set", "delete", "restore", "list", "show"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
+    if (["set", "delete", "restore"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
     return this[input.action](input);
   }
 
@@ -744,7 +810,71 @@ async function copyPlainTree(source, target) {
 function magnetViewFromMap(magnet) {
   const fields = {};
   for (const [field, entry] of magnet.fields) if (!entry.removed) fields[field] = entry.value;
-  return { id: magnet.id, fields, kind: fields.kind ?? null, deleted: !!magnet.deleted };
+  return { id: magnet.id, fields, kind: fields.kind ?? null, deleted: !!magnet.deleted?.active };
+}
+
+const stickyFieldNames = new Set(["kind", "text", "color", "anchor", "x", "y", "w", "h", "folded"]);
+const finite = (value, min, max) => typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+
+export function stickyFields(fields) {
+  const values = {};
+  for (const [field, value] of Object.entries(fields)) {
+    if (!stickyFieldNames.has(field)) throw new Error(`Unknown sticky note field: ${field}.`);
+    if (field === "kind") {
+      if (value !== "sticky") throw new Error("A sticky note keeps its kind.");
+      values.kind = value;
+    } else if (field === "text") {
+      if (typeof value !== "string" || value.length > 20_000 || value.includes("\u0000")) throw new Error("Sticky text must be text up to 20,000 characters.");
+      values.text = value;
+    } else if (field === "color") {
+      if (!stickyColors.includes(value)) throw new Error(`Sticky colour must be one of: ${stickyColors.join(", ")}.`);
+      values.color = value;
+    } else if (field === "anchor") {
+      if (!stickyAnchor(value)) throw new Error("A sticky note needs one block anchor with its heading path.");
+      values.anchor = value;
+    } else if (field === "folded") {
+      if (typeof value !== "boolean") throw new Error("Sticky folded must be true or false.");
+      values.folded = value;
+    } else {
+      const limits = field === "w" || field === "h" ? [72, 4000] : [-200_000, 200_000];
+      if (!finite(value, limits[0], limits[1])) throw new Error(`Sticky ${field} must be a number between ${limits[0]} and ${limits[1]}.`);
+      values[field] = Math.round(value);
+    }
+  }
+  return values;
+}
+
+function stickyAnchor(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const landmarks = value.landmarks;
+  if (!Array.isArray(landmarks) || !landmarks.length || landmarks.length > 8) return false;
+  return landmarks.every(landmark => {
+    if (!landmark || typeof landmark !== "object" || landmark.kind !== "block") return false;
+    if (typeof landmark.block !== "string" || !landmark.block.trim() || landmark.block.length > 262_144) return false;
+    if (!Array.isArray(landmark.headings) || landmark.headings.length > 6) return false;
+    if (!landmark.headings.every(heading => typeof heading === "string" && heading.length <= 400)) return false;
+    return landmark.line === undefined || Number.isInteger(landmark.line);
+  });
+}
+
+// Other magnet kinds stay open for later slices; a sticky note is validated field by field.
+function validateMagnetFields(kind, fields, partial) {
+  if (kind !== "sticky") {
+    if (partial && Object.hasOwn(fields, "kind")) throw new Error("A magnet keeps its kind.");
+    return fields;
+  }
+  const values = stickyFields(partial ? fields : { ...fields, kind: "sticky" });
+  if (!partial) {
+    if (typeof values.text !== "string") throw new Error("A sticky note needs text.");
+    if (!values.anchor) throw new Error("A sticky note needs an anchor.");
+    values.color ??= stickyColors[0];
+    values.folded ??= false;
+    values.x ??= 0;
+    values.y ??= 0;
+    values.w ??= 232;
+    values.h ??= 168;
+  }
+  return values;
 }
 
 function goodVaultId(value) {
