@@ -103,13 +103,15 @@ function ArrowTools({ arrow, route, view, onUpdate, onDelete, onSelect }: {
   </div>;
 }
 
-type Drag = { from?: ArrowEnd; box?: EndMark; end?: "from" | "to"; id?: string; other?: Point };
+type Drag =
+  | { from: ArrowEnd; box: EndMark }
+  | { end: "from" | "to"; route: ArrowRoute; arrow: ArrowMark; line: SVGPathElement | null; head: SVGPathElement | null };
 
 export default function ArrowOverlay(props: Props) {
   const { routes, arrows, selected, view, names, tool, style, color, scroller, hitTest, onCreate, onSelect, onDelete, onUpdate, onMissing } = props;
   const root = useRef<HTMLDivElement>(null);
   const preview = useRef<SVGPathElement>(null), previewHead = useRef<SVGPathElement>(null), snap = useRef<HTMLDivElement>(null);
-  const drag = useRef<Drag | undefined>(undefined), last = useRef<Point | undefined>(undefined), direction = useRef(0), frame = useRef<number | undefined>(undefined);
+  const drag = useRef<Drag | undefined>(undefined), last = useRef<Point | undefined>(undefined), frame = useRef<number | undefined>(undefined);
   const live = useRef({ hitTest, onCreate, onUpdate, onSelect, onDelete, onMissing, scroller, arrows, style, color });
   live.current = { hitTest, onCreate, onUpdate, onSelect, onDelete, onMissing, scroller, arrows, style, color };
   const arrow = arrows.find(item => item.id === selected), route = routes.find(item => item.id === selected);
@@ -127,9 +129,9 @@ export default function ArrowOverlay(props: Props) {
   }, []);
 
   const drawPreview = useCallback((at: Point) => {
-    const start = drag.current?.box;
-    if (!start) return;
-    const current = live.current;
+    const state = drag.current;
+    if (!state || !("box" in state)) return;
+    const start = state.box, current = live.current;
     const path = arrowPath(edgePoint(start, at), at, current.style);
     preview.current?.setAttribute("d", path.d);
     previewHead.current?.setAttribute("d", headPath(path.end, path.angle, "solid"));
@@ -142,75 +144,69 @@ export default function ArrowOverlay(props: Props) {
     return rect ? { x: clientX - rect.left, y: clientY - rect.top } : { x: clientX, y: clientY };
   }, []);
 
-  const redrawEnd = useCallback((state: Drag, client: Point) => {
-    if (!state.id || !state.other || !state.end) return;
-    const at = local(client.x, client.y);
-    const start = state.end === "from" ? at : state.other, finish = state.end === "from" ? state.other : at;
-    const path = arrowPath(start, finish, live.current.style);
-    root.current?.querySelector(`[data-arrow-path="${state.id}"]`)?.setAttribute("d", path.d);
-    root.current?.querySelector(`[data-arrow-head="${state.id}"]`)?.setAttribute("d", headPath(path.end, path.angle, "solid"));
-    showSnap(live.current.hitTest(client.x, client.y));
-  }, [local, showSnap]);
+  const redrawEnd = useCallback((state: Extract<Drag, { end: string }>, at: Point) => {
+    const other = state.end === "from" ? state.route.to : state.route.from;
+    const start = state.end === "from" ? at : other, finish = state.end === "from" ? other : at;
+    const path = arrowPath(start, finish, state.arrow.style);
+    state.line?.setAttribute("d", path.d);
+    state.head?.setAttribute("d", headPath(path.end, path.angle, state.arrow.head));
+  }, []);
 
   useEffect(() => {
-    let previous = performance.now();
-    const step = (time = performance.now()) => {
-      if (!direction.current) { frame.current = undefined; return; }
-      // Time-based, so a throttled or slow frame still scrolls at hand speed instead of crawling.
-      const delta = Math.min(64, Math.max(0, time - previous));
-      previous = time;
-      live.current.scroller.scrollBy(0, direction.current * delta * 1.1);
+    let scrollTime: number | undefined;
+    const step = (time: number) => {
+      frame.current = undefined;
       const point = last.current, state = drag.current;
-      if (point) {
-        if (state?.id) redrawEnd(state, point);
-        else drawPreview(local(point.x, point.y));
-      }
-      frame.current = requestAnimationFrame(step);
+      last.current = undefined;
+      if (!point || !state) return;
+      const current = live.current;
+      const rect = current.scroller.getBoundingClientRect(), zone = 52;
+      const direction = point.y < rect.top + zone ? -1 : point.y > rect.bottom - zone ? 1 : 0;
+      if (direction) {
+        const delta = Math.min(64, Math.max(0, time - (scrollTime ?? time - 16.7)));
+        current.scroller.scrollBy(0, direction * delta * 1.1);
+        scrollTime = time;
+        last.current = point;
+        frame.current = requestAnimationFrame(step);
+      } else scrollTime = undefined;
+      const at = local(point.x, point.y);
+      const hit = current.hitTest(point.x, point.y);
+      if ("end" in state) redrawEnd(state, at);
+      else drawPreview(at);
+      showSnap(hit);
     };
     const move = (event: PointerEvent) => {
+      if (!drag.current) return;
+      last.current = { x: event.clientX, y: event.clientY };
+      if (frame.current === undefined) frame.current = requestAnimationFrame(step);
+    };
+    const cancel = () => {
       const state = drag.current;
-      if (!state) return;
-      const point = { x: event.clientX, y: event.clientY };
-      last.current = point;
-      const rect = live.current.scroller.getBoundingClientRect(), zone = 52;
-      const near = event.clientY < rect.top + zone ? -1 : event.clientY > rect.bottom - zone ? 1 : 0;
-      if (near !== direction.current) {
-        direction.current = near;
-        if (near && !frame.current) frame.current = requestAnimationFrame(step);
+      drag.current = undefined;
+      last.current = undefined;
+      scrollTime = undefined;
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+      showSnap(undefined);
+      preview.current?.setAttribute("d", "");
+      previewHead.current?.setAttribute("d", "");
+      if (state && "end" in state) {
+        state.line?.setAttribute("d", state.route.d);
+        state.head?.setAttribute("d", state.route.head ?? "");
       }
-      if (state.id) redrawEnd(state, point);
-      else { drawPreview(local(point.x, point.y)); showSnap(live.current.hitTest(point.x, point.y)); }
     };
     const finish = (event: PointerEvent) => {
       const state = drag.current;
-      drag.current = undefined;
-      last.current = undefined;
-      direction.current = 0;
-      if (frame.current) cancelAnimationFrame(frame.current);
-      frame.current = undefined;
-      showSnap(undefined);
-      preview.current?.setAttribute("d", "");
-      previewHead.current?.setAttribute("d", "");
       if (!state) return;
-      const hit = live.current.hitTest(event.clientX, event.clientY);
+      const current = live.current;
+      const hit = current.hitTest(event.clientX, event.clientY);
+      cancel();
       if (!hit) return;
-      if (state.id) {
-        const current = live.current.arrows.find(item => item.id === state.id);
-        const other = state.end === "from" ? current?.to : current?.from;
-        if (!sameEnd(hit.end, other)) live.current.onUpdate(state.id, state.end === "from" ? { from: hit.end } : { to: hit.end });
-        return;
-      }
-      if (state.from) live.current.onCreate(state.from, hit.end);
-    };
-    const cancel = () => {
-      drag.current = undefined;
-      last.current = undefined;
-      direction.current = 0;
-      if (frame.current) cancelAnimationFrame(frame.current);
-      frame.current = undefined;
-      showSnap(undefined);
-      preview.current?.setAttribute("d", "");
-      previewHead.current?.setAttribute("d", "");
+      if ("end" in state) {
+        const mark = current.arrows.find(item => item.id === state.arrow.id);
+        const other = state.end === "from" ? mark?.to : mark?.from;
+        if (mark && !sameEnd(hit.end, other)) current.onUpdate(mark.id, state.end === "from" ? { from: hit.end } : { to: hit.end });
+      } else current.onCreate(state.from, hit.end);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish);
@@ -226,7 +222,7 @@ export default function ArrowOverlay(props: Props) {
   const begin = (state: Drag) => {
     drag.current = state;
     last.current = undefined;
-    if (state.from && state.box) showSnap({ end: state.from, box: state.box, name: "" });
+    if ("box" in state) showSnap({ end: state.from, box: state.box, name: "" });
   };
 
   const startCreate = (event: React.PointerEvent) => {
@@ -241,9 +237,10 @@ export default function ArrowOverlay(props: Props) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
-    const current = routes.find(item => item.id === selected);
-    if (!current) return;
-    begin({ id: selected, end, other: end === "from" ? current.to : current.from });
+    if (!route || !arrow || !root.current) return;
+    begin({ route, arrow, end,
+      line: root.current.querySelector(`[data-arrow-path="${route.id}"]`),
+      head: root.current.querySelector(`[data-arrow-head="${route.id}"]`) });
   };
 
   return <div className="glass-arrow-overlay" ref={root} data-glass-arrows style={{ height: `${view.page}px` }}>

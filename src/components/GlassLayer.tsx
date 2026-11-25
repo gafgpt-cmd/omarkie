@@ -157,6 +157,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [comments, setComments] = useState<GlassMagnet[]>([]);
   const [magnets, setMagnets] = useState<StickyNote[]>([]);
   const [images, setImages] = useState<GlassImage[]>([]);
+  const [ink, setInk] = useState<GlassMagnet[]>([]);
   const [inkTool, setInkTool] = useState<InkTool | "eraser">("pen");
   const [inkSize, setInkSize] = useState(inkDefaults("pen").size);
   const [inkColor, setInkColor] = useState(inkDefaults("pen").color);
@@ -228,14 +229,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const lines = new Map<string, number | null>();
     const matchLine = (anchor: Parameters<typeof matchIndexed>[1]) => {
       const key = JSON.stringify(anchor.landmarks);
-      if (!lines.has(key)) lines.set(key, matchIndexed(index.current, anchor));
-      return lines.get(key) ?? null;
+      let line = lines.get(key);
+      if (line === undefined) { line = matchIndexed(index.current, anchor); lines.set(key, line); }
+      return line;
     };
+    const paragraphRects = new Map<HTMLElement, DOMRect>();
     for (const mark of [...latest.current.magnets, ...latest.current.stickers]) {
-      const line = needsArrows ? matchLine(mark.anchor) : matchIndexed(index.current, mark.anchor);
+      const line = matchLine(mark.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[mark.id] = { status: "orphan" }; continue; }
-      const rect = element.getBoundingClientRect();
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
       places[mark.id] = { status: "resolved", x: rect.left - frame.left + mark.x, y: rect.top - frame.top + mark.y, width: mark.w, height: mark.h };
     }
     const flowing = new Set<string>();
@@ -338,7 +342,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         const value = await glassCall({ note: path, action: "list" });
         loaded.current = true;
         const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [];
-        const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [];
+        const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
             const sticky = stickyFromMagnet(magnet);
@@ -353,7 +357,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
             const arrow = arrowFromMagnet(magnet);
             if (arrow) nextArrows.push(arrow);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
-          else if (magnet.kind !== "ink") incoming.push(magnet);
+          else if (magnet.kind === "ink") nextInk.push(magnet);
+          else incoming.push(magnet);
         }
         setMagnets(stickies);
         setImages(nextImages);
@@ -361,6 +366,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setArrows(nextArrows);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
+        setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
         setTrash(value.trash ?? []);
         setSaved("saved");
       } catch (error) { setSaved("error"); setNotice(message(error)); }
@@ -932,8 +938,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pin} magnets={comments} reload={load} />}
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
-      <GlassInk editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
-        eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />
+      {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
+        editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
+        magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
       {(tool === "sticky" || tool === "sticker") && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();

@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { createPortal } from "react-dom";
 import type { EditorHandle } from "../editor/MarkdownEditor";
 import { liveBlocks } from "../glass/anchor-map";
+import type { GlassMagnet } from "../glass/glass-model";
 import {
   inkFields, inkStrokeFromMagnet, liveBoxes, newInkId, placeInk, splitStroke,
   type InkPart, type InkPlacement, type InkSample, type InkStroke,
@@ -24,14 +25,6 @@ interface Pending { pointerId: number; points: InkSample[]; eraser: boolean }
 
 const eraserRadius = 14;
 const historyLimit = 50;
-
-async function glassCall(request: Record<string, unknown>) {
-  const api = window.desktop?.glass;
-  if (!api) throw new Error("Glass storage is not available here.");
-  const reply = await api(request);
-  if (!reply?.ok) throw new Error(reply?.error ?? "Glass storage refused the change.");
-  return reply.value ?? {};
-}
 
 const sampleOf = (event: PointerEvent | React.PointerEvent): InkSample => ({
   x: event.clientX, y: event.clientY, pressure: pressureOf(event.pointerType || "mouse", event.pressure),
@@ -127,7 +120,7 @@ const InkPaths = memo(function InkPaths({ placed, pathOf }: { placed: InkPlaceme
   return children;
 });
 
-export default function GlassInk({ editor, root, note, tool, color, size, eraser, api, onHistory, onNotice }: {
+export default function GlassInk({ editor, root, note, tool, color, size, eraser, api, onHistory, onNotice, magnets, send, reloadInk, saved }: {
   editor(): EditorHandle | undefined;
   root: HTMLElement;
   note?: string;
@@ -138,6 +131,10 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   api?: { current: InkHistoryApi | null };
   onHistory?(canUndo: boolean, canRedo: boolean): void;
   onNotice?(text: string): void;
+  magnets: readonly GlassMagnet[];
+  send(request: Record<string, unknown>): Promise<unknown>;
+  reloadInk(): Promise<unknown> | undefined;
+  saved: string;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
@@ -147,9 +144,7 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   const [strokes, setStrokes] = useState<InkStroke[]>([]);
   const [placed, setPlaced] = useState<InkPlacement[]>([]);
   const [orphans, setOrphans] = useState(0);
-  const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const paths = useRef(new WeakMap<InkPart, { tool: InkTool; size: number; width: number; height: number; path: string }>());
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef<Pending | null>(null);
   const penSeen = useRef(false);
   const drawing = useRef(false);
@@ -172,54 +167,10 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     setOrphans(result.orphans);
   }, [root]);
 
-  const send = useCallback((request: Record<string, unknown>) => {
-    const path = latest.current.note;
-    if (!path) return Promise.resolve(undefined);
-    const run = queue.current.then(async () => {
-      setSaved("saving");
-      try {
-        await glassCall({ note: path, ...request });
-        setSaved("saved");
-      } catch (error) {
-        setSaved("error");
-        callbacks.current.onNotice?.(error instanceof Error ? error.message : String(error));
-      }
-    });
-    queue.current = run;
-    return run;
-  }, []);
-
-  const load = useCallback(() => {
-    const path = latest.current.note;
-    if (!path) { setStrokes([]); return; }
-    const run = queue.current.then(async () => {
-      try {
-        const value = await glassCall({ note: path, action: "list" }) as { magnets?: { id: string; fields: Record<string, unknown>; kind?: string | null }[] };
-        setStrokes((value.magnets ?? []).flatMap(magnet => inkStrokeFromMagnet(magnet) ?? []));
-        setSaved("saved");
-      } catch (error) {
-        setSaved("error");
-        callbacks.current.onNotice?.(error instanceof Error ? error.message : String(error));
-      }
-    });
-    queue.current = run;
-    void run;
-  }, []);
-
   useEffect(() => {
-    setStrokes([]);
-    setPlaced([]);
-    history.current = { undo: [], redo: [] };
-    callbacks.current.onHistory?.(false, false);
-    load();
-    const subscribe = window.desktop?.onGlassChanged;
-    if (!subscribe) return;
-    return subscribe((event: { note?: string } | undefined) => {
-      if (!event || event.note !== latest.current.note) return;
-      if (drawing.current) { reload.current = true; return; }
-      load();
-    });
-  }, [note, load]);
+    if (drawing.current) { reload.current = true; return; }
+    setStrokes((previous) => !previous.length && !magnets.length ? previous : magnets.flatMap(magnet => inkStrokeFromMagnet(magnet) ?? []));
+  }, [magnets]);
 
   useEffect(() => {
     measure();
@@ -388,8 +339,8 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     liveFrame.current = 0;
     live.current?.setAttribute("d", "");
     if (gesture && !gesture.eraser) finishDraw(gesture);
-    if (reload.current) { reload.current = false; load(); }
-  }, [finishDraw, load]);
+    if (reload.current) { reload.current = false; void reloadInk(); }
+  }, [finishDraw, reloadInk]);
 
   const moveGesture = useCallback((event: PointerEvent) => {
     const gesture = pending.current;
