@@ -130,6 +130,21 @@ function prepareOperation(phase, change) { return new Promise((resolve, reject) 
 let operationRunning = false;
 let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
+
+// G17 agent parity: an ink magnet id is the region. The renderer rasterises the stroke it is
+// already painting, then the local OCR hook reads it. Read-only; no journal write.
+async function glassOcrRegion(payload) {
+  const { dataUrlBytes, ocrAvailable, runOcr } = await import("./ocr.mjs");
+  if (!(await ocrAvailable())) throw new Error("Set OMARKIE_OCR to a local OCR command to read ink.");
+  const id = typeof payload?.magnet === "string" ? payload.magnet : "";
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error("--region must be an ink magnet id.");
+  if (!window) throw new Error("Open Omarkie to read an ink region.");
+  const dataUrl = await window.webContents.executeJavaScript(`window.__omarkieInkPng?.(${JSON.stringify(id)}) ?? null`, true);
+  const bytes = dataUrlBytes(dataUrl);
+  if (!bytes) throw new Error("That ink stroke is not on screen.");
+  return runOcr(bytes);
+}
+
 function announceGlass(request) {
   if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "merge-accept", "merge-undo", "lift-up",
     "srs-card", "srs-answer", "srs-review", "study-set"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
@@ -196,8 +211,12 @@ async function syncGlassNow(folder) {
       glassRuntime.close = await listenBridge(root, {
         client(request, send) {
           if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
-          if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
           const { op: _, token: __, ...payload } = request;
+          if (payload.action === "ocr") {
+            glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
+            return;
+          }
+          if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
           Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
         },
         stopWait() {}, bind() { return {}; }, unbind() { return 0; },
@@ -247,6 +266,13 @@ function prioritizeGlass(file) {
 }
 const handlers = {
   payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
+  ocrAvailable: async () => ({ available: await (await import("./ocr.mjs")).ocrAvailable() }),
+  glassOcr: async (_, request) => {
+    const { dataUrlBytes, runOcr } = await import("./ocr.mjs");
+    const bytes = dataUrlBytes(request?.png);
+    if (!bytes) throw new Error("The ink image is invalid.");
+    return runOcr(bytes);
+  },
   payloadKey: async (_, baseUrl, value) => (await import("./payload.mjs")).setPayloadKey(baseUrl, value),
   viewState: (_, _focus, _typewriter, _sidebar, checked, disabled, context) => {
     viewChecked = checked || {};

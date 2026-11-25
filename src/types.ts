@@ -170,6 +170,8 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   glass?(request: Record<string, unknown>): Promise<any>;
+  ocrAvailable?(): Promise<{ ok?: boolean; value?: { available: boolean } } | { available: boolean } | null>;
+  glassOcr?(request: { png: string }): Promise<{ ok?: boolean; value?: { text: string }; error?: string } | null>;
   onGlassStorage?(callback: (status: { bring?: { count: number; notes?: { path: string; title?: string }[] } | null } | null) => void): () => void;
   onCommand(callback: (command: Command) => void): () => void;
   payloadRequest?(request: PayloadRequest): Promise<string>;
