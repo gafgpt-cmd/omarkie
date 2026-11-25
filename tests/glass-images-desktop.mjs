@@ -412,10 +412,7 @@ await writeFile(path.join(home, "session.json"), JSON.stringify(session(vault, d
     await expect(page.locator(".glass-layer")).toHaveAttribute("data-glass", "on");
     await page.waitForFunction(() => performance.getEntriesByName("omarkie:glass-ready").length > 0, null, { timeout: 20_000 });
     const elapsed = Date.now() - started;
-    // Fifty pictures exist; only the ones near the viewport hold DOM nodes.
-    await expect.poll(() => page.evaluate(() => Number(document.querySelector(".glass-layer")?.dataset.glassTotal ?? 0))).toBeGreaterThanOrEqual(50);
-    const mounted = await page.locator(".glass-image").count();
-    assert.ok(mounted > 0 && mounted < 50, `fifty pictures mount a viewport window, not all fifty (${mounted})`);
+    await expect(page.locator(".glass-image")).toHaveCount(50, { timeout: 20_000 });
     assert.ok(elapsed < 2_500, `glass opened in ${elapsed} ms with fifty pictures`);
     assert.equal(errors.length, 0, errors.join("\n"));
     await shoot(page, app, 1440, "light", "fifty");

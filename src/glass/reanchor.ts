@@ -77,7 +77,9 @@ export function bulkReanchor(entries: readonly ReanchorEntry[], blocks: readonly
     const candidate = hit.line === null ? undefined : byLine.get(hit.line);
     // A line-number guess is only a placement when the words there still resemble the old quote;
     // otherwise the paragraph the mark belonged to is gone and the reader has to say what happens.
-    const weak = hit.tier === "position";
+    // A legacy landmark stores the paragraph's Markdown, which never equals rendered text; the word
+    // test only means something when the anchor kept its exact quote.
+    const weak = hit.tier === "position" && entry.anchor.landmarks.some(item => item.kind === "quote");
     const evidence = weak && candidate ? overlap(oldContext(entry.anchor).quote, candidate.block) : 1;
     const line = weak && evidence < 0.2 ? null : hit.line;
     if (weak && evidence < 0.2) return {

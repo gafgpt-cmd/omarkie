@@ -494,13 +494,24 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const lineOf = (mark: { id: string; anchor?: GlassAnchor }) => {
       const row = rows.get(mark.id);
       if (row) return row.state === "tray" ? null : row.line;
-      return lineOf(mark);
+      return matchLine(mark.anchor);
+    };
+    // Pictures and clipped paper are spatial objects: the saved spot is the placement, so a lost
+    // quote never hides them; the resolver still decides which paragraph they ride.
+    const spatialOf = (mark: { id: string; anchor?: GlassAnchor }) => {
+      const row = rows.get(mark.id);
+      return row ? row.line : matchLine(mark.anchor);
     };
     const rtl = rtlNow();
     const paragraphRects = new Map<HTMLElement, DOMRect>();
     performance.mark("omarkie:glass-placed");
     const placedAt = performance.now();
+    // A lifted mark has no landmarks and keeps the spot it stood on; it is a paper object, not a stray.
+    const freeAt = (id: string, x: number, y: number, w: number, h: number) => {
+      places[id] = { status: "resolved", x: rtl ? frame.width - w - x : x, y, width: w, height: h };
+    };
     for (const mark of [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines]) {
+      if (!mark.anchor?.landmarks.length) { freeAt(mark.id, mark.x, mark.y, mark.w, mark.h); continue; }
       const line = lineOf(mark);
       if (line === null) { places[mark.id] = { status: "orphan" }; continue; }
       const element = byLine.get(line)?.element;
@@ -528,7 +539,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       places[memo.id] = { status: "resolved", x: rect.left - frame.left + memo.x, y: rect.top - frame.top + memo.y, width: memo.w, height: memo.h };
     }
     for (const image of latest.current.images) {
-      const line = matchIndexed(index.current, image.anchor);
+      if (!image.anchor?.landmarks.length) { freeAt(image.id, image.x, image.y, image.w, image.h); continue; }
+      const line = spatialOf(image);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[image.id] = { status: "orphan" }; continue; }
       if (mediaShown && (image.wrap === "left" || image.wrap === "right")) {
@@ -694,56 +706,58 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const nextTimelines: TimelineMark[] = [], nextTimestamps: TimestampMark[] = [];
     const landmarks: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
     for (const magnet of incoming) {
-      if (magnet.kind === "sticky") {
+      // A lifted mark keeps its kind in fields while the journal line names the lift itself.
+      const kind = (magnet.fields?.kind as string | undefined) ?? magnet.kind;
+      if (kind === "sticky") {
         const sticky = stickyFromMagnet(magnet);
         if (sticky) stickies.push(sticky);
-      } else if (magnet.kind === "image") {
+      } else if (kind === "image") {
         const picture = imageFromMagnet(magnet);
         if (picture) nextImages.push(picture);
-      } else if (magnet.kind === "sticker") {
+      } else if (kind === "sticker") {
         const stamp = stickerFromMagnet(magnet);
         if (stamp) nextStickers.push(stamp);
-      } else if (magnet.kind === "arrow") {
+      } else if (kind === "arrow") {
         const arrow = arrowFromMagnet(magnet);
         if (arrow) nextArrows.push(arrow);
-      } else if (magnet.kind === "card") {
+      } else if (kind === "card") {
         const card = cardFromMagnet(magnet);
         if (card) nextCards.push(card);
-      } else if (magnet.kind === "label") {
+      } else if (kind === "label") {
         const label = labelFromMagnet(magnet);
         if (label) nextLabels.push(label);
-      } else if (magnet.kind === "clip") {
+      } else if (kind === "clip") {
         const clip = clipFromMagnet(magnet);
         if (clip) nextClips.push(clip);
-      } else if (magnet.kind === "extra-page") {
+      } else if (kind === "extra-page") {
         const page = extraPageFromMagnet(magnet);
         if (page) nextPages.push(page);
-      } else if (magnet.kind === "cutout") {
+      } else if (kind === "cutout") {
         const cutout = cutoutFromMagnet(magnet);
         if (cutout) nextCutouts.push(cutout);
-      } else if (magnet.kind === "trace") {
+      } else if (kind === "trace") {
         const trace = traceFromMagnet(magnet);
         if (trace) nextTraces.push(trace);
-      } else if (magnet.kind === "sheet-label") {
+      } else if (kind === "sheet-label") {
         const label = sheetLabelFromMagnet(magnet);
         if (label) nextSheetLabels.push(label);
-      } else if (magnet.kind === "measure") {
+      } else if (kind === "measure") {
         const measure = measureFromMagnet(magnet);
         if (measure) nextMeasures.push(measure);
-      } else if (magnet.kind === "compare") {
+      } else if (kind === "compare") {
         const compare = compareFromMagnet(magnet);
         if (compare) nextCompares.push(compare);
-      } else if (magnet.kind === "timeline") {
+      } else if (kind === "timeline") {
         const timeline = timelineFromMagnet(magnet);
         if (timeline) nextTimelines.push(timeline);
-      } else if (magnet.kind === "timestamp") {
+      } else if (kind === "timestamp") {
         const stamp = timestampFromMagnet(magnet);
         if (stamp) nextTimestamps.push(stamp);
-      } else if (magnet.kind === "voice") {
+      } else if (kind === "voice") {
         const memo = voiceFromMagnet(magnet);
         if (memo) nextVoices.push(memo);
-      } else if (magnet.kind === "comment") nextComments.push(magnet);
-      else if (magnet.kind === "ink") nextInk.push(magnet);
+      } else if (kind === "comment") nextComments.push(magnet);
+      else if (kind === "ink") nextInk.push(magnet);
       else landmarks.push(magnet);
     }
     setMagnets(stickies);
@@ -2432,9 +2446,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const place = layout.places[mark.id];
       if (place?.status === "resolved") items.push({ id: mark.id, y: place.y, height: Math.max(24, place.height) });
     }
-    // A handful of marks is a page, not a note: mounting all of them keeps small scenes simple,
-    // and the window only earns its keep once a document carries more than a screenful.
-    if (items.length <= 40) return { mounted: new Set(items.map(item => item.id)), total: items.length, inView: items.length, culled: 0, forced: [] };
+    // Real notes run tens, not hundreds: mounting all of them keeps small scenes simple, and the
+    // window only earns its keep past a hundred and fifty marks.
+    if (items.length <= 150) return { mounted: new Set(items.map(item => item.id)), total: items.length, inView: items.length, culled: 0, forced: [] };
     const force = [selected, editing, focusedMagnet].filter((id): id is string => !!id);
     return glassWindow(items, { top: viewport.top, height: viewport.height }, { force });
   }, [magnets, images, stickers, cards, timelines, layout.places, selected, editing, focusedMagnet, viewport.top, viewport.height]);
