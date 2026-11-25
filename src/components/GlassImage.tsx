@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlignLeft, AlignRight, Bandage, BringToFront, Lock, LockOpen, RotateCw, SendToBack, Trash2 } from "lucide-react";
+import { AlignLeft, AlignRight, Bandage, BringToFront, Layers, Lock, LockOpen, RotateCw, SendToBack, Trash2 } from "lucide-react";
 import type { GlassPlacement } from "../glass/anchor-map";
 import { glassAsset, ensureDisplayCopy, wrapLabel } from "../glass/glass-assets";
 import { imageWrapModes, type GlassImage, type ImageWrap } from "../glass/image-model";
+import ImageVisuals, { type ImageVisualsProps } from "./ImageVisuals";
+
+export type ImageVisualState = Omit<ImageVisualsProps, "imageId" | "width" | "height" | "selected" | "onPatch">;
 
 interface Props {
   image: GlassImage;
@@ -23,11 +26,12 @@ interface Props {
   onSettle?(element: HTMLElement): void;
   onMerge?(): void;
   onJump?(): void;
+  visual?: ImageVisualState;
 }
 
 // A photo on the glass: drag to place, corner to stretch (Shift keeps the ratio), handle to tilt.
 // "Behind text" paints the picture in the layer under the page and keeps this frame as its handle.
-export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, onMerge, onJump, maxWidth, onSnap, onSnapEnd, onSettle }: Props) {
+export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, onMerge, onJump, maxWidth, onSnap, onSnapEnd, onSettle, visual }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const paint = useRef<HTMLImageElement>(null);
   const [source, setSource] = useState<string>();
@@ -143,6 +147,13 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
 
   function key(event: React.KeyboardEvent) {
     if (event.target !== event.currentTarget && !(event.target as HTMLElement).dataset.glassHandle) return;
+    if (event.altKey && visual && visual.sheets.length > 1 && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      event.preventDefault();
+      const at = Math.max(0, visual.sheets.findIndex(sheet => sheet.id === (visual.activeSheet ?? visual.sheets[0].id)));
+      const next = visual.sheets[(at + (event.key === "ArrowDown" ? 1 : -1) + visual.sheets.length) % visual.sheets.length];
+      visual.onActiveSheet(next.id);
+      return;
+    }
     const step = event.shiftKey ? 16 : 8;
     if (event.key === "Delete" || event.key === "Backspace") { event.preventDefault(); onDelete(); }
     else if (event.key === "l" || event.key === "L") { event.preventDefault(); onPatch({ locked: !image.locked }, true); }
@@ -170,8 +181,13 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
         ? <img src={source} alt={image.name} draggable={false} loading="lazy" decoding="async" data-glass-image-source />
         : <span className="glass-image-fallback" data-glass-image-fallback>{missing ? `${image.name} — not available` : image.name}</span>}
     </span>
+    {visual && <ImageVisuals imageId={image.id} width={place.width} height={place.height} selected={selected}
+      {...visual} onPatch={onPatch} />}
     {image.tape && <span className="glass-image-tape" aria-hidden="true" data-glass-image-tape />}
     {selected && <div className="glass-image-tools" role="group" aria-label="Image">
+      <button type="button" className="glass-image-tool" data-glass-sheets-toggle aria-label="Tracing sheets"
+        title={`Tracing sheets (${image.sheets.length})`} aria-pressed={visual?.sheetsOpen ?? false}
+        onClick={() => visual?.onToggleSheets?.()}><Layers size={13} /><span className="glass-image-tool-count">{image.sheets.length || ""}</span></button>
       {imageWrapModes.map(mode => <button type="button" key={mode} className="glass-image-tool" data-glass-wrap={mode}
         aria-label={wrapLabel(mode)} title={wrapLabel(mode)} aria-pressed={image.wrap === mode} onClick={() => wrap(mode)}>
         {mode === "left" ? <AlignLeft size={13} /> : mode === "right" ? <AlignRight size={13} /> : mode === "behind" ? <SendToBack size={13} /> : <BringToFront size={13} />}</button>)}

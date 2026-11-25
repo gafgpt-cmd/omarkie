@@ -2,6 +2,7 @@
 // Pure functions only; electron/glass-service.mjs owns the disk.
 
 import { sanitizeTitle, truncateBytes } from "./glass-core.mjs";
+import { validScale, validSheetId, validSheets } from "./glass-visual.mjs";
 
 export const imageWraps = ["left", "right", "behind", "front"];
 export const imageDefaults = {
@@ -12,7 +13,7 @@ export const imageDefaults = {
   rotateLimit: 360, offsetLimit: 200_000,
 };
 export const imageFieldNames = new Set(["kind", "name", "asset", "display", "bytes", "w", "h", "aspect",
-  "rot", "wrap", "tape", "locked", "anchor", "x", "y", "source"]);
+  "rot", "wrap", "tape", "locked", "anchor", "x", "y", "source", "sheets", "activeSheet", "scale"]);
 
 // A lifted copy remembers the page element it came from; "jump to source" reads this.
 export function validSource(value) {
@@ -181,6 +182,22 @@ export function imageFields(input = {}, { partial = false } = {}) {
       case "anchor":
         if (!value || typeof value !== "object" || !Array.isArray(value.landmarks) || !value.landmarks.length) throw new Error("An image magnet needs an anchor.");
         values.anchor = value;
+        break;
+      case "sheets": {
+        const sheets = validSheets(value);
+        if (!sheets) throw new Error("Tracing sheets need an id, a name, opacity 0-100, and visible and locked flags, eight at most.");
+        values.sheets = sheets;
+        break;
+      }
+      case "activeSheet":
+        if (value === null) { values.activeSheet = null; break; }
+        if (!validSheetId(value)) throw new Error("The active sheet must be a sheet id.");
+        values.activeSheet = value;
+        break;
+      case "scale":
+        if (value === null) { values.scale = null; break; }
+        if (!validScale(value)) throw new Error("Image scale needs a unit, precision, real length, two points and a frame.");
+        values.scale = validScale(value);
         break;
     }
   }

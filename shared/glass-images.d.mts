@@ -21,6 +21,8 @@ export function assetFile(wanted: unknown, extension: string, taken?: Set<string
 export function displayFile(asset: string): string;
 export function isAssetName(value: unknown): boolean;
 export function imageFields(input?: Record<string, unknown>, options?: { partial?: boolean }): Record<string, unknown>;
+export interface ImageSheet { id: string; name: string; opacity: number; visible: boolean; locked: boolean }
+export interface ImageScale { unit: string; precision: number; length: number; line: [[number, number], [number, number]]; frame: [number, number] }
 
 export type ImageSource = { element: string; line: number; path: string; kind?: string };
 export function validSource(value: unknown): ImageSource | null;
