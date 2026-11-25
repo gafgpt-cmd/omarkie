@@ -290,5 +290,10 @@
   "未配置朗读：请设置 OMARKIE_TTS。": "未配置朗读：请设置 OMARKIE_TTS。",
   "朗读设置无效：请检查 OMARKIE_TTS。": "朗读设置无效：请检查 OMARKIE_TTS。",
   "无法启动朗读程序：请检查 OMARKIE_TTS。": "无法启动朗读程序：请检查 OMARKIE_TTS。",
-  "朗读程序未能完成播放。": "朗读程序未能完成播放。"
+  "朗读程序未能完成播放。": "朗读程序未能完成播放。",
+  "{{count}} notes here already have glass on this computer.": "{{count}} 篇笔记在这台电脑上已有玻璃。",
+  "1 note here already has glass on this computer.": "这里的 1 篇笔记在这台电脑上已有玻璃。",
+  "Bring glass": "带入玻璃",
+  "Glass brought for {{count}} notes.": "已为 {{count}} 篇笔记带入玻璃。",
+  "Dismiss": "忽略"
 }

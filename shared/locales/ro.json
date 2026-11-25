@@ -1109,5 +1109,10 @@
   "预览属性修改": "Previzualizează modificarea proprietății",
   "预览已过期，请重新预览后再应用。": "Previzualizarea este veche. Previzualizează din nou înainte de a aplica.",
   "预览文件夹整理": "Previzualizează pregătirea dosarului",
-  "预览笔记整理": "Previzualizează pregătirea notei"
+  "预览笔记整理": "Previzualizează pregătirea notei",
+  "{{count}} notes here already have glass on this computer.": "{{count}} note de aici au deja sticlă pe acest computer.",
+  "1 note here already has glass on this computer.": "1 notă de aici are deja sticlă pe acest computer.",
+  "Bring glass": "Adu sticla",
+  "Glass brought for {{count}} notes.": "Sticlă adusă pentru {{count}} note.",
+  "Dismiss": "Închide"
 }

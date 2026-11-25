@@ -1098,5 +1098,10 @@
   "预览属性修改": "Preview property change",
   "预览已过期，请重新预览后再应用。": "Preview is stale. Preview again before applying.",
   "预览文件夹整理": "Preview folder make-ready",
-  "预览笔记整理": "Preview note make-ready"
+  "预览笔记整理": "Preview note make-ready",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notes here already have glass on this computer.",
+  "1 note here already has glass on this computer.": "1 note here already has glass on this computer.",
+  "Bring glass": "Bring glass",
+  "Glass brought for {{count}} notes.": "Glass brought for {{count}} notes.",
+  "Dismiss": "Dismiss"
 }

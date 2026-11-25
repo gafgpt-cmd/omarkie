@@ -7,10 +7,17 @@ import { archPkgver, describeBuild } from "./arch-electron.mjs";
 
 // Folders the Electron host reads at runtime, at the same relative paths as in the repository.
 export const applicationFolders = ["dist", "electron", "shared", "docs/showcase", "third-party/csl", "skills/omarkie-tutor"];
-export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi", "@toon-format/toon",
+export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi", "@toon-format/toon", "@parcel/watcher", "detect-libc", "is-glob", "is-extglob", "picomatch",
   "markdown-it", "markdown-it-task-lists", "markdown-it-mark", "markdown-it-sub", "markdown-it-sup", "markdown-it-emoji",
   "entities", "linkify-it", "mdurl", "punycode.js", "uc.micro"];
 export const nativeBridgeModule = (platform = process.platform, arch = process.arch) => `@koromix/koffi-${platform === "windows" ? "win32" : platform}-${arch}`;
+export const watcherBridgeModule = (platform = process.platform, arch = process.arch) => {
+  if (platform === "linux") {
+    const glibc = !!process.report?.getReport?.()?.header?.glibcVersionRuntime;
+    return `@parcel/watcher-linux-${arch}-${glibc ? "glibc" : "musl"}`;
+  }
+  return `@parcel/watcher-${platform === "windows" ? "win32" : platform}-${arch}`;
+};
 // Ship Node bridge dependencies; Vite bundles the editor.
 export async function prepareElectronApplication(platform, application = path.resolve(`build/${platform}-app`)) {
   await rm(application, { recursive: true, force: true });
@@ -18,7 +25,7 @@ export async function prepareElectronApplication(platform, application = path.re
   for (const folder of applicationFolders) await cp(folder, path.join(application, folder), { recursive: true });
   const index = path.join(application, "dist/index.html");
   await writeFile(index, (await readFile(index, "utf8")).replace('name="omarkie-build" content="dev"', `name="omarkie-build" content="${archPkgver(pkg.version, describeBuild(pkg.version))}"`));
-  for (const name of [...nodeBridgeModules, nativeBridgeModule(platform)]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
+  for (const name of [...nodeBridgeModules, nativeBridgeModule(platform), watcherBridgeModule(platform)]) await cp(`node_modules/${name}`, path.join(application, "node_modules", name), { recursive: true });
   await cp("LICENSE", path.join(application, "LICENSE"));
   await cp("build/icon.png", path.join(application, "icon.png"));
   await licenseNotices(path.join(application, "ThirdPartyLicenses"));
@@ -31,6 +38,7 @@ export async function prepareElectronApplication(platform, application = path.re
     homepage: pkg.homepage, dependencies: Object.fromEntries([
       ...nodeBridgeModules.filter(name => pkg.dependencies[name]).map(name => [name, pkg.dependencies[name]]),
       [nativeBridgeModule(platform), pkg.dependencies.koffi],
+      [watcherBridgeModule(platform), pkg.dependencies["@parcel/watcher"]],
     ]),
   }, null, 2));
   return application;

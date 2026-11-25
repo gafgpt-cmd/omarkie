@@ -175,9 +175,9 @@ export const host: Host = window.desktop
   ? new Proxy({ native: true } as Host, {
       get(target, name: keyof Host) {
         if (name === "native") return true;
-        if (name === "checkGrammar" && !window.desktop![name]) return undefined;
+        if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
         if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
-        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "closeWindow")
+        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];

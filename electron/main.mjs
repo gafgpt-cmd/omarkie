@@ -34,6 +34,7 @@ import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
 import { listenBridge } from "./tutor-transport.mjs";
 import { GlassService } from "./glass-service.mjs";
+import { GlassSync } from "./glass-sync.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -128,7 +129,7 @@ ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== wi
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
 let bibliography;
-let glassRuntime = { folder: null, root: null, service: null, close: null, error: null };
+let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
   const run = glassQueue.then(() => syncGlassNow(folder));
@@ -137,8 +138,9 @@ function syncGlass(folder = store?.folder ?? null) {
 }
 async function closeGlassRuntime() {
   const current = glassRuntime;
-  glassRuntime = { folder: null, root: null, service: null, close: null, error: null };
+  glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
   await current.close?.().catch(() => {});
+  await current.sync?.close().catch(() => {});
   await current.service?.close().catch(() => {});
 }
 async function syncGlassNow(folder) {
@@ -156,6 +158,18 @@ async function syncGlassNow(folder) {
     glassRuntime.root = root;
     glassRuntime.service = service;
     service.subscribe(status => window?.webContents.send("glass:storage", status));
+    let sync = null;
+    try {
+      sync = new GlassSync({ service, cacheDir: path.join(app.getPath("cache"), "omarkie"), appData: app.getPath("userData") });
+      service.sync = sync;
+      glassRuntime.sync = sync;
+      await sync.start();
+    } catch (error) {
+      await sync?.close().catch(() => {});
+      service.sync = null;
+      glassRuntime.sync = null;
+      console.warn("Glass index:", error.message);
+    }
     try {
       glassRuntime.close = await listenBridge(root, {
         client(request, send) {
@@ -184,6 +198,11 @@ async function vaultBibliography(folder) {
   if (folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
   if (bibliography && bibliography.root !== folder) releaseBibliography();
   return bibliography ??= new VaultBibliography(store.dataDir, folder, () => send("bibliography-changed"));
+}
+function prioritizeGlass(file) {
+  const sync = glassRuntime.sync;
+  if (!file || !sync) return;
+  void sync.prioritize(file).catch(() => {});
 }
 const handlers = {
   payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
@@ -390,6 +409,7 @@ const handlers = {
       const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
       result = { documents, activeId: documents[0].id, folder: folder.folder, readingRecoveryWarning: folder.readingRecoveryWarning };
     }
+    prioritizeGlass(result?.documents?.find(document => document.id === result.activeId)?.path);
     return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },
   showcase: async () => {
@@ -407,6 +427,7 @@ const handlers = {
     const file = result.filePaths[0], record = isPdf(file) ? await openPdf(file) : await store.open(file);
     if (!record) return null;
     await workspace.remember(record.path);
+    prioritizeGlass(record.path);
     return record;
   },
   folder: async () => {
@@ -420,7 +441,7 @@ const handlers = {
     return scanned;
   },
   scan: () => store.scan(),
-  token: async (_, token) => { const record = await store.openToken(token); await workspace.remember(record.path); return record; },
+  token: async (_, token) => { const record = await store.openToken(token); await workspace.remember(record.path); prioritizeGlass(record.path); return record; },
   reopen: (_, id) => store.reload(id),
   writeClipboard: (_, text) => clipboard.writeText(String(text)),
   readClipboard: () => clipboard.readText(),
@@ -637,7 +658,7 @@ app
         }
         finally {
           if (bibliography && bibliography.root !== store.folder) releaseBibliography();
-          try { await syncGlass(store?.folder ?? null); } catch { /* the glass handler reports its own error */ }
+          void syncGlass(store?.folder ?? null).catch(() => { /* the glass handler reports its own error */ });
         }
       });
     function createWindow() {
@@ -691,6 +712,7 @@ app
           send("quit");
         }
       });
+      window.on("focus", () => { void glassRuntime.sync?.focus().catch(() => {}); });
       window.on("closed", () => {
         stopSpeech();
         detachTutor(contents);

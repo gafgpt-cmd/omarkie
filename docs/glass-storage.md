@@ -59,6 +59,29 @@ omarkie-axi glass status
 
 The verbs need the vault open in Omarkie, because Omarkie is the only writer.
 
+## Moves, folders and drives
+
+The vault's Markdown structure is owned by the vault, not by glass. A watcher sees moves and the next scan reconciles them.
+
+- A single note moved to another folder keeps its id and journals; `notes.jsonl` gets one `move` line.
+- A renamed folder that holds many notes gets one `folder old/ -> new/` line, not one line per note.
+- A copy-then-delete move is treated like a sync tool: wait for the folder to go quiet, then pair it once.
+- A move made while Omarkie was closed is paired on the next open by hash, then by name and heading shape.
+- mtime is only a hint. On FAT/exFAT, where timestamps are loose, the hash decides; name matching folds NFC and case on drives that need it.
+- Glass that cannot be paired goes to the lost-glass list. It is never deleted.
+- The index lives at `~/.cache/omarkie/<vault-id>/index.db`, never in the vault, and can be rebuilt at any time.
+
+`notes.jsonl` and the per-note journals are the truth. The index only answers search and move questions faster.
+
+```sh
+omarkie-axi vault map              # counts per kind, biggest folders, unindexed files, lost glass
+omarkie-axi find "dose units"      # note text and glass magnets
+omarkie-axi glass finder           # glass this computer knows from other folders
+omarkie-axi glass bring --note notes/map.md
+```
+
+Opening another vault that contains notes this computer already has glass for shows a banner; **Bring glass** copies the known journals into that vault.
+
 ## Privacy and backups
 
 Glass journals are plain files inside the vault, so the vault's existing git, Syncthing, Drive or backup setup carries them. The local index and previews live in Omarkie's cache, outside the vault, and can always be rebuilt. No network request is made for storage.

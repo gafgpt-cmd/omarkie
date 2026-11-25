@@ -27,7 +27,7 @@ await build({
     appId: pkg.build.appId, productName: pkg.build.productName,
     extraMetadata: { version },
     directories: { app: application, output: "release/linux" },
-    files: ["**/*"], asar: true, npmRebuild: false,
+    files: ["**/*"], asar: true, asarUnpack: ["**/*.node"], npmRebuild: false,
     extraFiles: [{ from: path.resolve("packaging/omarkie-axi"), to: "omarkie-axi" }],
     electronVersion: pkg.devDependencies.electron,
     linux: {

@@ -33,10 +33,14 @@ const specs = {
   "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets on a note."],
   "glass show": ["--note <note.md> [--magnet <id>] [--vault <dir>]", "Show one magnet, or the whole note glass."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
+  "glass finder": ["[--vault <dir>]", "Show glass this computer already knows from other folders."],
+  "glass bring": ["[--note <note.md>] [--vault <dir>]", "Bring known glass for one note, or every matching note, into this vault."],
+  "vault map": ["[--vault <dir>]", "Review counts per kind, biggest folders, unindexed files and lost glass."],
+  find: ["<query> [--vault <dir>] [--limit <n>]", "Search note text and glass magnets in this vault."],
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
-const positionalCounts = { "ask view": 1, reply: 1, status: 2, "doc view": 1 };
+const positionalCounts = { "ask view": 1, reply: 1, status: 2, "doc view": 1, find: 1 };
 const flags = spec => [...spec[0].matchAll(/--([a-z-]+)( <[^>]+>)?/g)].map(match => [match[1], { type: match[2] ? "string" : "boolean" }]);
 const usage = command => `omarkie-axi${command === "home" ? "" : ` ${command}`} ${specs[command][0]}`;
 const scopeHint = "Run from the vault or pass --vault <dir>.";
@@ -70,7 +74,7 @@ function skim(ask, full = false) {
 export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { console.log(pkg.version); return; }
   let command = argv[0]?.startsWith("-") || !argv.length ? "home" : argv[0];
-  if (["ask", "doc", "scraps", "scrap", "setup", "glass"].includes(command) && argv[1] && !argv[1].startsWith("-")) command += ` ${argv[1]}`;
+  if (["ask", "doc", "scraps", "scrap", "setup", "glass", "vault"].includes(command) && argv[1] && !argv[1].startsWith("-")) command += ` ${argv[1]}`;
   const spec = Object.hasOwn(specs, command) ? specs[command] : null;
   if (argv.includes("--help")) {
     if (!spec || command === "home") emit({ description: live, commands: Object.keys(specs).filter(name => name !== "context").map(usage) });
@@ -114,13 +118,15 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "reply") requireArgument(Boolean(opts.text?.trim()) !== Boolean(opts.file), "Supply either --text or --file.");
     if (command === "status") requireArgument(["seen", "working", "done"].includes(args[1]), "Status must be seen, working, or done.");
     if (command === "poll") requireArgument(Boolean(opts["reply-to"]) === Boolean(opts["agent-reply"]), "Supply --reply-to with --agent-reply.");
-    if (command.startsWith("glass ")) requireArgument(command === "glass status" || Boolean(opts.note?.trim()), "--note is required.");
+    if (command.startsWith("glass ")) requireArgument(["glass status", "glass finder", "glass bring"].includes(command) || Boolean(opts.note?.trim()), "--note is required.");
+    if (command === "find") requireArgument(Boolean(args[0]?.trim()), "A search query is required.");
     const root = await folder(opts.vault, process.cwd());
-    if (command.startsWith("glass ")) {
+    if (command.startsWith("glass ") || command === "vault map" || command === "find") {
       const { requestBridge } = await import("./tutor-transport.mjs");
-      const state = await requestBridge(root, { op: "glass", action: command.slice(6), note: opts.note, text: opts.text,
-        kind: opts.kind, magnet: opts.magnet }, 30_000, "glass");
-      if (!state) throw new Error("Glass storage is not running in this vault. Open the folder in Omarkie first.");
+      const action = command === "vault map" ? "map" : command === "find" ? "find" : command.slice(6);
+      const state = await requestBridge(root, { op: "glass", action, note: opts.note, text: opts.text,
+        kind: opts.kind, magnet: opts.magnet, query: args[0], limit: opts.limit === undefined ? undefined : Number(opts.limit) }, 60_000, "glass");
+      if (!state) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       emit(state);
       return;
     }
