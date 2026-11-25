@@ -73,6 +73,102 @@ export function parseClock(value) {
   return match ? { t: Number.parseInt(match[1], 16), c: Number.parseInt(match[2], 16) } : null;
 }
 
+// Fixed-width sort key: wall, then counter, then device. Legacy short clocks compare correctly
+// without rewriting them, so a journal written by an older build keeps its bytes.
+export function hlcKey(hlc, device) {
+  const parsed = parseClock(hlc);
+  if (!parsed) return null;
+  return `${parsed.t.toString(16).padStart(16, "0")}-${parsed.c.toString(16).padStart(8, "0")}-${String(device ?? "")}`;
+}
+
+const opIdSource = ["device", "hlc", "op", "magnetId", "field"];
+
+function fnv1a(text, seed) {
+  let hash = seed >>> 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+// Identity of one operation: device + HLC + op + magnet + field. Two lines with the same
+// identity are the same write, so union merges and sync copies stay idempotent.
+export function journalOpId(record = {}) {
+  const text = opIdSource.map(key => `${key}\u0001${String(record[key] ?? "")}`).join("\u0000");
+  return `${fnv1a(text, 0x811c9dc5)}${fnv1a(`${text}\u0002`, 0x9e3779b9)}`;
+}
+
+const opIdPattern = /^[A-Za-z0-9_-]{8,128}$/;
+
+function opIdOf(record) {
+  if (typeof record.opId === "string" && opIdPattern.test(record.opId)) return record.opId;
+  return parseClock(record.hlc) ? journalOpId(record) : null;
+}
+
+// Key-order-independent payload, so a re-serialized duplicate is still a duplicate.
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
+}
+
+function payloadOf(record) {
+  const { opId: _ignored, ...rest } = record;
+  return canonicalJson(rest);
+}
+
+// One pass groups lines by op id. A repeated id with a different payload is quarantined whole:
+// no copy is applied, because either could be the corrupted one and merge order is arbitrary.
+function collectRecords(lines) {
+  const entries = new Map(), plain = [], quarantined = [];
+  const seenLines = new Set();
+  let invalid = 0, duplicates = 0, order = 0;
+  for (const line of lines) {
+    const position = order++;
+    if (!line.trim()) continue;
+    if (conflictLine.test(line)) { invalid += 1; quarantined.push({ reason: "conflict-marker", line }); continue; }
+    if (seenLines.has(line)) { duplicates += 1; continue; }
+    seenLines.add(line);
+    let record;
+    try { record = JSON.parse(line); } catch { invalid += 1; quarantined.push({ reason: "unparsable", line }); continue; }
+    if (!record || typeof record !== "object" || Array.isArray(record)) { invalid += 1; quarantined.push({ reason: "unparsable", line }); continue; }
+    const id = opIdOf(record);
+    if (!id) { plain.push({ record, line, order: position }); continue; }
+    const entry = entries.get(id);
+    if (!entry) { entries.set(id, { id, order: position, record, line, payloads: new Map([[payloadOf(record), line]]) }); continue; }
+    const payload = payloadOf(record);
+    if (entry.payloads.has(payload)) { duplicates += 1; continue; }
+    entry.payloads.set(payload, line);
+  }
+  const records = [...plain];
+  for (const entry of entries.values()) {
+    if (entry.payloads.size > 1) {
+      quarantined.push({ reason: "op-id-conflict", opId: entry.id, lines: [...entry.payloads.values()] });
+      continue;
+    }
+    records.push({ record: entry.record, line: entry.line, order: entry.order });
+  }
+  records.sort((left, right) => left.order - right.order);
+  return { records, quarantined, duplicates, invalid };
+}
+
+const secretKey = /(?:token|secret|password|passphrase|credential|oauth)/i;
+
+// The vault syncs to every device and backup; a credential belongs in the OS keychain.
+export function assertNoStoreSecrets(value, where = "Glass settings") {
+  const visit = (node, trail) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach((item, index) => visit(item, `${trail}[${index}]`)); return; }
+    for (const [key, item] of Object.entries(node)) {
+      if (secretKey.test(key)) throw new Error(`${where} must not store ${key}; secrets live in the OS keychain, never in the vault.`);
+      visit(item, `${trail}.${key}`);
+    }
+  };
+  visit(value, where);
+}
+
 export function createClock(device, now = Date.now) {
   let t = 0, c = 0;
   let range = 0;
@@ -98,12 +194,10 @@ export function createClock(device, now = Date.now) {
 
 export function isNewer(hlc, device, current) {
   if (!current) return true;
-  const left = parseClock(hlc), right = parseClock(current.hlc);
+  const left = hlcKey(hlc, device), right = hlcKey(current.hlc, current.device);
   if (!left) return false;
   if (!right) return true;
-  if (left.t !== right.t) return left.t > right.t;
-  if (left.c !== right.c) return left.c > right.c;
-  return String(device ?? "") > String(current.device ?? "");
+  return left > right;
 }
 
 const conflictLine = /^(?:<<<<<<<|=======|>>>>>>>)/;
@@ -124,22 +218,16 @@ export function parseJournalText(text) {
 
 export function replayJournalText(text) {
   const { lines, incomplete } = parseJournalText(text);
+  const { records, quarantined, duplicates, invalid: badLines } = collectRecords(lines);
   const magnets = new Map(), layers = new Map(), unknown = [];
-  const seen = new Set();
-  let invalid = 0, duplicates = 0;
   const clocks = [];
-  for (const line of lines) {
-    if (!line.trim() || conflictLine.test(line)) { if (line.trim()) invalid += 1; continue; }
-    if (seen.has(line)) { duplicates += 1; continue; }
-    seen.add(line);
-    let record;
-    try { record = JSON.parse(line); } catch { invalid += 1; continue; }
-    if (!record || typeof record !== "object" || Array.isArray(record)) { invalid += 1; continue; }
+  let invalid = badLines;
+  for (const { record, line } of records) {
     if (record.op === "layer") {
-      if (typeof record.layer !== "string" || !record.layer || record.layer.length > 40) { invalid += 1; continue; }
+      if (typeof record.layer !== "string" || !record.layer || record.layer.length > 40) { invalid += 1; quarantined.push({ reason: "invalid-layer", line }); continue; }
       const hlc = record.hlc, device = typeof record.device === "string" ? record.device : "";
-      if (!parseClock(hlc)) { invalid += 1; continue; }
-      if (!["visible", "locked", "opacity"].includes(record.field)) { invalid += 1; continue; }
+      if (!parseClock(hlc)) { invalid += 1; quarantined.push({ reason: "invalid-clock", line }); continue; }
+      if (!["visible", "locked", "opacity"].includes(record.field)) { invalid += 1; quarantined.push({ reason: "invalid-layer", line }); continue; }
       clocks.push(hlc);
       let fields = layers.get(record.layer);
       if (!fields) { fields = new Map(); layers.set(record.layer, fields); }
@@ -151,12 +239,15 @@ export function replayJournalText(text) {
       unknown.push(record);
       continue;
     }
-    if (typeof record.magnetId !== "string" || !record.magnetId || record.magnetId.length > 200) { invalid += 1; continue; }
+    if (typeof record.magnetId !== "string" || !record.magnetId || record.magnetId.length > 200) {
+      invalid += 1; quarantined.push({ reason: "invalid-op", line }); continue;
+    }
     const hlc = record.hlc, device = typeof record.device === "string" ? record.device : "";
-    if (!parseClock(hlc)) { invalid += 1; continue; }
+    if (!parseClock(hlc)) { invalid += 1; quarantined.push({ reason: "invalid-clock", line }); continue; }
     clocks.push(hlc);
     // A tombstone keeps its clock after an undo, so a delete merged in later by an older
-    // device can never resurrect it; the newest delete/restore event wins.
+    // device can never resurrect it; the newest delete/restore event wins. A field set never
+    // clears a tombstone: only an explicit restore does.
     if (record.op === "delete") {
       const magnet = magnetOf(magnets, record.magnetId);
       if (isNewer(hlc, device, magnet.deleted)) magnet.deleted = { hlc, device, active: true };
@@ -167,7 +258,9 @@ export function replayJournalText(text) {
       if (isNewer(hlc, device, magnet.deleted)) magnet.deleted = { hlc, device, active: false };
       continue;
     }
-    if (typeof record.field !== "string" || !record.field || record.field.length > 200) { invalid += 1; continue; }
+    if (typeof record.field !== "string" || !record.field || record.field.length > 200) {
+      invalid += 1; quarantined.push({ reason: "invalid-field", line }); continue;
+    }
     const magnet = magnetOf(magnets, record.magnetId);
     const current = magnet.fields.get(record.field);
     if (!isNewer(hlc, device, current)) continue;
@@ -175,7 +268,7 @@ export function replayJournalText(text) {
       ? { value: null, removed: true, hlc, device }
       : { value: record.value, removed: false, hlc, device });
   }
-  return { magnets, layers, lines, unknown, invalid, duplicates, incomplete: incomplete.length, clocks };
+  return { magnets, layers, lines, unknown, invalid, duplicates, incomplete: incomplete.length, clocks, quarantined };
 }
 
 function magnetOf(magnets, id) {
@@ -196,16 +289,10 @@ export function visibleMagnets(magnets) {
 
 export function replayNotesText(text) {
   const { lines, incomplete } = parseJournalText(text);
+  const { records, quarantined, duplicates, invalid: badLines } = collectRecords(lines);
   const byId = new Map();
-  const seen = new Set();
-  let invalid = 0, unknown = 0;
-  for (const line of lines) {
-    if (!line.trim() || conflictLine.test(line)) { if (line.trim()) invalid += 1; continue; }
-    if (seen.has(line)) continue;
-    seen.add(line);
-    let record;
-    try { record = JSON.parse(line); } catch { invalid += 1; continue; }
-    if (!record || typeof record !== "object") { invalid += 1; continue; }
+  let invalid = badLines, unknown = 0;
+  for (const { record } of records) {
     if (record.op === "note" && typeof record.id === "string" && typeof record.path === "string") {
       byId.set(record.id, { id: record.id, path: record.path, title: record.title, fingerprint: record.fingerprint,
         hlc: record.hlc, device: record.device });
@@ -222,5 +309,5 @@ export function replayNotesText(text) {
       }
     } else unknown += 1;
   }
-  return { notes: byId, invalid, unknown, incomplete: incomplete.length };
+  return { notes: byId, invalid, unknown, incomplete: incomplete.length, duplicates, quarantined };
 }
