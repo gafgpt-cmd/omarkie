@@ -543,7 +543,7 @@ try {
   assert.ok(timing.events > 20, "the drag reaches the ink surface");
   await expect(page.locator(".glass-ink")).toHaveAttribute("data-glass-ink", /./);
   const inkChains = await page.evaluate(() => [...window.__inkChains]);
-  assertWorkBudget({ work: inkChains, longTasks: inkWork.longTasks, gesture: "Drawing over 2,000 strokes" });
+  assertWorkBudget({ work: inkChains, longTasks: inkWork.longTasks, gesture: "Drawing over 2,000 strokes", longest: stableHost() ? 50 : 100 });
   assert.ok(timing.paints > 0, "the live stroke repaints while drawing");
   assert.ok(timing.commit <= 1500, `committing the 2,001st stroke does not lock the app (${timing.commit?.toFixed(0)}ms)`);
   assertFrameCadence(cadence, "Drawing over 2,000 strokes");

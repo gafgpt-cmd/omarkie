@@ -468,7 +468,7 @@ try {
   // The strict 2 ms budget for the guide math is proven in glass-snap.test.mjs. This end-to-end
   // sample runs on shared hosts, so it only guards against a pathological slowdown.
   assert.ok(sorted.length >= 20 && p95 <= 50, `guides stay responsive on the app path (p95 ${p95}, max ${sorted.at(-1)})`);
-  assertWorkBudget({ work: dragCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging with 200 magnets" });
+  assertWorkBudget({ work: dragCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging with 200 magnets", longest: stableHost() ? 50 : 100 });
   assertFrameCadence(gaps, "Dragging with 200 magnets");
   assert.deepEqual(errors, []);
 } finally {

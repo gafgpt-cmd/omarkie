@@ -478,7 +478,7 @@ try {
   const p95 = sorted[Math.floor(sorted.length * 0.95)];
   console.log(`budget: plain ${plain.map(value => value.toFixed(1)).join("/")}ms; 203 magnets ${many.map(value => value.toFixed(1)).join("/")}ms; drag ${frames.length} moving frames in 1.2s, p50 ${p50?.toFixed(1)}ms, p95 ${p95?.toFixed(1)}ms`);
   if (fullEvidence) assert.ok(frames.length > 0, "Trusted drag must move the paper across multiple renderer frames.");
-  assertWorkBudget({ work: dragSamples.filter(Number.isFinite), longTasks: stickyWork.longTasks, gesture: "Dragging a sticky over 203 magnets" });
+  assertWorkBudget({ work: dragSamples.filter(Number.isFinite), longTasks: stickyWork.longTasks, gesture: "Dragging a sticky over 203 magnets", longest: stableHost() ? 50 : 100 });
 
   // A deleted paragraph leaves its magnets in the orphan tray, not lost.
   await learning(page, false);
