@@ -308,9 +308,13 @@ const card = page => page.locator(`.glass-card`);
     // Same proof as the sticky budget: toggle the glass off and time the mount to first committed layout.
     const toggleBudget = async () => {
       const layer = page.locator(".glass-layer");
-      if (await layer.count()) {
+      // A keypress can land while the editor is still settling; give the shortcut a few tries.
+      for (let attempt = 0; attempt < 4 && await layer.count(); attempt += 1) {
         await rich.click({ position: { x: 4, y: 4 } });
         await page.keyboard.press("g");
+        await page.waitForTimeout(120);
+      }
+      if (await layer.count()) {
         await expect(layer).toHaveCount(0);
       }
       await rich.click({ position: { x: 4, y: 4 } });
