@@ -129,8 +129,8 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
         <button type="button" data-card-open-page title={t("Open as its own note")} onClick={() => void openPage()}>
           <ExternalLink size={13} aria-hidden="true" /><span>{t("Open as page")}</span>
         </button>
-        <button type="button" data-card-merge={card.id} title="Merge down into the page" onClick={onMerge}>
-          <ArrowDownToLine size={13} aria-hidden="true" /><span>Merge down</span>
+        <button type="button" data-card-merge={card.id} aria-label="Merge down into the page" title="Merge down into the page" onClick={onMerge}>
+          <ArrowDownToLine size={13} aria-hidden="true" />
         </button>
         <button type="button" data-card-delete aria-label={t("Move card to trash")} title={t("Move to trash")} onClick={onDelete}>
           <Trash2 size={13} aria-hidden="true" />

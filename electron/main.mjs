@@ -140,7 +140,24 @@ function syncGlass(folder = store?.folder ?? null) {
   glassQueue = run.catch(() => {});
   return run;
 }
+let glassRetry = null, glassRetries = 0;
+// A bridge that failed to bind must heal itself: agents call the CLI as soon as the folder is open.
+function scheduleGlassRetry(folder) {
+  if (glassRetry || glassRetries >= 3 || !folder) return;
+  glassRetries += 1;
+  glassRetry = setTimeout(() => {
+    glassRetry = null;
+    if (glassRuntime.service && glassRuntime.close) return;
+    if (glassRuntime.folder && glassRuntime.folder !== folder) return;
+    glassRuntime.folder = null;
+    glassRuntime.error = null;
+    void syncGlass(folder).catch(() => {});
+  }, 1_000);
+  glassRetry.unref?.();
+}
 async function closeGlassRuntime() {
+  if (glassRetry) { clearTimeout(glassRetry); glassRetry = null; }
+  glassRetries = 0;
   const current = glassRuntime;
   glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
   await current.close?.().catch(() => {});
@@ -188,9 +205,13 @@ async function syncGlassNow(folder) {
     } catch (error) {
       service.bridgeState = "unavailable";
       console.warn("Glass bridge:", error.message);
+      scheduleGlassRetry(folder);
+      return;
     }
+    glassRetries = 0;
   } catch (error) {
     glassRuntime.error = error;
+    scheduleGlassRetry(folder);
     throw error;
   }
 }
@@ -807,6 +828,8 @@ app
         app.quit();
       }
     });
+    // The Glass bridge exists before the document is usable; an agent's first CLI call never races a cold start.
+    void syncGlass(store?.folder ?? null).catch(() => { /* scheduleGlassRetry retries it */ });
     createWindow();
     const command = (action) => item => {
       if (item?.type === "checkbox") item.checked = viewChecked[action] === true;
