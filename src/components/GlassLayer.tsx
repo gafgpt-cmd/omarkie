@@ -952,9 +952,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           const placed = placesRef.current[id];
           dragging.current = true;
           element.classList.add("is-lifting");
-          // Guides are built on the first move, not on the press: picking up 200 magnets must not stall the press.
+          // Guides are built after the press has painted: picking up 200 magnets must stall neither
+          // the press nor the first move.
           drag = { element, id, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY,
             ...(placed?.status === "resolved" ? { place: { x: placed.x, y: placed.y, w: placed.width, h: placed.height } } : {}) };
+          const warming = drag;
+          setTimeout(() => { if (drag === warming && !warming.context) warming.context = snapContext(id); }, 0);
         },
         move(event) {
           if (!drag) return;

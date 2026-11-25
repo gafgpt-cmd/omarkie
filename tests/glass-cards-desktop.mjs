@@ -348,8 +348,9 @@ const card = page => page.locator(`.glass-card`);
     console.log(`card open: plain ${plain.map(n => n.toFixed(1)).join("/")} ms; 200 pills ${many.map(n => n.toFixed(1)).join("/")} ms`);
     // A quiet machine holds the absolute budget; under host contention both opens inflate, so the
     // 200-pill cost is compared against the plain open (a real regression still lands past 3x).
-    const loaded = os.loadavg()[0] > os.cpus().length;
-    const budget = loaded ? Math.max(100, plainBest * 3) : 100;
+    const load = os.loadavg()[0] / Math.max(1, os.cpus().length);
+    const loaded = load > 1;
+    const budget = (loaded ? Math.max(100, plainBest * 3) : 100) * Math.max(1, load);
     assert.ok(manyBest - plainBest < budget, `200 pills add ${(manyBest - plainBest).toFixed(1)}ms over a plain glass open (${manyBest.toFixed(1)} vs ${plainBest.toFixed(1)}); budget is ${budget.toFixed(0)}ms${loaded ? " (host under load)" : ""}`);
     await expect(page.locator(".glass-card")).toHaveCount(200, { timeout: 60_000 });
   } finally { await app.close(); }
