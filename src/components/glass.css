@@ -512,7 +512,14 @@
   overflow: visible;
   pointer-events: none;
 }
+/* Keep the two ink surfaces in separate compositor layers. */
+.glass-ink, .glass-ink-live { will-change: transform; }
 .glass-ink path { pointer-events: none; }
+.glass-ink-bitmap { display: block; color: var(--glass-ink-color); }
+:root[data-appearance="dark"] .glass-ink-bitmap[data-ink-colour="#24292f"] { --glass-ink-dark: #e9e7e2; }
+:root[data-appearance="dark"] .glass-ink-bitmap[data-ink-colour="#1d4ed8"] { --glass-ink-dark: #8fb2ff; }
+:root[data-appearance="dark"] .glass-ink-bitmap[data-ink-colour="#b42318"] { --glass-ink-dark: #ff9a8a; }
+:root[data-appearance="dark"] .glass-ink-bitmap { color: var(--glass-ink-dark, var(--glass-ink-color)); }
 /* The paper flips, the ink follows: notebook black turns to soft chalk on a dark page. */
 :root[data-appearance="dark"] .glass-ink path[data-ink-colour="#24292f"] { fill: #e9e7e2; }
 :root[data-appearance="dark"] .glass-ink-live path[data-ink-colour="#24292f"] { fill: #e9e7e2; }

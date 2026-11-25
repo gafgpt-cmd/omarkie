@@ -1,7 +1,7 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditorHandle } from "../editor/MarkdownEditor";
-import { liveBlocks, type GlassBlock } from "../glass/anchor-map";
+import { liveBlocks } from "../glass/anchor-map";
 import {
   inkFields, inkStrokeFromMagnet, liveBoxes, newInkId, placeInk, splitStroke,
   type InkPart, type InkPlacement, type InkSample, type InkStroke,
@@ -52,18 +52,79 @@ function appendSample(points: InkSample[], sample: InkSample) {
 
 const inkPoints = (points: readonly InkSample[]) => points.map(point => [point.x, point.y, point.pressure] as [number, number, number]);
 
-// The layer re-renders whenever the page re-renders; the committed paths only change
-// when placements change, so keep React from reconciling thousands of nodes per render.
+const InkBitmap = memo(function InkBitmap({ x, y, width, height, left, top, color, d, parts }: {
+  x: number; y: number; width: number; height: number; left: number; top: number; color: string; d: string; parts: number;
+}) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const ratio = Math.min(window.devicePixelRatio, 2);
+  useLayoutEffect(() => {
+    const element = canvas.current, ctx = element?.getContext("2d");
+    if (!element || !ctx) return;
+    const path = new Path2D(d);
+    const paint = () => {
+      ctx.resetTransform();
+      ctx.clearRect(0, 0, element.width, element.height);
+      ctx.setTransform(ratio, 0, 0, ratio, -left * ratio, -top * ratio);
+      ctx.fillStyle = getComputedStyle(element).color;
+      ctx.fill(path);
+    };
+    paint();
+    const theme = new MutationObserver(paint);
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance"] });
+    return () => theme.disconnect();
+  }, [d, left, top, width, height, ratio, color]);
+  return <foreignObject x={x + left} y={y + top} width={width} height={height} data-ink-batch={parts}>
+    <canvas ref={canvas} width={Math.ceil(width * ratio)} height={Math.ceil(height * ratio)}
+      className="glass-ink-bitmap" data-ink-colour={color} style={{ width, height, "--glass-ink-color": color } as React.CSSProperties} />
+  </foreignObject>;
+});
+
+function bitmapBounds(placed: readonly InkPlacement[], start: number, end: number) {
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (let i = start; i < end; i++) {
+    const { points, stroke: { size } } = placed[i];
+    for (const [x, y] of points) {
+      left = Math.min(left, x - size); top = Math.min(top, y - size);
+      right = Math.max(right, x + size); bottom = Math.max(bottom, y + size);
+    }
+  }
+  left = Math.floor(left); top = Math.floor(top);
+  const width = Math.ceil(right) - left, height = Math.ceil(bottom) - top;
+  if (width > 0 && height > 0 && width <= 2048 && height <= 2048 && width * height <= 262144)
+    return { left, top, width, height };
+}
+
 const InkPaths = memo(function InkPaths({ placed, pathOf }: { placed: InkPlacement[]; pathOf: (placement: InkPlacement) => string }) {
-  return <>
-    {placed.map(placement => <path key={`${placement.stroke.id}:${placement.part}`} d={pathOf(placement)}
-      data-ink={placement.stroke.id} data-ink-part={placement.part} data-ink-tool={placement.stroke.tool}
-      data-ink-colour={placement.stroke.color}
-      data-ink-box={placement.stroke.parts[placement.part]?.box.kind ?? "block"}
-      transform={`translate(${placement.x} ${placement.y})`}
-      fill={placement.stroke.color} fillOpacity={placement.stroke.tool === "highlighter" ? 0.42 : 1}
-      style={{ mixBlendMode: placement.stroke.tool === "highlighter" ? "multiply" : "normal" }} />)}
-  </>;
+  const children = [];
+  for (let i = 0; i < placed.length;) {
+    const first = placed[i], { tool, color, id } = first.stroke;
+    const transform = `translate(${first.x} ${first.y})`;
+    let end = i + 1;
+    if (tool === "pen") {
+      while (end < placed.length) {
+        const next = placed[end];
+        if (next.stroke.tool !== tool || next.stroke.color !== color || next.x !== first.x || next.y !== first.y) break;
+        end++;
+      }
+    }
+    // Keep dense settled pen ink in a bounded bitmap; transparent marks retain SVG paint order.
+    const bounds = end - i >= 64 ? bitmapBounds(placed, i, end) : undefined;
+    if (bounds) {
+      const outlines = [];
+      for (let j = i; j < end; j++) outlines.push(pathOf(placed[j]));
+      children.push(<InkBitmap key={`batch:${id}:${first.part}`} x={first.x} y={first.y} {...bounds}
+        d={outlines.join(" ")} parts={end - i} color={color} />);
+    } else for (let j = i; j < end; j++) {
+      const placement = placed[j];
+      children.push(<path key={`${placement.stroke.id}:${placement.part}`} d={pathOf(placement)} transform={transform}
+        data-ink={placement.stroke.id} data-ink-part={placement.part} data-ink-tool={tool} data-ink-colour={color}
+        data-ink-box={placement.stroke.parts[placement.part]?.box.kind ?? "block"}
+        fill={color} fillOpacity={tool === "highlighter" ? 0.42 : 1}
+        style={{ mixBlendMode: tool === "highlighter" ? "multiply" : "normal" }} />);
+    }
+    i = end;
+  }
+  return children;
 });
 
 export default function GlassInk({ editor, root, note, tool, color, size, eraser, api, onHistory, onNotice }: {
@@ -81,35 +142,35 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   const surface = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const live = useRef<SVGPathElement>(null);
+  const liveFrame = useRef(0);
   const cursor = useRef<HTMLDivElement>(null);
   const [strokes, setStrokes] = useState<InkStroke[]>([]);
   const [placed, setPlaced] = useState<InkPlacement[]>([]);
   const [orphans, setOrphans] = useState(0);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const blocks = useRef<GlassBlock[]>([]);
-  const paths = useRef(new Map<string, { key: string; path: string }>());
+  const paths = useRef(new WeakMap<InkPart, { tool: InkTool; size: number; width: number; height: number; path: string }>());
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const pending = useRef<Pending | null>(null);
   const penSeen = useRef(false);
   const drawing = useRef(false);
   const placedRef = useRef<InkPlacement[]>([]);
-  const latest = useRef({ strokes, note, tool, color, size, eraser });
+  const latest = useRef({ strokes, note, tool, color, size, eraser, editor });
   const callbacks = useRef({ onHistory, onNotice });
   const history = useRef<{ undo: InkOp[][]; redo: InkOp[][] }>({ undo: [], redo: [] });
   const reload = useRef(false);
-  latest.current = { strokes, note, tool, color, size, eraser };
+  latest.current = { strokes, note, tool, color, size, eraser, editor };
   callbacks.current = { onHistory, onNotice };
   placedRef.current = placed;
 
   const measure = useCallback(() => {
     const element = svg.current;
     if (!element) { setPlaced([]); return; }
-    blocks.current = liveBlocks(editor()?.readingContext(), root);
+    const blocks = liveBlocks(latest.current.editor()?.readingContext(), root);
     const origin = element.getBoundingClientRect();
-    const result = placeInk(latest.current.strokes, blocks.current, origin);
+    const result = placeInk(latest.current.strokes, blocks, origin);
     setPlaced(result.placed);
     setOrphans(result.orphans);
-  }, [editor, root]);
+  }, [root]);
 
   const send = useCallback((request: Record<string, unknown>) => {
     const path = latest.current.note;
@@ -148,7 +209,6 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   useEffect(() => {
     setStrokes([]);
     setPlaced([]);
-    paths.current = new Map();
     history.current = { undo: [], redo: [] };
     callbacks.current.onHistory?.(false, false);
     load();
@@ -258,11 +318,19 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     path.setAttribute("d", inkPath(inkPoints(gesture.points), { tool, size: latest.current.size }));
   }, []);
 
+  const scheduleLive = useCallback(() => {
+    if (liveFrame.current) return;
+    liveFrame.current = requestAnimationFrame(() => {
+      liveFrame.current = 0;
+      flushLive();
+    });
+  }, [flushLive]);
+  useEffect(() => () => cancelAnimationFrame(liveFrame.current), []);
+
   const finishDraw = useCallback((gesture: Pending) => {
     const points = gesture.points;
     if (!points.length || !latest.current.note) return;
-    const list = liveBlocks(editor()?.readingContext(), root);
-    blocks.current = list;
+    const list = liveBlocks(latest.current.editor()?.readingContext(), root);
     const parts = splitStroke(points, liveBoxes(list), list);
     if (!parts.length) { callbacks.current.onNotice?.("Draw over the page so ink can follow a paragraph."); return; }
     const tool = latest.current.tool;
@@ -270,7 +338,7 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     const stroke: InkStroke = { id: newInkId(), tool, color: latest.current.color, size: latest.current.size, parts };
     addStroke(stroke);
     pushHistory([{ type: "add", id: stroke.id, fields: inkFields(stroke) }]);
-  }, [addStroke, editor, pushHistory, root]);
+  }, [addStroke, pushHistory, root]);
 
   const applyErase = useCallback((point: { x: number; y: number }) => {
     const current = latest.current.strokes;
@@ -316,6 +384,8 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     const gesture = pending.current;
     pending.current = null;
     drawing.current = false;
+    cancelAnimationFrame(liveFrame.current);
+    liveFrame.current = 0;
     live.current?.setAttribute("d", "");
     if (gesture && !gesture.eraser) finishDraw(gesture);
     if (reload.current) { reload.current = false; load(); }
@@ -326,8 +396,8 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     if (!gesture || event.pointerId !== gesture.pointerId) return;
     if (latest.current.tool === "eraser") { applyErase({ x: event.clientX, y: event.clientY }); return; }
     for (const item of coalesced(event)) appendSample(gesture.points, sampleOf(item));
-    flushLive();
-  }, [applyErase, flushLive]);
+    scheduleLive();
+  }, [applyErase, scheduleLive]);
 
   const endGesture = useCallback((event: PointerEvent) => {
     const gesture = pending.current;
@@ -347,8 +417,8 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     drawing.current = true;
     pending.current = { pointerId: event.pointerId, points: [sampleOf(event)], eraser: latest.current.tool === "eraser" };
     if (latest.current.tool === "eraser") applyErase({ x: event.clientX, y: event.clientY });
-    else flushLive();
-  }, [applyErase, flushLive]);
+    else scheduleLive();
+  }, [applyErase, scheduleLive]);
 
   const trackCursor = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const element = cursor.current;
@@ -357,13 +427,12 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   }, []);
 
   const pathOf = useCallback((placement: InkPlacement) => {
-    const key = `${placement.stroke.tool}:${placement.stroke.size}:${Math.round(placement.width * 10)}:${Math.round(placement.height * 10)}`;
-    const id = `${placement.stroke.id}:${placement.part}`;
-    const cached = paths.current.get(id);
-    if (cached?.key === key) return cached.path;
-    if (paths.current.size > 4096) paths.current.clear();
-    const path = inkPath(placement.points, { tool: placement.stroke.tool, size: placement.stroke.size });
-    paths.current.set(id, { key, path });
+    const { stroke, width, height } = placement, { tool, size } = stroke;
+    const part = stroke.parts[placement.part];
+    const cached = paths.current.get(part);
+    if (cached?.tool === tool && cached.size === size && cached.width === width && cached.height === height) return cached.path;
+    const path = inkPath(placement.points, { tool, size });
+    paths.current.set(part, { tool, size, width, height, path });
     return path;
   }, []);
 

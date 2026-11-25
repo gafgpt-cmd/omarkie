@@ -97,6 +97,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - Reports include medians. Photo samples report `naturalSize` (density-corrected browser dimensions, not decoded pixel counts) and `loadedAfter3s` (loaded-image count).
 - Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
 - Glass: the 50,000-note unit test checks searchable results and heartbeat progress. Only `test:perf` enforces the 400 ms main-thread gap budget.
+- On a 60 Hz display, ink must miss no refreshes: no gap above 25 ms, and p95 at most 17.5 ms while drawing. The hover check measures handler CPU time, not display intervals.
 - `OMARKIE_PERF_RUNS` sets repetitions (default 3).
 - `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar for the UI timings. Glass indexing measures the checked-out code.
 

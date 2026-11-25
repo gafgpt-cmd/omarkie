@@ -75,6 +75,7 @@ A glass image is a photo magnet: it anchors to one paragraph like a sticky note 
 - A stroke splits per element box (paragraph, list item, table cell, formula, code block) and each part stays glued to its box through edits, reflow and scrolling. Margin doodles anchor to the nearest element.
 - Pressure widens the nib. With a stylus present, fingers and palms leave no marks; a mouse works too.
 - The page is never written; strokes live in the glass journal.
+- Live ink repaints at most once per frame. Dense settled pen strokes share a bounded bitmap; translucent marks keep their SVG blending.
 
 Agents read ink as SVG paths in percent of the anchored element box:
 

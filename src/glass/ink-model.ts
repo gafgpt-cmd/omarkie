@@ -132,6 +132,7 @@ export function placeInk(strokes: readonly InkStroke[], blocks: readonly GlassBl
   placed: InkPlacement[]; orphans: number;
 } {
   const byLine = new Map(blocks.map(block => [block.line, block]));
+  const bounds = new Map<HTMLElement, InkPlacement["rect"]>();
   const placed: InkPlacement[] = [];
   let orphans = 0;
   for (const stroke of strokes) {
@@ -140,9 +141,13 @@ export function placeInk(strokes: readonly InkStroke[], blocks: readonly GlassBl
       const block = resolved.line === null || resolved.confidence < 0.5 ? undefined : byLine.get(resolved.line);
       const element = block?.element ? resolveBox(block.element, part.box) : undefined;
       if (!element) { orphans += 1; return; }
-      const box = element.getBoundingClientRect();
+      let box = bounds.get(element);
+      if (!box) {
+        const { left, top, width, height } = element.getBoundingClientRect();
+        bounds.set(element, box = { left, top, width, height });
+      }
       const points = part.points.map(([x, y, pressure]) => [x * box.width, y * box.height, pressure] as InkPoint);
-      placed.push({ stroke, part: index, points, rect: { left: box.left, top: box.top, width: box.width, height: box.height },
+      placed.push({ stroke, part: index, points, rect: box,
         x: box.left - origin.left, y: box.top - origin.top, width: box.width, height: box.height });
     });
   }

@@ -469,7 +469,16 @@ try {
   await appendFile(journalPath, `${bulk.join("\n")}\n`);
   await glassMenu(page, false);
   await glassMenu(page, true);
-  await expect.poll(async () => page.locator(".glass-ink path").count(), { timeout: 60_000 }).toBeGreaterThan(2000);
+  await expect.poll(() => page.evaluate(() =>
+    [...document.querySelectorAll(".glass-ink path, .glass-ink [data-ink-batch]")].reduce((count, node) => count + Number(node.dataset.inkBatch ?? 1), 0)),
+    { timeout: 60_000 }).toBeGreaterThan(2000);
+  const bitmap = page.locator(".glass-ink-bitmap").first();
+  await expect(bitmap).toBeVisible();
+  assert.ok(await bitmap.evaluate(canvas => {
+    const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 0) return true;
+    return false;
+  }), "dense committed strokes are present in the bitmap");
   await pick(page, "Pen");
   await expect(page.locator("[data-ink-live]")).toBeAttached();
   const grab = await page.evaluate(() => {
@@ -487,8 +496,15 @@ try {
     new MutationObserver(() => window.__inkCommits.push(performance.now()))
       .observe(document.querySelector(".glass-ink"), { attributes: true, attributeFilter: ["data-glass-ink"] });
   });
-  await page.evaluate(async grab => {
+  const cadence = await page.evaluate(async grab => {
     const surface = document.querySelector("[data-ink-surface]");
+    const gaps = [];
+    let then = await new Promise(resolve => requestAnimationFrame(resolve));
+    let frame = requestAnimationFrame(function sample(now) {
+      gaps.push(now - then);
+      then = now;
+      frame = requestAnimationFrame(sample);
+    });
     const fire = (type, x, y) => surface.dispatchEvent(new PointerEvent(type, {
       bubbles: true, cancelable: true, pointerId: 31, pointerType: "pen", pressure: 0.6, isPrimary: true,
       buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: y }));
@@ -500,7 +516,11 @@ try {
       await new Promise(resolve => setTimeout(resolve, 8));
       step += 1;
     }
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    cancelAnimationFrame(frame);
     fire("pointerup", grab.x + 12 + (step * 7) % 240, grab.y + (step * 3) % 16);
+    gaps.sort((a, b) => a - b);
+    return { frames: gaps.length, max: gaps.at(-1), p95: gaps[Math.ceil(gaps.length * 0.95) - 1] };
   }, grab);
   await page.waitForFunction(() => window.__inkCommits.length > 0, { timeout: 30_000 });
   const timing = await page.evaluate(() => {
@@ -509,20 +529,18 @@ try {
       p50: sorted[Math.floor(sorted.length / 2)], p95: sorted[Math.floor(sorted.length * 0.95)],
       commit: window.__inkCommits[0] - window.__inkUp };
   });
-  // Headless ozone throttles animation frames on an empty page too; a real display does not.
-  const cadence = await page.evaluate(async () => {
-    const times = []; const start = performance.now();
-    while (times.length < 12 && performance.now() - start < 4000) times.push(await new Promise(resolve => requestAnimationFrame(resolve)));
-    const gaps = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
-    return { frames: times.length, p50: gaps[Math.floor(gaps.length / 2)], p95: gaps[Math.floor(gaps.length * 0.95)] };
-  });
-  console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms; rAF p50 ${Math.round(cadence.p50 ?? 0)}ms p95 ${Math.round(cadence.p95 ?? 0)}ms over ${cadence.frames} frames`);
+  console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms; drawing rAF p95 ${cadence.p95?.toFixed(1)}ms, max ${cadence.max?.toFixed(1)}ms over ${cadence.frames} frames`);
   assert.ok(timing.events > 20, "the drag reaches the ink surface");
   assert.ok(timing.p95 <= 16, `drawing a stroke on 2,000 keeps pointer->path inside one frame (p95 ${timing.p95?.toFixed(1)}ms)`);
   assert.ok(timing.paints > 0, "the live stroke repaints while drawing");
   assert.ok(timing.commit <= 1500, `committing the 2,001st stroke does not lock the app (${timing.commit?.toFixed(0)}ms)`);
-  if ((cadence.p50 ?? 1000) <= 34) assert.ok(cadence.p95 <= 34, `2,000 strokes still draw near 60 fps (p95 ${cadence.p95?.toFixed(1)}ms)`);
-  else console.log("headless ozone throttles animation frames (empty page too); frame cadence needs OMARKIE_TEST_DISPLAY on a real display");
+  if (process.platform !== "linux" || process.env.OMARKIE_TEST_DISPLAY) {
+    assert.ok(cadence.frames >= 60, `drawing produced only ${cadence.frames} frames in 1.3 s`);
+    // At 60 Hz, >25 ms (1.5 refresh intervals) indicates a missed refresh.
+    // The p95 bound allows sub-ms variance in the nominal 16.67 ms timestamps.
+    assert.ok(cadence.max <= 25, `2,000 strokes must not miss a refresh (max ${cadence.max.toFixed(1)}ms, limit 25ms)`);
+    assert.ok(cadence.p95 <= 17.5, `2,000 strokes must stay at 60 Hz (p95 ${cadence.p95.toFixed(1)}ms, limit 17.5ms)`);
+  } else console.log("Frame cadence requires an isolated display; the headless backend throttles animation frames.");
   assert.ok(await page.evaluate(() => document.querySelector(".glass-ink").getAttribute("data-glass-ink") !== null));
 
   assert.deepEqual(errors, []);
