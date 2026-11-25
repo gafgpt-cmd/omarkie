@@ -60,6 +60,7 @@ import {
   blobBase64, cancelTranscribe, transcribeCapture, VoiceRecorder, voiceInfo, type CapturePart,
 } from "../voice/voice-client";
 import { timestampLabel, voiceDefaults, voiceKeyMatches } from "../../shared/voice.mjs";
+import GlassSwapPanel from "./GlassSwapPanel";
 import type { MeasureMode } from "./ImageVisuals";
 import "./glass.css";
 import "./board.css";
@@ -380,6 +381,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [openTrash, setOpenTrash] = useState(false);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [notice, setNotice] = useState("");
+  const [swapTarget, setSwapTarget] = useState<{ id: string; kind: string; line: number }>();
   const [mergeOpen, setMergeOpen] = useState<MergePreview>();
   const [mergeStale, setMergeStale] = useState<MergePreview>();
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -2173,10 +2175,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const onAction = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail?.action === "lift") void liftUp(detail);
+      if (detail?.action === "change") {
+        if (!documentSaved) { setNotice("Save the note before changing an element."); return; }
+        setSwapTarget({ id: detail.id, kind: detail.kind, line: detail.line });
+      }
     };
     window.addEventListener("omarkie:element-action", onAction);
     return () => window.removeEventListener("omarkie:element-action", onAction);
-  }, [liftUp]);
+  }, [documentSaved, liftUp]);
 
   useEffect(() => {
     if (!documentSaved && mergeOpen) {

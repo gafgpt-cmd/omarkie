@@ -4,10 +4,10 @@ import { host } from "../host";
 import { t } from "../i18n";
 import { tutorReply, type TutorDraft, type TutorReply } from "./tutor-verbs";
 
-type Pending = { id?: string; draft: TutorDraft; question: string; surface: "curtain" | "bubble"; settle: (reply: TutorReply | undefined) => void };
+type Pending = { id?: string; draft: TutorDraft; question: string; surface: "curtain" | "bubble"; quiet?: boolean; settle: (reply: TutorReply | undefined) => void };
 
 export interface LiveTutor {
-  send(draft: TutorDraft, question: string, surface?: "curtain" | "bubble"): Promise<TutorReply | undefined>;
+  send(draft: TutorDraft, question: string, surface?: "curtain" | "bubble", quiet?: boolean): Promise<TutorReply | undefined>;
   owner: string | null;
   status?: TutorReceipt;
   reply?: TutorReply;
@@ -39,8 +39,9 @@ export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, 
       void (async () => {
         try {
           const result = tutorReply(ask.draft, ask.question, event.text);
-          await onReply(result);
-          if (lease.current === active && ask.surface === "curtain" && result.verb !== "propose") setReply(result);
+          // A swap rewrite is consumed by its own panel; it must not also become a study answer.
+          if (!ask.quiet) await onReply(result);
+          if (lease.current === active && !ask.quiet && ask.surface === "curtain" && result.verb !== "propose") setReply(result);
           settle(result);
         } catch (error) {
           if (lease.current === active) setProblem(t((error as Error).message));
@@ -58,11 +59,13 @@ export function useLiveTutor(id: string, enabled: boolean, refresh: () => void, 
     };
   }, [id, supported]);
 
-  async function send(draft: TutorDraft, question: string, surface: "curtain" | "bubble" = "curtain"): Promise<TutorReply | undefined> {
+  async function send(draft: TutorDraft, question: string, surface: "curtain" | "bubble" = "curtain", quiet = false): Promise<TutorReply | undefined> {
     const bridge = host.tutorBridge, active = lease.current;
-    if (!active || !bridge || pending.current) return undefined;
+    if (!active) { setProblem(t("The Tutor is not attached to this note yet.")); return undefined; }
+    if (!bridge) { setProblem(t("The Tutor bridge is not available.")); return undefined; }
+    if (pending.current) { setProblem(t("The Tutor is busy with another ask.")); return undefined; }
     const { promise, resolve } = Promise.withResolvers<TutorReply | undefined>();
-    const ask: Pending = { draft, question, surface, settle: resolve };
+    const ask: Pending = { draft, question, surface, quiet, settle: resolve };
     pending.current = ask;
     setStatus("queued"); setReply(undefined); setProblem("");
     try {

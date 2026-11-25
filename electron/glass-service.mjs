@@ -36,7 +36,14 @@ import {
 } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
 import { journalTimeline, magnetsAt, parseScrubTime } from "../shared/glass-scrub.mjs";
+import {
+  attributionText, candidateAllowed, capProposals, compareSet, isSwapId, latestSwaps, normalLicence, onlineAllowed,
+  replaySwaps, replacementLines, swapActionsFor, swapActionList, swapDefaults, swapDestinations, swapDiff,
+} from "../shared/element-swap.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
+import { readGlassSettings, writeGlassSettings } from "./glass-state.mjs";
+import { searchOnline } from "./image-search.mjs";
+import { cleanHookResult, hookState, runImageHook, transcribe } from "./image-hooks.mjs";
 import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
 import {
   chapterMarks, cleanTranscript, timestampLabel, validSpeakerSegments, validVoiceLanguage, validVoiceWav,
@@ -52,6 +59,40 @@ const directory = async file => { const item = await info(file); return !!item?.
 const relative = (root, file) => path.relative(root, file).split(path.sep).join("/");
 const titleOf = name => path.basename(name).replace(markdown, "");
 const journalPattern = / ~([a-z0-9]{4,32})\.jsonl$/;
+const vaultPicture = /\.(?:png|jpe?g|gif|webp|avif)$/i;
+
+function previewOfBytes(bytes, type) {
+  if (!bytes?.length || bytes.length > swapDefaults.previewBytes || !type) return null;
+  return { base64: bytes.toString("base64"), mime: mimeFor(type) };
+}
+
+function candidateId(...parts) {
+  return `c-${createHash("sha256").update(parts.map(part => String(part ?? "")).join("\u0001")).digest("hex").slice(0, 10)}`;
+}
+
+// A bounded walk; hidden folders, .omarkie and symlinks never enter, so a vault cannot stall the search.
+async function vaultImages(root, limit = 8) {
+  const found = [];
+  let entries = 0;
+  async function walk(directory, depth) {
+    if (entries > 4_000 || found.length > 400) return;
+    let items;
+    try { items = await readdir(directory, { withFileTypes: true }); } catch { return; }
+    for (const entry of items.sort((left, right) => left.name.localeCompare(right.name))) {
+      if (++entries > 4_000) return;
+      if (entry.isSymbolicLink() || entry.name.startsWith(".") || entry.name === "node_modules") continue;
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) { if (depth < 8) await walk(absolute, depth + 1); continue; }
+      if (!entry.isFile() || !vaultPicture.test(entry.name)) continue;
+      const metadata = await info(absolute);
+      if (!metadata?.isFile()) continue;
+      found.push({ absolute, rel: relative(root, absolute), name: entry.name, size: metadata.size });
+      if (found.length > 400) return;
+    }
+  }
+  await walk(root, 0);
+  return found.slice(0, Math.max(limit, 0));
+}
 
 export class GlassService {
   constructor({ root, appData, device, host = os.hostname(), now = Date.now, faults = {} }) {
@@ -1436,6 +1477,429 @@ export class GlassService {
     return findInVault(settings.root, clean).catch(() => undefined);
   }
 
+  // ---- G22 swap anything: pick, complain, compare, cover or replace, undo ----
+  async swapContext(request) {
+    if (!this.initialized) await this.initialize();
+    const { note: name, file } = await this.validateNote(request.note);
+    const known = this.notesByPath.get(name);
+    const note = known ?? (this.readOnly ? { id: null, path: name, title: titleOf(name) } : await this.identify(name));
+    const journal = this.journalFor(note);
+    const text = decodeNote(await readFile(file)).text;
+    return { name, file, note, journal, text, elements: markdownElements(text) };
+  }
+
+  async swapRecords(journal) {
+    return replaySwaps(await readFile(journal, "utf8").catch(() => ""));
+  }
+
+  swapEcho(element, elements) {
+    const at = elements.findIndex(item => item.id === element.id);
+    const near = (offset) => {
+      const row = elements[at + offset];
+      return row ? { kind: row.kind, line: row.line, text: row.text.slice(0, 160) } : null;
+    };
+    return {
+      id: element.id, kind: element.kind, line: element.line, headings: [...element.headings],
+      markdown: element.markdown, text: element.text.slice(0, 4_000),
+      heading_path: element.headings.join(" › "), quote: element.text.slice(0, 400),
+      neighbours: [near(-1), near(1)].filter(Boolean),
+    };
+  }
+
+  swapElementOf(elements, id) {
+    const element = elements.find(item => item.id === id);
+    if (!element) throw Object.assign(new Error("That element is not in this note."), { code: "ELEMENT_NOT_FOUND" });
+    return element;
+  }
+
+  async swapSettings(request) {
+    this.assertReady();
+    const { note: name, file } = await this.validateNote(request.note);
+    const root = await vaultRoot(path.dirname(file), this.root);
+    if (request.neverOnline === undefined) return { note: name, ...(await readGlassSettings(root)) };
+    this.assertWritable();
+    const settings = await writeGlassSettings(root, { neverOnline: request.neverOnline === true });
+    return { note: name, ...settings };
+  }
+
+  // The original is a candidate too: the compare widget needs both sides.
+  async swapCurrent(element, file, name) {
+    if (element.kind === "image" || element.kind === "embed") {
+      const reference = imageReferenceOf(element.markdown);
+      const source = reference ? await this.resolveImageReference(reference, file) : null;
+      const metadata = source ? await info(source) : null;
+      if (!source || !metadata?.isFile() || metadata.isSymbolicLink()) return null;
+      const bytes = await readFile(source);
+      const type = imageTypeOf(bytes);
+      const size = orientationSize(imageDimensions(bytes)) ?? { width: 0, height: 0 };
+      if (!type || size.width < 1) return null;
+      return {
+        id: "current", kind: "find", current: true, source: "vault", sourceLabel: "your vault",
+        title: path.basename(reference ?? source), vaultPath: relative(await vaultRoot(path.dirname(file), this.root), source),
+        width: size.width, height: size.height, bytes: bytes.length,
+        licence: { code: "own", version: null, url: null, attribution: "", required: false },
+        preview: previewOfBytes(bytes, type), absolute: source,
+      };
+    }
+    return { id: "current", kind: "rewrite", current: true, title: "Current", text: element.markdown, source: "page", sourceLabel: "your note" };
+  }
+
+  // Vault pictures first: a bounded walk, filenames scored against the complaint, no index required.
+  async swapVaultCandidates(query, file, name, skip) {
+    const root = await vaultRoot(path.dirname(file), this.root);
+    const files = await vaultImages(root, swapDefaults.searchResults + 4);
+    const tokens = String(query ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(token => token.length > 2).slice(0, 8);
+    const scored = files.filter(item => item.absolute !== skip).map(item => {
+      const haystack = item.rel.toLowerCase();
+      const hits = tokens.filter(token => haystack.includes(token)).length;
+      return { ...item, score: hits };
+    }).filter(item => !tokens.length || item.score > 0).sort((left, right) => right.score - left.score || left.rel.localeCompare(right.rel));
+    const candidates = [];
+    for (const item of (scored.length ? scored : files.filter(row => row.absolute !== skip).sort((l, r) => l.rel.localeCompare(r.rel)))) {
+      if (candidates.length >= swapDefaults.candidates - 1) break;
+      if (item.size > imageDefaults.maxBytes) continue;
+      const bytes = await readFile(item.absolute).catch(() => null);
+      const type = bytes ? imageTypeOf(bytes) : null;
+      const size = bytes ? orientationSize(imageDimensions(bytes)) : null;
+      if (!bytes || !type || !size || Math.min(size.width, size.height) < swapDefaults.minEdge) continue;
+      candidates.push({
+        id: candidateId(name, item.rel, "vault"), kind: "find", source: "vault", sourceLabel: "your vault",
+        title: item.name, vaultPath: item.rel, width: size.width, height: size.height, bytes: bytes.length,
+        licence: { code: "own", version: null, url: null, attribution: "", required: false },
+        preview: previewOfBytes(bytes, type), absolute: item.absolute,
+      });
+    }
+    return candidates;
+  }
+
+  async swapHookCandidate(kind, element, file, complaint, hooks) {
+    if (!hooks[kind === "enhance" ? "enhance" : "generate"]) {
+      return { candidate: null, warning: { code: "HOOK_MISSING", message: `${kind === "enhance" ? "OMARKIE_ENHANCE" : "OMARKIE_IMAGEGEN"} is not configured.` } };
+    }
+    let input;
+    if (kind === "enhance") {
+      if (element.kind !== "image" && element.kind !== "embed") return { candidate: null, warning: { code: "UNSUPPORTED_KIND", message: "Only a picture can be enhanced." } };
+      const reference = imageReferenceOf(element.markdown);
+      input = reference ? await this.resolveImageReference(reference, file) : null;
+      if (!input) return { candidate: null, warning: { code: "SOURCE_OFFLINE", message: "The picture file is missing from this vault." } };
+    }
+    const prompt = kind === "generate" ? (complaint || element.text).slice(0, 1_000) : undefined;
+    const result = await runImageHook(kind === "enhance" ? "enhance" : "generate", { input, prompt, appData: this.appData });
+    if (!result.ok) return { candidate: null, warning: { code: result.code, message: result.hint } };
+    try {
+      const size = orientationSize(imageDimensions(result.bytes));
+      if (!size || Math.min(size.width, size.height) < swapDefaults.minEdge) {
+        return { candidate: null, warning: { code: "CANDIDATE_TOO_SMALL", message: `The hook's picture is smaller than ${swapDefaults.minEdge} px.` } };
+      }
+      const stem = kind === "enhance" ? `${path.basename(input, path.extname(input))} sharpened` : "Generated picture";
+      return { candidate: {
+        id: candidateId(relative(this.root, file), stem, kind), kind, source: kind, sourceLabel: kind === "enhance" ? "enhanced on this machine" : "generated on this machine",
+        title: stem, width: size.width, height: size.height, bytes: result.bytes.length, base64: result.bytes.toString("base64"),
+        licence: { code: "local", version: null, url: null, attribution: "", required: false },
+        operations: kind === "enhance" ? ["sharpened locally"] : ["generated locally"],
+        preview: previewOfBytes(result.bytes, result.type),
+      }, warning: null };
+    } finally {
+      await cleanHookResult(result);
+    }
+  }
+
+  async swapOptions(request) {
+    const { name, file, note, text, elements } = await this.swapContext(request);
+    const element = this.swapElementOf(elements, request.element);
+    const actions = swapActionsFor(element);
+    if (!actions.length) throw Object.assign(new Error("This element cannot be swapped."), { code: "UNSUPPORTED_KIND" });
+    const complaint = String(request.complaint ?? "").trim().slice(0, swapDefaults.complaintLimit);
+    const root = await vaultRoot(path.dirname(file), this.root);
+    const settings = await readGlassSettings(root);
+    const hooks = await hookState(this.appData);
+    // A hook action exists only when the hook does, so the chips match what this machine can do.
+    const usable = actions.filter(action => action !== "enhance" || hooks.enhance).filter(action => action !== "generate" || hooks.generate);
+    const kind = swapActionList.includes(request.kind) && usable.includes(request.kind) ? request.kind : usable[0] ?? actions[0];
+    const warnings = [];
+    const found = [];
+    const current = await this.swapCurrent(element, file, name);
+    if (kind === "find") found.push(...await this.swapVaultCandidates(complaint || element.text, file, name, current?.absolute));
+    if (kind === "enhance" || kind === "generate") {
+      const { candidate, warning } = await this.swapHookCandidate(kind, element, file, complaint, hooks);
+      if (candidate) found.push(candidate);
+      if (warning) warnings.push(warning);
+    }
+    const online = onlineAllowed({ requested: request.online === true, neverOnline: settings.neverOnline });
+    let searched = false;
+    if (kind === "find" && online.allowed && complaint) {
+      searched = true;
+      // A results file keeps searches offline and deterministic on a machine or a test.
+      const fixture = process.env.OMARKIE_SWAP_SEARCH?.trim();
+      const fixtureResults = fixture
+        ? { candidates: JSON.parse(await readFile(fixture, "utf8")).map(item => ({ ...item, source: item.source ?? "commons", online: true })), errors: [] }
+        : null;
+      const { candidates, errors } = fixtureResults ?? await searchOnline(complaint, { limit: 3 });
+      for (const error of errors) warnings.push({ code: error.code, message: `${error.source}: ${error.message}` });
+      for (const candidate of candidates) {
+        const checked = candidateAllowed(candidate);
+        if (!candidate.preview && typeof candidate.bytesBase64 === "string" && candidate.bytesBase64) {
+          const bytes = Buffer.from(candidate.bytesBase64, "base64");
+          candidate.preview = previewOfBytes(bytes, imageTypeOf(bytes));
+        }
+        const view = this.swapCandidateView(candidate, root, name);
+        if (checked.ok) found.push(view);
+        else warnings.push({ code: checked.code, message: `${view.title}: ${checked.hint}` });
+      }
+    }
+    const candidates = compareSet(current, found.slice(0, swapDefaults.candidates - (current ? 1 : 0)));
+    return { ...this.describe(note, file), element: this.swapEcho(element, elements), actions, kind, complaint, hooks,
+      online: { ...online, searched }, neverOnline: settings.neverOnline, candidates, warnings };
+  }
+
+  swapCandidateView(candidate, root, name) {
+    const licence = normalLicence(candidate.licence);
+    return { ...candidate, id: candidate.id ?? candidateId(name, candidate.sourceUrl ?? candidate.title ?? "", candidate.source ?? "web"),
+      licence: licence ?? null, online: candidate.online === true, preview: candidate.preview ?? null };
+  }
+
+  async swapCandidateBytes(candidate) {
+    const inline = typeof candidate.base64 === "string" && candidate.base64 ? candidate.base64
+      : typeof candidate.bytesBase64 === "string" && candidate.bytesBase64 ? candidate.bytesBase64 : null;
+    if (inline) {
+      const bytes = Buffer.from(inline, "base64");
+      return { bytes, type: imageTypeOf(bytes) };
+    }
+    if (typeof candidate.vaultPath === "string" && candidate.vaultPath) {
+      const clean = candidate.vaultPath.replace(/^\.\//, "");
+      if (clean.startsWith("..") || path.isAbsolute(clean)) throw Object.assign(new Error("That vault picture is outside this vault."), { code: "ELEMENT_NOT_FOUND" });
+      const bytes = await readFile(path.resolve(this.root, ...clean.split("/"))).catch(() => null);
+      return bytes ? { bytes, type: imageTypeOf(bytes) } : null;
+    }
+    if (typeof candidate.downloadUrl === "string" && /^https?:\/\//i.test(candidate.downloadUrl)) {
+      const response = await fetch(candidate.downloadUrl, { signal: AbortSignal.timeout(20_000), headers: { accept: "image/*", "user-agent": "omarkie-swap/1 (+local note app)" } });
+      if (!response.ok) throw Object.assign(new Error(`The picture download failed (${response.status}).`), { code: "SOURCE_OFFLINE" });
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length > imageDefaults.maxBytes) throw Object.assign(new Error("The picture is too large."), { code: "OUTPUT_TOO_LARGE" });
+      return { bytes, type: imageTypeOf(bytes) };
+    }
+    return null;
+  }
+
+  async swapAddMagnet(journal, fields, magnetId = newMagnetId()) {
+    const values = validateMagnetFields(fields.kind, fields, false);
+    for (const [field, value] of Object.entries(values))
+      await this.appendRecord(journal, { op: "set", magnetId, field, value, hlc: this.clock.next(), device: this.deviceName });
+    return magnetId;
+  }
+
+  async swapApply(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { name, file, note, journal, text, elements } = await this.swapContext(request);
+    const element = this.swapElementOf(elements, request.element);
+    const actions = swapActionsFor(element);
+    if (!actions.length) throw Object.assign(new Error("This element cannot be swapped."), { code: "UNSUPPORTED_KIND" });
+    const mode = request.mode === "replace" ? "replace" : "cover";
+    const candidate = request.candidate && typeof request.candidate === "object" ? request.candidate : null;
+    if (!candidate) throw Object.assign(new Error("Choose a candidate first."), { code: "VALIDATION_ERROR" });
+    const checked = candidateAllowed(candidate);
+    if (!checked.ok) throw Object.assign(new Error(checked.hint), { code: checked.code });
+    const kind = swapActionList.includes(candidate.kind) ? candidate.kind : actions[0];
+    const swapId = isSwapId(request.swapId) ? request.swapId : `sw-${randomBytes(6).toString("hex")}`;
+    const at = this.now();
+    const isPicture = candidate.kind !== "rewrite" && candidate.kind !== "redraw";
+    let bytes = null, type = null;
+    if (isPicture) {
+      const loaded = await this.swapCandidateBytes(candidate);
+      if (!loaded?.bytes?.length || !loaded.type) throw Object.assign(new Error("The candidate picture could not be read."), { code: "SOURCE_OFFLINE" });
+      ({ bytes, type } = loaded);
+    }
+    const operations = Array.isArray(candidate.operations) ? candidate.operations : [];
+    const citation = attributionText({ ...candidate, licence: normalLicence(candidate.licence) }, { accessed: at, operations });
+    const settings = await this.mergeSettingsFor(file, name);
+    const eol = noteLineEnding(text);
+    // A picture always lands in the vault's attachment folder first; the page only points at it.
+    let attachment = null, mapping = null;
+    if (isPicture) {
+      const folder = this.attachmentDir(settings.root, settings.attachmentFolder);
+      const taken = new Set(await readdir(folder).catch(() => []));
+      const assetName = assetFile(candidate.title || candidate.name || "swap", extensionFor(type), taken);
+      const assetPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
+      const width = Math.round(Math.min(imageDefaults.maxW, Math.max(imageDefaults.minW, Number(candidate.width) || imageDefaults.w)));
+      mapping = mergeLines("image", { name: candidate.title || assetName, w: width }, { settings, assetPath, assetName });
+      attachment = { name: assetName, rel: assetPath, abs: path.join(folder, assetName), bytes };
+    }
+    const lines = isPicture
+      ? replacementLines(candidate, { swapId, accessed: at, operations, imageMarkdown: mapping.lines[0] })
+      : replacementLines(candidate, { swapId, accessed: at, operations });
+    const diff = swapDiff(text, element, lines, eol);
+    const before = await readFile(file);
+    const baseHash = hashBytes(before);
+    const buffer = encodeNote({ bom: decodeNote(before).bom, text: diff.next });
+    if (request.dryRun === true) {
+      return { ...this.describe(note, file), needsUser: true, swapId, mode, expectedHash: baseHash,
+        candidate: this.swapCandidateView(candidate, settings.root, name),
+        element: this.swapEcho(element, elements), diff: diff.rows, footnote: citation, attachment: attachment?.rel ?? null,
+        message: "Preview only. Pass --accept to write it." };
+    }
+    if (mode === "replace" && request.approved !== true) {
+      return { ...this.describe(note, file), needsUser: true, swapId, mode, expectedHash: baseHash,
+        candidate: this.swapCandidateView(candidate, settings.root, name),
+        element: this.swapEcho(element, elements), diff: diff.rows, footnote: citation, attachment: attachment?.rel ?? null,
+        message: "Preview only. Press Accept to replace this element in the page." };
+    }
+    if (mode === "replace" && typeof request.expectedHash === "string" && request.expectedHash && request.expectedHash !== baseHash) {
+      return { ...this.describe(note, file), stale: true, swapId, mode, diff: diff.rows, footnote: citation,
+        message: "The note changed since the preview; nothing was written." };
+    }
+    const fresh = await readFile(file);
+    if (hashBytes(fresh) !== baseHash) {
+      return { ...this.describe(note, file), stale: true, swapId, mode, diff: diff.rows, footnote: citation,
+        message: "The note changed since the preview; nothing was written." };
+    }
+    let magnetId = null, undoRel = null, assetWritten = false;
+    if (mode === "replace") {
+      undoRel = `assets/${path.basename(journal, ".jsonl")}/undo-${swapId}.md`;
+      await mkdir(path.dirname(path.join(this.storeDir, ...undoRel.split("/"))), { recursive: true, mode: 0o700 });
+      await writeBytesAtomic(path.join(this.storeDir, ...undoRel.split("/")), before);
+      try {
+        if (attachment) {
+          await mkdir(path.dirname(attachment.abs), { recursive: true, mode: 0o700 });
+          const existing = await readFile(attachment.abs).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+          if (existing && !existing.equals(attachment.bytes))
+            throw Object.assign(new Error("A different picture already has that name; choose the candidate again."), { code: "NOTE_WRITE_CONFLICT" });
+          if (!existing) { await writeBytesAtomic(attachment.abs, attachment.bytes); assetWritten = true; }
+        }
+        await writeBytesAtomic(file, buffer);
+      } catch (error) {
+        if (assetWritten && attachment) await unlink(attachment.abs).catch(() => {});
+        throw error;
+      }
+    } else {
+      const anchor = { version: 2, landmarks: [...(element.landmarks?.landmarks ?? [])] };
+      let fields;
+      if (isPicture) {
+        const stored = await this.imageAsset({ file: journal, image: { base64: bytes.toString("base64"), name: candidate.title || "swap" }, width: 320 });
+        fields = { ...stored, anchor, x: 0, y: 0, coverOf: element.id,
+          source: { element: element.id, kind: element.kind, line: element.line, path: name } };
+      } else {
+        fields = { kind: "sticky", text: String(candidate.text ?? "").slice(0, swapDefaults.textLimit), color: stickyColors[0],
+          anchor, x: 0, y: 0, w: 232, h: 168, folded: false,
+          source: { element: element.id, kind: element.kind, line: element.line, path: name } };
+      }
+      magnetId = await this.swapAddMagnet(journal, fields);
+    }
+    await this.appendRecord(journal, { op: "swap", swapId, element: { id: element.id, kind: element.kind, line: element.line },
+      mode, kind, candidateId: candidate.id ?? null, title: candidate.title ?? null, source: candidate.source ?? null,
+      licence: normalLicence(candidate.licence), attribution: citation, ...(magnetId ? { magnetId } : {}),
+      ...(attachment ? { attachment: attachment.rel } : {}), ...(undoRel ? { undo: undoRel } : {}),
+      baseHash, afterHash: mode === "replace" ? hashBytes(buffer) : null, at: new Date(at).toISOString(),
+      hlc: this.clock.next(), device: this.deviceName });
+    await this.identify(name).catch(() => {});
+    const replay = await this.readJournal(journal);
+    const magnet = magnetId ? replay.magnets.get(magnetId) : null;
+    this.notify();
+    return { ...this.describe(note, file), swap: { swapId, mode, kind, elementId: element.id, title: candidate.title ?? null,
+      attachment: attachment?.rel ?? null, magnetId, attribution: citation }, applied: true,
+      diff: mode === "replace" ? diff.rows : null, magnet: magnet ? magnetViewFromMap(magnet) : null };
+  }
+
+  async swapRestore(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { name, file, note, journal } = await this.swapContext(request);
+    const records = await this.swapRecords(journal);
+    const latest = latestSwaps(records.applied);
+    const record = request.swap
+      ? records.applied.find(entry => entry.swapId === request.swap)
+      : request.element ? latest.find(entry => entry.element?.id === request.element) : latest.sort((left, right) => String(right.at).localeCompare(String(left.at)))[0];
+    if (!record) throw Object.assign(new Error("Nothing to restore on this note."), { code: "ELEMENT_NOT_FOUND" });
+    if (record.mode === "replace") {
+      if (!record.undo) throw new Error("The undo copy for that swap is missing.");
+      const inside = path.relative(this.storeDir, path.resolve(this.storeDir, ...String(record.undo).split("/")));
+      if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) throw new Error("The undo copy sits outside the glass store.");
+      const bytes = await readFile(path.join(this.storeDir, ...record.undo.split("/"))).catch(error => {
+        throw error.code === "ENOENT" ? new Error("The undo copy for that swap is missing.") : error;
+      });
+      const currentHash = hashBytes(await readFile(file));
+      if (record.afterHash && currentHash !== record.afterHash && request.force !== true) {
+        return { ...this.describe(note, file), undoStale: true, swap: record,
+          message: "The note changed after the swap; press Undo again to restore it anyway." };
+      }
+      await writeBytesAtomic(file, bytes);
+    }
+    if (record.magnetId) {
+      const replay = await this.readJournal(journal);
+      const magnet = replay.magnets.get(record.magnetId);
+      if (magnet && magnet.deleted?.active !== true)
+        await this.appendRecord(journal, { op: "delete", magnetId: record.magnetId, hlc: this.clock.next(), device: this.deviceName });
+    }
+    await this.appendRecord(journal, { op: "swap-undo", swapId: record.swapId, hlc: this.clock.next(), device: this.deviceName });
+    await this.identify(name).catch(() => {});
+    this.notify();
+    return { ...this.describe(note, file), restored: true, swap: record, noteUnchanged: record.mode === "cover" };
+  }
+
+  async swapPropose(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { name, file, note, journal, elements } = await this.swapContext(request);
+    const element = this.swapElementOf(elements, request.element);
+    if (!swapActionsFor(element).length) throw Object.assign(new Error("This element cannot be swapped."), { code: "UNSUPPORTED_KIND" });
+    const input = Array.isArray(request.candidates) ? request.candidates : [];
+    if (!input.length) throw new Error("Pass at least one candidate to propose.");
+    const records = await this.swapRecords(journal);
+    const now = this.now();
+    const open = capProposals(records.proposals.map(entry => ({ ...entry, candidateId: entry.candidate?.id, title: entry.candidate?.title,
+      dismissed: records.dismissed.has(entry.swapId), at: Date.parse(entry.at ?? 0) || 0 })), { now });
+    const room = Math.max(0, Math.min(swapDefaults.proposalBatch, swapDefaults.proposalNote - open.length));
+    const accepted = [], rejected = [];
+    const seen = new Set(open.map(entry => entry.candidateId));
+    for (const candidate of input) {
+      if (accepted.length >= room) { rejected.push({ title: candidate?.title ?? null, code: "PROPOSAL_CAP", hint: "The proposal cap for this note is reached." }); continue; }
+      const checked = candidateAllowed(candidate);
+      if (!checked.ok) { rejected.push({ title: candidate?.title ?? null, code: checked.code, hint: checked.hint }); continue; }
+      const view = this.swapCandidateView(candidate, this.root, name);
+      if (seen.has(view.id)) { rejected.push({ title: view.title, code: "PROPOSAL_DUPLICATE", hint: "That candidate is already waiting." }); continue; }
+      seen.add(view.id);
+      const swapId = `sw-${randomBytes(6).toString("hex")}`;
+      const stored = { ...view };
+      delete stored.preview;
+      // A local hook's picture has no vault path yet; keep its bytes so the card can still apply.
+      if (stored.base64?.length && stored.base64.length < 2_500_000) stored.bytesBase64 = stored.base64;
+      delete stored.base64;
+      delete stored.absolute;
+      await this.appendRecord(journal, { op: "swap-propose", swapId, element: { id: element.id, kind: element.kind, line: element.line },
+        candidate: stored, at: new Date(now + accepted.length).toISOString(), hlc: this.clock.next(), device: this.deviceName });
+      accepted.push({ swapId, candidate: view, at: new Date(now + accepted.length).toISOString() });
+    }
+    return { ...this.describe(note, file), element: this.swapEcho(element, elements), proposals: accepted, rejected, cap: swapDefaults.proposalBatch };
+  }
+
+  async swapDismiss(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { note, file, journal } = await this.swapContext(request);
+    if (!isSwapId(request.swap)) throw new Error("Pass the proposal id to dismiss.");
+    await this.appendRecord(journal, { op: "swap-dismiss", swapId: request.swap, hlc: this.clock.next(), device: this.deviceName });
+    return { ...this.describe(note, file), dismissed: request.swap };
+  }
+
+  async swapState(request) {
+    if (!this.initialized) await this.initialize();
+    const { name, file, note, journal } = await this.swapContext(request);
+    const records = await this.swapRecords(journal);
+    const root = await vaultRoot(path.dirname(file), this.root);
+    const settings = await readGlassSettings(root);
+    const proposals = capProposals(records.proposals.map(entry => ({ ...entry, candidateId: entry.candidate?.id, title: entry.candidate?.title,
+      dismissed: records.dismissed.has(entry.swapId), at: Date.parse(entry.at ?? 0) || 0 })), { now: this.now() });
+    return { ...this.describe(note, file), swaps: latestSwaps(records.applied), proposals, hooks: await hookState(this.appData),
+      neverOnline: settings.neverOnline, destinations: swapDestinations };
+  }
+
+  async swapVoice(request) {
+    this.assertReady();
+    const wav = typeof request.audio === "string" ? Buffer.from(request.audio, "base64") : null;
+    const extension = request.extension === "webm" || request.extension === "ogg" ? request.extension : "wav";
+    return transcribe(wav, { appData: this.appData, extension });
+  }
+
   // Layers exist per note: the panel reads their state with the current magnet counts.
   async layers(request) {
     this.assertReady();
@@ -1766,6 +2230,11 @@ export class GlassService {
     if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "voice-memo", "voice-lecture",
       "layers", "layer", "board", "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up", "timeline", "scrub", "ocr",
       "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
+      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
+      "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set",
+      "swap-options", "swap-apply", "swap-restore", "swap-propose", "swap-dismiss", "swap-state", "swap-settings", "swap-voice"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (input.action === "swap-voice") return this.swapVoice(input);
     if (input.action === "srs-due") return this.srsDue();
     if (input.action === "srs-review") return this.srsReview(input);
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
@@ -1782,6 +2251,13 @@ export class GlassService {
     if (input.action === "merge-undo") return this.mergeUndo(input);
     if (input.action === "merge-history") return this.mergeHistory(input);
     if (input.action === "lift-up") return this.liftUp(input);
+    if (input.action === "swap-options") return this.swapOptions(input);
+    if (input.action === "swap-apply") return this.swapApply(input);
+    if (input.action === "swap-restore") return this.swapRestore(input);
+    if (input.action === "swap-propose") return this.swapPropose(input);
+    if (input.action === "swap-dismiss") return this.swapDismiss(input);
+    if (input.action === "swap-state") return this.swapState(input);
+    if (input.action === "swap-settings") return this.swapSettings(input);
     if (input.action === "asset") return this.magnetAsset(input);
     if (input.action === "asset-display") return this.assetDisplay(input);
     return this[input.action](input);
