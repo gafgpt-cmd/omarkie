@@ -159,15 +159,14 @@ export class GlassSync {
     return entries;
   }
 
-  async readNote(entry) {
+  async readNote(entry, needShape = true) {
     const file = path.join(this.root, ...entry.path.split("/"));
     const buffer = await readFile(file).catch(missing);
     if (!buffer) return null;
     const hash = createHash("sha256").update(buffer).digest("hex");
-    const head = buffer.subarray(0, 1024 * 1024).toString("utf8");
-    return { ...entry, size: buffer.length, hash,
-      text: buffer.toString("utf8"), title: path.basename(entry.path).replace(markdown, ""),
-      shape: shapeOf(head, path.basename(entry.path)) };
+    const text = buffer.toString("utf8"), fileName = path.basename(entry.path);
+    const shape = needShape ? shapeOf(buffer.length <= 1024 * 1024 ? text : buffer.subarray(0, 1024 * 1024).toString("utf8"), fileName) : undefined;
+    return { ...entry, size: buffer.length, hash, text, title: fileName.replace(markdown, ""), shape };
   }
 
   async exists(relative) {
@@ -196,6 +195,7 @@ export class GlassSync {
       await this.rebuildNoteKeys();
       this.total = entries.length;
       let indexed = 0;
+      const tracked = this.service.currentNotes();
       const seen = new Set();
       const readings = [];
       let batch = [];
@@ -219,10 +219,10 @@ export class GlassSync {
               if (prior.note_id !== noteId) batch.push({ ...entry, noteId });
               return;
             }
-            const reading = await this.readNote(entry);
+            const reading = await this.readNote(entry, tracked.length > 0);
             if (!reading) return;
             reading.noteId = noteId;
-            readings.push(reading);
+            if (tracked.length) readings.push(reading);
             batch.push(reading);
             return;
           }
@@ -243,27 +243,31 @@ export class GlassSync {
           .catch(error => { this.error = error.message; });
       }
 
-      const present = new Set([...seen].map(caseFold));
-      const missingNotes = this.service.currentNotes().filter(note => !present.has(caseFold(note.path)));
-      const missingIds = new Set(missingNotes.map(note => note.id));
-      const readingsByPath = new Map(readings.map(reading => [reading.path, reading]));
-      const caseOnly = [];
-      for (const note of missingNotes) {
-        const match = readings.find(reading => !this.noteFor(reading.path) && caseFold(reading.path) === caseFold(note.path));
-        if (!match) continue;
-        caseOnly.push({ note, match });
-        missingIds.delete(note.id);
-        readingsByPath.delete(match.path);
+      const present = this.caseInsensitive && tracked.length ? new Set([...seen].map(caseFold)) : seen;
+      const missingNotes = tracked.filter(note => !present.has(caseFold(note.path)));
+      this.lost = [];
+      if (missingNotes.length) {
+        const readingsByPath = new Map(readings.map(reading => [reading.path, reading]));
+        const caseOnly = [];
+        const added = readings.filter(reading => !this.noteFor(reading.path));
+        const missing = [];
+        for (const note of missingNotes) {
+          const match = added.find(reading => caseFold(reading.path) === caseFold(note.path));
+          if (!match) {
+            missing.push({ ...note, hash: note.fingerprint?.hash, size: note.fingerprint?.size, shape: note.fingerprint?.shape });
+            continue;
+          }
+          caseOnly.push({ note, match });
+          readingsByPath.delete(match.path);
+        }
+        const plan = planMoves({ missing, added: added.filter(reading => readingsByPath.has(reading.path)), caseInsensitive: this.caseInsensitive });
+        await this.applyCaseOnly(caseOnly, readingsByPath);
+        await this.applyPlan(plan, readingsByPath);
+        this.lost = plan.lost.map(item => ({ ...item, title: this.service.notesById.get(item.id)?.title ?? null }));
       }
-      const added = [...readingsByPath.values()].filter(reading => !this.noteFor(reading.path));
-      const plan = planMoves({ missing: missingNotes.filter(note => missingIds.has(note.id)).map(note => ({ ...note,
-        hash: note.fingerprint?.hash, size: note.fingerprint?.size, shape: note.fingerprint?.shape })), added, caseInsensitive: this.caseInsensitive });
-      await this.applyCaseOnly(caseOnly, readingsByPath);
-      await this.applyPlan(plan, readingsByPath);
       await this.publishNotes();
       await this.publishMagnets();
       this.unclaimed.clear();
-      this.lost = plan.lost.map(item => ({ ...item, title: this.service.notesById.get(item.id)?.title ?? null }));
       await this.updateOffer();
       this.scanComplete = true;
       this.scanAt = Date.now();
@@ -346,6 +350,7 @@ export class GlassSync {
   }
 
   async updateOffer() {
+    if (!this.finder.hasForeign(this.service.vaultId)) { this.offer = null; return; }
     try {
       const rows = (await this.requestIndex("snapshot")).filter(row => row.kind === "note" && row.hash);
       const found = this.finder.matches(rows.map(row => row.hash), this.service.vaultId);

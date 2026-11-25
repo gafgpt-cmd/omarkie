@@ -48,6 +48,11 @@ export class GlassFinder {
     return record;
   }
 
+  hasForeign(vaultId) {
+    for (const entry of this.entries.values()) if (entry.vaultId !== vaultId) return true;
+    return false;
+  }
+
   // Entries from another vault that this computer already knows.
   matches(hashes, vaultId) {
     const found = new Map();
