@@ -131,7 +131,7 @@ let operationRunning = false;
 let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
 function announceGlass(request) {
-  if (["add", "set", "delete", "restore", "bring", "layer", "merge-accept", "merge-undo", "lift-up"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
+  if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "merge-accept", "merge-undo", "lift-up"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
 
 let glassQueue = Promise.resolve();
@@ -325,6 +325,17 @@ const handlers = {
     const result = await glassRuntime.service.request(request);
     if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request);
     return result;
+  },
+  captureRegion: async (_, rect) => {
+    if (!window) throw new Error(t("No window to capture."));
+    if (!rect || typeof rect !== "object") throw new Error("Invalid capture region.");
+    const box = ["x", "y", "width", "height"].map(key => Math.round(Number(rect[key])));
+    if (box.some(value => !Number.isFinite(value)) || box[2] < 1 || box[3] < 1 || box[2] > 4096 || box[3] > 4096)
+      throw new Error("Invalid capture region.");
+    const image = await window.webContents.capturePage({ x: box[0], y: box[1], width: box[2], height: box[3] });
+    const bytes = image.toPNG();
+    if (!bytes.length) throw new Error(t("The capture came back empty."));
+    return { base64: bytes.toString("base64"), mime: "image/png", width: image.getSize().width, height: image.getSize().height };
   },
   tutorBridge: async ({ sender }, id, request) => {
     if (request?.action === "detach" && !tutorLoading) return;

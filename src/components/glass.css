@@ -852,3 +852,153 @@
 }
 .glass-merge-done button { padding: 2px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .glass-merge-done button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+
+/* G13: clipped mini-pages, cutouts and extra sheets sit on the existing glass layers. */
+.glass-sheet {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink, #333) 18%, transparent);
+  border-radius: 3px 8px 4px 3px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  font: 12px/1.45 var(--interface-font, system-ui, sans-serif);
+  box-shadow: 0 1px 2px #0000001a, 0 8px 18px -12px #00000040;
+  pointer-events: auto;
+  transform: rotate(-0.35deg);
+}
+.glass-sheet[data-selected] { outline: 2px solid var(--accent, #326eaa); outline-offset: 2px; }
+.glass-sheet[data-paper="lined"] { background-image: repeating-linear-gradient(transparent 0 22px, color-mix(in srgb, var(--ink, #333) 12%, transparent) 23px); background-position: 0 30px; }
+.glass-sheet[data-paper="grid"] { background-image: repeating-linear-gradient(transparent 0 22px, color-mix(in srgb, var(--ink, #333) 10%, transparent) 23px), repeating-linear-gradient(90deg, transparent 0 22px, color-mix(in srgb, var(--ink, #333) 10%, transparent) 23px); background-position: 0 30px; }
+.glass-sheet[data-paper="dotted"] { background-image: radial-gradient(color-mix(in srgb, var(--ink, #333) 22%, transparent) 1px, transparent 1.2px); background-size: 16px 16px; background-position: 0 32px; }
+.glass-sheet[data-paper="kraft"] { background-color: #d9c6a5; }
+[data-appearance="dark"] .glass-sheet { background-color: color-mix(in srgb, var(--paper, #222) 92%, #6b6250); box-shadow: 0 1px 2px #00000066, 0 8px 18px -12px #000000aa; }
+[data-appearance="dark"] .glass-sheet[data-paper="kraft"] { background-color: #5a4c38; }
+.glass-sheet[data-paper="plain"] { background-image: none; }
+.glass-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 2px 4px 2px 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink, #333) 12%, transparent);
+  cursor: grab;
+}
+.glass-sheet-heading { flex: 1; overflow: hidden; font: 600 11px/1.2 var(--interface-font, system-ui, sans-serif); text-overflow: ellipsis; white-space: nowrap; }
+.glass-sheet-actions { display: flex; gap: 1px; }
+.glass-sheet-actions button, .glass-sheet-ink-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.glass-sheet-actions button:hover, .glass-sheet-ink-toggle:hover, .glass-sheet-actions button:focus-visible { opacity: 1; background: color-mix(in srgb, var(--ink, #333) 8%, transparent); }
+.glass-sheet-body { position: relative; flex: 1; min-height: 0; }
+.glass-sheet-text {
+  position: absolute;
+  inset: 6px 8px 28px;
+  width: calc(100% - 16px);
+  height: calc(100% - 34px);
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: 12px/23px var(--interface-font, system-ui, sans-serif);
+}
+.glass-sheet-ink { position: absolute; inset: 0; pointer-events: none; }
+.glass-sheet-ink[data-sheet-ink="on"] { pointer-events: auto; cursor: crosshair; }
+.glass-sheet-ink svg { width: 100%; height: 100%; display: block; }
+.glass-sheet-ink-toggle { position: absolute; right: 5px; bottom: 5px; opacity: 0.55; }
+.glass-sheet-ink-toggle[aria-pressed="true"] { opacity: 1; background: color-mix(in srgb, var(--accent, #326eaa) 16%, transparent); color: var(--accent, #326eaa); }
+.glass-sheet-note-path { position: absolute; left: 8px; bottom: 6px; max-width: calc(100% - 44px); overflow: hidden; color: var(--muted, #777); font: 10px/1.2 var(--interface-font, system-ui, sans-serif); text-overflow: ellipsis; white-space: nowrap; }
+.glass-sheet-grip { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--ink, #333) 18%, transparent) 55% 62%, transparent 62% 72%, color-mix(in srgb, var(--ink, #333) 18%, transparent) 72%); }
+.glass-sheet-grip-bottom { right: 14px; width: 18px; height: 8px; cursor: ns-resize; background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink, #333) 22%, transparent) 0 2px, transparent 2px 4px); }
+
+/* A folded clip is a paper tab in the margin with the child page's stack behind it. */
+.glass-clip { position: absolute; z-index: 3; pointer-events: auto; }
+.glass-clip[data-folded] { border: 0; background: none; box-shadow: none; transform: none; outline: 0; }
+.glass-clip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 240px;
+  padding: 4px 8px 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--ink, #333) 20%, transparent);
+  border-radius: 3px 7px 3px 3px;
+  background: color-mix(in srgb, var(--paper, #fff) 92%, #e8d9b8);
+  color: var(--ink, #333);
+  font: 11px/1.2 var(--interface-font, system-ui, sans-serif);
+  cursor: pointer;
+  box-shadow: 0 1px 1px #00000014, 0 4px 8px -7px #00000055;
+}
+.glass-clip-pill:hover, .glass-clip-pill:focus-visible { background: color-mix(in srgb, var(--paper, #fff) 82%, #e8d9b8); }
+.glass-clip-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glass-clip-pill small { color: var(--muted, #777); font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; }
+[data-appearance="dark"] .glass-clip-pill { background: #3b352a; }
+
+.glass-cutout {
+  position: absolute;
+  z-index: 3;
+  background: var(--paper, #fff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink, #333) 18%, transparent), 0 2px 4px #0000001f, 0 10px 20px -14px #00000066;
+  pointer-events: auto;
+}
+[data-appearance="dark"] .glass-cutout { background: #26241f; box-shadow: 0 0 0 1px #ffffff33, 0 2px 4px #00000066, 0 10px 20px -14px #000000cc; }
+.glass-cutout-frame { position: relative; display: block; width: 100%; height: 100%; overflow: hidden; }
+.glass-cutout-image { display: block; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.glass-cutout-badge {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--paper, #fff) 86%, transparent);
+  color: var(--ink, #333);
+  font: 10px/1.2 var(--interface-font, system-ui, sans-serif);
+}
+.glass-cutout[data-selected] { outline: 2px solid var(--accent, #326eaa); outline-offset: 3px; }
+.glass-cutout-missing { display: grid; place-items: center; width: 100%; height: 100%; color: var(--muted, #777); font: 11px var(--interface-font, system-ui, sans-serif); }
+.glass-cutout-actions { position: absolute; top: 3px; right: 3px; display: none; gap: 2px; }
+.glass-cutout[data-selected] .glass-cutout-actions, .glass-cutout:hover .glass-cutout-actions, .glass-cutout:focus-within .glass-cutout-actions { display: flex; }
+.glass-cutout-actions button { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border, #ccc); border-radius: 4px; background: var(--paper, #fff); color: var(--ink, #333); cursor: pointer; }
+
+/* Scissors: one fixed sheet-shaped surface; rectangle or freehand lasso inside it. */
+.glass-scissors-overlay { position: fixed; inset: 0; z-index: 35; cursor: crosshair; touch-action: none; }
+.glass-scissors-overlay.lasso { cursor: cell; }
+.glass-scissors-rect { position: fixed; border: 1.5px dashed var(--accent, #326eaa); background: color-mix(in srgb, var(--accent, #326eaa) 8%, transparent); pointer-events: none; }
+.glass-scissors-lasso { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.glass-scissors-lasso polyline { fill: color-mix(in srgb, var(--accent, #326eaa) 8%, transparent); stroke: var(--accent, #326eaa); stroke-width: 1.5; stroke-dasharray: 5 3; }
+html.glass-capturing .glass-layer, html.glass-capturing .glass-under, html.glass-capturing .glass-palette,
+html.glass-capturing .glass-tray, html.glass-capturing .glass-back, html.glass-capturing .glass-notice,
+html.glass-capturing .glass-scissors-overlay,
+html.glass-capturing [data-glass-layer] { visibility: hidden !important; }
+html.glass-capturing .glass-layer { display: none !important; }
+.glass-back {
+  position: fixed;
+  left: 50%;
+  bottom: 92px;
+  z-index: 40;
+  padding: 3px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  background: var(--paper, #fff);
+  transform: translateX(-50%);
+}
+.glass-back button { padding: 4px 8px; border: 0; border-radius: 6px; background: none; color: var(--interactive, #326eaa); font: 11px var(--interface-font, system-ui, sans-serif); cursor: pointer; }
+.glass-back button:hover { background: color-mix(in srgb, var(--interactive, #326eaa) 12%, transparent); }
+.glass-cutout-grip { position: absolute; right: 2px; bottom: 2px; width: 12px; height: 12px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 55%, #ffffffcc 55% 68%, transparent 68%); }

@@ -37,7 +37,8 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
-  "glass add": ["--note <note.md> [--kind <kind>] [--text <text>] [--near <quote> | --anchor <json>] [--file <path>] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--lock] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--rotate <deg>] [--sticker <id> | --image <path>] [--from <end>] [--to <end>] [--style <style>] [--head <shape>] [--label <text>] [--card <static|ai|menu>] [--title <text>] [--link <note#section>] [--question <text>] [--answer <text>] [--choices <json>] [--magnet <id>] [--vault <dir>]", "Add a sticky note, photo, sticker, arrow, or static, AI or menu card."],
+  "glass add": ["--note <note.md> [--kind <kind>] [--text <text>] [--near <quote> | --anchor <json>] [--file <path>] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--lock] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--rotate <deg>] [--sticker <id> | --image <path>] [--from <end>] [--to <end>] [--style <style>] [--head <shape>] [--label <text>] [--card <static|ai|menu>] [--title <text>] [--link <note#section>] [--question <text>] [--answer <text>] [--choices <json>] [--paper <lined|grid|dotted|kraft|plain>] [--name <text>] [--aspect <ratio>] [--region <json>] [--source <json>] [--source-kind <image|region>] [--magnet <id>] [--vault <dir>]", "Add a sticky note, photo, sticker, arrow, card, paper clip, cutout or extra page."],
+  "glass clip-save": ["--note <note.md> --magnet <id> [--vault <dir>]", "Save a clipped mini-page as one new Markdown note; a second save returns the same file."],
   "glass page": ["--note <note.md> --magnet <id> [--vault <dir>]", "Write one card to its own Markdown note; the source note is never edited."],
   "glass move": ["--note <note.md> --magnet <id> --x <px> --y <px> [--w <px>] [--h <px>] [--rot <deg>] [--snap] [--grid <px>] [--vault <dir>]", "Move or resize a magnet; x and y are offsets from its anchored paragraph. --snap applies the app's guides: grid, page column and the magnets on the same paragraph."],
   "glass edit": ["--note <note.md> --magnet <id> [--text <text>] [--color <colour>] [--folded] [--unfold] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--no-tape] [--lock] [--unlock] [--sticker <id>] [--rotate <deg>] [--style <style>] [--head <shape>] [--label <text>] [--vault <dir>]", "Change sticky text or fold, picture settings, sticker art or rotation, or arrow style, head or label."],
@@ -258,7 +259,14 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "find") requireArgument(Boolean(args[0]?.trim()), "A search query is required.");
     if (["glass move", "glass edit", "glass delete", "glass restore", "glass ink delete", "glass page"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
     if (command === "glass add") {
-      if (opts.kind === "sticky" || opts.kind === "sticker") requireArgument(Boolean(opts.near?.trim() || opts.anchor), "--near <quote> or --anchor is required for a sticky note or sticker.");
+      if (opts.kind === "sticky" || opts.kind === "sticker" || opts.kind === "clip" || opts.kind === "extra-page")
+        requireArgument(Boolean(opts.near?.trim() || opts.anchor !== undefined), "--near <quote> or --anchor is required for a paper object.");
+      if (opts.kind === "cutout") {
+        requireArgument(Boolean(opts.region), "--region <json> is required for a cutout.");
+        requireArgument(Boolean(opts.source), "--source <json> is required for a cutout.");
+        if (opts["source-kind"] === "region" || opts["source-kind"] === undefined)
+          requireArgument(Boolean(opts.file?.trim()), "--file <png> is required for a page-region cutout.");
+      }
       if (opts.kind === "arrow") requireArgument(Boolean(opts.from?.trim() && opts.to?.trim()), "--from and --to are required for an arrow.");
       else {
         requireArgument(opts.from === undefined && opts.to === undefined, "Use --kind arrow with --from and --to.");
@@ -352,11 +360,16 @@ export async function main(argv = process.argv.slice(2)) {
       emit(await inkListing(root, opts.note, state.magnets ?? [], opts.full));
       return;
     }
-    if (command === "glass page") {
+    if (command === "glass page" || command === "glass clip-save") {
       const { requestBridge } = await import("./tutor-transport.mjs");
-      const state = await requestBridge(root, { op: "glass", action: "card", mode: "page", note: opts.note, magnet: opts.magnet }, 60_000, "glass");
+      const request = command === "glass page"
+        ? { op: "glass", action: "card", mode: "page", note: opts.note, magnet: opts.magnet }
+        : { op: "glass", action: "clip-save", note: opts.note, magnet: opts.magnet };
+      const state = await requestBridge(root, request, 60_000, "glass");
       if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
-      emit({ document: opts.note, card: state.card, path: state.path, name: state.name, bytes: state.bytes });
+      emit(command === "glass page"
+        ? { document: opts.note, card: state.card, path: state.path, name: state.name, bytes: state.bytes }
+        : { document: opts.note, magnet: opts.magnet, path: state.path, name: state.name, bytes: state.bytes, created: state.created });
       return;
     }
     if (command === "glass merge-down" || command === "glass merge-undo" || command === "glass lift-up") {
@@ -423,6 +436,13 @@ export async function main(argv = process.argv.slice(2)) {
         if (opts.tape) fields.tape = true;
         if (opts.lock) fields.locked = true;
         if (opts.folded !== undefined) fields.folded = true;
+        for (const name of ["region", "source"]) if (opts[name] !== undefined) {
+          try { fields[name] = JSON.parse(opts[name]); } catch { throw new Error(`--${name} must be JSON.`); }
+        }
+        if (opts["source-kind"] !== undefined) fields.sourceKind = opts["source-kind"];
+        if (opts.paper !== undefined) fields.paper = opts.paper;
+        if (opts.name !== undefined) fields.name = opts.name;
+        if (opts.aspect !== undefined) fields.aspect = Number(opts.aspect);
         if (opts.kind === "card") {
           request.card = opts.card;
           request.layer = "ai-cards";
