@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, stat, realpath } from "node:fs/promises";
 import path from "node:path";
 import budgets from "./perf-budgets.json" with { type: "json" };
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { runGlassIndexScale } from "./glass-index-fixture.mjs";
 
 const runs = Number(process.env.OMARKIE_PERF_RUNS ?? 3);
 assert.ok(Number.isSafeInteger(runs) && runs > 0, "OMARKIE_PERF_RUNS must be a positive integer");
@@ -115,7 +116,12 @@ try {
   results.fixtures = await prepare();
   for (let i = 0; i < runs; i++) {
     console.log(`Performance run ${i + 1}/${runs}`);
-    results.samples.push({ ...await measure("launch"), ...await measure("big", big, "Big note"), ...await measure("photos", photos, "Photos") });
+    results.samples.push({
+      ...await measure("launch"),
+      ...await measure("big", big, "Big note"),
+      ...await measure("photos", photos, "Photos"),
+      glassIndexMainThreadGap: (await runGlassIndexScale()).gap,
+    });
   }
   for (const [metric, budget] of Object.entries(budgets)) {
     const values = results.samples.map(sample => sample[metric]).sort((a, b) => a - b), middle = Math.floor(values.length / 2);
