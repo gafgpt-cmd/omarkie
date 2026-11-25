@@ -1232,7 +1232,6 @@
   "Spaced repetition: due cards in this vault": "Repetición espaciada: tarjetas pendientes en esta bóveda",
   "No window to capture.": "No hay ventana para capturar.",
   "The capture came back empty.": "La captura llegó vacía.",
-  "Identifiers found": "Identificadores encontrados",
   "Back": "Atrás",
   "Calculator": "Calculadora",
   "Choices": "Opciones",
@@ -1257,7 +1256,6 @@
   "Formula (input keys, e.g. dose * weight)": "Fórmula (claves de entrada, p. ej. dosis * peso)",
   "Inputs, one line each: key | label | unit | min | max": "Entradas, una por línea: clave | etiqueta | unidad | mín | máx",
   "Citation (protocol, section or source). Required.": "Cita (protocolo, sección o fuente). Obligatoria.",
-  "Identifiers found": "Identificadores encontrados",
   "导出…": "Exportar…",
   "显示他人的玻璃": "Mostrar el cristal de otra persona",
   "导出选项": "Opciones de exportación",
@@ -1284,5 +1282,7 @@
   "下移": "Bajar",
   "导出只会新建文件，原笔记与知识库不变。": "La exportación solo crea archivos nuevos; la nota y el baúl no cambian.",
   "导出玻璃需要桌面应用": "Exportar cristal requiere la aplicación de escritorio.",
-  "导入玻璃导出包需要桌面应用": "Importar un paquete de cristal requiere la aplicación de escritorio."
+  "导入玻璃导出包需要桌面应用": "Importar un paquete de cristal requiere la aplicación de escritorio.",
+  "共享玻璃需要桌面应用": "El cristal compartido necesita la aplicación de escritorio.",
+  "导出选项无效。": "Esa opción de exportación no es válida."
 }

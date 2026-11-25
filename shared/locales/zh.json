@@ -371,5 +371,7 @@
   "due": "到期",
   "Spaced repetition: due cards in this vault": "间隔重复：此库中到期的卡片",
   "No window to capture.": "没有可截取的窗口。",
-  "The capture came back empty.": "截图结果为空。"
+  "The capture came back empty.": "截图结果为空。",
+  "共享玻璃需要桌面应用": "共享玻璃需要桌面应用。",
+  "导出选项无效。": "导出选项无效。"
 }

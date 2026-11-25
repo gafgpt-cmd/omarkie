@@ -1218,7 +1218,6 @@
   "Spaced repetition: due cards in this vault": "Spaced repetition: due cards in this vault",
   "No window to capture.": "No window to capture.",
   "The capture came back empty.": "The capture came back empty.",
-  "Identifiers found": "Identifiers found",
   "Back": "Back",
   "Calculator": "Calculator",
   "Choices": "Choices",
@@ -1243,7 +1242,6 @@
   "Formula (input keys, e.g. dose * weight)": "Formula (input keys, e.g. dose * weight)",
   "Inputs, one line each: key | label | unit | min | max": "Inputs, one line each: key | label | unit | min | max",
   "Citation (protocol, section or source). Required.": "Citation (protocol, section or source). Required.",
-  "Identifiers found": "Identifiers found",
   "导出…": "Export…",
   "显示他人的玻璃": "Show shared glass",
   "导出选项": "Export options",
@@ -1270,5 +1268,7 @@
   "下移": "Move down",
   "导出只会新建文件，原笔记与知识库不变。": "Export creates new files only; the note and the vault stay unchanged.",
   "导出玻璃需要桌面应用": "Exporting glass needs the desktop app.",
-  "导入玻璃导出包需要桌面应用": "Importing a glass bundle needs the desktop app."
+  "导入玻璃导出包需要桌面应用": "Importing a glass bundle needs the desktop app.",
+  "共享玻璃需要桌面应用": "Shared glass needs the desktop app.",
+  "导出选项无效。": "That export option is not valid."
 }

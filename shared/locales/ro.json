@@ -1232,7 +1232,6 @@
   "Spaced repetition: due cards in this vault": "Repetiție spațiată: cartonașe scadente în acest seif",
   "No window to capture.": "Nu există fereastră de capturat.",
   "The capture came back empty.": "Captura a revenit goală.",
-  "Identifiers found": "Identificatori găsiți",
   "Back": "Înapoi",
   "Calculator": "Calculator",
   "Choices": "Opțiuni",
@@ -1257,7 +1256,6 @@
   "Formula (input keys, e.g. dose * weight)": "Formulă (cheile intrărilor, de ex. doză * greutate)",
   "Inputs, one line each: key | label | unit | min | max": "Intrări, una pe linie: cheie | etichetă | unitate | min | max",
   "Citation (protocol, section or source). Required.": "Citare (protocol, secțiune sau sursă). Obligatorie.",
-  "Identifiers found": "Identificatori găsiți",
   "导出…": "Exportă…",
   "显示他人的玻璃": "Arată sticla altei persoane",
   "导出选项": "Opțiuni de export",
@@ -1284,5 +1282,7 @@
   "下移": "Mută în jos",
   "导出只会新建文件，原笔记与知识库不变。": "Exportul creează doar fișiere noi; nota și seiful rămân neschimbate.",
   "导出玻璃需要桌面应用": "Exportarea sticlei necesită aplicația desktop.",
-  "导入玻璃导出包需要桌面应用": "Importarea unui pachet de sticlă necesită aplicația desktop."
+  "导入玻璃导出包需要桌面应用": "Importarea unui pachet de sticlă necesită aplicația desktop.",
+  "共享玻璃需要桌面应用": "Sticla partajată are nevoie de aplicația desktop.",
+  "导出选项无效。": "Această opțiune de export nu este validă."
 }

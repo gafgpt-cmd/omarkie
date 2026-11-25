@@ -1232,7 +1232,6 @@
   "Spaced repetition: due cards in this vault": "Repetició espaiada: targetes pendents en aquesta cambra",
   "No window to capture.": "No hi ha cap finestra per capturar.",
   "The capture came back empty.": "La captura ha arribat buida.",
-  "Identifiers found": "Identificadors trobats",
   "Back": "Enrere",
   "Calculator": "Calculadora",
   "Choices": "Opcions",
@@ -1257,7 +1256,6 @@
   "Formula (input keys, e.g. dose * weight)": "Fórmula (claus d’entrada, p. ex. dosi * pes)",
   "Inputs, one line each: key | label | unit | min | max": "Entrades, una per línia: clau | etiqueta | unitat | mín | màx",
   "Citation (protocol, section or source). Required.": "Cita (protocol, secció o font). Obligatòria.",
-  "Identifiers found": "Identificadors trobats",
   "导出…": "Exporta…",
   "显示他人的玻璃": "Mostra el vidre d'una altra persona",
   "导出选项": "Opcions d'exportació",
@@ -1284,5 +1282,7 @@
   "下移": "Baixa",
   "导出只会新建文件，原笔记与知识库不变。": "L'exportació només crea fitxers nous; la nota i el bagul no canvien.",
   "导出玻璃需要桌面应用": "Exportar vidre requereix l'aplicació d'escriptori.",
-  "导入玻璃导出包需要桌面应用": "Importar un paquet de vidre requereix l'aplicació d'escriptori."
+  "导入玻璃导出包需要桌面应用": "Importar un paquet de vidre requereix l'aplicació d'escriptori.",
+  "共享玻璃需要桌面应用": "El vidre compartit necessita l’aplicació d’escriptori.",
+  "导出选项无效。": "Aquesta opció d’exportació no és vàlida."
 }
