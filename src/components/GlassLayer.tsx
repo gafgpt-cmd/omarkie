@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Eraser, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
+import { ArrowUpRight, Eraser, FileText, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, Paperclip, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
@@ -28,6 +28,12 @@ import { imageCopy } from "../glass/glass-assets";
 import { cardAnchor, cardFieldsOf, cardFromMagnet, newCardId, pillPlacement, type GlassCard } from "../glass/card-model";
 import GlassCardView, { NewCardDialog } from "./GlassCard";
 import GlassImageFrame from "./GlassImage";
+import { ClipView, CutoutView, ExtraPageView } from "./GlassClippings";
+import {
+  clipDefaults, clipFields, clipFromMagnet, cutoutDefaults, cutoutFields, cutoutFromMagnet, extraPageDefaults,
+  extraPageFields, extraPageFromMagnet, extraPagePapers, newClipId, type ClipPage, type Cutout, type ExtraPage, type SheetStroke,
+} from "../glass/clip-model";
+import { lassoOf, regionOf, sheetInkColors } from "../../shared/glass-clips.mjs";
 import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
 import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
 import { elementNode } from "../glass/element-node";
@@ -68,11 +74,9 @@ interface GlassReply {
   undoStale?: boolean;
   needsUser?: boolean;
   message?: string;
+  path?: string;
 }
 interface Viewport { top: number; height: number; width: number; page: number }
-const comingSoon = [
-  { id: "scissors", label: "Scissors", icon: Scissors },
-] as const;
 const imageFile = /\.(?:png|jpe?g|gif|webp|avif|heic|heif|tiff?)$/i;
 async function glassCall(request: Record<string, unknown>): Promise<GlassReply> {
   const api = window.desktop?.glass;
@@ -206,9 +210,18 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [stickers, setStickers] = useState<StickerMark[]>([]);
   const [arrows, setArrows] = useState<ArrowMark[]>([]);
   const [cards, setCards] = useState<GlassCard[]>([]);
+  const [clips, setClips] = useState<ClipPage[]>([]);
+  const [extraPages, setExtraPages] = useState<ExtraPage[]>([]);
+  const [cutouts, setCutouts] = useState<Cutout[]>([]);
+  const [cutMode, setCutMode] = useState<"rect" | "lasso">("rect");
+  const [pagePaper, setPagePaper] = useState<(typeof extraPagePapers)[number]>("lined");
+  const [capturing, setCapturing] = useState(false);
+  const [backTo, setBackTo] = useState<{ top: number; id: string; label: string }>();
+  const [cutDrag, setCutDrag] = useState<{ start: [number, number]; end: [number, number]; points: [number, number][]; model: "rect" | "lasso" }>();
+  const cutDraftRef = useRef<{ start: [number, number]; end: [number, number]; points: [number, number][]; model: "rect" | "lasso" } | undefined>(undefined);
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
-  const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow" | "grid">("select");
+  const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout">("select");
   const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
   const [customImage, setCustomImage] = useState<string>();
   const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
@@ -242,11 +255,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const elementBoxes = useRef<Record<string, EndMark>>({});
   const placesRef = useRef<Record<string, GlassPlacement>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, stickers, arrows, cards, note, tool });
+  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
   const localAt = useRef(0), revision = useRef(0);
-  latest.current = { magnets, images, stickers, arrows, cards, note, tool };
+  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -325,6 +338,32 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const spot = pillPlacement(rect, frame);
       places[card.id] = { status: "resolved", x: spot.x + card.x, y: spot.y + card.y + cardRow * 24, width: spot.width, height: 0 };
       cardRow += 1;
+    }
+    // G13: clipped pages, cutouts and extra sheets are pinned to their paragraph like paper.
+    for (const clip of latest.current.clips) {
+      const line = matchLine(clip.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[clip.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      places[clip.id] = { status: "resolved", x: rect.left - frame.left + clip.x, y: rect.top - frame.top + clip.y,
+        width: clip.folded ? clipDefaults.foldedW : clip.w, height: clip.folded ? clipDefaults.foldedH : clip.h };
+    }
+    for (const page of latest.current.extraPages) {
+      const line = matchLine(page.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[page.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      places[page.id] = { status: "resolved", x: rect.left - frame.left + page.x, y: rect.top - frame.top + page.y, width: page.w, height: page.h };
+    }
+    for (const cutout of latest.current.cutouts) {
+      const line = matchLine(cutout.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[cutout.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      places[cutout.id] = { status: "resolved", x: rect.left - frame.left + cutout.x, y: rect.top - frame.top + cutout.y, width: cutout.w, height: cutout.h };
     }
     dropSpacers(flowing);
     placesRef.current = places;
@@ -415,6 +454,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         if (revision.current !== startedAt) return;
         loaded.current = true;
         const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [];
+        const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
         const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
@@ -432,6 +472,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           } else if (magnet.kind === "card") {
             const card = cardFromMagnet(magnet);
             if (card) nextCards.push(card);
+          } else if (magnet.kind === "clip") {
+            const clip = clipFromMagnet(magnet);
+            if (clip) nextClips.push(clip);
+          } else if (magnet.kind === "extra-page") {
+            const page = extraPageFromMagnet(magnet);
+            if (page) nextPages.push(page);
+          } else if (magnet.kind === "cutout") {
+            const cutout = cutoutFromMagnet(magnet);
+            if (cutout) nextCutouts.push(cutout);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
           else if (magnet.kind === "ink") nextInk.push(magnet);
           else incoming.push(magnet);
@@ -441,6 +490,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setStickers(nextStickers);
         setArrows(nextArrows);
         setCards(previous => JSON.stringify(previous) === JSON.stringify(nextCards) ? previous : nextCards);
+        setClips(previous => JSON.stringify(previous) === JSON.stringify(nextClips) ? previous : nextClips);
+        setExtraPages(previous => JSON.stringify(previous) === JSON.stringify(nextPages) ? previous : nextPages);
+        setCutouts(previous => JSON.stringify(previous) === JSON.stringify(nextCutouts) ? previous : nextCutouts);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
@@ -490,7 +542,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [scroller, root, measure]);
 
   const showingArrows = arrows.length > 0 || tool === "arrow";
-  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, showingArrows, measure]);
+  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, showingArrows, measure]);
 
   // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
   useEffect(() => {
@@ -521,8 +573,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [notice]);
 
   useEffect(() => {
-    if (selected && !magnets.some(item => item.id === selected) && !images.some(item => item.id === selected) && !stickers.some(item => item.id === selected)) setSelected(undefined);
-  }, [magnets, images, stickers, selected]);
+    if (selected && !magnets.some(item => item.id === selected) && !images.some(item => item.id === selected) && !stickers.some(item => item.id === selected)
+      && !clips.some(item => item.id === selected) && !extraPages.some(item => item.id === selected) && !cutouts.some(item => item.id === selected)) setSelected(undefined);
+  }, [magnets, images, stickers, clips, extraPages, cutouts, selected]);
 
   useEffect(() => {
     if (selectedArrow && !arrows.some(item => item.id === selectedArrow)) setSelectedArrow(undefined);
@@ -656,16 +709,25 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     let downSource: Element | null = null;
     const track = (event: Event) => { downSource = event.target as Element; };
     surface.addEventListener("pointerdown", track, true);
-    const markElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note, .glass-sticker") ?? target) as HTMLElement;
+    const markElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note, .glass-sticker, .glass-clip, .glass-extra-page, .glass-cutout") ?? target) as HTMLElement;
     const findMark = (id: string) => {
       const sticky = latest.current.magnets.find(item => item.id === id);
       if (sticky) return { kind: "sticky" as const, x: sticky.x, y: sticky.y, w: sticky.w, h: sticky.h };
       const sticker = latest.current.stickers.find(item => item.id === id);
-      return sticker ? { kind: "sticker" as const, x: sticker.x, y: sticker.y, w: sticker.w, h: sticker.h } : undefined;
+      if (sticker) return { kind: "sticker" as const, x: sticker.x, y: sticker.y, w: sticker.w, h: sticker.h };
+      const clip = latest.current.clips.find(item => item.id === id);
+      if (clip) return { kind: "clip" as const, x: clip.x, y: clip.y, w: clip.w, h: clip.h };
+      const page = latest.current.extraPages.find(item => item.id === id);
+      if (page) return { kind: "extra-page" as const, x: page.x, y: page.y, w: page.w, h: page.h };
+      const cutout = latest.current.cutouts.find(item => item.id === id);
+      return cutout ? { kind: "cutout" as const, x: cutout.x, y: cutout.y, w: cutout.w, h: cutout.h } : undefined;
     };
     const place = (id: string, patch: { x: number; y: number; w?: number; h?: number }) => {
       setMagnets(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
       setStickers(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+      setClips(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+      setExtraPages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+      setCutouts(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
       const fields: Record<string, number> = { x: patch.x, y: patch.y };
       if (patch.w !== undefined) fields.w = patch.w;
       if (patch.h !== undefined) fields.h = patch.h;
@@ -675,8 +737,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     let drag: { element: HTMLElement; id: string; x: number; y: number; pageX: number; pageY: number;
       place?: SnapBox; context: SnapContext } | undefined;
     instance.draggable({
-      allowFrom: ".glass-note, .glass-note-head, .glass-sticker",
-      ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot, .glass-sticker-grip, .glass-sticker-rotate, .glass-sticker-delete",
+      allowFrom: ".glass-note, .glass-note-head, .glass-sticker, .glass-clip, .glass-sheet-head, .glass-cutout",
+      ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot, .glass-sticker-grip, .glass-sticker-rotate, .glass-sticker-delete, .glass-sheet-text, .glass-sheet-ink, .glass-sheet-actions, .glass-sheet-ink-toggle, .glass-sheet-grip, .glass-sheet-body, .glass-cutout-actions, .glass-cutout-grip, textarea, input, button",
       listeners: {
         start(event) {
           const element = markElement(event.target);
@@ -726,7 +788,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         },
       },
     }).resizable({
-      edges: { right: ".glass-note-grip-right, .glass-sticker-grip", bottom: ".glass-note-grip-bottom" },
+      edges: { right: ".glass-note-grip-right, .glass-sticker-grip, .glass-sheet-grip", bottom: ".glass-note-grip-bottom, .glass-cutout-grip" },
       listeners: {
         start(event) {
           const element = markElement(event.target);
@@ -734,7 +796,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           if (!mark) return;
           dragging.current = true;
           const rect = element.getBoundingClientRect();
-          element.dataset.resize = JSON.stringify({ id: element.dataset.magnet, kind: mark.kind, width: rect.width, height: rect.height, pageX: event.pageX, pageY: event.pageY });
+          const limits = mark.kind === "clip" ? [clipDefaults.minW, clipDefaults.minH]
+            : mark.kind === "extra-page" ? [extraPageDefaults.minW, extraPageDefaults.minH]
+            : mark.kind === "cutout" ? [cutoutDefaults.minW, cutoutDefaults.minH] : [stickyDefaults.minW, stickyDefaults.minH];
+          element.dataset.resize = JSON.stringify({ id: element.dataset.magnet, kind: mark.kind, width: rect.width, height: rect.height,
+            minW: limits[0], minH: limits[1], pageX: event.pageX, pageY: event.pageY });
         },
         move(event) {
           const element = markElement(event.target), data = element.dataset.resize;
@@ -747,7 +813,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
             element.dataset.size = String(size);
             return;
           }
-          const width = Math.max(stickyDefaults.minW, start.width + event.pageX - start.pageX), height = Math.max(stickyDefaults.minH, start.height + event.pageY - start.pageY);
+          const width = Math.max(start.minW ?? stickyDefaults.minW, start.width + event.pageX - start.pageX), height = Math.max(start.minH ?? stickyDefaults.minH, start.height + event.pageY - start.pageY);
           element.style.width = `${width}px`;
           element.style.height = `${height}px`;
           element.dataset.size = JSON.stringify({ width, height });
@@ -792,6 +858,136 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setEditing(stickie.id);
     void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
   }, [send]);
+
+  const blockSource = useCallback((block: GlassBlock, path: string) => ({
+    element: block.element?.dataset.cid ?? `block-${block.line}`, line: block.line, path,
+    ...(block.kind ? { kind: block.kind } : {}),
+  }), []);
+
+  // G13: a paper clip holds its own mini-page; a blank extra sheet sits beside a paragraph.
+  const createSheet = useCallback((kind: "clip" | "extra-page", point: { x: number; y: number }) => {
+    if (!latest.current.note) { setNotice("Save this note first."); return; }
+    const block = nearestBlock(blocks.current, point);
+    if (!block) return;
+    const offset = offsetIn(block, point);
+    const id = newClipId();
+    if (kind === "clip") {
+      const clip: ClipPage = { id, text: "", title: "", anchor: anchorOf(block), x: offset.x + 12, y: offset.y + 12,
+        w: clipDefaults.w, h: clipDefaults.h, folded: false, strokes: [], notePath: null, savedAt: "",
+        source: blockSource(block, latest.current.note) };
+      setClips(current => [...current, clip]);
+      setSelected(id);
+      setSelectedArrow(undefined);
+      setTool("select");
+      void send({ action: "add", magnet: id, fields: clipFields(clip) });
+      return;
+    }
+    const page: ExtraPage = { id, text: "", title: "Extra page", paper: pagePaper, anchor: anchorOf(block),
+      x: offset.x + 12, y: offset.y + 12, w: extraPageDefaults.w, h: extraPageDefaults.h, strokes: [] };
+    setExtraPages(current => [...current, page]);
+    setSelected(id);
+    setSelectedArrow(undefined);
+    setTool("select");
+    void send({ action: "add", magnet: id, fields: extraPageFields(page) });
+  }, [blockSource, pagePaper, send]);
+
+  const patchClip = useCallback((id: string, patch: Partial<ClipPage>, persist = true) => {
+    setClips(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+    if (!persist) return;
+    const fields: Record<string, unknown> = {};
+    for (const key of ["text", "title", "folded", "strokes"] as const)
+      if (patch[key] !== undefined) fields[key] = patch[key];
+    if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  const patchPage = useCallback((id: string, patch: Partial<ExtraPage>, persist = true) => {
+    setExtraPages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+    if (!persist) return;
+    const fields: Record<string, unknown> = {};
+    for (const key of ["text", "title", "paper", "strokes"] as const)
+      if (patch[key] !== undefined) fields[key] = patch[key];
+    if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  // One new note per clip; a second press returns the same file, never a duplicate.
+  const saveClip = useCallback(async (id: string) => {
+    if (!latest.current.note) return;
+    try {
+      // The textarea flushes on blur; let that write land before the note is written.
+      await queue.current;
+      const value = await glassCall({ note: latest.current.note, action: "clip-save", magnet: id });
+      const saved = typeof value.path === "string" ? value.path : "";
+      const stored = value.magnet ? clipFromMagnet(value.magnet) : undefined;
+      setClips(current => current.map(item => item.id === id
+        ? { ...(stored ?? item), ...(saved ? { notePath: saved } : {}) } : item));
+      setNotice(saved ? `Saved as ${saved}` : "Saved as a note.");
+    } catch (error) { setNotice(message(error)); }
+  }, []);
+
+  const anchorLine = (anchor: ClipPage["anchor"]) => {
+    for (const landmark of anchor.landmarks) if (landmark.kind === "block" && landmark.line) return landmark.line;
+    return 1;
+  };
+
+  const jumpWithBack = useCallback((id: string, line: number, label: string) => {
+    setBackTo({ top: scroller.scrollTop, id, label });
+    editor()?.jump(line);
+  }, [editor, scroller]);
+
+  // Scissors: rectangle or freehand lasso. Image sources keep fractions; page regions use a small snapshot.
+  const cutoutAt = useCallback(async (box: { x: number; y: number; width: number; height: number }, lasso: [number, number][]) => {
+    if (!latest.current.note) { setNotice("Save this note first."); return; }
+    if (box.width < cutoutDefaults.minCropPx || box.height < cutoutDefaults.minCropPx) { setNotice("Cut at least 10 px."); return; }
+    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const block = nearestBlock(blocks.current, point);
+    if (!block?.element) { setNotice("Cut over a paragraph or a picture."); return; }
+    const elementBox = block.element.getBoundingClientRect();
+    const region = regionOf({ x: elementBox.left, y: elementBox.top, width: elementBox.width, height: elementBox.height }, box);
+    const picture = block.element.tagName === "IMG" ? block.element as HTMLImageElement : block.element.querySelector("img");
+    const offset = offsetIn(block, { x: box.x + 12, y: box.y + 12 });
+    const w = Math.round(Math.min(360, Math.max(cutoutDefaults.minW, box.width)));
+    const aspect = Math.max(0.1, box.width / Math.max(1, box.height));
+    const id = newClipId();
+    const draft: Cutout = { id, name: picture ? "Cutout" : "Page cutout", asset: null, display: null,
+      sourceKind: picture ? "image" : "region", bytes: 0, aspect, w, h: Math.max(cutoutDefaults.minH, Math.round(w / aspect)),
+      x: offset.x, y: offset.y, anchor: anchorOf(block), source: blockSource(block, latest.current.note),
+      region, lasso: lasso.length >= 3 ? lasso : null, locked: false };
+    setCutouts(current => [...current, draft]);
+    setSelected(id);
+    setSelectedArrow(undefined);
+    const fields = cutoutFields(draft);
+    try {
+      if (picture) {
+        const value = await send({ action: "add", magnet: id, fields });
+        const stored = value?.magnet && cutoutFromMagnet(value.magnet);
+        if (stored) setCutouts(current => current.map(item => item.id === id ? stored : item));
+        setTool("select");
+        return;
+      }
+      setCapturing(true);
+      document.documentElement.classList.add("glass-capturing");
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      let snapshot = "";
+      try {
+        const reply = await window.desktop?.captureRegion({ x: Math.round(box.x), y: Math.round(box.y),
+          width: Math.round(box.width), height: Math.round(box.height) });
+        if (!reply?.ok || !reply.value?.base64) throw new Error(reply?.error ?? "The cutout could not be captured.");
+        snapshot = reply.value.base64;
+      } finally {
+        document.documentElement.classList.remove("glass-capturing");
+        setCapturing(false);
+      }
+      const value = await send({ action: "add", magnet: id, fields,
+        image: { base64: snapshot, name: `${draft.name}.png`, width: w } });
+      const stored = value?.magnet && cutoutFromMagnet(value.magnet);
+      if (stored) setCutouts(current => current.map(item => item.id === id ? stored : item));
+      else setNotice("The cutout was saved without its picture.");
+      setTool("select");
+    } catch (error) {
+      setCutouts(current => current.filter(item => item.id !== id));
+      setNotice(message(error));
+    }
+  }, [blockSource, send]);
 
   const chooseInk = useCallback((next: InkTool | "eraser") => {
     setTool("ink");
@@ -1133,8 +1329,20 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented) return;
       const target = event.target instanceof Element ? event.target : null;
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === "k" || event.key === "K")
+        && !target?.closest("input, textarea, [contenteditable='true'], .cm-content")) {
+        event.preventDefault();
+        const view = editor()?.view();
+        const line = view ? view.state.doc.lineAt(view.state.selection.main.head).number : -1;
+        const block = blocks.current.find(item => item.line === line && item.element)
+          ?? nearestBlock(blocks.current, { x: scroller.getBoundingClientRect().left + 120, y: scroller.getBoundingClientRect().top + 120 });
+        const rect = block?.element?.getBoundingClientRect();
+        if (rect) createSheet("clip", { x: rect.left + rect.width / 2, y: rect.top + Math.min(rect.height / 2, 24) });
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (target?.closest("input, textarea, [contenteditable='true'], .cm-content")) return;
       if (event.key === "n" || event.key === "N") { event.preventDefault(); createAtCenter(); }
       else if (event.key === "p" || event.key === "P") { event.preventDefault(); chooseInk("pen"); }
@@ -1149,7 +1357,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseInk, createAtCenter, removeMark, selected, selectedArrow, stickers]);
+  }, [chooseInk, createAtCenter, createSheet, editor, removeMark, scroller, selected, selectedArrow, stickers]);
 
   const orphans = [...magnets, ...images, ...stickers, ...cards].filter(mark => layout.places[mark.id]?.status === "orphan");
   const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
@@ -1256,12 +1464,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="eraser" aria-pressed={tool === "ink" && inkTool === "eraser"} aria-label="Eraser" title="Eraser (E)" onClick={() => chooseInk("eraser")}><Eraser size={15} /></button>
     <button type="button" data-glass-tool="sticker" aria-pressed={tool === "sticker"} aria-label="Sticker" title="Stickers" onClick={() => setTool("sticker")}><Star size={15} /></button>
     <button type="button" data-glass-tool="arrow" aria-pressed={tool === "arrow"} aria-label="Arrow" title="Arrow between two things" onClick={() => setTool("arrow")}><ArrowUpRight size={15} /></button>
+    <span className="glass-tray-rule" aria-hidden="true" />
+    <button type="button" data-glass-tool="clip" aria-pressed={tool === "clip"} aria-label="Paper clip" title="Paper clip: a mini-page pinned to a paragraph (⌘⇧K)" onClick={() => setTool("clip")}><Paperclip size={15} /></button>
+    <button type="button" data-glass-tool="extra-page" aria-pressed={tool === "extra-page"} aria-label="Extra page" title="Extra page: a blank sheet beside a paragraph" onClick={() => setTool("extra-page")}><FileText size={15} /></button>
+    <button type="button" data-glass-tool="cutout" aria-pressed={tool === "cutout"} aria-label="Scissors" title="Scissors: cut a rectangle or lasso from the page" onClick={() => setTool("cutout")}><Scissors size={15} /></button>
     <button type="button" data-glass-grid aria-pressed={grid.on} aria-expanded={tool === "grid"} aria-label="Grid" title="Grid: line magnets up with the paper" onClick={() => setTool(current => current === "grid" ? "select" : "grid")}><Grid3x3 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-tool="card" aria-haspopup="dialog" aria-label="Card" title="Card: section, tutor answer or quiz"
       onClick={() => setCardOpen(true)}><SquareStack size={15} /></button>
-    {comingSoon.map(({ id, label, icon: Icon }) => <button type="button" key={id} data-glass-coming={id} aria-disabled="true"
-      aria-label={label} title={`${label} — coming soon`} onClick={() => setNotice(`${label} is coming soon.`)}><Icon size={15} /></button>)}
     <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-ink-undo aria-label="Undo ink" title="Undo ink" disabled={!inkHistory.undo}
       onClick={() => inkApi.current?.undo()}><Undo2 size={15} /></button>
@@ -1291,7 +1501,24 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       </button>)}
     </>}
   </div> : null;
-  const panel = <>{tray}{inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+  const cutoutPalette = tool === "cutout" ? <div className="glass-palette" role="group" aria-label="Cut shape" data-glass-palette="cutout">
+    <p className="glass-palette-title">Scissors</p>
+    <div className="glass-palette-row">
+      <button type="button" data-cutout-mode="rect" aria-pressed={cutMode === "rect"} onClick={() => setCutMode("rect")}>Rectangle</button>
+      <button type="button" data-cutout-mode="lasso" aria-pressed={cutMode === "lasso"} onClick={() => setCutMode("lasso")}>Lasso</button>
+    </div>
+    <p className="glass-palette-hint">Drag over a paragraph or picture. Images keep a lossless crop; Esc cancels tool.</p>
+    <button type="button" data-cutout-cancel onClick={() => setTool("select")}>Done</button>
+  </div> : null;
+  const pagePalette = tool === "extra-page" ? <div className="glass-palette" role="group" aria-label="Extra page paper" data-glass-palette="extra-page">
+    <p className="glass-palette-title">Extra page</p>
+    <div className="glass-palette-row">
+      {extraPagePapers.map(paper => <button type="button" key={paper} data-page-paper={paper}
+        aria-pressed={pagePaper === paper} onClick={() => setPagePaper(paper)}>{paper[0]!.toUpperCase() + paper.slice(1)}</button>)}
+    </div>
+    <p className="glass-palette-hint">Pick paper, then click a paragraph. The sheet never pushes text.</p>
+  </div> : null;
+  const panel = <>{tray}{cutoutPalette ?? pagePalette ?? inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
     <strong>Glass trash</strong>
     {trash.length ? <ul>{trash.map(magnet => <li key={magnet.id}>
       <span>{magnetLabel(magnet)}</span>
@@ -1309,7 +1536,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     </span>)}
   </div>}{cardOpen && note && <NewCardDialog blocks={blocks.current}
     point={cardPoint()}
-    close={() => setCardOpen(false)} create={card => { void createCard(card); setCardOpen(false); }} />}{notice && <p className="glass-notice" role="status">{notice}</p>}
+    close={() => setCardOpen(false)} create={card => { void createCard(card); setCardOpen(false); }} />}{backTo && <div className="glass-back" role="status" data-glass-back>
+    <button type="button" data-glass-back-skip onClick={() => {
+      scroller.scrollTo({ top: backTo.top });
+      setSelected(backTo.id);
+      setBackTo(undefined);
+    }}>Back to {backTo.label}</button>
+  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}
   {mergeDone && <div className="glass-merge-done" role="status" data-glass-merge-done>
     <span>Merged into the page.</span>
     <button type="button" data-glass-merge-undo={mergeDone.id} onClick={() => void undoMerge(mergeDone.id)}>Undo</button>
@@ -1348,7 +1581,51 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pinCard} magnets={comments} reload={load} />}
-    {createPortal(<><div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}>
+    {createPortal(<>
+    {tool === "cutout" && !capturing && <div className={`glass-scissors-overlay ${cutMode}`} aria-label="Cut a selection"
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const point: [number, number] = [event.clientX, event.clientY];
+        const draft = { start: point, end: point, points: [point], model: cutMode };
+        cutDraftRef.current = draft;
+        setCutDrag(draft);
+      }}
+      onPointerMove={event => {
+        const current = cutDraftRef.current;
+        if (!current) return;
+        const point: [number, number] = [event.clientX, event.clientY];
+        const next = { ...current, end: point,
+          points: current.model === "lasso" ? [...current.points, point] : current.points };
+        cutDraftRef.current = next;
+        setCutDrag(next);
+      }}
+      onPointerUp={event => {
+        const current = cutDraftRef.current;
+        if (!current) return;
+        cutDraftRef.current = undefined;
+        const end: [number, number] = current.end;
+        const bounds = current.model === "lasso" && current.points.length >= 3 ? current.points : [current.start, end];
+        const left = Math.min(...bounds.map(point => point[0])), right = Math.max(...bounds.map(point => point[0]));
+        const top = Math.min(...bounds.map(point => point[1])), bottom = Math.max(...bounds.map(point => point[1]));
+        const box = { x: left, y: top, width: right - left, height: bottom - top };
+        const lasso = current.model === "lasso" && current.points.length >= 3 && box.width > 0 && box.height > 0
+          ? current.points.map(([x, y]) => [Math.round(((x - box.x) / box.width) * 1000) / 10,
+            Math.round(((y - box.y) / box.height) * 1000) / 10] as [number, number]) : [];
+        setCutDrag(undefined);
+        if (box.width >= cutoutDefaults.minCropPx && box.height >= cutoutDefaults.minCropPx) void cutoutAt(box, lasso);
+        else setNotice("Cut at least 10 px.");
+      }}
+      onPointerCancel={() => { cutDraftRef.current = undefined; setCutDrag(undefined); }}>
+      {cutDrag && cutDrag.model === "rect"
+        ? <div className="glass-scissors-rect" style={{ left: Math.min(cutDrag.start[0], cutDrag.end[0]),
+            top: Math.min(cutDrag.start[1], cutDrag.end[1]), width: Math.abs(cutDrag.end[0] - cutDrag.start[0]),
+            height: Math.abs(cutDrag.end[1] - cutDrag.start[1]) }} />
+        : cutDrag ? <svg className="glass-scissors-lasso" aria-hidden="true">
+            <polyline points={cutDrag.points.map(([x, y]) => `${x},${y}`).join(" ")} />
+          </svg> : null}
+    </div>}
+    <div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}>
       {grid.on && <div className="glass-grid" aria-hidden="true" data-glass-grid={grid.size} />}
       <div className="glass-guides" ref={guidesEl} aria-hidden="true" data-snap="off">
         <span className="glass-guide" data-guide="x" hidden />
@@ -1358,12 +1635,39 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
-      {(tool === "sticky" || tool === "sticker") && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
+      {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page") && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
         if (tool === "sticker") placeSticker({ x: event.clientX, y: event.clientY });
+        else if (tool === "clip" || tool === "extra-page") createSheet(tool, { x: event.clientX, y: event.clientY });
         else create({ x: event.clientX, y: event.clientY });
       }} />}
+      {clips.map(clip => { const place = layout.places[clip.id]; return place?.status !== "resolved" ? null :
+        <ClipView key={clip.id} clip={clip} place={place} selected={selected === clip.id} savedNote={clip.notePath}
+          note={note} inkColor={sheetInkColors[0]} inkSize={inkSize}
+          onSelect={() => { setSelected(clip.id); setSelectedArrow(undefined); }}
+          onText={text => patchClip(clip.id, { text })}
+          onFold={() => patchClip(clip.id, { folded: !clip.folded })}
+          onStrokes={strokes => patchClip(clip.id, { strokes })}
+          onSave={() => void saveClip(clip.id)}
+          onJump={() => jumpWithBack(clip.id, anchorLine(clip.anchor), clip.title || "Clip")}
+          onDelete={() => removeMark(clip.id)} />; })}
+      {extraPages.map(page => { const place = layout.places[page.id]; return place?.status !== "resolved" ? null :
+        <ExtraPageView key={page.id} page={page} place={place} selected={selected === page.id}
+          inkColor={sheetInkColors[1]} inkSize={inkSize}
+          onSelect={() => { setSelected(page.id); setSelectedArrow(undefined); }}
+          onText={text => patchPage(page.id, { text })}
+          onStrokes={strokes => patchPage(page.id, { strokes })}
+          onJump={() => jumpWithBack(page.id, anchorLine(page.anchor), page.title || "Extra page")}
+          onDelete={() => removeMark(page.id)} />; })}
+      {cutouts.map(cutout => { const place = layout.places[cutout.id]; if (place?.status !== "resolved") return null;
+        const block = blocks.current.find(item => (item.element?.dataset.cid ?? `block-${item.line}`) === cutout.source.element);
+        const picture = block?.element?.tagName === "IMG" ? block.element as HTMLImageElement : block?.element?.querySelector("img");
+        return <CutoutView key={cutout.id} cutout={cutout} place={place} selected={selected === cutout.id} note={note}
+          sourceImage={picture?.currentSrc || picture?.src || undefined}
+          onSelect={() => { setSelected(cutout.id); setSelectedArrow(undefined); }}
+          onJump={() => jumpWithBack(cutout.id, cutout.source.line, cutout.name)}
+          onDelete={() => removeMark(cutout.id)} />; })}
       {layout.fixture && (layout.fixture.status === "resolved"
         ? <div className="glass-debug" data-glass-object="fixture" data-glass-status="resolved"
             style={{ left: `${layout.fixture.x}px`, top: `${layout.fixture.y}px`, width: `${layout.fixture.width}px`, height: `${layout.fixture.height}px` }} />

@@ -8,7 +8,7 @@ import path from "node:path";
 import { imageSize } from "image-size";
 import {
   anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
-  replayJournalText, replayNotesText, stickyColors, validAnchor, visibleMagnets,
+  replayJournalText, replayNotesText, sanitizeTitle, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 import {
   assetFile, convertible, displayFile, extensionFor, imageDefaults, imageFields, imageTypeOf, mimeFor,
@@ -21,6 +21,7 @@ import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validAr
 import {
   cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
 } from "../shared/glass-cards.mjs";
+import { clipFieldValues, cutoutFieldValues, extraPageFieldValues, sheetTitle } from "../shared/glass-clips.mjs";
 import {
   decodeNote, encodeNote, inkSvg, insertBlock, mergeAnchorOf, mergeDiff, mergeKindLabel, mergeLines,
   mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
@@ -682,11 +683,15 @@ export class GlassService {
     const magnetId = request.magnet ?? newMagnetId();
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
-    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded", "layer", "tool", "size", "parts", "card", "title", "link", "question", "answer", "answerAt", "choices"])
+    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded", "layer", "tool", "size", "parts", "card", "title", "link", "question", "answer", "answerAt", "choices",
+      "strokes", "source", "region", "lasso", "notePath", "savedAt", "aspect", "name", "asset", "display", "bytes", "locked"])
       if (request[key] !== undefined) fields[key] = request[key];
     if (request.image !== undefined) {
       if (!request.image || typeof request.image !== "object" || Array.isArray(request.image)) throw new Error("Invalid image payload.");
-      Object.assign(fields, await this.imageAsset({ file, image: request.image, width: fields.w, wrap: fields.wrap }));
+      const kind = fields.kind === "cutout" ? "cutout" : "image";
+      const stored = await this.imageAsset({ file, image: request.image, width: fields.w, wrap: fields.wrap, kind });
+      if (kind === "cutout") { delete stored.wrap; delete stored.rot; delete stored.tape; }
+      Object.assign(fields, stored);
     }
     if (fields.anchor !== undefined && fields.kind !== "sticky") {
       if (!validAnchor(fields.anchor)) throw new Error("Invalid Glass anchor.");
@@ -716,7 +721,7 @@ export class GlassService {
   }
 
   // Original bytes stay untouched; a light display copy is written only when one was supplied or can be converted.
-  async imageAsset({ file, image, width, wrap }) {
+  async imageAsset({ file, image, width, wrap, kind = "image" }) {
     if (this.readOnly) throw Object.assign(new Error("Glass is read-only."), { code: "GLASS_READ_ONLY" });
     const directory = this.assetDir(file);
     await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -757,8 +762,9 @@ export class GlassService {
     }
     const requested = Number(width);
     const w = Math.round(Math.min(imageDefaults.maxW, Math.max(imageDefaults.minW, Number.isFinite(requested) && requested > 0 ? requested : imageDefaults.w)));
-    const fields = imageFields({ kind: "image", name: image.name || sourceName, asset, display, bytes: bytes.length, w,
-      h: Math.max(imageDefaults.minH, Math.round(w / aspect)), aspect, wrap: image.wrap ?? wrap ?? "left" });
+    const fields = imageFields({ kind: kind === "cutout" ? "image" : kind, name: image.name || sourceName, asset, display,
+      bytes: bytes.length, w, h: Math.max(imageDefaults.minH, Math.round(w / aspect)), aspect, wrap: image.wrap ?? wrap ?? "left" });
+    if (kind === "cutout") fields.kind = "cutout";
     return fields;
   }
 
@@ -801,7 +807,7 @@ export class GlassService {
     const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
     if (!magnet) throw new Error("Glass magnet not found.");
     const fields = magnetViewFromMap(magnet).fields;
-    if (fields.kind !== "image") throw new Error("That magnet is not an image.");
+    if (fields.kind !== "image" && fields.kind !== "cutout") throw new Error("That magnet has no picture.");
     const directory = this.assetDir(file);
     const wanted = request.which === "original" ? fields.asset : fields.display ?? fields.asset;
     if (!wanted) throw new Error("This image has no stored copy yet.");
@@ -1307,6 +1313,39 @@ export class GlassService {
     throw new Error("Too many pages already use that title.");
   }
 
+  // Save as note is the clip's only path into the vault: one new Markdown file, never an edit.
+  async clipSave(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    if (!this.initialized && await this.existingStore()) await this.initialize();
+    if (!this.initialized) throw new Error("Glass is not initialized in this vault.");
+    this.assertWritable();
+    const note = this.notesByPath.get(name);
+    if (!note) throw new Error("Glass note not found.");
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet || magnet.deleted?.active) throw new Error("Glass clip not found.");
+    const fields = magnetViewFromMap(magnet).fields;
+    if (fields.kind !== "clip") throw new Error("That magnet is not a clip.");
+    const previous = typeof fields.notePath === "string" ? fields.notePath : "";
+    if (previous) {
+      const existing = path.join(this.root, ...previous.split("/"));
+      const metadata = await info(existing).catch(() => null);
+      if (metadata?.isFile() && !metadata.isSymbolicLink()) return { ...this.describe(note, file), magnet: magnet.id,
+        path: previous, name: path.basename(previous, ".md"), bytes: metadata.size, created: false };
+    }
+    const text = typeof fields.text === "string" ? fields.text : "";
+    if (!text.trim()) throw new Error("Write something in the clip before saving it as a note.");
+    const stem = sanitizeTitle(sheetTitle(fields)) || "Clipped page";
+    const written = await this.writeCardPage(name, stem, text.endsWith("\n") ? text : `${text}\n`);
+    const savedAt = new Date().toISOString();
+    for (const [field, value] of Object.entries({ notePath: written.path, savedAt }))
+      await this.appendRecord(file, { op: "set", magnetId: magnet.id, field, value, hlc: this.clock.next(), device: this.deviceName });
+    const next = await this.readJournal(file);
+    return { ...this.describe(note, file), magnet: magnetViewFromMap(next.magnets.get(magnet.id)), path: written.path,
+      name: written.name, bytes: written.bytes, created: true };
+  }
+
   status() {
     return { version: glassVersion, initialized: this.initialized === true, vaultId: this.vaultId ?? null, mode: this.mode ?? null, readOnly: this.readOnly === true,
       readOnlyReason: this.readOnly ? this.readOnlyReason ?? null : null, root: this.root,
@@ -1324,10 +1363,11 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card",
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save",
       "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
-    if (["set", "delete", "restore", "asset", "asset-display", "card", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (["set", "delete", "restore", "asset", "asset-display", "card", "clip-save", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (input.action === "clip-save") return this.clipSave(input);
     if (input.action === "merge-preview") return this.mergePreview(input);
     if (input.action === "merge-accept") return this.mergeAccept(input);
     if (input.action === "merge-undo") return this.mergeUndo(input);
@@ -1629,6 +1669,9 @@ function validateMagnetFields(kind, fields, partial) {
     }
     return values;
   }
+  if (kind === "clip") return clipFieldValues(partial ? fields : { ...fields, kind: "clip" }, partial);
+  if (kind === "extra-page") return extraPageFieldValues(partial ? fields : { ...fields, kind: "extra-page" }, partial);
+  if (kind === "cutout") return cutoutFieldValues(partial ? fields : { ...fields, kind: "cutout" }, partial);
   if (kind !== "sticky") {
     if (partial && Object.hasOwn(fields, "kind")) throw new Error("A magnet keeps its kind.");
     return fields;

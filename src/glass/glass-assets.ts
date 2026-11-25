@@ -22,8 +22,10 @@ export function glassAsset(note: string | undefined, magnet: string, which: "dis
     if (!note) return null;
     try {
       const value = await glassCall({ note, magnet, action: "asset", which });
-      return typeof value.base64 === "string" && value.base64 ? `data:${value.mime ?? "image/png"};base64,${value.base64}` : null;
-    } catch { return null; }
+      const url = typeof value.base64 === "string" && value.base64 ? `data:${value.mime ?? "image/png"};base64,${value.base64}` : null;
+      if (!url) sources.delete(key);
+      return url;
+    } catch { sources.delete(key); return null; }
   })();
   sources.set(key, run);
   return run;
