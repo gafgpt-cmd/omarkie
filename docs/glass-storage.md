@@ -52,6 +52,22 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 - On a focused note: `Enter` edits, `F` folds, `Delete` trashes, `Esc` exits editing.
 - G19 scale gap: a local 203-sticky test took 152 ms on its first open against the 100 ms target. Warm runs took 34–41 ms.
 
+## Pictures
+
+A glass image is a photo magnet: it anchors to one paragraph like a sticky note and never writes the `.md`.
+
+- Drop a file on the page, paste a copied picture, or use the pencil case Image tool. With Glass on, Learning mode hands file drops to the glass; its own image scraps are the legacy form, imported the first time a note's glass is listed.
+- Original bytes stay untouched in `.omarkie/assets/<note> ~<id>/<human name>.<ext>`. Big photos (over 2 MB, 12 MP or 2400 px) also get `<name> ~display.webp`, so the page never decodes the original while scrolling. HEIC and TIFF need an external converter (`OMARKIE_IMAGE_CONVERT` or `image-convert` in app data) for that light copy; without one the magnet shows its file name.
+- Chromium decodes EXIF orientation, so a phone photo keeps its upright aspect.
+- Move: drag the picture. Free modes save x and y offsets from the paragraph; wrap modes re-anchor to the paragraph under the pointer when dropped.
+- Resize: drag the corner handle, hold Shift to keep the ratio. Rotate: drag the round handle above the frame, Shift snaps to 15°.
+- Wrap: left or right pushes the paragraph text aside with a real CSS float, capped at 60% of the measure so a readable column stays beside it; behind paints the picture under the page text and keeps its frame as the handle; in front paints above the text.
+- Washi tape is decorative and rotates with the picture. Lock makes it refuse every gesture; unlock to move again.
+- On a selected picture: `Delete` trashes it, `L` locks, `T` toggles tape, `[` and `]` turn 15°, arrows nudge (Shift arrows resize on free modes).
+- The pencil-case trash restores it. Bytes are never removed by delete; the magnet's trash state is a journal tombstone.
+- The renderer asks for bytes lazily near the viewport and caches one copy per magnet per session. No network.
+- Limits: 64 MB per file, 48–4000 px per side, rotation ±360°.
+
 ## Renderer and agents
 
 The Electron main process owns one `GlassService` per open vault. The renderer calls `window.desktop.glass({action})` and subscribes to `window.desktop.onGlassStorage(status)` for read-only, disk-full and recovery notices.
@@ -67,9 +83,12 @@ omarkie-axi glass restore --note notes/map.md --magnet m-6f2a1c
 omarkie-axi glass list --note notes/map.md
 omarkie-axi glass show --note notes/map.md --magnet m-6f2a1c
 omarkie-axi glass status
+omarkie-axi glass add --note notes/map.md --kind image --file photos/harbour.png --near "Closely spaced contour lines" --wrap right
+omarkie-axi glass edit --note notes/map.md --magnet m-6f2a1c --wrap behind --tape --lock
+omarkie-axi glass move --note notes/map.md --magnet m-6f2a1c --x 64 --y 24 --rot -8
 ```
 
-A sticky note anchors to the one paragraph holding `--near`; x and y are offsets from that paragraph, so the note follows it through edits and reflow. Every CLI change reaches an open glass immediately.
+A sticky note or picture anchors to the one paragraph holding `--near`; x and y are offsets from that paragraph, so the magnet follows it through edits and reflow. `--wrap` takes `left`, `right`, `behind` or `front`; `--tape`, `--lock`, `--rot` change a picture. Every CLI change reaches an open glass immediately.
 
 The verbs need the vault open in Omarkie, because Omarkie is the only writer.
 
