@@ -1,11 +1,11 @@
 import { constants } from "node:fs";
 import { createReadStream } from "node:fs";
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, stat, truncate, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, truncate, unlink } from "node:fs/promises";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
-  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, replayJournalText, replayNotesText, validAnchor, visibleMagnets,
+  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseJournalText, replayJournalText, replayNotesText, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
@@ -43,6 +43,10 @@ export class GlassService {
     this.readOnly = false;
     this.tail = Promise.resolve();
     this.closed = false;
+    this.finder = null;
+    this.indexStatus = null;
+    this.offer = null;
+    this.lost = [];
   }
 
   async open({ passive = true } = {}) {
@@ -88,6 +92,7 @@ export class GlassService {
     await this.loadNotes();
     await this.scanJournals();
     this.initialized = true;
+    this.afterInitialize?.();
     return this;
   }
 
@@ -297,6 +302,7 @@ export class GlassService {
         const record = { op: "note", id: known.id, path: name, title: titleOf(name), fingerprint, hlc: this.clock.next(), device: this.deviceName };
         await this.appendRecord(this.notesFile, record);
         Object.assign(known, { fingerprint, hlc: record.hlc });
+        await this.rememberNote(known, name);
       }
       return known;
     }
@@ -306,7 +312,129 @@ export class GlassService {
     this.notesById.set(id, entry);
     this.notesByPath.set(name, entry);
     await this.appendRecord(this.notesFile, record);
+    await this.rememberNote(entry, name);
     return entry;
+  }
+
+  async rememberNote(note, name = note.path) {
+    if (!this.finder || !note.fingerprint?.hash) return;
+    await this.finder.remember({ hash: note.fingerprint.hash, size: note.fingerprint.size, vaultId: this.vaultId,
+      store: this.storeDir, journal: relative(this.storeDir, this.journalFor(note)), noteId: note.id,
+      title: note.title, path: name, mode: this.mode }).catch(() => {});
+  }
+
+  async refreshFingerprint(note, fingerprint, name = note.path) {
+    if (note.fingerprint?.hash === fingerprint.hash && note.fingerprint?.size === fingerprint.size) return note;
+    this.assertWritable();
+    const record = { op: "note", id: note.id, path: name, title: note.title ?? titleOf(name), fingerprint,
+      hlc: this.clock.next(), device: this.deviceName };
+    await this.appendRecord(this.notesFile, record);
+    note.fingerprint = fingerprint;
+    note.hlc = record.hlc;
+    await this.rememberNote(note, name);
+    return note;
+  }
+
+  currentNotes() {
+    return [...this.notesById.values()].map(note => ({ id: note.id, path: note.path, title: note.title,
+      fingerprint: note.fingerprint ?? null }));
+  }
+
+  async recordMove(note, to, { title, fingerprint } = {}) {
+    this.assertWritable();
+    const record = { op: "move", id: note.id, to, hlc: this.clock.next(), device: this.deviceName,
+      title: title ?? titleOf(to), ...(fingerprint ? { fingerprint } : {}) };
+    await this.appendRecord(this.notesFile, record);
+    this.notesByPath.delete(note.path);
+    note.path = to;
+    note.title = record.title;
+    if (fingerprint) note.fingerprint = fingerprint;
+    this.notesByPath.set(to, note);
+    await this.rememberNote(note, to);
+    return record;
+  }
+
+  async recordFolder(from, to) {
+    this.assertWritable();
+    const record = { op: "folder", from, to, hlc: this.clock.next(), device: this.deviceName };
+    await this.appendRecord(this.notesFile, record);
+    for (const note of this.notesById.values()) {
+      if (note.path !== from && !note.path.startsWith(`${from}/`)) continue;
+      this.notesByPath.delete(note.path);
+      note.path = `${to}${note.path.slice(from.length)}`;
+      this.notesByPath.set(note.path, note);
+    }
+    return record;
+  }
+
+  async appendText(file, text) {
+    this.assertWritable();
+    const line = text.endsWith("\n") ? text : `${text}\n`;
+    await this.enqueueWrite(file, line);
+    return line;
+  }
+
+  async magnetsForIndex() {
+    const result = [];
+    for (const [noteId, file] of this.journals) {
+      const replay = await this.readJournal(file).catch(() => null);
+      if (!replay) continue;
+      for (const magnet of visibleMagnets(replay.magnets)) {
+        const fields = magnet.fields ?? {};
+        const text = [fields.text, fields.title, fields.quote, fields.body]
+          .filter(value => typeof value === "string" && value.trim()).join("\n").slice(0, 8_000);
+        result.push({ id: magnet.id, noteId, kind: magnet.kind ?? null, text, fields });
+      }
+    }
+    return result;
+  }
+
+  // Bring one note's glass from a store this computer already knows about. Nothing at the old location changes.
+  async attachForeign(notePath, foreign) {
+    const { note: name, file } = await this.validateNote(notePath);
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    if (!foreign || typeof foreign.store !== "string" || typeof foreign.noteId !== "string")
+      throw new Error("Glass finder entry is incomplete.");
+    const storeRoot = await realpath(foreign.store).catch(() => null);
+    if (!storeRoot) throw new Error("The old glass store is not reachable.");
+    const journalName = path.basename(String(foreign.journal ?? ""));
+    if (!journalPattern.test(journalName)) throw new Error("Glass finder journal name is invalid.");
+    const source = path.join(storeRoot, "glass", journalName);
+    const resolved = await realpath(source).catch(() => null);
+    if (!resolved || !resolved.startsWith(`${storeRoot}${path.sep}`)) throw new Error("Glass finder journal is outside its store.");
+    const text = await readLimited(resolved, 128 * 1024 * 1024).catch(error => { if (error.code === "ENOENT") return ""; throw error; });
+
+    let note = this.notesByPath.get(name);
+    if (!note) {
+      const fingerprint = await this.noteFingerprint(file);
+      const id = /^[a-z0-9]{4,32}$/.test(foreign.noteId) && !this.notesById.has(foreign.noteId) && !this.journals.has(foreign.noteId)
+        ? foreign.noteId : this.newNoteId();
+      const record = { op: "note", id, path: name, title: titleOf(name), fingerprint, hlc: this.clock.next(), device: this.deviceName };
+      note = { id, path: name, title: record.title, fingerprint, hlc: record.hlc, device: record.device };
+      this.notesById.set(id, note);
+      this.notesByPath.set(name, note);
+      this.journals.set(id, path.join(this.storeDir, "glass", glassFileName(record.title, id)));
+      await this.appendRecord(this.notesFile, record);
+    }
+
+    const target = this.journalFor(note);
+    const existing = new Set(parseJournalText(await readFile(target, "utf8").catch(() => "")).lines);
+    let copied = 0;
+    for (const line of parseJournalText(text).lines) {
+      if (!line.trim() || existing.has(line)) continue;
+      existing.add(line);
+      await this.appendText(target, line);
+      copied += 1;
+    }
+
+    const sourceAssets = path.join(storeRoot, "assets", journalName.replace(/\.jsonl$/, ""));
+    const targetAssets = path.join(this.storeDir, "assets", path.basename(target, ".jsonl"));
+    const assets = await copyPlainTree(sourceAssets, targetAssets);
+    const replay = await this.readJournal(target);
+    for (const clock of replay.clocks) this.clock.observe(clock);
+    await this.rememberNote(note, name);
+    return { note: name, id: note.id, journal: relative(this.storeDir, target), lines: copied, assets };
   }
 
   newNoteId() {
@@ -484,6 +612,7 @@ export class GlassService {
     }
     const replay = await this.readJournal(file);
     const magnet = replay.magnets.get(magnetId);
+    this.notify();
     return { ...this.describe(note, file), magnet: magnet ? magnetViewFromMap(magnet) : null, pending: this.pending.length, saved: this.pending.length === 0 };
   }
 
@@ -528,13 +657,18 @@ export class GlassService {
       readOnlyReason: this.readOnly ? this.readOnlyReason ?? null : null, root: this.root,
       location: this.mode === "inside" ? ".omarkie" : this.storeDir, notes: this.notesById.size,
       pending: this.pending.length, error: this.error ? { ...this.error } : null, lastSavedAt: this.lastSavedAt ?? null,
-      lock: this.lockOwner ? { host: this.lockOwner.host, pid: this.lockOwner.pid } : null, bridge: this.bridgeState ?? null };
+      lock: this.lockOwner ? { host: this.lockOwner.host, pid: this.lockOwner.pid } : null, bridge: this.bridgeState ?? null,
+      index: this.indexStatus ?? null, bring: this.offer ?? null, lost: this.lost ?? [] };
   }
 
   async request(input) {
     if (!input || typeof input !== "object" || typeof input.action !== "string") throw new Error("Invalid Glass request.");
     if (input.action === "status") return this.status();
     if (input.action === "flush") return this.initialized ? this.flushPending() : this.status();
+    if (["map", "find", "bring", "finder", "reindex"].includes(input.action)) {
+      if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
+      return this.sync[input.action](input);
+    }
     if (!["add", "list", "show"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (input.action !== "add" && (typeof input.note !== "string" || !input.note.trim())) throw new Error("--note is required.");
     return this[input.action](input);
@@ -584,6 +718,27 @@ async function lastCompleteOffset(handle, size) {
     offset -= part.length;
   }
   return 0;
+}
+
+async function copyPlainTree(source, target) {
+  const root = await info(source);
+  if (!root?.isDirectory() || root.isSymbolicLink()) return 0;
+  let copied = 0;
+  async function walk(from, to) {
+    let entries;
+    try { entries = await readdir(from, { withFileTypes: true }); } catch { return; }
+    await mkdir(to, { recursive: true, mode: 0o700 });
+    for (const entry of entries) {
+      const fromFile = path.join(from, entry.name);
+      const toFile = path.join(to, entry.name);
+      if (entry.isDirectory()) { await walk(fromFile, toFile); continue; }
+      if (!entry.isFile()) continue;
+      if (await info(toFile)) continue;
+      try { await copyFile(fromFile, toFile, constants.COPYFILE_EXCL); copied += 1; } catch { /* keep the old asset on any refusal */ }
+    }
+  }
+  await walk(source, target);
+  return copied;
 }
 
 function magnetViewFromMap(magnet) {

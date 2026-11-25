@@ -13,7 +13,7 @@ await build({
   config: {
     appId: pkg.build.appId, productName: pkg.build.productName,
     directories: { app: application, output: "release/windows" },
-    files: ["**/*"], asar: true, npmRebuild: false,
+    files: ["**/*"], asar: true, asarUnpack: ["**/*.node"], npmRebuild: false,
     electronVersion: pkg.devDependencies.electron,
     fileAssociations: pkg.build.fileAssociations,
     win: { icon: "build/icon.ico", artifactName: "Omarkie-${version}-windows-${arch}.${ext}" },

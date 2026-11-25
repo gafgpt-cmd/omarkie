@@ -90,6 +90,25 @@ export default function App() {
   const [sheetsRoot, setSheetsRoot] = useState<HTMLDivElement | null>(null);
   const [halfTile, setHalfTile] = useState(() => window.matchMedia("(max-width: 820px)").matches);
   const [drawer, setDrawer] = useState(false);
+  const [glassOffer, setGlassOffer] = useState<{ count: number; notes?: { path: string; title?: string }[] } | null>(null);
+  const [glassBusy, setGlassBusy] = useState(false);
+  useEffect(() => host.onGlassStorage?.(status => {
+    const offer = status?.bring;
+    setGlassOffer(offer?.count ? offer : null);
+  }), []);
+  async function bringGlass() {
+    if (!host.glass) return;
+    setGlassBusy(true);
+    try {
+      const result = await host.glass({ action: "bring" }) as { brought?: unknown[] };
+      setGlassOffer(null);
+      if (Array.isArray(result?.brought)) session.setMessage(t("Glass brought for {{count}} notes.", { count: result.brought.length }));
+    } catch (error) {
+      session.setMessage((error as Error).message);
+    } finally {
+      setGlassBusy(false);
+    }
+  }
   useEffect(() => {
     const tile = window.matchMedia("(max-width: 820px)");
     const changed = () => { setHalfTile(tile.matches); setDrawer(false); };
@@ -579,6 +598,15 @@ export default function App() {
         tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
         payload={payloadAvailable ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
+      {glassOffer && (
+        <div className="glass-banner" role="status">
+          <span>{glassOffer.count === 1
+            ? t("1 note here already has glass on this computer.")
+            : t("{{count}} notes here already have glass on this computer.", { count: glassOffer.count })}</span>
+          <button disabled={glassBusy} onClick={() => void bringGlass()}>{t("Bring glass")}</button>
+          <button className="glass-banner-dismiss" aria-label={t("Dismiss")} onClick={() => setGlassOffer(null)}><X size={15} /></button>
+        </div>
+      )}
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
         search={() => setDialog("global-search")} recent={() => setDialog("recent")} notify={session.setMessage}

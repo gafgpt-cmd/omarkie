@@ -1,4 +1,4 @@
-import { createPackage } from "@electron/asar";
+import { createPackageWithOptions } from "@electron/asar";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -14,7 +14,12 @@ await rm(work, { recursive: true, force: true });
 await mkdir(sources, { recursive: true });
 
 const application = await prepareElectronApplication("linux");
-await createPackage(application, path.join(sources, "app.asar"));
+const archive = await createPackageWithOptions(path.relative(process.cwd(), application), path.join(sources, "app.asar"), { unpack: "**/*.node" });
+await new Promise((resolve, reject) => {
+  archive.on("finish", resolve);
+  archive.on("error", reject);
+});
+execFileSync("bsdtar", ["-cf", path.join(sources, "app.asar.unpacked.tar"), "-C", sources, "app.asar.unpacked"]);
 execFileSync("bsdtar", ["-cf", path.join(sources, "ThirdPartyLicenses.tar"), "-C", path.join(application, "ThirdPartyLicenses"), "."]);
 await copyFile("LICENSE", path.join(sources, "LICENSE"));
 await copyFile("build/icon.png", path.join(sources, "omarkie.png"));
@@ -31,7 +36,7 @@ execFileSync("makepkg", ["--force", "--nodeps", "--noconfirm", "--cleanbuild"], 
 const name = (await readdir(work)).find(file => file.endsWith(".pkg.tar.zst"));
 if (!name) throw new Error("makepkg produced no package");
 const file = path.join(work, name), listing = execFileSync("bsdtar", ["-tf", file], { encoding: "utf8" });
-for (const entry of ["usr/bin/omarkie", "usr/bin/omarkie-axi", "usr/lib/omarkie/app.asar", "usr/share/applications/omarkie.desktop", "usr/share/licenses/omarkie/LICENSE"])
+for (const entry of ["usr/bin/omarkie", "usr/bin/omarkie-axi", "usr/lib/omarkie/app.asar", "usr/lib/omarkie/app.asar.unpacked/node_modules/@parcel/watcher-linux-x64-glibc/watcher.node", "usr/share/applications/omarkie.desktop", "usr/share/licenses/omarkie/LICENSE"])
   if (!listing.split("\n").includes(entry)) throw new Error(`Arch package lacks ${entry}`);
 const info = execFileSync("bsdtar", ["-xOf", file, ".PKGINFO"], { encoding: "utf8" });
 if (/^depend = electron(?:[0-9]+)?(?:[<>=].*)?$/m.test(info)) throw new Error("Arch package must not require Electron");

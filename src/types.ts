@@ -169,6 +169,8 @@ export interface Host {
   confirmClose(name: string): Promise<"save" | "discard" | "cancel">;
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
+  glass?(request: Record<string, unknown>): Promise<any>;
+  onGlassStorage?(callback: (status: { bring?: { count: number; notes?: { path: string; title?: string }[] } | null } | null) => void): () => void;
   onCommand(callback: (command: Command) => void): () => void;
   payloadRequest?(request: PayloadRequest): Promise<string>;
   payloadKey?(baseUrl: string, value: string): Promise<void>;

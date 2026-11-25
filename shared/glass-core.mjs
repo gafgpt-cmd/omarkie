@@ -195,7 +195,11 @@ export function replayNotesText(text) {
           note.path = `${record.to}${note.path.slice(record.from.length)}`;
     } else if (record.op === "move" && typeof record.id === "string" && typeof record.to === "string") {
       const note = byId.get(record.id);
-      if (note) note.path = record.to;
+      if (note) {
+        note.path = record.to;
+        if (typeof record.title === "string" && record.title) note.title = record.title;
+        if (record.fingerprint && typeof record.fingerprint === "object") note.fingerprint = record.fingerprint;
+      }
     } else unknown += 1;
   }
   return { notes: byId, invalid, unknown, incomplete: incomplete.length };

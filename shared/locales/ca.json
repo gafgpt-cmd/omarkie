@@ -1126,5 +1126,10 @@
   "Change": "Canviar",
   "Comment": "Comentar",
   "Element actions": "Accions de l'element",
-  "Selected {{kind}}: {{text}}": "Seleccionat {{kind}}: {{text}}"
+  "Selected {{kind}}: {{text}}": "Seleccionat {{kind}}: {{text}}",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notes d'aquí ja tenen vidre en aquest equip.",
+  "1 note here already has glass on this computer.": "1 nota d'aquí ja té vidre en aquest equip.",
+  "Bring glass": "Porta el vidre",
+  "Glass brought for {{count}} notes.": "Vidre portat per a {{count}} notes.",
+  "Dismiss": "Descarta"
 }

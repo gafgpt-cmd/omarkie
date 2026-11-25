@@ -586,6 +586,47 @@ svg {
   border-radius: 4px;
   padding: 4px 8px;
 }
+.glass-banner {
+  position: fixed;
+  left: 18px;
+  bottom: 42px;
+  z-index: 30;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  max-width: min(420px, calc(100vw - 36px));
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px #00000018;
+  padding: 11px 12px;
+  flex-wrap: wrap;
+}
+.glass-banner span {
+  flex: 1;
+  min-width: 180px;
+  line-height: 1.45;
+}
+.glass-banner button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--ink);
+}
+.glass-banner button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.glass-banner button:disabled {
+  opacity: 0.5;
+}
+.glass-banner .glass-banner-dismiss {
+  border: 0;
+  padding: 2px;
+  color: var(--muted);
+}
 .empty-document {
   height: 100%;
   display: flex;

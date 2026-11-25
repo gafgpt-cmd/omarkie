@@ -1126,5 +1126,10 @@
   "Change": "Cambiar",
   "Comment": "Comentar",
   "Element actions": "Acciones del elemento",
-  "Selected {{kind}}: {{text}}": "Seleccionado {{kind}}: {{text}}"
+  "Selected {{kind}}: {{text}}": "Seleccionado {{kind}}: {{text}}",
+  "{{count}} notes here already have glass on this computer.": "{{count}} notas de aquí ya tienen cristal en este equipo.",
+  "1 note here already has glass on this computer.": "1 nota de aquí ya tiene cristal en este equipo.",
+  "Bring glass": "Traer cristal",
+  "Glass brought for {{count}} notes.": "Cristal traído para {{count}} notas.",
+  "Dismiss": "Descartar"
 }
