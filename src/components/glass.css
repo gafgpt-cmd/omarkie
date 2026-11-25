@@ -963,6 +963,7 @@
   transform: translateX(-0%);
 }
 .glass-timeline-pin span { display: block; width: 11px; height: 11px; margin: 6px auto; background: var(--ink, #333); border: 2px solid var(--paper, #fff); transform: rotate(45deg); box-shadow: 0 0 0 1px var(--ink, #333); }
+.glass-timeline-pin[data-active] span { width: 15px; height: 15px; margin: 4px auto; background: var(--accent, #326eaa); }
 .glass-timeline-pin:focus-visible { outline: 2px solid var(--accent, #326eaa); outline-offset: 1px; border-radius: 4px; }
 .glass-timeline-actions { display: flex; align-items: center; gap: 8px; }
 .glass-timeline-actions button { padding: 3px 9px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
@@ -995,6 +996,7 @@
 @media (forced-colors: active) {
   .glass-timeline, .glass-timeline-pin span, .glass-timeline-rail, .glass-timeline-progress { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
   .glass-timeline-pin span { background: CanvasText; }
+  .glass-timeline-pin[data-active] { outline: 2px solid Highlight; outline-offset: 1px; }
   .glass-timeline-transcript button[data-active] { outline: 2px solid Highlight; }
 }
 

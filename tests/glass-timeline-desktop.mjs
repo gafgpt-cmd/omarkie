@@ -77,9 +77,11 @@ async function capture(page, name) {
     const pin = page.locator("[data-glass-timestamp]").first();
     const label = await pin.getAttribute("aria-label");
     assert.match(label, /00:00/);
+    await expect(pin).toHaveAttribute("data-active", "true");
     await page.evaluate(() => { const audio = document.querySelector(".glass-timeline audio"); if (audio) audio.currentTime = 0; });
     await pin.click();
     await expect.poll(() => page.evaluate(() => document.querySelector(".glass-timeline audio")?.currentTime ?? 0)).toBeGreaterThan(0.09);
+    await expect(second).toHaveAttribute("aria-current", "true");
 
     await timeline.focus();
     await page.keyboard.press("ArrowRight");

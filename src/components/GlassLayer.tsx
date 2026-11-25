@@ -276,7 +276,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const lastPlaces = useRef<Record<string, Extract<GlassPlacement, { status: "resolved" }>>>({});
   const fileInput = useRef<HTMLInputElement>(null);
   const latest = useRef({ magnets, images, stickers, arrows, cards, timelines, timestamps, note, tool });
-  const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
+  const fingerprint = useRef(""), mounted = useRef(false), opening = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
   const localAt = useRef(0), revision = useRef(0);
   latest.current = { magnets, images, stickers, arrows, cards, timelines, timestamps, note, tool };
@@ -307,10 +307,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const measure = useCallback(() => {
     const surface = layer.current;
     if (!surface) return;
-    for (const name of ["measure:start", "measure:end", "blocks", "indexed", "anchored", "placed", "page"]) performance.clearMarks(`omarkie:glass-${name}`);
+    for (const name of ["measure:start", "measure:end", "context", "blocks", "indexed", "anchored", "placed", "page"]) performance.clearMarks(`omarkie:glass-${name}`);
     performance.clearMeasures("omarkie:glass-measure");
     performance.mark("omarkie:glass-measure:start");
+    if (!mounted.current) performance.mark("omarkie:glass-open-context");
+    performance.mark("omarkie:glass-context");
     const context = editor()?.readingContext();
+    if (!mounted.current) performance.mark("omarkie:glass-open-extracted");
+    performance.mark("omarkie:glass-extracted");
     blocks.current = liveBlocks(context, root, liveCache.current);
     performance.mark("omarkie:glass-blocks");
     // Rebuild only when the document text changes: scrolling must not rescan a 1,000-page note.
@@ -473,7 +477,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     pagePx.current = Number.parseFloat(page);
     if (surface.style.getPropertyValue("--glass-page") !== page) surface.style.setProperty("--glass-page", page);
     performance.mark("omarkie:glass-page");
-    if (!mounted.current) { mounted.current = true; performance.mark("omarkie:glass-mounted"); }
+    if (!mounted.current) { mounted.current = true; opening.current = true; performance.mark("omarkie:glass-mounted"); }
     performance.mark("omarkie:glass-measure:end");
     const measured = performance.measure("omarkie:glass-measure", "omarkie:glass-measure:start", "omarkie:glass-measure:end");
     surface.dataset.measureMs = measured.duration.toFixed(2);
@@ -491,6 +495,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   useLayoutEffect(() => {
     if (layout.loaded && !ready.current) { ready.current = true; performance.mark("omarkie:glass-ready"); }
   }, [layout.loaded]);
+
+  // Cold-open budget: indexing, anchoring, placement, page write and React's commit of the window.
+  useLayoutEffect(() => {
+    if (!opening.current) return;
+    opening.current = false;
+    performance.mark("omarkie:glass-committed");
+    performance.measure("omarkie:glass-open", "omarkie:glass-measure:start", "omarkie:glass-committed");
+  }, [layout]);
 
   // One write at a time, in the order the hand made them: a fresh note must exist before its text lands.
   const send = useCallback((request: Record<string, unknown>) => {
@@ -649,7 +661,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   const patchImage = useCallback((id: string, patch: Partial<GlassImage>, persist = false) => {
     const image = latest.current.images.find(item => item.id === id);
-    if (image && image.wrap !== "left" && image.wrap !== "right" && !patch.anchor && (patch.x !== undefined || patch.w !== undefined))
+    const wrap = patch.wrap ?? image?.wrap;
+    if (image && wrap !== "left" && wrap !== "right" && !patch.anchor && (patch.x !== undefined || patch.w !== undefined))
       patch = { ...patch, x: inlineX(root, image, patch) };
     setImages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
     if (persist) void send({ action: "set", magnet: id, fields: patch as Record<string, unknown> });
@@ -943,7 +956,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       id, kind: "timeline", src, title: name, media: media.tagName === "VIDEO" ? "video" : "audio",
       duration: Number.isFinite(media.duration) ? media.duration : 0,
       transcript: cues.filter((cue): cue is NonNullable<typeof cue> => !!cue),
-      trims: [], anchor: anchorOf(block), x: 32, y: 32, w: 380, h: 320,
+      anchor: anchorOf(block), x: 32, y: 32, w: 380, h: 320,
     };
     setTimelines(current => [...current, timeline]);
     setSelected(id);

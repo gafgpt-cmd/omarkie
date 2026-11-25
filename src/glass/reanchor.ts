@@ -78,7 +78,3 @@ export function bulkReanchor(entries: readonly ReanchorEntry[], blocks: readonly
   });
 }
 
-// A magnet with no landmarks stays a free object at its stored absolute spot.
-export function isFreeObject(anchor: GlassAnchor | undefined) {
-  return !anchor || anchor.landmarks.length === 0;
-}

@@ -1,11 +1,9 @@
 // Timeline glass: media time is stored in source seconds and never rewritten.
-// Trims are edit ranges; display time is source time minus everything trimmed before it.
-// Pins, transcript cues and the player all speak source time; only labels use display time.
+// Pins, transcript cues and the player all speak source time.
 import type { GlassAnchor, GlassPlacement } from "./anchor-map";
 import type { GlassMagnet } from "./glass-model";
 import { anchorFrom } from "./glass-state.ts";
 
-export interface TrimRange { from: number; to: number }
 export interface TranscriptCue { start: number; end: number; text: string }
 
 export interface TimelineMark {
@@ -16,7 +14,6 @@ export interface TimelineMark {
   media: "audio" | "video";
   duration: number;
   transcript: TranscriptCue[];
-  trims: TrimRange[];
   anchor?: GlassAnchor;
   x: number;
   y: number;
@@ -29,7 +26,6 @@ export interface TimestampMark {
   kind: "timestamp";
   timeline: string;
   t: number;
-  end?: number;
   label: string;
 }
 
@@ -55,22 +51,6 @@ export function formatTime(seconds: number, withHours = false): string {
 
 function number(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function trimsOf(value: unknown): TrimRange[] {
-  if (!Array.isArray(value)) return [];
-  const ranges = value.flatMap(item => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-    if (!("from" in item) || !("to" in item)) return [];
-    const from = number(item.from, Number.NaN), to = number(item.to, Number.NaN);
-    return Number.isFinite(from) && Number.isFinite(to) && to > from && from >= 0 ? [{ from, to }] : [];
-  }).sort((left, right) => left.from - right.from);
-  return ranges.reduce<TrimRange[]>((merged, range) => {
-    const last = merged.at(-1);
-    if (last && range.from <= last.to) last.to = Math.max(last.to, range.to);
-    else merged.push({ ...range });
-    return merged;
-  }, []);
 }
 
 function transcriptOf(value: unknown): TranscriptCue[] {
@@ -99,7 +79,6 @@ export function timelineFromMagnet(magnet: GlassMagnet): TimelineMark | undefine
     media,
     duration: Math.max(0, number(fields.duration)),
     transcript: transcriptOf(fields.transcript),
-    trims: trimsOf(fields.trims),
     anchor: anchorFrom(fields.anchor),
     x: number(fields.x), y: number(fields.y),
     w: Math.max(240, number(fields.w, timelineDefaults.w)),
@@ -113,53 +92,18 @@ export function timestampFromMagnet(magnet: GlassMagnet): TimestampMark | undefi
   const timeline = typeof fields.timeline === "string" ? fields.timeline : "";
   const t = number(fields.t, Number.NaN);
   if (!timeline || !Number.isFinite(t) || t < 0) return;
-  const end = number(fields.end, Number.NaN);
   return {
     id: magnet.id,
     kind: "timestamp",
     timeline,
     t,
-    ...(Number.isFinite(end) && end > t ? { end } : {}),
     label: typeof fields.label === "string" ? fields.label.trim().slice(0, 500) : "",
   };
 }
 
-// Removed source span before a given source second.
-export function trimmedBefore(source: number, trims: readonly TrimRange[]): number {
-  return trims.reduce((sum, trim) => sum + Math.max(0, Math.min(source, trim.to) - trim.from), 0);
-}
-
-export function displayTime(source: number, trims: readonly TrimRange[] = []): number {
-  return Math.max(0, source - trimmedBefore(source, trims));
-}
-
-export function sourceTime(display: number, trims: readonly TrimRange[] = []): number {
-  let source = Math.max(0, display);
-  for (const trim of trims) {
-    const keptBefore = trim.from - trimmedBefore(trim.from, trims);
-    if (source < keptBefore) break;
-    source += trim.to - trim.from;
-  }
-  return source;
-}
-
-export function keptDuration(duration: number, trims: readonly TrimRange[] = []): number {
-  return Math.max(0.05, duration - trims.reduce((sum, trim) => sum + Math.max(0, Math.min(duration, trim.to) - trim.from), 0));
-}
-
-// Pin geometry uses kept (display) time, so trimming never moves a magnet in source space.
-export function pinPercent(source: number, duration: number, trims: readonly TrimRange[] = []): number {
+export function pinPercent(source: number, duration: number): number {
   if (!(duration > 0)) return 0;
-  return Math.max(0, Math.min(1, displayTime(source, trims) / keptDuration(duration, trims)));
-}
-
-export function activeCue(cues: readonly TranscriptCue[], source: number): number {
-  let found = -1;
-  for (let index = 0; index < cues.length; index += 1) {
-    if (cues[index].start <= source + 0.001) found = index;
-    else break;
-  }
-  return found;
+  return Math.max(0, Math.min(1, source / duration));
 }
 
 // Transcript line: "[00:12] text", "1:02:03.5 text" or "00:12 - text".

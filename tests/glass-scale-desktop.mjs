@@ -52,15 +52,22 @@ async function metrics(page) {
   return page.evaluate(() => {
     const at = name => performance.getEntriesByName(name)[0]?.startTime ?? 0;
     const measures = performance.getEntriesByType("measure").filter(entry => entry.name === "omarkie:glass-measure");
-    const long = performance.getEntriesByType("measure").filter(entry => entry.name === "omarkie:glass-longtask").map(entry => entry.duration);
+    const long = performance.getEntriesByType("measure").filter(entry => entry.name === "omarkie:glass-longtask");
     const sorted = measures.map(entry => entry.duration).sort((left, right) => left - right);
+    const open = performance.getEntriesByName("omarkie:glass-open")[0];
+    const workStart = at("omarkie:glass-open-extracted"), workEnd = at("omarkie:glass-committed");
+    const openLong = long.filter(entry => workStart && workEnd && entry.startTime >= workStart && entry.startTime <= workEnd);
     return {
-      openMs: Math.max(0, at("omarkie:glass-mounted") - at("omarkie:first-document-painted")),
+      openMs: open?.duration ?? 0,
+      workMs: workStart && workEnd ? workEnd - workStart : 0,
+      paintToMountMs: Math.max(0, at("omarkie:glass-mounted") - at("omarkie:first-document-painted")),
+      openLongTasks: openLong.length,
+      openLongTaskMaxMs: Math.max(0, ...openLong.map(entry => entry.duration)),
       handlerMs: sorted[0] ?? 0,
       handlerP95Ms: sorted[Math.floor(sorted.length * 0.95)] ?? sorted.at(-1) ?? 0,
       handlers: sorted.length,
       longTasks: long.length,
-      longTaskMaxMs: Math.max(0, ...long),
+      longTaskMaxMs: Math.max(0, ...long.map(entry => entry.duration)),
       mounted: Number(document.querySelector(".glass-layer")?.getAttribute("data-mounted") ?? 0),
       phases: Object.fromEntries(["blocks", "indexed", "anchored", "placed", "measure:end"].map(name => [name, Math.round(at(`omarkie:glass-${name}`))])),
     };
@@ -125,9 +132,10 @@ let cold;
     const report = { baseline, cold, delta: cold.openMs - baseline.openMs };
     if (evidence) { await mkdir(evidence, { recursive: true }); await writeFile(path.join(evidence, "scale.json"), JSON.stringify(report, null, 2), "utf8"); }
     console.log("G19 scale", JSON.stringify(report));
-    // Separate launches include the editor's own layout and GC; the magnet phase isolates the 200 magnets.
-    const magnetWork = run => run.phases.placed - run.phases.indexed;
-    assert.ok(magnetWork(cold) - magnetWork(baseline) < 100, `200 magnets added ${(magnetWork(cold) - magnetWork(baseline)).toFixed(1)} ms of magnet work at cold open`);
+    // Whole glass open: live blocks, indexing, anchoring, placement, page write and React's commit.
+    // Both runs pay the editor's identical text extraction; only the glass work competes.
+    assert.ok(cold.workMs - baseline.workMs < 100, `200 magnets added ${(cold.workMs - baseline.workMs).toFixed(1)} ms of glass open work`);
+    assert.ok(cold.openLongTaskMaxMs < 100, `glass open had a ${cold.openLongTaskMaxMs.toFixed(1)} ms long task`);
     assert.ok(cold.mounted <= 301, `only the viewport window is mounted (${cold.mounted})`);
 
     const scrolled = await metrics(page);
@@ -147,6 +155,33 @@ let cold;
     await page.evaluate(() => window.dispatchEvent(new Event("resize")));
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector(".rich-document")).direction)).toBe("rtl");
     await expect.poll(lefts, { timeout: 15_000 }).not.toBe(beforeRtl);
+    const target = await page.evaluate(() => {
+      for (const node of document.querySelectorAll("[data-magnet]")) {
+        const head = node.querySelector(".glass-note-head") ?? node;
+        const rect = head.getBoundingClientRect();
+        if (rect.top > 100 && rect.bottom < innerHeight - 80 && rect.width > 0)
+          return { id: node.dataset.magnet, left: Number.parseFloat(node.style.left), x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      }
+      return null;
+    });
+    assert.ok(target, "a magnet is visible for the RTL drag check");
+    await page.mouse.move(target.x, target.y);
+    await page.mouse.down();
+    await page.mouse.move(target.x + 100, target.y, { steps: 6 });
+    await page.mouse.up();
+    const leftOf = () => page.evaluate(id => Number.parseFloat(document.querySelector(`[data-magnet="${id}"]`)?.style.left ?? ""), target.id);
+    await expect.poll(leftOf, { timeout: 15_000 }).toBeGreaterThanOrEqual(target.left + 99);
+    const moved = await leftOf();
+    assert.ok(moved - target.left >= 99 && moved - target.left <= 102, `RTL drag +100 px moved the rendered left by ${(moved - target.left).toFixed(1)} px`);
+    const beforeCreate = await page.evaluate(() => [...document.querySelectorAll("[data-magnet]")].map(node => node.dataset.magnet));
+    await page.locator('[data-glass-tool="sticky"]').click();
+    await page.mouse.click(620, 420);
+    const findCreated = () => page.evaluate(before => [...document.querySelectorAll("[data-magnet]")]
+      .map(node => node.dataset.magnet).find(id => !before.includes(id)) ?? "", beforeCreate);
+    await expect.poll(findCreated, { timeout: 15_000 }).not.toBe("");
+    const createdId = await findCreated();
+    const createdRight = await page.evaluate(id => document.querySelector(`[data-magnet="${id}"]`)?.getBoundingClientRect().right ?? 0, createdId);
+    assert.ok(Math.abs(createdRight - 620) <= 2, `RTL click-created sticky keeps its inline-start edge at the pointer (${createdRight})`);
     await capture(page, "rtl-1440");
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 900));
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(720);
@@ -193,7 +228,7 @@ let cold;
     const dense = await metrics(page);
     const stored = await page.evaluate(async () => (await window.desktop.glass({ note: "textbook.md", action: "list" })).value?.magnets?.length ?? 0);
     console.log("G19 dense", JSON.stringify({ ...dense, stored }));
-    assert.equal(stored, 2000);
+    assert.ok(stored >= 2000, `the dense note keeps at least 2,000 magnets (${stored})`);
     assert.ok(dense.mounted <= 301, `2,000 magnets mount ${dense.mounted} nodes, not all of them`);
     assert.deepEqual(errors, []);
   } finally { await app.close(); }

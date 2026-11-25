@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { formatTime, keptDuration, pinPercent, sourceTime, type TimelineMark, type TimestampMark } from "../glass/timeline-model";
+import { formatTime, pinPercent, type TimelineMark, type TimestampMark } from "../glass/timeline-model";
 
 export interface TimelinePlace { x: number; y: number; width: number; height: number }
 
@@ -71,7 +71,12 @@ export default function GlassTimeline({ mark, timestamps, place, selected, onSel
   }, [mark.duration]);
 
   const pins = useMemo(() => timestamps.filter(stamp => stamp.timeline === mark.id), [timestamps, mark.id]);
-  const total = duration || Math.max(0, ...cues.map(cue => cue.end), ...pins.map(pin => pin.end ?? pin.t));
+  const activePin = useMemo(() => {
+    let id: string | undefined;
+    for (const pin of [...pins].sort((left, right) => left.t - right.t)) if (pin.t <= time + 0.001) id = pin.id; else break;
+    return id;
+  }, [pins, time]);
+  const total = duration || Math.max(0, ...cues.map(cue => cue.end), ...pins.map(pin => pin.t));
 
   return <section className="glass-timeline" data-glass-timeline={mark.id} data-selected={selected || undefined}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${mark.w}px` }}
@@ -107,13 +112,14 @@ export default function GlassTimeline({ mark, timestamps, place, selected, onSel
         if (event.target !== event.currentTarget) return;
         const rect = event.currentTarget.getBoundingClientRect();
         if (rect.width <= 0) return;
-        seek(sourceTime(((event.clientX - rect.left) / rect.width) * keptDuration(total, mark.trims), mark.trims));
+        seek(((event.clientX - rect.left) / rect.width) * total);
         onSelect();
       }}>
       <span className="glass-timeline-rail" aria-hidden="true" />
       <span className="glass-timeline-progress" aria-hidden="true" style={{ width: `${total > 0 ? Math.min(100, (time / total) * 100) : 0}%` }} />
       {pins.map(pin => <button type="button" key={pin.id} className="glass-timeline-pin" data-glass-timestamp={pin.id}
-        style={{ insetInlineStart: `${pinPercent(pin.t, total, mark.trims) * 100}%` }}
+        data-active={pin.id === activePin || undefined} aria-current={pin.id === activePin ? "true" : undefined}
+        style={{ insetInlineStart: `${pinPercent(pin.t, total) * 100}%` }}
         aria-label={`${formatTime(pin.t)}${pin.label ? `, ${pin.label}` : ""}`} title={pin.label ? `${formatTime(pin.t)} · ${pin.label}` : formatTime(pin.t)}
         onClick={() => seek(pin.t)}>
         <span aria-hidden="true" />
