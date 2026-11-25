@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld("desktop", {
   learningSearch: (id, query) => call("learningSearch", id, query),
   glass: request => call("glass", request),
   captureRegion: rect => call("captureRegion", rect),
+  ocrAvailable: () => call("ocrAvailable"),
+  glassOcr: request => call("glassOcr", request),
   onGlassChanged: callback => {
     const listener = (_, event) => callback(event);
     ipcRenderer.on("glass:changed", listener);

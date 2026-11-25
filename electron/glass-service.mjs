@@ -35,6 +35,7 @@ import {
   mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
 } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
+import { journalTimeline, magnetsAt, parseScrubTime } from "../shared/glass-scrub.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
 import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
 
@@ -1112,6 +1113,31 @@ export class GlassService {
     return this.studyState({ note: note.path });
   }
 
+  // G17 time scrub: read-only views of the journal. `timeline` lists the wall-clock moments
+  // the slider can stop on; `scrub` replays every record at or before the chosen moment.
+  async timeline(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    const note = this.notesByPath.get(name);
+    if (!note) return { note: name, id: null, journal: null, points: [], from: null, to: null, events: 0, count: 0 };
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file);
+    return { ...this.describe(note, file), ...journalTimeline(replay.lines) };
+  }
+
+  async scrub(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    const at = parseScrubTime(request.at);
+    if (at === null) throw new Error("--at must be an ISO time or epoch milliseconds.");
+    const note = this.notesByPath.get(name);
+    if (!note) return { note: name, id: null, journal: null, at, magnets: [] };
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file);
+    const state = magnetsAt(replay.lines, at);
+    return { ...this.describe(note, file), at, magnets: state.magnets, lines: state.lines };
+  }
+
   // Where the vault says attachments go and how its links look; read only, never written.
   async mergeSettingsFor(file, name) {
     let root = this.root;
@@ -1561,7 +1587,7 @@ export class GlassService {
       return this.sync[input.action](input);
     }
     if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
-      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
+      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up", "timeline", "scrub", "ocr",
       "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (input.action === "srs-due") return this.srsDue();
     if (input.action === "srs-review") return this.srsReview(input);

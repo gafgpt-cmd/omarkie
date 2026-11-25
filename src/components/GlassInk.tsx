@@ -14,7 +14,13 @@ import "./glass.css";
 // a content-anchored SVG; the pointer surface and the in-progress stroke are viewport-fixed,
 // so a stroke can start anywhere on screen and still land on the page under it.
 type InkMode = InkTool | "eraser";
-export interface InkHistoryApi { undo(): void; redo(): void }
+export interface InkHistoryApi {
+  undo(): void; redo(): void;
+  remove(id: string): void; restore(stroke: InkStroke): void;
+  setFields(id: string, fields: Record<string, unknown>): void;
+  pngOf(id: string): string | null;
+}
+export interface InkPick { stroke: InkStroke; rect: { x: number; y: number; width: number; height: number } }
 
 type InkOp =
   | { type: "add"; id: string; fields: Record<string, unknown> }
@@ -120,7 +126,7 @@ const InkPaths = memo(function InkPaths({ placed, pathOf }: { placed: InkPlaceme
   return children;
 });
 
-export default function GlassInk({ editor, root, note, tool, color, size, eraser, api, onHistory, onNotice, magnets, send, reloadInk, saved }: {
+export default function GlassInk({ editor, root, note, tool, color, size, eraser, api, onHistory, onNotice, onStroke, ocr, onOcrPick, magnets, send, reloadInk, saved }: {
   editor(): EditorHandle | undefined;
   root: HTMLElement;
   note?: string;
@@ -131,6 +137,9 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   api?: { current: InkHistoryApi | null };
   onHistory?(canUndo: boolean, canRedo: boolean): void;
   onNotice?(text: string): void;
+  onStroke?(stroke: InkStroke, points: readonly InkSample[]): void;
+  ocr?: boolean;
+  onOcrPick?(pick: InkPick): void;
   magnets: readonly GlassMagnet[];
   send(request: Record<string, unknown>): Promise<unknown>;
   reloadInk(): Promise<unknown> | undefined;
@@ -150,11 +159,11 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   const drawing = useRef(false);
   const placedRef = useRef<InkPlacement[]>([]);
   const latest = useRef({ strokes, note, tool, color, size, eraser, editor });
-  const callbacks = useRef({ onHistory, onNotice });
+  const callbacks = useRef({ onHistory, onNotice, onStroke, onOcrPick });
   const history = useRef<{ undo: InkOp[][]; redo: InkOp[][] }>({ undo: [], redo: [] });
   const reload = useRef(false);
   latest.current = { strokes, note, tool, color, size, eraser, editor };
-  callbacks.current = { onHistory, onNotice };
+  callbacks.current = { onHistory, onNotice, onStroke, onOcrPick };
   placedRef.current = placed;
 
   const measure = useCallback(() => {
@@ -167,9 +176,20 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     setOrphans(result.orphans);
   }, [root]);
 
+  // A field edit is on screen before the journal echoes it; the echo must not undo it.
+  const pendingFields = useRef(new Map<string, { fields: Record<string, unknown>; at: number }>());
   useEffect(() => {
     if (drawing.current) { reload.current = true; return; }
-    setStrokes((previous) => !previous.length && !magnets.length ? previous : magnets.flatMap(magnet => inkStrokeFromMagnet(magnet) ?? []));
+    const now = performance.now();
+    setStrokes((previous) => !previous.length && !magnets.length ? previous : magnets.flatMap(magnet => {
+      const stroke = inkStrokeFromMagnet(magnet);
+      if (!stroke) return [];
+      const pending = pendingFields.current.get(stroke.id);
+      if (!pending) return [stroke];
+      const settled = Object.entries(pending.fields).every(([field, value]) => stroke[field as "tool" | "color" | "size"] === value);
+      if (settled || now - pending.at > 4_000) { pendingFields.current.delete(stroke.id); return [stroke]; }
+      return [{ ...stroke, ...(pending.fields as Partial<Pick<InkStroke, "tool" | "color" | "size">>) }];
+    }));
   }, [magnets]);
 
   useEffect(() => {
@@ -195,6 +215,80 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     };
   }, [root, measure]);
 
+  const pathOf = useCallback((placement: InkPlacement) => {
+    const { stroke, width, height } = placement, { tool, size } = stroke;
+    const part = stroke.parts[placement.part];
+    const cached = paths.current.get(part);
+    if (cached?.tool === tool && cached.size === size && cached.width === width && cached.height === height) return cached.path;
+    const path = inkPath(placement.points, { tool, size });
+    paths.current.set(part, { tool, size, width, height, path });
+    return path;
+  }, []);
+
+  // Rasterise one stroke in black on transparent for the OCR hook, as the canvas already
+  // paints it. Client coordinates, so the image is the ink the eye sees, not the page.
+  const rasterStroke = useCallback((id: string): string | null => {
+    const items = placedRef.current.filter(item => item.stroke.id === id && item.points.length);
+    if (!items.length) return null;
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (const item of items) {
+      const pad = item.stroke.size + 8;
+      for (const [x, y] of item.points) {
+        left = Math.min(left, item.rect.left + x - pad); top = Math.min(top, item.rect.top + y - pad);
+        right = Math.max(right, item.rect.left + x + pad); bottom = Math.max(bottom, item.rect.top + y + pad);
+      }
+    }
+    const width = Math.ceil(right - left), height = Math.ceil(bottom - top);
+    if (!(width > 0 && height > 0) || width > 4096 || height > 4096) return null;
+    const ratio = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = width * ratio; canvas.height = height * ratio;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.fillStyle = "#000";
+    for (const item of items) {
+      context.save();
+      context.translate(item.rect.left - left, item.rect.top - top);
+      context.fill(new Path2D(pathOf(item)));
+      context.restore();
+    }
+    return canvas.toDataURL("image/png");
+  }, [pathOf]);
+
+  // The OCR pick is a click on a stroke: nearest drawn part wins, within a forgiving 18 px.
+  const pickAt = useCallback((x: number, y: number): InkPick | undefined => {
+    const groups = new Map<string, InkPlacement[]>();
+    for (const item of placedRef.current) groups.set(item.stroke.id, [...(groups.get(item.stroke.id) ?? []), item]);
+    let best: { stroke: InkStroke; rect: InkPick["rect"]; distance: number } | undefined;
+    for (const [strokeId, items] of groups) {
+      let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, distance = Infinity;
+      for (const item of items) {
+        for (let index = 0; index < item.points.length; index++) {
+          const px = item.rect.left + item.points[index][0], py = item.rect.top + item.points[index][1];
+          left = Math.min(left, px); top = Math.min(top, py); right = Math.max(right, px); bottom = Math.max(bottom, py);
+          const previous = item.points[Math.max(0, index - 1)];
+          const ax = item.rect.left + previous[0], ay = item.rect.top + previous[1];
+          const dx = px - ax, dy = py - ay, length = dx * dx + dy * dy;
+          const t = length ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / length)) : 0;
+          distance = Math.min(distance, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+        }
+      }
+      const pad = 10;
+      const rect = { x: left - pad, y: top - pad, width: Math.max(1, right - left) + pad * 2, height: Math.max(1, bottom - top) + pad * 2 };
+      const inside = x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+      distance = inside ? Math.min(distance, 8) : distance;
+      if (distance <= 18 && (!best || distance < best.distance)) best = { stroke: items[0].stroke, rect, distance };
+    }
+    return best ? { stroke: best.stroke, rect: best.rect } : undefined;
+  }, []);
+
+  useEffect(() => {
+    const host = window as unknown as { __omarkieInkPng?: (id: string) => string | null };
+    host.__omarkieInkPng = id => rasterStroke(id);
+    return () => { delete host.__omarkieInkPng; };
+  }, [rasterStroke]);
+
   const pushHistory = useCallback((ops: InkOp[]) => {
     const log = history.current;
     log.undo.push(ops);
@@ -206,6 +300,25 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
   const addStroke = useCallback((stroke: InkStroke) => {
     setStrokes(current => [...current, stroke]);
     void send({ action: "add", magnet: stroke.id, fields: inkFields(stroke) });
+  }, [send]);
+
+  // A magic gesture may transform or replace its raw stroke; every change keeps the same
+  // magnet id so the chip can restore exactly what the hand drew.
+  const removeStroke = useCallback((id: string) => {
+    setStrokes(current => current.filter(stroke => stroke.id !== id));
+    void send({ action: "delete", magnet: id });
+  }, [send]);
+
+  const restoreStroke = useCallback((stroke: InkStroke) => {
+    setStrokes(current => current.some(item => item.id === stroke.id) ? current : [...current, stroke]);
+    void send({ action: "add", magnet: stroke.id, fields: inkFields(stroke) });
+  }, [send]);
+
+  const setStrokeFields = useCallback((id: string, fields: Record<string, unknown>) => {
+    pendingFields.current.set(id, { fields, at: performance.now() });
+    setStrokes(current => current.map(stroke => stroke.id === id
+      ? { ...stroke, ...(fields as Partial<Pick<InkStroke, "tool" | "color" | "size">>) } : stroke));
+    void send({ action: "set", magnet: id, fields }).catch(() => pendingFields.current.delete(id));
   }, [send]);
 
   const applyForward = useCallback((op: InkOp) => {
@@ -258,9 +371,9 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
 
   useEffect(() => {
     if (!api) return;
-    api.current = { undo, redo };
+    api.current = { undo, redo, remove: removeStroke, restore: restoreStroke, setFields: setStrokeFields, pngOf: rasterStroke };
     return () => { api.current = null; };
-  }, [api, undo, redo]);
+  }, [api, undo, redo, removeStroke, restoreStroke, setStrokeFields, rasterStroke]);
 
   const flushLive = useCallback(() => {
     const gesture = pending.current, path = live.current;
@@ -289,6 +402,7 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     const stroke: InkStroke = { id: newInkId(), tool, color: latest.current.color, size: latest.current.size, parts };
     addStroke(stroke);
     pushHistory([{ type: "add", id: stroke.id, fields: inkFields(stroke) }]);
+    callbacks.current.onStroke?.(stroke, points);
   }, [addStroke, pushHistory, root]);
 
   const applyErase = useCallback((point: { x: number; y: number }) => {
@@ -377,16 +491,6 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
     element.style.transform = `translate3d(${event.clientX}px, ${event.clientY}px, 0)`;
   }, []);
 
-  const pathOf = useCallback((placement: InkPlacement) => {
-    const { stroke, width, height } = placement, { tool, size } = stroke;
-    const part = stroke.parts[placement.part];
-    const cached = paths.current.get(part);
-    if (cached?.tool === tool && cached.size === size && cached.width === width && cached.height === height) return cached.path;
-    const path = inkPath(placement.points, { tool, size });
-    paths.current.set(part, { tool, size, width, height, path });
-    return path;
-  }, []);
-
   const active = tool !== null && !!note;
   return <>
     <svg ref={svg} className="glass-ink" data-glass-layer="ink" data-glass-ink={strokes.length} data-ink-orphans={orphans || undefined}
@@ -405,5 +509,14 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
         style={{ mixBlendMode: tool === "highlighter" ? "multiply" : "normal" }} /></svg>
       {tool === "eraser" && <div ref={cursor} className="glass-ink-eraser" data-ink-eraser aria-hidden="true" />}
     </>, document.body)}
+    {/* OCR reads one drawn stroke: the click chooses the region, no rectangle tool needed. */}
+    {ocr && createPortal(<div className="glass-ink-surface" data-glass-ocr-surface
+      onPointerDown={event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const pick = pickAt(event.clientX, event.clientY);
+        if (!pick) { callbacks.current.onNotice?.("Click an ink stroke to read it."); return; }
+        callbacks.current.onOcrPick?.(pick);
+      }} />, document.body)}
   </>;
 }
