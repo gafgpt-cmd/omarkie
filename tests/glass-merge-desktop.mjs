@@ -214,6 +214,31 @@ try {
   await axi("glass", "merge-undo", "--note", doc);
   await expect.poll(bytes).toEqual(beforeInk);
 
+  // A card merges as the section it links to, or as its own question and answer.
+  await trayOf(page).getByRole("button", { name: "Select", exact: true }).click();
+  await axi("glass", "add", "--note", doc, "--kind", "card", "--card", "static", "--title", "Section link",
+    "--link", `#${heading}`, "--near", first, "--magnet", "m-card");
+  await page.locator('.glass-card[data-card-kind="static"] [data-card-pill]').click();
+  await page.locator('[data-card-merge="m-card"]').click();
+  await expect(dialog).toContainText("Card → section embed");
+  const beforeCard = await bytes();
+  await page.locator("[data-glass-merge-dialog] .glass-merge-accept").click();
+  await expect.poll(text).toContain(`![[#${heading}]]`);
+  await expect(page.locator('.glass-card[data-card="m-card"]')).toHaveCount(0);
+  await axi("glass", "merge-undo", "--note", doc);
+  await expect.poll(bytes).toEqual(beforeCard);
+  await axi("glass", "add", "--note", doc, "--kind", "card", "--card", "ai", "--title", "Why review?",
+    "--question", "Why space reviews?", "--answer", "Spacing fights forgetting.", "--near", second, "--magnet", "m-card-ai");
+  await page.locator('.glass-card[data-card-kind="ai"] [data-card-pill]').click();
+  await page.locator('[data-card-merge="m-card-ai"]').click();
+  await expect(dialog).toContainText("Card → plain Markdown");
+  const beforePlain = await bytes();
+  await page.locator("[data-glass-merge-dialog] .glass-merge-accept").click();
+  await expect.poll(text).toContain("**Why space reviews?**");
+  await expect.poll(text).toContain("Spacing fights forgetting.");
+  await axi("glass", "merge-undo", "--note", doc);
+  await expect.poll(bytes).toEqual(beforePlain);
+
   // Dark mode at 1440 and 720 keeps the dialog readable.
   await page.evaluate(() => localStorage.setItem("omarkie-theme", "omarchy-dark"));
   await ready(page);

@@ -57,6 +57,14 @@ test("each mapping and the vault's own link style", () => {
   assert.throws(() => inkSvg({ parts: [] }), /no points/);
   assert.deepEqual(mergeLines("card", { mode: "embed", section: "Other note#Heading" }).lines, ["![[Other note#Heading]]"]);
   assert.deepEqual(mergeLines("card", { mode: "plain", title: "Summary", body: "One\nTwo" }).lines, ["## Summary", "", "One", "Two"]);
+  assert.deepEqual(mergeLines("card", { card: "static", link: "Other note#Heading" }).lines, ["![[Other note#Heading]]"]);
+  assert.deepEqual(mergeLines("card", { card: "static", link: "#Heading" }).lines, ["![[#Heading]]"]);
+  assert.equal(mergeKindLabel("card", { card: "static", link: "#Heading" }), "Card → section embed");
+  assert.deepEqual(mergeLines("card", { card: "ai", title: "Why?", question: "Why kerma?", answer: "Energy per mass." }).lines,
+    ["## Why?", "", "**Why kerma?**", "", "Energy per mass."]);
+  assert.deepEqual(mergeLines("card", { card: "menu", title: "Dose quiz", choices: [{ label: "Unit?", body: "J/kg" }] }).lines,
+    ["## Dose quiz", "", "- Unit? — J/kg"]);
+  assert.throws(() => mergeLines("card", { card: "static", title: "Empty" }), /needs its Markdown body/);
 });
 
 test("diff touches only the lines around the anchor", () => {

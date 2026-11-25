@@ -28,9 +28,9 @@ function brokenText(state: StaticState) {
 
 // G9: a card is one pill in the margin; unfolding stays on the glass and never reflows the page.
 // The wrapper stays mounted across fold/unfold, so keyboard focus survives; the body's state only exists while open.
-function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete }: {
+function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, onMerge }: {
   card: GlassCard; place: Place; note: string; live?: LiveTutor;
-  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void;
+  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
 }) {
   return <div className="glass-card" data-card={card.id} data-card-kind={card.card} data-card-layer="ai-cards"
     data-folded={card.folded || undefined} style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px` }}

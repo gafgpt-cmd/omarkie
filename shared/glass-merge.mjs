@@ -1,15 +1,25 @@
 // Merge down and lift up: the only path from glass back into the Markdown page.
 // Pure functions only; electron/glass-service.mjs owns the disk, the CLI and the tests share these.
 import { normalizeText, textHash } from "./anchor-core.mjs";
+import { parseCardLink } from "./glass-cards.mjs";
 import { inkPath } from "./ink-core.mjs";
 
 export const mergeableKinds = ["sticky", "image", "ink", "card"];
+
+// A card merges as the section it links to, or as the Markdown it holds.
+function cardMergeTarget(fields = {}) {
+  const explicit = String(fields.section ?? "").trim();
+  if (explicit) return explicit;
+  const link = parseCardLink(String(fields.link ?? ""));
+  if (!link?.section) return "";
+  return link.target ? `${link.target}#${link.section}` : `#${link.section}`;
+}
 
 export function mergeKindLabel(kind, fields = {}) {
   if (kind === "sticky") return "Sticky note → callout";
   if (kind === "image") return "Picture → Markdown image";
   if (kind === "ink") return "Ink → SVG picture";
-  if (kind === "card") return (fields.mode ?? (fields.section ? "embed" : "plain")) === "embed" ? "Card → section embed" : "Card → plain Markdown";
+  if (kind === "card") return (fields.mode ?? (cardMergeTarget(fields) ? "embed" : "plain")) === "embed" ? "Card → section embed" : "Card → plain Markdown";
   return `${kind} → Markdown`;
 }
 
@@ -69,18 +79,27 @@ export function mergeLines(kind, fields, { settings, assetPath, assetName } = {}
       lines: [imageLink({ path: assetPath, name: assetName || "Ink", width: 640, linkStyle: settings.linkStyle })] };
   }
   if (kind === "card") {
-    const mode = fields.mode ?? (fields.section ? "embed" : "plain");
+    const target = cardMergeTarget(fields);
+    const mode = fields.mode ?? (target ? "embed" : "plain");
     if (mode === "embed") {
-      const section = String(fields.section ?? fields.source ?? "").trim();
+      const section = String(fields.section ?? target).trim();
       if (!section) throw new Error("A card needs a section (for example `Note#Heading`) before it can be embedded.");
       return { label: mergeKindLabel(kind, fields), style: "embed",
         lines: [section.startsWith("![[") ? section : `![[${section.replace(/^\[\[|\]\]$/g, "")}]]`] };
     }
-    const body = String(fields.body ?? fields.text ?? "").replace(/\r\n?/g, "\n").trim();
-    if (!body) throw new Error("A plain card needs its Markdown body.");
     const title = String(fields.title ?? "").trim();
-    return { label: mergeKindLabel(kind, fields), style: "plain",
-      lines: [...(title ? [`## ${title}`, ""] : []), ...body.split("\n")] };
+    const question = String(fields.question ?? "").trim();
+    const answer = String(fields.answer ?? "").trim();
+    const choices = Array.isArray(fields.choices) ? fields.choices : [];
+    const body = String(fields.body ?? fields.text ?? "").replace(/\r\n?/g, "\n").trim();
+    const lines = [];
+    if (title) lines.push(`## ${title}`, "");
+    if (body) lines.push(...body.split("\n"));
+    else if (question) { lines.push(`**${question}**`, ""); if (answer) lines.push(...answer.replace(/\r\n?/g, "\n").split("\n")); }
+    else if (answer) lines.push(...answer.replace(/\r\n?/g, "\n").split("\n"));
+    else if (choices.length) lines.push(...choices.map(choice => `- ${choice.label}${choice.body ? ` — ${choice.body}` : ""}`));
+    if (!body && !question && !answer && !choices.length) throw new Error("A plain card needs its Markdown body.");
+    return { label: mergeKindLabel(kind, fields), style: "plain", lines };
   }
   throw new Error("Only sticky notes, pictures, ink and cards can merge down.");
 }

@@ -1381,7 +1381,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         <GlassCardView key={card.id} card={card} place={{ x: place.x, y: place.y, width: place.width }} note={note!} live={live}
           onToggle={() => toggleCard(card.id)}
           onCached={(answer, answerAt) => patchCard(card.id, { answer, answerAt })}
-          onDelete={() => removeMark(card.id)} />; })}
+          onDelete={() => removeMark(card.id)} onMerge={() => void openMerge(card.id)} />; })}
       {above.map(frame)}
       {under.map(frame)}
       {visibleStickers.map(sticker => <StickerView key={sticker.id} sticker={sticker} place={layout.places[sticker.id]} selected={selected === sticker.id}
