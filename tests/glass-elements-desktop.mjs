@@ -148,12 +148,21 @@ try {
       await expect(page.locator(".glass-layer")).toHaveAttribute("data-glass", "on");
     }
     if (width !== 1440) await resize(width);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const name of Object.keys(targets)) {
-      await hover(name);
+      const before = await hover(name);
       await aligned(name, targets[name]());
+      assert.deepEqual(await targets[name]().boundingBox(), before, `${name} does not move when hovered`);
       await capture(page, `${name}-${theme}-${width}`);
       await expect(hoverBox).toHaveAttribute("data-element-kind", kinds[name]);
     }
+    const paragraphBounds = await hover("paragraph");
+    await page.mouse.click(paragraphBounds.x + 30, paragraphBounds.y + 10);
+    await expect(selectedBox).toBeVisible();
+    for (const name of ["Change", "Comment"]) await expect(pill.getByRole("button", { name, exact: true })).toBeInViewport({ ratio: 1 });
+    await capture(page, `actions-${theme}-${width}`, 40);
+    await page.keyboard.press("Escape");
+    await expect(selectedBox).toBeHidden();
     await resize(1440);
   }
   await page.evaluate(() => localStorage.setItem("omarkie-theme", "light"));
@@ -198,6 +207,20 @@ try {
   // Keyboard walk: Tab forward, Shift+Tab back, no tab characters land in the note.
   const before = await readFile(file, "utf8");
   await page.mouse.move(paragraphBox.x + 30, paragraphBox.y + 10);
+  await page.keyboard.press("Tab");
+  await expect(selectedBox).toHaveAttribute("data-element-kind", "heading");
+  await page.keyboard.press("Tab");
+  await expect(selectedBox).toHaveAttribute("data-element-kind", "paragraph");
+  await page.keyboard.press("Enter");
+  await expect(pill.getByRole("button", { name: "Change", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(pill.getByRole("button", { name: "Comment", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__elementActions.map(action => action.action))).toEqual(["change", "comment", "comment"]);
+  await page.keyboard.press("Shift+Tab");
+  await expect(pill.getByRole("button", { name: "Change", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(selectedBox).toBeHidden();
   await page.keyboard.press("Tab");
   await expect(selectedBox).toHaveAttribute("data-element-kind", "heading");
   await page.keyboard.press("Tab");

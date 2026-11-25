@@ -86,6 +86,8 @@
 - `omarkie-axi setup hooks --vault <dir>` opts that project into Claude Code, Codex, and OpenCode 2 notices. Optional: `--agent <name>`. Put `omarkie-axi` on PATH and review the Codex hook with `/hooks`.
 - Hooks announce pending ask count, not note text. Read the `omarkie-tutor` skill with `omarkie-axi skill`.
 - Glass overlay state is per vault: `omarkie-axi glass [--on | --off] [--vault <dir>]` reads or sets `.omarkie/glass/vault.json` (the overlay toggle, beside the per-note magnet journals), and an open window follows the file live. `G` or the Display menu toggles the same state.
+- With Glass on, hover for the element type or click to select. In the document, Tab and Shift+Tab walk elements; Enter focuses the actions, and Escape returns to the document.
+- `omarkie-axi element list --note <note.md>` lists elements and their IDs. `omarkie-axi element show <id> --note <note.md>` shows one element's Markdown and heading path.
 
 ### Preview media
 

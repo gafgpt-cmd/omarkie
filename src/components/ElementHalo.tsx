@@ -208,7 +208,8 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
       else clear();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) return;
+      if (event.defaultPrevented || event.isComposing || !["Escape", "Enter", "Tab"].includes(event.key)) return;
+      if (document.querySelector('[role="dialog"], dialog[open]')) return;
       if (event.key === "Escape") {
         if (!selectElement.current) return;
         event.stopPropagation();
@@ -216,7 +217,8 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
         return;
       }
       const active = document.activeElement;
-      if (event.key === "Enter" && selectElement.current && active && scroller.contains(active) && !pill.current?.contains(active)) {
+      if (active && (pill.current?.contains(active) || active !== document.body && !scroller.contains(active))) return;
+      if (event.key === "Enter" && selectElement.current) {
         const button = pill.current?.querySelector("button");
         if (!button) return;
         event.preventDefault();
@@ -224,8 +226,6 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
         return;
       }
       if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) return;
-      if (active && active !== document.body && !scroller.contains(active)) return;
-      if (document.querySelector('[role="dialog"], dialog[open]')) return;
       event.preventDefault();
       event.stopPropagation();
       step(event.shiftKey ? -1 : 1);
