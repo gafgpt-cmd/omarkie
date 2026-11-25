@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, History, Image as ImageIcon, MessageSquarePlus, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, ScanEye, ScanText, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2, Wand2 } from "lucide-react";
+import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
 import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassAnchor, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
-import { bubbleBundle, bubblePayload, findIdentifiers, payloadText, type BubbleBundle, type BubblePayload, type IdentifierFlag } from "../../shared/bubble-context.mjs";
-import { centroid, classifyGesture } from "../../shared/glass-gestures.mjs";
 import { arrowEndKey, customStickerBytes, type ArrowColor, type ArrowHead, type ArrowStyle } from "../../shared/glass-marks.mjs";
 import { fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
 import GlassLandmarks, { landmarkSeeds } from "./GlassLandmarks";
@@ -17,9 +15,8 @@ import StickerView from "./StickerView";
 import StickerArt from "./StickerArt";
 import type { LiveTutor } from "./tutor-live";
 import type { TutorReply } from "./tutor-verbs";
-import GlassInk, { type InkHistoryApi, type InkPick } from "./GlassInk";
+import GlassInk, { type InkHistoryApi } from "./GlassInk";
 import { inkColors, inkDefaults, inkWidths, type InkTool } from "../../shared/ink-core.mjs";
-import type { InkSample, InkStroke } from "../glass/ink-model";
 import type { StudyOverlay } from "./learning-overlays";
 import {
   anchorOf, nearestBlock, newStickyId, offsetIn, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
@@ -101,9 +98,6 @@ interface GlassReply {
   message?: string;
   path?: string;
   layers?: Partial<Record<GlassLayerId, { visible?: boolean; locked?: boolean; opacity?: number }>>;
-  points?: ScrubPoint[];
-  at?: number;
-  lines?: number;
 }
 interface Viewport { top: number; height: number; width: number; page: number }
 const imageFile = /\.(?:png|jpe?g|gif|webp|avif|heic|heif|tiff?)$/i;
@@ -117,38 +111,10 @@ async function glassCall(request: Record<string, unknown>): Promise<GlassReply> 
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const glassGridKey = "omarkie-glass-grid";
-const glassMagicKey = "omarkie-glass-magic";
-const lensRadius = 120;
 type GlassGrid = { on: boolean; size: number };
 function readGlassGrid(): GlassGrid {
   const off: GlassGrid = { on: false, size: snapDefaults.grid };
   try { return snapSetting(JSON.parse(localStorage.getItem(glassGridKey) ?? "null") ?? off); } catch { return off; }
-}
-function readGlassMagic(): boolean {
-  try { return localStorage.getItem(glassMagicKey) !== "off"; } catch { return true; }
-}
-interface MagicChip {
-  kind: "bubble" | "highlight" | "connector";
-  low: boolean;
-  at: { x: number; y: number };
-  apply?: () => void;
-  revert: () => void;
-}
-interface ScrubPoint { at: number; events: number; kinds: string[] }
-interface ScrubView {
-  points: ScrubPoint[];
-  index: number;
-  at: number;
-  marks: number;
-  bubbles: number;
-}
-interface XrayView {
-  id: string;
-  label: string;
-  kind: string;
-  bundle: BubbleBundle;
-  payload: BubblePayload;
-  flags: IdentifierFlag[];
 }
 const imageFiles = (data: DataTransfer | null) => {
   if (!data) return [];
@@ -313,24 +279,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [selected, setSelected] = useState<string>();
   const [selectedArrow, setSelectedArrow] = useState<string>();
   const [grid, setGrid] = useState<GlassGrid>(readGlassGrid);
-  const [magic, setMagic] = useState(readGlassMagic);
-  const magicRef = useRef(magic);
-  magicRef.current = magic;
-  const [chip, setChip] = useState<MagicChip | null>(null);
-  const [lensOn, setLensOn] = useState(false);
-  const [lens, setLens] = useState<{ x: number; y: number } | null>(null);
-  const [ocrReady, setOcrReady] = useState(false);
-  const [ocrMode, setOcrMode] = useState(false);
-  const [scrub, setScrub] = useState<ScrubView | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const scrubRef = useRef<ScrubView | null>(null);
-  scrubRef.current = scrub;
-  const scrubFrame = useRef(0);
-  const [xray, setXray] = useState<XrayView>();
-  const pointer = useRef<{ x: number; y: number } | undefined>(undefined);
-  const lensFrame = useRef(0);
-  const lensOnRef = useRef(false);
-  lensOnRef.current = lensOn;
   const guidesEl = useRef<HTMLDivElement>(null);
   const gridRef = useRef(grid);
   gridRef.current = grid;
@@ -562,77 +510,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, []);
 
   const loadSeq = useRef(0);
-  // One mapping from stored magnets to the live layers; the scrub replays the same shapes
-  // from the journal without touching the current state.
-  const applyMagnets = useCallback((incoming: readonly GlassMagnet[]) => {
-    const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [], nextLabels: GlassLabel[] = [];
-    const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
-    const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
-    const landmarks: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
-    for (const magnet of incoming) {
-      if (magnet.kind === "sticky") {
-        const sticky = stickyFromMagnet(magnet);
-        if (sticky) stickies.push(sticky);
-      } else if (magnet.kind === "image") {
-        const picture = imageFromMagnet(magnet);
-        if (picture) nextImages.push(picture);
-      } else if (magnet.kind === "sticker") {
-        const stamp = stickerFromMagnet(magnet);
-        if (stamp) nextStickers.push(stamp);
-      } else if (magnet.kind === "arrow") {
-        const arrow = arrowFromMagnet(magnet);
-        if (arrow) nextArrows.push(arrow);
-      } else if (magnet.kind === "card") {
-        const card = cardFromMagnet(magnet);
-        if (card) nextCards.push(card);
-      } else if (magnet.kind === "label") {
-        const label = labelFromMagnet(magnet);
-        if (label) nextLabels.push(label);
-      } else if (magnet.kind === "clip") {
-        const clip = clipFromMagnet(magnet);
-        if (clip) nextClips.push(clip);
-      } else if (magnet.kind === "extra-page") {
-        const page = extraPageFromMagnet(magnet);
-        if (page) nextPages.push(page);
-      } else if (magnet.kind === "cutout") {
-        const cutout = cutoutFromMagnet(magnet);
-        if (cutout) nextCutouts.push(cutout);
-      } else if (magnet.kind === "trace") {
-        const trace = traceFromMagnet(magnet);
-        if (trace) nextTraces.push(trace);
-      } else if (magnet.kind === "sheet-label") {
-        const label = sheetLabelFromMagnet(magnet);
-        if (label) nextSheetLabels.push(label);
-      } else if (magnet.kind === "measure") {
-        const measure = measureFromMagnet(magnet);
-        if (measure) nextMeasures.push(measure);
-      } else if (magnet.kind === "compare") {
-        const compare = compareFromMagnet(magnet);
-        if (compare) nextCompares.push(compare);
-      } else if (magnet.kind === "comment") nextComments.push(magnet);
-      else if (magnet.kind === "ink") nextInk.push(magnet);
-      else landmarks.push(magnet);
-    }
-    setMagnets(stickies);
-    setImages(nextImages);
-    setStickers(nextStickers);
-    setArrows(nextArrows);
-    setCards(previous => JSON.stringify(previous) === JSON.stringify(nextCards) ? previous : nextCards);
-    setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(landmarks) ? previous : landmarks);
-    setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
-    setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
-    setLabels(previous => JSON.stringify(previous) === JSON.stringify(nextLabels) ? previous : nextLabels);
-    setClips(previous => JSON.stringify(previous) === JSON.stringify(nextClips) ? previous : nextClips);
-    setExtraPages(previous => JSON.stringify(previous) === JSON.stringify(nextPages) ? previous : nextPages);
-    setCutouts(previous => JSON.stringify(previous) === JSON.stringify(nextCutouts) ? previous : nextCutouts);
-    setTraces(previous => JSON.stringify(previous) === JSON.stringify(nextTraces) ? previous : nextTraces);
-    setSheetLabels(previous => JSON.stringify(previous) === JSON.stringify(nextSheetLabels) ? previous : nextSheetLabels);
-    setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
-    setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
-    return { marks: stickies.length + nextImages.length + nextStickers.length + nextArrows.length + nextCards.length + nextInk.length,
-      bubbles: nextComments.length };
-  }, []);
-
   const load = useCallback(() => {
     const path = latest.current.note;
     if (!path) return;
@@ -644,7 +521,70 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         // A write that landed while this list was in flight wins; its optimistic state is newer.
         if (revision.current !== startedAt || mine !== loadSeq.current) return;
         loaded.current = true;
-        applyMagnets(value.magnets ?? []);
+        const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [], nextLabels: GlassLabel[] = [];
+        const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
+        const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
+        const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
+        for (const magnet of value.magnets ?? []) {
+          if (magnet.kind === "sticky") {
+            const sticky = stickyFromMagnet(magnet);
+            if (sticky) stickies.push(sticky);
+          } else if (magnet.kind === "image") {
+            const picture = imageFromMagnet(magnet);
+            if (picture) nextImages.push(picture);
+          } else if (magnet.kind === "sticker") {
+            const stamp = stickerFromMagnet(magnet);
+            if (stamp) nextStickers.push(stamp);
+          } else if (magnet.kind === "arrow") {
+            const arrow = arrowFromMagnet(magnet);
+            if (arrow) nextArrows.push(arrow);
+          } else if (magnet.kind === "card") {
+            const card = cardFromMagnet(magnet);
+            if (card) nextCards.push(card);
+          } else if (magnet.kind === "label") {
+            const label = labelFromMagnet(magnet);
+            if (label) nextLabels.push(label);
+          } else if (magnet.kind === "clip") {
+            const clip = clipFromMagnet(magnet);
+            if (clip) nextClips.push(clip);
+          } else if (magnet.kind === "extra-page") {
+            const page = extraPageFromMagnet(magnet);
+            if (page) nextPages.push(page);
+          } else if (magnet.kind === "cutout") {
+            const cutout = cutoutFromMagnet(magnet);
+            if (cutout) nextCutouts.push(cutout);
+          } else if (magnet.kind === "trace") {
+            const trace = traceFromMagnet(magnet);
+            if (trace) nextTraces.push(trace);
+          } else if (magnet.kind === "sheet-label") {
+            const label = sheetLabelFromMagnet(magnet);
+            if (label) nextSheetLabels.push(label);
+          } else if (magnet.kind === "measure") {
+            const measure = measureFromMagnet(magnet);
+            if (measure) nextMeasures.push(measure);
+          } else if (magnet.kind === "compare") {
+            const compare = compareFromMagnet(magnet);
+            if (compare) nextCompares.push(compare);
+          } else if (magnet.kind === "comment") nextComments.push(magnet);
+          else if (magnet.kind === "ink") nextInk.push(magnet);
+          else incoming.push(magnet);
+        }
+        setMagnets(stickies);
+        setImages(nextImages);
+        setStickers(nextStickers);
+        setArrows(nextArrows);
+        setCards(previous => JSON.stringify(previous) === JSON.stringify(nextCards) ? previous : nextCards);
+        setLabels(previous => JSON.stringify(previous) === JSON.stringify(nextLabels) ? previous : nextLabels);
+        setClips(previous => JSON.stringify(previous) === JSON.stringify(nextClips) ? previous : nextClips);
+        setExtraPages(previous => JSON.stringify(previous) === JSON.stringify(nextPages) ? previous : nextPages);
+        setCutouts(previous => JSON.stringify(previous) === JSON.stringify(nextCutouts) ? previous : nextCutouts);
+        setTraces(previous => JSON.stringify(previous) === JSON.stringify(nextTraces) ? previous : nextTraces);
+        setSheetLabels(previous => JSON.stringify(previous) === JSON.stringify(nextSheetLabels) ? previous : nextSheetLabels);
+        setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
+        setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
+        setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
+        setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
+        setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
         setTrash(value.trash ?? []);
         publishGlassLayers(path, value.layers, layerCounts(value.magnets ?? []));
         setSaved("saved");
@@ -662,7 +602,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     });
     queue.current = run;
     return run;
-  }, [applyMagnets]);
+  }, []);
 
   useLayoutEffect(() => {
     void load();
@@ -1451,15 +1391,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   // An arrow joins two marks or page elements; both ends stay anchored.
   const createArrow = useCallback((from: ArrowMark["from"], to: ArrowMark["to"]) => {
-    if (!latest.current.note || arrowEndKey(from) === arrowEndKey(to)) return undefined;
-    if (lockedLayer("arrow")) { setNotice("Notes & stickers layer is locked."); return undefined; }
+    if (!latest.current.note || arrowEndKey(from) === arrowEndKey(to)) return;
+    if (lockedLayer("arrow")) { setNotice("Notes & stickers layer is locked."); return; }
     const arrow: ArrowMark = { id: `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       from, to, style: arrowStyle, color: arrowColor, head: arrowHead, label: "" };
     setArrows(current => [...current, arrow]);
     setSelectedArrow(arrow.id);
     setSelected(undefined);
     void send({ action: "add", magnet: arrow.id, fields: arrowFields(arrow) });
-    return arrow.id;
   }, [arrowColor, arrowHead, arrowStyle, send]);
 
   const updateArrow = useCallback((id: string, patch: Partial<ArrowMark>) => {
@@ -1526,364 +1465,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     forget(id);
     void send({ action: "delete", magnet: id });
   }, [arrows, cards, forget, images, magnets, send, stickers]);
-
-  // Every page line in view, so a flat underline knows whether it sits under words.
-  const lineRects = useCallback((points: readonly (readonly [number, number])[]) => {
-    if (!points.length) return [];
-    let top = Infinity, bottom = -Infinity;
-    for (const [, y] of points) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
-    const lines: { top: number; bottom: number }[] = [];
-    for (const block of blocks.current) {
-      const element = block.element;
-      if (!element) continue;
-      const box = element.getBoundingClientRect();
-      if (box.bottom < top - 80 || box.top > bottom + 80) continue;
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      for (const line of range.getClientRects()) if (line.width > 8 && line.height > 0) lines.push({ top: line.top, bottom: line.bottom });
-      if (lines.length > 240) break;
-    }
-    return lines;
-  }, []);
-
-  // The words inside a drawn loop: per-character hit test against the loop's ellipse, so a
-  // sloppy circle still catches its sentence and an empty circle catches nothing.
-  const enclosedText = useCallback((points: readonly (readonly [number, number])[]) => {
-    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-    for (const [x, y] of points) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
-    const cx = (left + right) / 2, cy = (top + bottom) / 2;
-    const rx = Math.max(8, (right - left) / 2), ry = Math.max(8, (bottom - top) / 2);
-    if (right - left < 12 || bottom - top < 12) return "";
-    const chars: string[] = [];
-    let lastTop: number | undefined, lastRight: number | undefined;
-    for (const block of blocks.current) {
-      const element = block.element;
-      if (!element) continue;
-      const box = element.getBoundingClientRect();
-      if (box.right < left || box.left > right || box.bottom < top || box.top > bottom) continue;
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-      const range = document.createRange();
-      for (let node = walker.nextNode(); node && chars.length < 400; node = walker.nextNode()) {
-        const data = node.textContent ?? "";
-        for (let index = 0; index < data.length && chars.length < 400; index++) {
-          const character = data[index];
-          if (!character.trim()) {
-            if (!/[\r\n]/.test(character) && chars.at(-1) !== " ") chars.push(" ");
-            continue;
-          }
-          range.setStart(node, index); range.setEnd(node, index + 1);
-          const rect = range.getBoundingClientRect();
-          if (!rect.width) continue;
-          const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
-          if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 > 1) continue;
-          // Word spans in the rich page carry no literal space between them; a pixel gap is the space.
-          if ((lastTop !== undefined && Math.abs(rect.top - lastTop) > rect.height * 0.6) ||
-              (lastRight !== undefined && rect.left - lastRight > 1)) {
-            if (chars.at(-1) !== " ") chars.push(" ");
-          }
-          chars.push(character); lastTop = rect.top; lastRight = rect.right;
-        }
-      }
-    }
-    return chars.join("").replace(/\s+/g, " ").trim().slice(0, 240);
-  }, []);
-
-  // An arrow gesture lands on marks and page elements only; a stroke into blank paper stays ink.
-  const arrowEndAt = useCallback((clientX: number, clientY: number): ArrowMark["from"] | undefined => {
-    const surface = layer.current;
-    if (!surface) return undefined;
-    const frame = surface.getBoundingClientRect();
-    const x = clientX - frame.left, y = clientY - frame.top;
-    let best: { area: number; end: ArrowMark["from"] } | undefined;
-    const inside = (box: { x: number; y: number; width: number; height: number }) =>
-      x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
-    for (const [id, mark] of Object.entries(placesRef.current)) {
-      if (mark.status !== "resolved" || !inside(mark)) continue;
-      const area = mark.width * mark.height;
-      if (!best || area < best.area) best = { area, end: { kind: "magnet", magnet: id } };
-    }
-    for (const block of blocks.current) {
-      const node = block.element, id = node?.dataset.cid;
-      if (!node || !id) continue;
-      const box = node.getBoundingClientRect();
-      const insideBox = clientX >= box.left && clientX <= box.right && clientY >= box.top && clientY <= box.bottom;
-      if (!insideBox) continue;
-      const area = box.width * box.height;
-      if (best && area >= best.area) continue;
-      const anchor = anchorOf(block);
-      best = { area, end: { kind: "element", element: id, anchor } };
-    }
-    return best?.end;
-  }, []);
-
-  // Circle = bubble on the enclosed words; underline = highlight; stroke between marks = connector.
-  // A weak guess never silently rewrites the page: its chip offers "use gesture" first.
-  const onInkStroke = useCallback((stroke: InkStroke, samples: readonly InkSample[]) => {
-    if (!magicRef.current) return;
-    const points = samples.map(sample => [sample.x, sample.y] as [number, number]);
-    if (points.length < 3) return;
-    const result = classifyGesture(points, { lines: lineRects(points) });
-    if (result.kind === "none") return;
-    const at = { x: points.at(-1)![0], y: points.at(-1)![1] };
-    const low = result.confidence < 0.8;
-    const chipKind = result.kind === "circle" ? "bubble" : result.kind === "underline" ? "highlight" : "connector";
-    const startChip = (make: () => { apply: () => void; revert: () => void }) => {
-      const actions = make();
-      if (low) setChip({ kind: chipKind, low: true, at, apply: actions.apply, revert: () => {} });
-      else { actions.apply(); setChip({ kind: chipKind, low: false, at, revert: actions.revert }); }
-    };
-    if (result.kind === "underline") {
-      startChip(() => {
-        const apply = () => inkApi.current?.setFields(stroke.id, {
-          tool: "highlighter", size: inkWidths.highlighter[0], color: inkColors.highlighter[0] });
-        const revert = () => inkApi.current?.setFields(stroke.id, { tool: stroke.tool, size: stroke.size, color: stroke.color });
-        return { apply, revert };
-      });
-      return;
-    }
-    if (result.kind === "circle") {
-      const center = centroid(points);
-      const block = nearestBlock(blocks.current, center);
-      const id = block?.element?.dataset.cid;
-      const quote = enclosedText(points);
-      // A circle around nothing keeps its ink: a stray loop must not open an empty bubble.
-      if (!block || !id || !quote) return;
-      startChip(() => ({
-        apply: () => window.dispatchEvent(new CustomEvent("omarkie:comment-request", { detail: { id, line: block.line, quote } })),
-        revert: () => window.dispatchEvent(new CustomEvent("omarkie:comment-cancel")),
-      }));
-      return;
-    }
-    if (result.kind === "arrow") {
-      const from = arrowEndAt(points[0][0], points[0][1]);
-      const to = arrowEndAt(at.x, at.y);
-      if (!from || !to || arrowEndKey(from) === arrowEndKey(to)) return;
-      startChip(() => {
-        let arrow: string | undefined;
-        return {
-          apply: () => { arrow = createArrow(from, to); inkApi.current?.remove(stroke.id); },
-          revert: () => { if (arrow) removeMark(arrow); inkApi.current?.restore(stroke); },
-        };
-      });
-    }
-  }, [arrowEndAt, createArrow, enclosedText, lineRects, removeMark]);
-
-  // Alt+? asks about the paragraph under the pointer; the page supplies the anchor, no HWR.
-  const askHere = useCallback((point?: { x: number; y: number }) => {
-    const surface = layer.current;
-    if (!surface) return;
-    const frame = surface.getBoundingClientRect();
-    const at = point ?? { x: frame.left + Math.min(frame.width / 2, 320), y: frame.top + 160 };
-    const block = nearestBlock(blocks.current, at);
-    const id = block?.element?.dataset.cid;
-    if (!block || !id) { setNotice("Point at the page, then Alt+? or Ask here."); return; }
-    window.dispatchEvent(new CustomEvent("omarkie:comment-request", { detail: { id, line: block.line } }));
-  }, []);
-
-  const pageElements = useCallback(() => {
-    const text = editor()?.readingContext()?.text;
-    if (text === undefined) return elements.current.list;
-    if (elements.current.text !== text) elements.current = { text, list: markdownElements(text) };
-    return elements.current.list;
-  }, [editor]);
-
-  const openXray = useCallback((id: string) => {
-    const sticky = magnets.find(item => item.id === id);
-    const sticker = stickers.find(item => item.id === id);
-    const card = cards.find(item => item.id === id);
-    const image = images.find(item => item.id === id);
-    const arrow = arrows.find(item => item.id === id);
-    if (!sticky && !sticker && !card && !image && !arrow) return;
-    const marks = [...magnets, ...stickers, ...cards, ...images];
-    const from = arrow?.from;
-    let anchor: GlassAnchor | undefined;
-    if (from?.kind === "element") anchor = from.anchor;
-    else if (from?.kind === "magnet") anchor = marks.find(item => item.id === from.magnet)?.anchor;
-    else if (!arrow) anchor = (sticky ?? sticker ?? card ?? image)?.anchor;
-    if (!anchor) { setNotice("That mark has no page anchor to inspect."); return; }
-    const context = editor()?.readingContext();
-    if (!context) { setNotice("Open a note to inspect what an agent sees."); return; }
-    const list = pageElements();
-    const line = matchIndexed(index.current, anchor) ?? anchor.landmarks.find(landmark => landmark.kind === "block")?.line;
-    const element = (line !== undefined ? list.find(item => item.blockLine === line || item.line === line) : undefined) ?? list[0];
-    if (!element) { setNotice("The page has no readable element there."); return; }
-    const text = sticky ? sticky.text : arrow ? arrow.label || "Connector"
-      : card ? card.question || card.title || "Card" : sticker ? stickerName(sticker) : image ? image.name : "Glass mark";
-    const bundle = bubbleBundle(list, element, { note: note ?? "", quote: element.markdown ?? element.text });
-    const payload = bundle ? bubblePayload(bundle, text) : undefined;
-    if (!bundle || !payload) { setNotice("That mark's paragraph is gone."); return; }
-    setXray({ id, label: text, kind: element.kind, bundle, payload, flags: findIdentifiers(payloadText(payload), { limit: Infinity }) });
-  }, [arrows, cards, editor, images, magnets, note, pageElements, stickers]);
-
-  const ocrPick = useCallback(async (pick: InkPick) => {
-    const png = inkApi.current?.pngOf(pick.stroke.id);
-    if (!png) { setNotice("That stroke is not on screen to read."); return; }
-    try {
-      const reply = await window.desktop?.glassOcr?.({ png });
-      const failed = reply && "ok" in reply && reply.ok === false;
-      if (failed) throw new Error(reply.error || "The OCR hook failed.");
-      const text = reply && "value" in reply ? reply.value?.text : undefined;
-      if (!text) throw new Error("The OCR hook found no text in that ink.");
-      const point = { x: pick.rect.x + pick.rect.width / 2, y: pick.rect.y + pick.rect.height / 2 };
-      const block = nearestBlock(blocks.current, point) ?? blocks.current[0];
-      if (!block) return;
-      const offset = offsetIn(block, point);
-      const note: StickyNote = { id: newStickyId(), text, color: stickyColors[0], anchor: anchorOf(block),
-        x: offset.x, y: offset.y, w: 264, h: 168, folded: false };
-      setMagnets(current => [...current, note]);
-      setSelected(note.id); setEditing(note.id);
-      await send({ action: "add", magnet: note.id, fields: stickyFields(note) });
-      setNotice("Read the ink into a sticky note.");
-      setOcrMode(false);
-    } catch (error) { setNotice(message(error)); }
-  }, [send]);
-
-  useEffect(() => {
-    let live = true;
-    const check = async () => {
-      try {
-        const reply = await window.desktop?.ocrAvailable?.();
-        if (!live || !reply) return;
-        const value = "value" in reply ? reply.value : reply;
-        setOcrReady(!!value?.available);
-      } catch { /* no hook means no button */ }
-    };
-    void check();
-    return () => { live = false; };
-  }, []);
-
-  // Time scrub: the journal's HLC order replayed as glass states, read-only until "return to now".
-  const replayScrub = useCallback(async (points: ScrubView["points"], index: number) => {
-    if (!latest.current.note) return;
-    const point = points[Math.max(0, Math.min(points.length - 1, index))];
-    const value = await glassCall({ note: latest.current.note, action: "scrub", at: point.at });
-    const counts = applyMagnets(value.magnets ?? []);
-    setScrub({ points, index, at: point.at, marks: counts.marks, bubbles: counts.bubbles });
-  }, [applyMagnets]);
-
-  const openScrub = useCallback(async () => {
-    if (!latest.current.note) return;
-    try {
-      const value = await glassCall({ note: latest.current.note, action: "timeline" });
-      const points = Array.isArray(value.points) ? value.points as ScrubView["points"] : [];
-      if (!points.length) { setNotice("No glass history to replay yet."); return; }
-      setSelected(undefined); setSelectedArrow(undefined); setEditing(undefined); setChip(null); setTool("select");
-      await replayScrub(points, points.length - 1);
-    } catch (error) { setNotice(message(error)); }
-  }, [replayScrub]);
-
-  const scrubTo = useCallback((index: number) => {
-    const current = scrubRef.current;
-    if (!current) return;
-    if (scrubFrame.current) cancelAnimationFrame(scrubFrame.current);
-    scrubFrame.current = requestAnimationFrame(() => {
-      scrubFrame.current = 0;
-      void replayScrub(current.points, index);
-    });
-  }, [replayScrub]);
-
-  const returnToNow = useCallback(() => {
-    if (scrubFrame.current) cancelAnimationFrame(scrubFrame.current);
-    scrubFrame.current = 0;
-    setScrub(null); scrubRef.current = null;
-    setSelected(undefined); setSelectedArrow(undefined); setEditing(undefined);
-    void load();
-  }, [load]);
-
-  useEffect(() => () => { if (scrubFrame.current) cancelAnimationFrame(scrubFrame.current); }, []);
-
-  useEffect(() => {
-    if (!playing || !scrub) return;
-    if (scrub.index >= scrub.points.length - 1) { setPlaying(false); return; }
-    const timer = setTimeout(() => scrubTo(scrub.index + 1), 450);
-    return () => clearTimeout(timer);
-  }, [playing, scrub, scrubTo]);
-
-  useEffect(() => { try { localStorage.setItem(glassMagicKey, magic ? "on" : "off"); } catch { /* private mode */ } }, [magic]);
-
-  useEffect(() => {
-    if (tool === "select") return;
-    setLensOn(false); setLens(null);
-  }, [tool]);
-
-  // Hold Alt: a clear circle follows the pointer and hides the glass inside it. Alt while
-  // dragging still means "no snap", so the lens waits for a free pointer.
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      if (event.key !== "Alt" || event.repeat || latest.current.tool !== "select" || dragging.current) return;
-      const target = event.target instanceof Element ? event.target : null;
-      setLensOn(true);
-      if (pointer.current) setLens(pointer.current);
-      // Alt in a text field may be an input chord (AltGr); peek without swallowing it.
-      if (target?.closest("input, textarea, [contenteditable='true'], .cm-content")) return;
-      event.preventDefault();
-    };
-    const up = (event: KeyboardEvent) => { if (event.key === "Alt") setLensOn(false); };
-    const blur = () => setLensOn(false);
-    window.addEventListener("keydown", down, true);
-    window.addEventListener("keyup", up, true);
-    window.addEventListener("blur", blur);
-    return () => {
-      window.removeEventListener("keydown", down, true);
-      window.removeEventListener("keyup", up, true);
-      window.removeEventListener("blur", blur);
-    };
-  }, []);
-
-  useEffect(() => {
-    const onMove = (event: PointerEvent) => {
-      pointer.current = { x: event.clientX, y: event.clientY };
-      if (!lensOn || latest.current.tool !== "select" || dragging.current || lensFrame.current) return;
-      lensFrame.current = requestAnimationFrame(() => {
-        lensFrame.current = 0;
-        setLens(pointer.current ?? null);
-      });
-    };
-    window.addEventListener("pointermove", onMove, { passive: true });
-    const onScroll = () => { if (lensOn) setLens(pointer.current ?? null); };
-    scroller.addEventListener("scroll", onScroll, { passive: true, capture: true });
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      scroller.removeEventListener("scroll", onScroll, true);
-      if (lensFrame.current) cancelAnimationFrame(lensFrame.current);
-    };
-  }, [lensOn, scroller]);
-
-  // Even-odd path cuts one transparent hole: the page shows through, no overlay copies it.
-  useLayoutEffect(() => {
-    const surface = layer.current;
-    if (!surface) return;
-    if (!lensOn || !lens || tool !== "select") {
-      surface.style.removeProperty("clip-path");
-      delete surface.dataset.glassLens;
-      return;
-    }
-    const frame = surface.getBoundingClientRect();
-    const x = lens.x - frame.left, y = lens.y - frame.top;
-    const width = Math.max(scroller.clientWidth, frame.width, 1), height = Math.max(scroller.scrollHeight, frame.height, 1);
-    surface.style.clipPath = `path(evenodd, "M0 0H${width}V${height}H0Z M${x + lensRadius} ${y}A${lensRadius} ${lensRadius} 0 1 0 ${x - lensRadius} ${y}A${lensRadius} ${lensRadius} 0 1 0 ${x + lensRadius} ${y}Z")`;
-    surface.dataset.glassLens = "on";
-  }, [lens, lensOn, scroller, tool]);
-
-  // Alt+? anywhere on the page asks about that spot; the pencil-case button asks at the pointer.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (!event.altKey || event.defaultPrevented) return;
-      const question = event.key === "?" || (event.code === "Slash" && event.shiftKey);
-      if (!question) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("input, textarea")) return;
-      event.preventDefault();
-      askHere(pointer.current);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [askHere]);
-
-  // Leaving the page (or a note switch) never leaves a stale magic chip or a scrubbed view.
-  useEffect(() => {
-    if (!note) { setChip(null); setScrub(null); }
-  }, [note]);
 
   const restore = useCallback(async (magnet: GlassMagnet) => {
     const value = await send({ action: "restore", magnet: magnet.id });
@@ -2191,15 +1772,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onClick={() => setCompareOpen(true)}><Columns2 size={15} /></button>
     <button type="button" data-glass-grid aria-pressed={grid.on} aria-expanded={tool === "grid"} aria-label="Grid" title="Grid: line magnets up with the paper" onClick={() => setTool(current => current === "grid" ? "select" : "grid")}><Grid3x3 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
-    <button type="button" data-glass-magic aria-pressed={magic} aria-label="Smart ink" title="Smart ink: circle words, underline, draw an arrow"
-      onClick={() => { const next = !magic; setMagic(next); if (!next) setChip(null); setNotice(next ? "Smart ink on: circles, underlines and arrows become glass." : "Smart ink off: every stroke stays ink."); }}><Wand2 size={15} /></button>
-    <button type="button" data-glass-ask aria-label="Ask here" title="Ask here (Alt+?)"
-      onClick={() => askHere(pointer.current)}><MessageSquarePlus size={15} /></button>
-    {ocrReady && <button type="button" data-glass-ocr aria-pressed={ocrMode} aria-label="Read ink" title="Read a drawn stroke with the OCR hook"
-      onClick={() => { setOcrMode(current => !current); setTool("select"); setChip(null); setNotice(ocrMode ? "Ink reading off." : "Click an ink stroke to read it."); }}><ScanText size={15} /></button>}
-    <button type="button" data-glass-scrub-open aria-label="Time scrub" title="Time scrub: replay how the glass grew"
-      onClick={() => void openScrub()}><History size={15} /></button>
-    <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-tool="card" aria-haspopup="dialog" aria-label="Card" title="Card: section, tutor answer or quiz"
       onClick={() => setCardOpen(true)}><SquareStack size={15} /></button>
     <button type="button" data-labels-hide aria-pressed={study.labelsHidden} aria-label={study.labelsHidden ? "Show labels" : "Hide labels"}
@@ -2285,10 +1857,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     </div>
     <p className="glass-palette-hint">Set the scale once per picture, then measure. Units are never converted behind your back.</p>
   </div> : null;
-  const panel = <>{tray}{inkPalette ?? marksPalette}{cutoutPalette ?? pagePalette ?? visualPalette}{(selected || selectedArrow) && <div className="glass-selection-actions" role="group" aria-label="Selected mark" data-glass-selection>
-    <button type="button" data-glass-xray-open={selected ?? selectedArrow} aria-haspopup="dialog" title="X-ray: exactly what the agent will see"
-      onClick={() => { const id = selected ?? selectedArrow; if (id) openXray(id); }}><ScanEye size={14} /> X-ray</button>
-  </div>}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+  const panel = <>{tray}{cutoutPalette ?? pagePalette ?? visualPalette ?? inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
     <strong>Glass trash</strong>
     {trash.length ? <ul>{trash.map(magnet => <li key={magnet.id}>
       <span>{magnetLabel(magnet)}</span>
@@ -2359,7 +1928,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   return <>
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
-    {note && !scrub && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pinCard} magnets={comments} reload={load}
+    {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pinCard} magnets={comments} reload={load}
       exam={study.exam} reveal={revealItem} />}
     {createPortal(<>
     {tool === "cutout" && !capturing && <div className={`glass-scissors-overlay ${cutMode}`} aria-label="Cut a selection"
@@ -2405,8 +1974,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
             <polyline points={cutDrag.points.map(([x, y]) => `${x},${y}`).join(" ")} />
           </svg> : null}
     </div>}
-    <div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}
-      data-glass-scrub={scrub ? "on" : undefined} data-glass-lens={lensOn && lens ? "on" : undefined}>
+    <div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}>
       {grid.on && <div className="glass-grid" aria-hidden="true" data-glass-grid={grid.size} />}
       <div className="glass-guides" ref={guidesEl} aria-hidden="true" data-snap="off">
         <span className="glass-guide" data-guide="x" hidden />
@@ -2414,9 +1982,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         <span className="glass-guide" data-guide="spacing" hidden />
       </div>
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
-        editor={editor} root={root} note={note} tool={scrub ? null : tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
-        magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice}
-        onStroke={onInkStroke} ocr={ocrMode && !scrub} onOcrPick={ocrPick} />}
+        editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
+        magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
       {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page" || tool === "label") && note && <div className="glass-surface" data-glass-surface data-placement={tool} data-glass-layer="notes" onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
@@ -2521,40 +2088,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     {study.exam && examOpen && <ExamPanel items={examItems} revealed={revealed} index={examIndex} markedOnly={examMarkedOnly}
       onIndex={setExamIndex} onReveal={revealItem} onMarkedOnly={setExamMarkedOnly} onGrade={previewGrade}
       onClose={() => { setStudyMode({ exam: false }); setExamOpen(false); setRevealed(new Set()); }} />}
-    {!scrub && createPortal(panel, document.body)}
-    {chip && createPortal(<div className="glass-chip" role="status" data-glass-gesture={chip.kind} data-glass-low={chip.low || undefined}
-      style={{ left: `${chip.at.x}px`, top: `${chip.at.y}px` }}>
-      <span>{chip.low ? `Possible ${chip.kind}` : chip.kind === "bubble" ? "Bubble on the circled words" : chip.kind === "highlight" ? "Underline became a highlight" : "Connector made"}</span>
-      {chip.low && chip.apply && <button type="button" data-gesture-use onClick={() => { chip.apply?.(); setChip(null); }}>Use gesture</button>}
-      <button type="button" data-gesture-keep onClick={() => { chip.revert(); setChip(null); }}>Keep as ink</button>
-      {!chip.low && <button type="button" data-gesture-undo onClick={() => { chip.revert(); setChip(null); }}>Undo gesture</button>}
-      <button type="button" data-gesture-dismiss aria-label="Dismiss gesture chip" title="Dismiss" onClick={() => setChip(null)}>×</button>
-    </div>, document.body)}
-    {lensOn && lens && createPortal(<div className="glass-lens" data-glass-lens-ring aria-hidden="true"
-      style={{ left: `${lens.x - lensRadius}px`, top: `${lens.y - lensRadius}px`, width: `${lensRadius * 2}px`, height: `${lensRadius * 2}px` }} />, document.body)}
-    {scrub && createPortal(<div className="glass-scrub" role="dialog" aria-label="Time scrub" data-glass-scrub>
-      <History size={15} aria-hidden="true" />
-      <span data-glass-scrub-count>{scrub.marks} marks · {scrub.bubbles} bubbles</span>
-      <input type="range" min={0} max={scrub.points.length - 1} value={scrub.index} aria-label="Glass history"
-        data-glass-scrub-range onChange={event => { setPlaying(false); scrubTo(Number(event.target.value)); }} />
-      <output data-glass-scrub-at={`${scrub.index + 1}/${scrub.points.length}`}>{new Date(scrub.at).toLocaleTimeString()}</output>
-      <button type="button" data-glass-scrub-play aria-pressed={playing} disabled={scrub.index >= scrub.points.length - 1}
-        onClick={() => setPlaying(value => !value)}>{playing ? "Pause" : "Play"}</button>
-      <button type="button" data-glass-scrub-now onClick={() => { setPlaying(false); returnToNow(); }}>Return to now</button>
-    </div>, document.body)}
-    {xray && createPortal(<div className="glass-xray" role="dialog" aria-modal="true" aria-label="What the agent sees" data-glass-xray>
-      <header>
-        <div><strong>{xray.label}</strong><span>{elementKindName(xray.kind)} · line {xray.bundle.element.line}</span></div>
-        <button type="button" className="glass-xray-close" aria-label="Close X-ray" data-glass-xray-close onClick={() => setXray(undefined)}>×</button>
-      </header>
-      <p className="glass-xray-meta" data-glass-xray-flags={xray.flags.length}>
-        {xray.flags.length ? `${xray.flags.length} identifier${xray.flags.length === 1 ? "" : "s"} redacted before any model call.` : "No identifiers found."}
-      </p>
-      <div className="glass-xray-body">
-        <section><h4>Page context</h4><pre>{xray.payload.text}</pre></section>
-        <section data-glass-xray-payload><h4>Sends to the agent</h4><pre>{payloadText(xray.payload)}</pre></section>
-      </div>
-    </div>, document.body)}
   </>;
 }
 

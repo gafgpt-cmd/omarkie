@@ -167,15 +167,11 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
       if (detail?.action === "comment") start(detail);
     };
     const onRequest = (event: Event) => start((event as CustomEvent).detail ?? {});
-    // Undoing a circle gesture closes the bubble draft it opened; nothing is stored.
-    const onCancel = () => { setDraft(undefined); setOpenId(undefined); setQuestion(""); setError(""); };
     window.addEventListener("omarkie:element-action", onAction);
     window.addEventListener("omarkie:comment-request", onRequest);
-    window.addEventListener("omarkie:comment-cancel", onCancel);
     return () => {
       window.removeEventListener("omarkie:element-action", onAction);
       window.removeEventListener("omarkie:comment-request", onRequest);
-      window.removeEventListener("omarkie:comment-cancel", onCancel);
     };
   }, []);
   const hasBubbles = !!draft || saved.length > 0;
