@@ -26,6 +26,9 @@ Every candidate shows its source and licence before you can use it.
   - Results need title, author, licence and landing URL; NC/ND are refused with the reason.
   - `OMARKIE_SWAP_SEARCH` points at a JSON results file for offline machines and tests.
 - Enhance and Generate exist only when `OMARKIE_ENHANCE` / `OMARKIE_IMAGEGEN` are configured.
+  - Enhance expects the PhotoCraft headless CLI (storytold/photocraft, Apache-2.0), named by config:
+    `photocraft-cli run "{image}" --cmd filter.sharpen.smartSharpen --out "{outdir}"`.
+  - Nothing is bundled; a hook that is absent leaves the action hidden.
 - Rewrite and Redraw use the Tutor bridge (`check` verb, JSON reply with `replacement`).
   - Redraw renders through Mermaid `securityLevel: strict`.
 

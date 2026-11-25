@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { hookArguments } from "./cli-hook.mjs";
 
-// G17 optional OCR hook: OMARKIE_OCR names a local command (Tesseract is Apache-2.0, nothing is
-// bundled). The command gets a temporary PNG, either where `{image}` stands or as its last
-// argument, and its stdout is the text. No network, no shell, no long-lived process.
+// G17 optional OCR hook: OMARKIE_OCR names a local command; nothing is bundled. The reference
+// intake is pdf-md-pipeline's RapidOCR pass plus its cleanup, whose path comes from config:
+//   "<pdf-md-pipeline>/tools/image_intake.py" "{image}" -o "{outdir}" --engine rapidocr
+// The command gets a temporary PNG, either where `{image}` stands or as its last argument, writes
+// text or Markdown to {outdir} or prints it, and never touches the network.
 export const ocrLimits = { png: 8 * 1024 * 1024, text: 20_000, stdout: 1024 * 1024, stderr: 16 * 1024, timeout: 30_000 };
 
 export const ocrPlaceholder = "{image}";
