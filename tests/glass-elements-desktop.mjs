@@ -63,12 +63,16 @@ async function axi(...args) {
 async function capture(page, name, extra = 0) {
   if (!qa) return;
   const box = await page.locator(".element-halo-box").first().boundingBox();
-  const size = page.viewportSize() ?? { width: 1440, height: 900 };
-  if (!box) { await page.screenshot({ path: path.join(qa, `g4-${name}.png`) }); return; }
-  const x = Math.max(0, Math.floor(box.x - 12)), y = Math.max(0, Math.floor(box.y - 26));
-  const width = Math.min(size.width - x, Math.ceil(box.width + 24)), height = Math.min(size.height - y, Math.ceil(box.height + 38 + extra));
+  const file = path.join(qa, `g4-${name}.png`);
+  // Crop after capture. A clipped screenshot can change the hovered element in Electron.
+  const bytes = await page.screenshot({ scale: "css", caret: "initial" });
+  if (!box) { await writeFile(file, bytes); return; }
+  const image = sharp(bytes);
+  const size = await image.metadata();
+  const left = Math.max(0, Math.floor(box.x - 12)), top = Math.max(0, Math.floor(box.y - 26));
+  const width = Math.min(size.width - left, Math.ceil(box.width + 24)), height = Math.min(size.height - top, Math.ceil(box.height + 38 + extra));
   if (width < 8 || height < 8) return;
-  await page.screenshot({ path: path.join(qa, `g4-${name}.png`), clip: { x, y, width, height } });
+  await image.extract({ left, top, width, height }).png().toFile(file);
 }
 
 const first = await launch.launch({ args: [process.cwd(), ...headlessArguments], env });
