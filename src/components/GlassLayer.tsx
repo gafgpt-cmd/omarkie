@@ -601,6 +601,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [], nextLabels: GlassLabel[] = [];
     const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
     const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
+    const nextVoices: VoiceMemo[] = [];
     const landmarks: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
     for (const magnet of incoming) {
       if (magnet.kind === "sticky") {
@@ -642,6 +643,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       } else if (magnet.kind === "compare") {
         const compare = compareFromMagnet(magnet);
         if (compare) nextCompares.push(compare);
+      } else if (magnet.kind === "voice") {
+        const memo = voiceFromMagnet(magnet);
+        if (memo) nextVoices.push(memo);
       } else if (magnet.kind === "comment") nextComments.push(magnet);
       else if (magnet.kind === "ink") nextInk.push(magnet);
       else landmarks.push(magnet);
@@ -662,6 +666,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setSheetLabels(previous => JSON.stringify(previous) === JSON.stringify(nextSheetLabels) ? previous : nextSheetLabels);
     setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
     setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
+    setVoices(previous => JSON.stringify(previous) === JSON.stringify(nextVoices) ? previous : nextVoices);
     return { marks: stickies.length + nextImages.length + nextStickers.length + nextArrows.length + nextCards.length + nextInk.length,
       bubbles: nextComments.length };
   }, []);
