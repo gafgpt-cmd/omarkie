@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Eraser, Highlighter, Image as ImageIcon, MousePointer2, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
+import { ArrowUpRight, Eraser, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
@@ -19,7 +19,7 @@ import GlassInk, { type InkHistoryApi } from "./GlassInk";
 import { inkColors, inkDefaults, inkWidths, type InkTool } from "../../shared/ink-core.mjs";
 import type { StudyOverlay } from "./learning-overlays";
 import {
-  anchorOf, nearestBlock, newStickyId, offsetIn, snapped, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
+  anchorOf, nearestBlock, newStickyId, offsetIn, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
   type GlassMagnet, type StickyNote,
 } from "../glass/glass-model";
 import { displayNeeded, imageDefaults, imageTypeOf } from "../../shared/glass-images.mjs";
@@ -32,7 +32,10 @@ import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, t
 import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
 import { elementNode } from "../glass/element-node";
 import { elementKindName } from "../glass/element-label";
+import { snapBox, snapDefaults, snapSetting, type SnapBox, type SnapColumn, type SnapGuide, type SnapLine } from "../../shared/glass-snap.mjs";
 import "./glass.css";
+
+interface SnapContext { others: SnapBox[]; column?: SnapColumn; lines: SnapLine[] }
 
 interface Layout {
   places: Record<string, GlassPlacement>;
@@ -63,6 +66,12 @@ async function glassCall(request: Record<string, unknown>): Promise<GlassReply> 
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const glassGridKey = "omarkie-glass-grid";
+type GlassGrid = { on: boolean; size: number };
+function readGlassGrid(): GlassGrid {
+  const off: GlassGrid = { on: false, size: snapDefaults.grid };
+  try { return snapSetting(JSON.parse(localStorage.getItem(glassGridKey) ?? "null") ?? off); } catch { return off; }
+}
 const imageFiles = (data: DataTransfer | null) => {
   if (!data) return [];
   const files = [...data.files];
@@ -171,7 +180,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [cards, setCards] = useState<GlassCard[]>([]);
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
-  const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow">("select");
+  const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow" | "grid">("select");
   const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
   const [customImage, setCustomImage] = useState<string>();
   const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
@@ -180,6 +189,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [cardOpen, setCardOpen] = useState(false);
   const [selected, setSelected] = useState<string>();
   const [selectedArrow, setSelectedArrow] = useState<string>();
+  const [grid, setGrid] = useState<GlassGrid>(readGlassGrid);
+  const guidesEl = useRef<HTMLDivElement>(null);
+  const gridRef = useRef(grid);
+  gridRef.current = grid;
+  const snapCache = useRef<{ id: string; context: SnapContext } | undefined>(undefined);
+  useEffect(() => { try { localStorage.setItem(glassGridKey, JSON.stringify(grid)); } catch { /* storage unavailable */ } }, [grid]);
   const [viewport, setViewport] = useState<Viewport>({ top: 0, height: 0, width: 0, page: 0 });
   const [editing, setEditing] = useState<string>();
   const [openTrash, setOpenTrash] = useState(false);
@@ -316,12 +331,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       }
       if (anchor) marker = placeAnchor(anchor, { x: 0, y: 0 }, blocks.current, surface);
     }
+    // Size the paper grid after the measurements, so this write never forces a second layout.
+    const page = `${Math.max(scroller.scrollHeight, frame.height)}px`;
+    if (surface.style.getPropertyValue("--glass-page") !== page) surface.style.setProperty("--glass-page", page);
     if (!mounted.current) { mounted.current = true; performance.mark("omarkie:glass-mounted"); }
     const serialized = JSON.stringify([places, routed.routes, names, routed.orphans, marker ?? null, loaded.current]);
     if (serialized === fingerprint.current) return;
     fingerprint.current = serialized;
     setLayout({ places, routes: routed.routes, names, orphanArrows: routed.orphans, fixture: marker, loaded: loaded.current });
-  }, [dropSpacers, editor, fixture, flow, root, seeds]);
+  }, [dropSpacers, editor, fixture, flow, root, scroller, seeds]);
 
   useEffect(() => () => { for (const spacer of spacers.current.values()) spacer.remove(); spacers.current.clear(); }, []);
 
@@ -520,6 +538,78 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return !!(await createCard(card))?.magnet;
   }, [createCard]);
 
+  // Guides measure what the hand can see: every placed magnet in the frame, the page text
+  // column, and the line boxes of the paragraphs on screen. Built once per pick-up.
+  const snapContext = useCallback((skip: string): SnapContext => {
+    const surface = layer.current;
+    if (!surface) return { others: [], lines: [] };
+    const frame = surface.getBoundingClientRect();
+    const others = Object.entries(placesRef.current).flatMap(([id, place]) =>
+      id === skip || place.status !== "resolved" ? [] : [{ x: place.x, y: place.y, w: place.width, h: place.height }]);
+    const column = root.getBoundingClientRect();
+    const view = scroller.getBoundingClientRect();
+    const lines: SnapLine[] = [];
+    for (const block of blocks.current) {
+      const element = block.element;
+      if (!element || lines.length >= 400) continue;
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || rect.bottom < view.top || rect.top > view.bottom) continue;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      for (const line of range.getClientRects())
+        if (line.width > 8 && line.height > 0) lines.push({ y: line.top - frame.top, x: line.left - frame.left, width: line.width });
+    }
+    return { others, column: { left: column.left - frame.left, right: column.right - frame.left }, lines };
+  }, [root, scroller]);
+
+  const paintGuides = useCallback((guides: readonly SnapGuide[], cost: number) => {
+    const holder = guidesEl.current;
+    if (!holder) return;
+    const shown = new Map<string, SnapGuide>();
+    for (const guide of guides) {
+      const key = guide.kind === "spacing" ? "spacing" : guide.axis;
+      if (!shown.has(key)) shown.set(key, guide);
+    }
+    for (const node of holder.querySelectorAll<HTMLElement>("[data-guide]")) {
+      const guide = shown.get(node.dataset.guide!);
+      node.hidden = !guide;
+      if (!guide) continue;
+      node.dataset.kind = guide.kind;
+      const cross = guide.from !== undefined && guide.to !== undefined;
+      if (guide.axis === "y") {
+        node.style.top = `${guide.at}px`;
+        node.style.left = `${guide.from ?? 0}px`;
+        node.style.width = cross ? `${Math.max(4, guide.to! - guide.from!)}px` : "100%";
+        node.style.height = "1px";
+      } else {
+        node.style.left = `${guide.at}px`;
+        node.style.top = `${guide.from ?? 0}px`;
+        node.style.height = cross ? `${Math.max(4, guide.to! - guide.from!)}px` : "100%";
+        node.style.width = guide.kind === "spacing" ? `${Math.max(2, guide.gap ?? 0)}px` : "1px";
+        if (guide.kind === "spacing") node.dataset.label = `${guide.gap ?? 0}`;
+      }
+    }
+    holder.dataset.snapMs = cost.toFixed(2);
+    holder.dataset.snap = guides.length ? "on" : "off";
+  }, []);
+
+  // The one rule every magnet follows: align to a neighbour or the column, glue the top to a
+  // text line, else round to the grid. Alt skips it all.
+  const resolveSnap = useCallback((box: SnapBox, context: SnapContext, alt: boolean) => {
+    const setting = gridRef.current;
+    const started = performance.now();
+    const result = snapBox({ box, others: context.others, column: context.column, lines: context.lines,
+      grid: setting.on ? setting.size : 0, disabled: alt });
+    paintGuides(alt ? [] : result.guides, performance.now() - started);
+    return result;
+  }, [paintGuides]);
+
+  const settle = useCallback((element: HTMLElement) => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    element.classList.add("is-settling");
+    window.setTimeout(() => element.classList.remove("is-settling"), snapDefaults.settleMs + 80);
+  }, []);
+
   useEffect(() => {
     const surface = layer.current;
     if (!surface) return;
@@ -543,21 +633,35 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       void send({ action: "set", magnet: id, fields });
     };
     const instance = interact(surface);
-    let drag: { element: HTMLElement; id: string; kind: "sticky" | "sticker"; x: number; y: number; pageX: number; pageY: number } | undefined;
+    let drag: { element: HTMLElement; id: string; x: number; y: number; pageX: number; pageY: number;
+      place?: SnapBox; context: SnapContext } | undefined;
     instance.draggable({
       allowFrom: ".glass-note, .glass-note-head, .glass-sticker",
       ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot, .glass-sticker-grip, .glass-sticker-rotate, .glass-sticker-delete",
       listeners: {
         start(event) {
           const element = markElement(event.target);
-          const mark = findMark(element.dataset.magnet ?? "");
+          const id = element.dataset.magnet ?? "";
+          const mark = findMark(id);
           if (!mark) return;
+          const placed = placesRef.current[id];
           dragging.current = true;
           element.classList.add("is-lifting");
-          drag = { element, id: element.dataset.magnet!, kind: mark.kind, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY };
+          drag = { element, id, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY,
+            ...(placed?.status === "resolved" ? { place: { x: placed.x, y: placed.y, w: placed.width, h: placed.height } } : {}),
+            context: snapContext(id) };
         },
         move(event) {
-          if (drag) drag.element.style.transform = `translate3d(${event.pageX - drag.pageX}px, ${event.pageY - drag.pageY}px, 0)`;
+          if (!drag) return;
+          const dx = event.pageX - drag.pageX, dy = event.pageY - drag.pageY;
+          let x = dx, y = dy;
+          if (drag.place) {
+            const proposal = { x: drag.place.x + dx, y: drag.place.y + dy, w: drag.place.w, h: drag.place.h };
+            const result = resolveSnap(proposal, drag.context, event.altKey);
+            x += result.x - proposal.x;
+            y += result.y - proposal.y;
+          }
+          drag.element.style.transform = `translate3d(${x}px, ${y}px, 0)`;
         },
         end(event) {
           const start = drag;
@@ -566,8 +670,20 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           if (!start) return;
           start.element.classList.remove("is-lifting");
           start.element.style.removeProperty("transform");
-          const x = snapped(start.x + event.pageX - start.pageX), y = snapped(start.y + event.pageY - start.pageY);
-          place(start.id, { x, y });
+          const dx = event.pageX - start.pageX, dy = event.pageY - start.pageY;
+          let x = start.x + dx, y = start.y + dy;
+          if (start.place) {
+            const proposal = { x: start.place.x + dx, y: start.place.y + dy, w: start.place.w, h: start.place.h };
+            const result = resolveSnap(proposal, start.context, event.altKey);
+            x = start.x + result.x - start.place.x;
+            y = start.y + result.y - start.place.y;
+          } else if (gridRef.current.on) {
+            x = Math.round(x / gridRef.current.size) * gridRef.current.size;
+            y = Math.round(y / gridRef.current.size) * gridRef.current.size;
+          }
+          paintGuides([], 0);
+          place(start.id, { x: Math.round(x), y: Math.round(y) });
+          settle(start.element);
         },
       },
     }).resizable({
@@ -602,23 +718,24 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           dragging.current = false;
           if (!data) return;
           const start = JSON.parse(data), size = element.dataset.size;
+          const step = gridRef.current.on ? gridRef.current.size : 1;
           delete element.dataset.resize;
           delete element.dataset.size;
           if (size === undefined) return;
           if (start.kind === "sticker") {
             const id = element.dataset.magnet!;
-            const edge = snapped(Math.max(24, Number(size)));
+            const edge = Math.round(Math.max(24, Number(size)) / step) * step;
             place(id, { x: findMark(id)?.x ?? 0, y: findMark(id)?.y ?? 0, w: edge, h: edge });
             return;
           }
           const id = element.dataset.magnet!;
           const box = JSON.parse(size);
-          place(id, { x: findMark(id)?.x ?? 0, y: findMark(id)?.y ?? 0, w: snapped(box.width), h: snapped(box.height) });
+          place(id, { x: findMark(id)?.x ?? 0, y: findMark(id)?.y ?? 0, w: Math.round(box.width / step) * step, h: Math.round(box.height / step) * step });
         },
       },
     });
     return () => { surface.removeEventListener("pointerdown", track, true); instance.unset(); };
-  }, [send]);
+  }, [paintGuides, resolveSnap, send, settle, snapContext]);
 
   const create = useCallback((point: { x: number; y: number }) => {
     const surface = layer.current;
@@ -731,8 +848,22 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const block = nearestBlock(blocks.current, { x: drop.clientX, y: drop.clientY });
       if (!block) return;
       patchImage(image.id, { anchor: anchorOf(block), x: 0, y: 0 }, true);
-    } else patchImage(image.id, { x: snapped(image.x + drop.dx), y: snapped(image.y + drop.dy) }, true);
-  }, [patchImage]);
+      return;
+    }
+    const step = gridRef.current.on ? gridRef.current.size : 1;
+    patchImage(image.id, { x: Math.round((image.x + drop.dx) / step) * step, y: Math.round((image.y + drop.dy) / step) * step }, true);
+    paintGuides([], 0);
+  }, [patchImage, paintGuides]);
+
+  // Pictures follow the same guides as paper: a floating photo aligns and glues while it moves.
+  const imageSnap = useCallback((image: GlassImage, dx: number, dy: number, alt: boolean) => {
+    const place = placesRef.current[image.id];
+    if (!place || place.status !== "resolved" || image.wrap === "left" || image.wrap === "right") { paintGuides([], 0); return { dx, dy }; }
+    if (snapCache.current?.id !== image.id) snapCache.current = { id: image.id, context: snapContext(image.id) };
+    const proposal = { x: place.x + dx, y: place.y + dy, w: place.width, h: place.height };
+    const result = resolveSnap(proposal, snapCache.current.context, alt);
+    return { dx: dx + result.x - proposal.x, dy: dy + result.y - proposal.y };
+  }, [paintGuides, resolveSnap, snapContext]);
 
   const liveImageSize = useCallback((id: string, width: number, height: number) => {
     const spacer = spacers.current.get(id);
@@ -906,6 +1037,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       paintHost={underHost} maxWidth={maxWidth} onSelect={() => { setSelected(image.id); setSelectedArrow(undefined); setEditing(undefined); }}
       onPatch={(patch, persist) => patchImage(image.id, patch, persist)}
       onDrop={drop => imageDrop(image, drop)}
+      onSnap={(dx, dy, alt) => imageSnap(image, dx, dy, alt)}
+      onSnapEnd={() => { snapCache.current = undefined; paintGuides([], 0); }}
+      onSettle={settle}
       onLiveSize={(width, height) => liveImageSize(image.id, width, height)}
       onDelete={() => removeMark(image.id)} />;
   };
@@ -944,6 +1078,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         {shape === "solid" ? "▸" : shape === "open" ? "›" : "—"}</button>)}
     </div>
     <p className="glass-palette-hint">Drag from a paragraph or sticker to another; the far end scrolls into view.</p>
+  </div> : tool === "grid" ? <div className="glass-palette" role="group" aria-label="Grid" data-glass-palette="grid">
+    <p className="glass-palette-title">Grid</p>
+    <div className="glass-palette-row">
+      <button type="button" data-grid-size="off" aria-pressed={!grid.on} onClick={() => setGrid(current => ({ ...current, on: false }))}>Off</button>
+      {snapDefaults.sizes.map(size => <button type="button" key={size} data-grid-size={size} aria-pressed={grid.on && grid.size === size}
+        aria-label={`Grid ${size}`} onClick={() => setGrid({ on: true, size })}>{size}</button>)}
+    </div>
+    <p className="glass-palette-hint">Magnets line up with the grid, each other and the text column. Hold Alt to move free.</p>
   </div> : null;
   const cardPoint = () => {
     const surface = scroller.getBoundingClientRect();
@@ -972,6 +1114,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="eraser" aria-pressed={tool === "ink" && inkTool === "eraser"} aria-label="Eraser" title="Eraser (E)" onClick={() => chooseInk("eraser")}><Eraser size={15} /></button>
     <button type="button" data-glass-tool="sticker" aria-pressed={tool === "sticker"} aria-label="Sticker" title="Stickers" onClick={() => setTool("sticker")}><Star size={15} /></button>
     <button type="button" data-glass-tool="arrow" aria-pressed={tool === "arrow"} aria-label="Arrow" title="Arrow between two things" onClick={() => setTool("arrow")}><ArrowUpRight size={15} /></button>
+    <button type="button" data-glass-grid aria-pressed={grid.on} aria-expanded={tool === "grid"} aria-label="Grid" title="Grid: line magnets up with the paper" onClick={() => setTool(current => current === "grid" ? "select" : "grid")}><Grid3x3 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-tool="card" aria-haspopup="dialog" aria-label="Card" title="Card: section, tutor answer or quiz"
       onClick={() => setCardOpen(true)}><SquareStack size={15} /></button>
@@ -1025,7 +1168,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pinCard} magnets={comments} reload={load} />}
-    {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
+    {createPortal(<div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}>
+      {grid.on && <div className="glass-grid" aria-hidden="true" data-glass-grid={grid.size} />}
+      <div className="glass-guides" ref={guidesEl} aria-hidden="true" data-snap="off">
+        <span className="glass-guide" data-guide="x" hidden />
+        <span className="glass-guide" data-guide="y" hidden />
+        <span className="glass-guide" data-guide="spacing" hidden />
+      </div>
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
@@ -1057,7 +1206,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         onSelect={() => { setSelected(sticker.id); setSelectedArrow(undefined); }}
         onRotate={rotate => { setStickers(current => current.map(item => item.id === sticker.id ? { ...item, rotate } : item)); void send({ action: "set", magnet: sticker.id, fields: { rotate } }); }}
         onNudge={(dx, dy) => {
-          const x = snapped(sticker.x + dx), y = snapped(sticker.y + dy);
+          const step = grid.on ? grid.size : 1;
+          const x = Math.round((sticker.x + dx) / step) * step, y = Math.round((sticker.y + dy) / step) * step;
           setStickers(current => current.map(item => item.id === sticker.id ? { ...item, x, y } : item));
           void send({ action: "set", magnet: sticker.id, fields: { x, y } });
         }}

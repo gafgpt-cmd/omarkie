@@ -5,6 +5,58 @@
   z-index: 3;
   pointer-events: none;
 }
+/* G10: the optional paper grid, drawn under every magnet and only when asked for. */
+.glass-grid {
+  --glass-grid: 8px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: var(--glass-page, 100%);
+  pointer-events: none;
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--ink, #333) 26%, transparent) 1px, transparent 1.2px);
+  opacity: 0.45;
+  background-size: var(--glass-grid) var(--glass-grid);
+}
+.glass-grid[data-glass-grid="16"] { --glass-grid: 16px; }
+.glass-grid[data-glass-grid="24"] { --glass-grid: 24px; }
+/* Smart guides: shown only while a magnet is picked up, never in the saved page. */
+.glass-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+.glass-guide {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: var(--accent, #326eaa);
+}
+.glass-guide[hidden] { display: none; }
+.glass-guide[data-kind="center"] { opacity: 0.7; }
+.glass-guide[data-kind="column"] { opacity: 0.5; }
+.glass-guide[data-kind="line"] { opacity: 0.55; background: repeating-linear-gradient(to bottom, var(--accent, #326eaa) 0 4px, transparent 4px 7px); }
+.glass-guide[data-guide="y"][data-kind="line"] { background: repeating-linear-gradient(to right, var(--accent, #326eaa) 0 4px, transparent 4px 7px); }
+.glass-guide[data-guide="spacing"] {
+  background: none;
+  border-left: 1px solid var(--accent, #326eaa);
+  border-right: 1px solid var(--accent, #326eaa);
+  opacity: 0.8;
+}
+.glass-guide[data-guide="spacing"]::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--paper, #fff);
+  color: var(--accent, #326eaa);
+  font: 10px/1.4 var(--interface-font, system-ui, sans-serif);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
 /* Test fixture: marks the anchored paragraph without hiding its text. */
 .glass-debug {
   position: absolute;
@@ -153,10 +205,15 @@
   transition: box-shadow 120ms ease-out;
 }
 .glass-note[data-selected] { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Depth: the magnet is picked up, so it floats a little and casts a longer shadow. */
 .glass-note.is-lifting {
   z-index: 5;
+  scale: 1.02;
+  transition: box-shadow 120ms ease-out, scale 120ms ease-out;
   box-shadow: 0 4px 8px #0000002e, 0 26px 44px -18px #000000b8;
 }
+/* Dropped: a short ease back onto the page, never a snap. */
+.is-settling { transition: box-shadow 160ms ease-out, scale 160ms ease-out; }
 .glass-note[data-colour="yellow"] { --note-paper: #fbed9d; --note-edge: #e4cf6c; }
 .glass-note[data-colour="rose"] { --note-paper: #f7c7cf; --note-edge: #e2a2ad; }
 .glass-note[data-colour="blue"] { --note-paper: #c4e0f5; --note-edge: #9dc3de; }
@@ -380,7 +437,7 @@
   box-sizing: border-box;
   pointer-events: auto;
   outline: none;
-  transition: box-shadow 140ms ease;
+  transition: box-shadow 140ms ease, scale 120ms ease-out;
 }
 .glass-image-body {
   position: absolute;
@@ -393,6 +450,7 @@
   overflow: visible;
 }
 .glass-image[data-locked] .glass-image-body { cursor: default; }
+.glass-image.is-lifting { z-index: 5; scale: 1.02; transition: box-shadow 140ms ease, scale 120ms ease-out; box-shadow: 0 18px 30px -18px #000000a6; }
 .glass-image.is-lifting .glass-image-body { cursor: grabbing; }
 .glass-image-body img {
   display: block;
@@ -701,3 +759,9 @@
 .glass-card-new .glass-card-kinds button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .glass-card-new .glass-card-note { margin: -6px 0 14px; color: var(--muted); font-size: 10.5px; overflow-wrap: anywhere; }
 .glass-card-new .glass-card-new-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Motion off: depth stays a shadow, never a scale or an ease. Last so it wins every magnet. */
+@media (prefers-reduced-motion: reduce) {
+  .glass-note, .glass-sticker, .glass-image { transition: none; }
+  .glass-note.is-lifting, .glass-sticker.is-lifting, .glass-image.is-lifting { scale: 1; }
+}

@@ -114,9 +114,10 @@ omarkie-axi glass status
 omarkie-axi glass add --note notes/map.md --kind image --file photos/harbour.png --near "Closely spaced contour lines" --wrap right
 omarkie-axi glass edit --note notes/map.md --magnet m-6f2a1c --wrap behind --tape --lock
 omarkie-axi glass move --note notes/map.md --magnet m-6f2a1c --x 64 --y 24 --rot -8
+omarkie-axi glass move --note notes/map.md --magnet m-6f2a1c --x 403 --y 391 --snap --grid 16
 ```
 
-A sticky note or picture anchors to the one paragraph holding `--near`; x and y are offsets from that paragraph, so the magnet follows it through edits and reflow. `--wrap` takes `left`, `right`, `behind` or `front`; `--tape`, `--lock`, `--rot` change a picture. Every CLI change reaches an open glass immediately.
+A sticky note or picture anchors to the one paragraph holding `--near`; x and y are offsets from that paragraph, so the magnet follows it through edits and reflow. `--wrap` takes `left`, `right`, `behind` or `front`; `--tape`, `--lock`, `--rot` change a picture. Every CLI change reaches an open glass immediately. `--snap` runs the app's own guide rules on what a note can measure offline — the grid (`--grid 8|16|24|0`) and the magnets on the same paragraph — and returns the guides it used; the rendered text column and line glue are applied by the app on a real drag.
 
 The verbs need the vault open in Omarkie, because Omarkie is the only writer.
 

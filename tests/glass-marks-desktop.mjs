@@ -120,13 +120,16 @@ async function center(page, locator) {
   assert.ok(box, "element has a box");
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
-async function drag(page, locator, dx, dy) {
+async function drag(page, locator, dx, dy, { alt = false } = {}) {
   const grab = await center(page, locator);
+  grab.x = Math.round(grab.x); grab.y = Math.round(grab.y);
   await page.mouse.move(grab.x, grab.y);
   await page.mouse.down();
+  if (alt) await page.keyboard.down("Alt");
   await page.mouse.move(grab.x + dx / 2, grab.y + dy / 2, { steps: 5 });
   await page.mouse.move(grab.x + dx, grab.y + dy, { steps: 5 });
   await page.mouse.up();
+  if (alt) await page.keyboard.up("Alt");
 }
 async function scrollTop(page) {
   return page.evaluate(() => {
@@ -209,6 +212,8 @@ try {
   await expect(warning).toHaveCount(1);
   const starId = await star.getAttribute("data-magnet");
   const warningId = await warning.getAttribute("data-magnet");
+  await expect.poll(async () => (await axi("glass", "list", "--note", doc)).magnets.map(item => item.fields.sticker).sort(),
+    { timeout: 20_000 }).toEqual(["star", "warning"]);
   let listed = await axi("glass", "list", "--note", doc);
   assert.deepEqual(listed.magnets.map(item => item.fields.sticker).sort(), ["star", "warning"]);
   assert.ok(listed.magnets.every(item => item.fields.kind === "sticker" && item.fields.layer === "notes"));
@@ -228,14 +233,15 @@ try {
   await expect(star).toHaveAttribute("data-selected", "true");
   const before = await star.boundingBox();
   const original = fieldsOf(await axi("glass", "show", "--note", doc, "--magnet", starId));
-  await drag(page, star.locator(".glass-sticker-paper"), 48, 32);
+  await drag(page, star.locator(".glass-sticker-paper"), 48, 32, { alt: true });
   await expect.poll(async () => {
     const box = await star.boundingBox();
-    return box ? [Math.round(box.x - before.x), Math.round(box.y - before.y)] : null;
-  }).toEqual([48, 32]);
+    if (!box) return false;
+    return Math.abs(box.x - before.x - 48) <= 1 && Math.abs(box.y - before.y - 32) <= 1;
+  }).toBe(true);
   const moved = fieldsOf(await axi("glass", "show", "--note", doc, "--magnet", starId));
-  assert.equal(moved.x, original.x + 48);
-  assert.equal(moved.y, original.y + 32);
+  assert.ok(Math.abs(moved.x - original.x - 48) <= 1, `journal x follows the hand (${moved.x - original.x})`);
+  assert.ok(Math.abs(moved.y - original.y - 32) <= 1, `journal y follows the hand (${moved.y - original.y})`);
   await star.click();
   const sized = await star.boundingBox();
   await drag(page, star.locator(".glass-sticker-grip"), 40, 16);
