@@ -311,10 +311,12 @@ await writeFile(path.join(home, "session.json"), JSON.stringify(session(vault, d
     await shoot(page, app, 1440, "omarchy-dark", "tape-lock");
     await shoot(page, app, 720, "omarchy-dark", "tape-lock");
     await selectImage(page, id);
+    await firstFrame.scrollIntoViewIfNeeded();
     await firstFrame.locator("[data-glass-lock]").click();
 
     // Delete and undo: the journal keeps the magnet and its bytes.
     await selectImage(page, id);
+    await firstFrame.scrollIntoViewIfNeeded();
     await firstFrame.locator("[data-glass-trash-image]").click();
     await expect(page.locator(".glass-image")).toHaveCount(0);
     await page.locator("[data-glass-trash]").click();

@@ -349,8 +349,12 @@
   bottom: 14px;
   z-index: 40;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
   gap: 3px;
+  row-gap: 4px;
+  max-width: min(calc(100vw - 20px), 900px);
   padding: 5px 7px;
   border: 1px solid var(--border, #ccc);
   border-radius: 12px;
