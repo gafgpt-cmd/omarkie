@@ -149,6 +149,7 @@ export default function App() {
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
   const learningSaved = readingVisible && !!active.path && !!session.folder &&
     active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"));
+  const glassNote = learningSaved ? active.path!.replaceAll("\\", "/").slice(session.folder!.replaceAll("\\", "/").replace(/\/?$/, "/").length) : undefined;
   const tutorKey = learningSaved && payloadSupported && activeEditorReady ? `${active.id}:${active.path}:${session.folder}` : null;
   const payloadAvailable = payloadEnabled && !tutorKey;
   const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
@@ -678,7 +679,7 @@ export default function App() {
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} glassNote={glassNote}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}
               canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}

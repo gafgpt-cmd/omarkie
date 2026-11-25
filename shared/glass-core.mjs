@@ -3,6 +3,8 @@
 
 export const glassVersion = 1;
 export const nameByteLimit = 120;
+// Sticky paper colours: six, shape-cued by a corner mark so colour is never the only signal.
+export const stickyColors = ["yellow", "rose", "blue", "green", "violet", "slate"];
 const reserved = new Set(["con", "prn", "aux", "nul",
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(unit => [`com${unit}`, `lpt${unit}`])]);
 const forbidden = /[\u0000-\u001f\u007f<>:"/\\|?*]/g;
@@ -106,7 +108,7 @@ export function replayJournalText(text) {
     let record;
     try { record = JSON.parse(line); } catch { invalid += 1; continue; }
     if (!record || typeof record !== "object" || Array.isArray(record)) { invalid += 1; continue; }
-    if (record.op !== "set" && record.op !== "del" && record.op !== "delete") {
+    if (record.op !== "set" && record.op !== "del" && record.op !== "delete" && record.op !== "restore") {
       if (parseClock(record.hlc)) clocks.push(record.hlc);
       unknown.push(record);
       continue;
@@ -115,9 +117,16 @@ export function replayJournalText(text) {
     const hlc = record.hlc, device = typeof record.device === "string" ? record.device : "";
     if (!parseClock(hlc)) { invalid += 1; continue; }
     clocks.push(hlc);
+    // A tombstone keeps its clock after an undo, so a delete merged in later by an older
+    // device can never resurrect it; the newest delete/restore event wins.
     if (record.op === "delete") {
       const magnet = magnetOf(magnets, record.magnetId);
-      if (isNewer(hlc, device, magnet.deleted)) magnet.deleted = { hlc, device };
+      if (isNewer(hlc, device, magnet.deleted)) magnet.deleted = { hlc, device, active: true };
+      continue;
+    }
+    if (record.op === "restore") {
+      const magnet = magnetOf(magnets, record.magnetId);
+      if (isNewer(hlc, device, magnet.deleted)) magnet.deleted = { hlc, device, active: false };
       continue;
     }
     if (typeof record.field !== "string" || !record.field || record.field.length > 200) { invalid += 1; continue; }
@@ -140,11 +149,11 @@ function magnetOf(magnets, id) {
 export function magnetView(magnet) {
   const fields = {};
   for (const [field, entry] of magnet.fields) if (!entry.removed) fields[field] = entry.value;
-  return { id: magnet.id, fields, kind: fields.kind ?? null, deleted: !!magnet.deleted };
+  return { id: magnet.id, fields, kind: fields.kind ?? null, deleted: !!magnet.deleted?.active };
 }
 
 export function visibleMagnets(magnets) {
-  return [...magnets.values()].filter(magnet => !magnet.deleted).map(magnetView);
+  return [...magnets.values()].filter(magnet => !magnet.deleted?.active).map(magnetView);
 }
 
 export function replayNotesText(text) {

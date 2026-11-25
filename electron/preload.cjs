@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   learningSearch: (id, query) => call("learningSearch", id, query),
   glass: request => call("glass", request),
+  onGlassChanged: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("glass:changed", listener);
+    return () => ipcRenderer.removeListener("glass:changed", listener);
+  },
   onGlassStorage: callback => {
     const listener = (_, status) => callback(status);
     ipcRenderer.on("glass:storage", listener);

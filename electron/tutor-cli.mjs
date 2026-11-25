@@ -29,8 +29,12 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
-  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--magnet <id>] [--vault <dir>]", "Add a magnet to a note's glass journal."],
-  "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets on a note."],
+  "glass add": ["--note <note.md> (--text <text> | --kind <kind> --near <quote>) [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--magnet <id>] [--vault <dir>]", "Add a magnet to a note's glass journal; a sticky note (--kind sticky) anchors to the paragraph holding --near."],
+  "glass move": ["--note <note.md> --magnet <id> --x <px> --y <px> [--w <px>] [--h <px>] [--vault <dir>]", "Move or resize a magnet; x and y are offsets from its anchored paragraph."],
+  "glass edit": ["--note <note.md> --magnet <id> [--text <text>] [--color <colour>] [--folded] [--unfold] [--vault <dir>]", "Change a magnet's text, colour, or folded state."],
+  "glass delete": ["--note <note.md> --magnet <id> [--vault <dir>]", "Move a magnet to the glass trash; the journal keeps it restorable."],
+  "glass restore": ["--note <note.md> --magnet <id> [--vault <dir>]", "Bring one magnet back from the glass trash."],
+  "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets and the trash of a note."],
   "glass show": ["--note <note.md> [--magnet <id>] [--vault <dir>]", "Show one magnet, or the whole note glass."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
   glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
@@ -60,6 +64,15 @@ async function folder(explicit, cwd) {
 async function bridgeExists(root) {
   const { endpointExists } = await import("./tutor-transport.mjs");
   return await endpointExists(root) || await endpointExists(root, "glass");
+}
+// Same block identity the renderer uses: normalized paragraph text plus its heading path.
+async function stickyAnchor(root, note, quote) {
+  const { openStudy, vaultRoot } = await import("./tutor-store.mjs");
+  const study = await openStudy(await vaultRoot(root), note, true);
+  const matches = study.blocks.filter(block => block.block.includes(quote));
+  if (matches.length !== 1) throw new Error(matches.length ? "Quote matches more than one paragraph; use a longer quote." : "Quote not found in that note.");
+  const [block] = matches;
+  return { landmarks: [{ kind: "block", block: block.block, headings: block.headings, line: block.line }] };
 }
 function summaries(asks) { return asks.map(({ id, verb, doc, block, status }) => ({ id, verb, doc, block, status })); }
 function skim(ask, full = false) {
@@ -116,11 +129,39 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "status") requireArgument(["seen", "working", "done"].includes(args[1]), "Status must be seen, working, or done.");
     if (command === "poll") requireArgument(Boolean(opts["reply-to"]) === Boolean(opts["agent-reply"]), "Supply --reply-to with --agent-reply.");
     if (command.startsWith("glass ")) requireArgument(command === "glass status" || Boolean(opts.note?.trim()), "--note is required.");
+    if (["glass move", "glass edit", "glass delete", "glass restore"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
+    if (command === "glass add") requireArgument(opts.kind === "sticky" ? Boolean(opts.near?.trim()) : true, "--near <quote> is required for a sticky note.");
+    if (command === "glass move") requireArgument(["x", "y"].every(name => Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== ""), "--x and --y are required numbers.");
+    if (command === "glass edit") requireArgument([opts.text, opts.color, opts.folded, opts.unfold].some(value => value !== undefined), "Supply --text, --color, --folded, or --unfold.");
     const root = await folder(opts.vault, process.cwd());
     if (command.startsWith("glass ")) {
       const { requestBridge } = await import("./tutor-transport.mjs");
-      const state = await requestBridge(root, { op: "glass", action: command.slice(6), note: opts.note, text: opts.text,
-        kind: opts.kind, magnet: opts.magnet }, 30_000, "glass");
+      const action = command.slice(6);
+      // The service exposes one field update, "set"; the CLI names it move and edit.
+      const request = { op: "glass", action: action === "move" || action === "edit" ? "set" : action, note: opts.note, magnet: opts.magnet };
+      if (action === "add") {
+        if (opts.text !== undefined) request.text = opts.text;
+        if (opts.kind !== undefined) request.kind = opts.kind;
+        const fields = {};
+        if (opts.color !== undefined) fields.color = opts.color;
+        for (const name of ["x", "y", "w", "h"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
+        if (opts.folded !== undefined) fields.folded = true;
+        if (opts.kind === "sticky") fields.anchor = await stickyAnchor(root, opts.note, opts.near.trim());
+        else if (opts.near?.trim()) fields.anchor = await stickyAnchor(root, opts.note, opts.near.trim());
+        if (Object.keys(fields).length) request.fields = fields;
+      } else if (action === "move") {
+        const fields = { x: Number(opts.x), y: Number(opts.y) };
+        for (const name of ["w", "h"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
+        request.fields = fields;
+      } else if (action === "edit") {
+        const fields = {};
+        if (opts.text !== undefined) fields.text = opts.text;
+        if (opts.color !== undefined) fields.color = opts.color;
+        if (opts.folded) fields.folded = true;
+        if (opts.unfold) fields.folded = false;
+        request.fields = fields;
+      }
+      const state = await requestBridge(root, request, 30_000, "glass");
       if (!state) throw new Error("Glass storage is not running in this vault. Open the folder in Omarkie first.");
       emit(state);
       return;

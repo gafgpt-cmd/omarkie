@@ -52,23 +52,44 @@ function similarity(text: string, candidate: string, counts: Map<string, number>
 }
 
 export function matchBlock(anchor: GlassAnchor, blocks: readonly GlassBlock[]): number | null {
+  return matchIndexed(indexBlocks(blocks), anchor);
+}
+
+// One index per measure pass: 200 magnets on a long note must not rescan every block.
+export interface BlockIndex {
+  blocks: readonly GlassBlock[];
+  texts: Map<string, GlassBlock[]>;
+  sections: Map<string, GlassBlock[]>;
+}
+
+export function indexBlocks(blocks: readonly GlassBlock[]): BlockIndex {
+  const texts = new Map<string, GlassBlock[]>(), sections = new Map<string, GlassBlock[]>();
+  const push = (map: Map<string, GlassBlock[]>, key: string, block: GlassBlock) => {
+    const list = map.get(key);
+    if (list) list.push(block); else map.set(key, [block]);
+  };
+  for (const block of blocks) {
+    const text = normalizeText(block.block);
+    if (!text) continue;
+    push(texts, text, block);
+    push(sections, sectionKey(block.headings), block);
+  }
+  return { blocks, texts, sections };
+}
+
+export function matchIndexed(index: BlockIndex, anchor: GlassAnchor): number | null {
   const landmark = anchor.landmarks.find(landmark => landmark.kind === "block");
   if (!landmark) return null;
   const text = normalizeText(landmark.block), section = sectionKey(landmark.headings);
-  const exact = new Set<number>(), elsewhere = new Set<number>();
-  for (const block of blocks) {
-    if (normalizeText(block.block) !== text) continue;
-    elsewhere.add(block.line);
-    if (sectionKey(block.headings) === section) exact.add(block.line);
-  }
-  if (exact.size === 1) return [...exact][0];
-  if (exact.size > 1) return null;
-  if (elsewhere.size === 1) return [...elsewhere][0];
-  if (elsewhere.size > 1) return null;
+  const exact = (index.texts.get(text) ?? []).filter(block => sectionKey(block.headings) === section);
+  if (exact.length === 1) return exact[0].line;
+  if (exact.length > 1) return null;
+  const elsewhere = index.texts.get(text) ?? [];
+  if (elsewhere.length === 1) return elsewhere[0].line;
+  if (elsewhere.length > 1) return null;
   const counts = grams(text);
   let best = 0, line: number | null = null;
-  for (const block of blocks) {
-    if (sectionKey(block.headings) !== section) continue;
+  for (const block of index.sections.get(section) ?? []) {
     const score = similarity(text, normalizeText(block.block), counts);
     if (score >= 0.8 && score > best) {
       line = block.line;
