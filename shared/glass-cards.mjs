@@ -11,7 +11,7 @@ export const cardDefaults = {
   headingLimit: 300, pageBytes: 512 * 1024,
 };
 export const cardFieldNames = new Set(["kind", "card", "layer", "title", "link", "question", "answer", "answerAt",
-  "choices", "anchor", "x", "y", "w", "folded"]);
+  "choices", "anchor", "x", "y", "w", "folded", "marked"]);
 
 const text = (value, limit, empty = true) => typeof value === "string" && value.length <= limit
   && !value.includes("\u0000") && (empty || value.trim().length > 0);
@@ -122,6 +122,9 @@ export function cardFields(fields) {
     } else if (field === "folded") {
       if (typeof value !== "boolean") throw new Error("Card folded must be true or false.");
       values.folded = value;
+    } else if (field === "marked") {
+      if (typeof value !== "boolean") throw new Error("Card marked must be true or false.");
+      values.marked = value;
     } else if (field === "w") {
       if (!finite(value, cardDefaults.minW, cardDefaults.maxW)) throw new Error(`Card w must be a number between ${cardDefaults.minW} and ${cardDefaults.maxW}.`);
       values.w = Math.round(value);

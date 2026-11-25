@@ -19,6 +19,7 @@ export interface GlassCard {
   y: number;
   w: number;
   folded: boolean;
+  marked: boolean;
 }
 
 const number = (value: unknown, fallback: number, min: number, max: number) =>
@@ -59,6 +60,7 @@ export function cardFromMagnet(magnet: GlassMagnet): GlassCard | undefined {
     y: number(fields.y, 0, -cardDefaults.offsetLimit, cardDefaults.offsetLimit),
     w: number(fields.w, cardDefaults.w, cardDefaults.minW, cardDefaults.maxW),
     folded: fields.folded !== false,
+    marked: fields.marked === true,
   };
 }
 

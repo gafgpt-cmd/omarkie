@@ -183,6 +183,7 @@
 .glass-surface {
   position: absolute;
   inset: 0;
+  z-index: 8;
   pointer-events: auto;
   cursor: crosshair;
 }
@@ -845,3 +846,86 @@
 }
 .glass-merge-done button { padding: 2px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .glass-merge-done button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+
+/* G14: image labels ride on the picture; hiding them turns the image into an occlusion quiz. */
+.glass-label { position: absolute; z-index: 6; pointer-events: auto; font: 12px/1.2 var(--interface-font, system-ui, sans-serif); }
+.glass-label-leader { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.glass-label-leader line { stroke: color-mix(in srgb, var(--accent, #326eaa) 65%, transparent); stroke-width: 1.25; stroke-dasharray: 2 2; }
+.glass-label-pin {
+  position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; padding: 0;
+  border: 1.5px solid var(--accent, #326eaa); border-radius: 50%;
+  background: var(--paper, #fff); color: var(--accent, #326eaa);
+  font: 700 9px/12px var(--interface-font, system-ui, sans-serif); text-align: center; cursor: pointer;
+  box-shadow: 0 1px 3px #00000033;
+}
+.glass-label-pin:hover, .glass-label-pin:focus-visible { background: var(--accent, #326eaa); color: var(--paper, #fff); outline: none; }
+.glass-label[data-hidden] .glass-label-pin { border-style: dashed; }
+.glass-label[data-hidden]:not([data-revealed]) .glass-label-pin { width: 18px; height: 18px; left: -9px; top: -9px; font-size: 11px; line-height: 16px;
+  background: color-mix(in srgb, var(--accent, #326eaa) 16%, var(--paper, #fff)); color: var(--ink, #222); font-weight: 700; }
+.glass-label[data-selected] .glass-label-pin { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #326eaa) 28%, transparent); }
+.glass-label-input {
+  position: absolute; left: 20px; top: -16px; width: 148px; padding: 3px 6px;
+  border: 1px solid var(--accent, #326eaa); border-radius: 4px; background: var(--paper, #fff); color: var(--ink, #222);
+  font: inherit; box-shadow: 0 2px 8px #00000024;
+}
+.glass-label-text {
+  position: absolute; display: inline-flex; align-items: center; gap: 3px; max-width: 240px;
+  padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--accent, #326eaa) 40%, var(--border, #ccc));
+  border-radius: 4px; background: var(--paper, #fff); color: var(--ink, #222);
+  box-shadow: 0 2px 7px #0000001f; white-space: nowrap; cursor: grab; touch-action: none;
+}
+.glass-label-text:active { cursor: grabbing; }
+.glass-label-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+.glass-label-tools { display: inline-flex; align-items: center; gap: 1px; }
+.glass-label-tools button {
+  padding: 0 2px; border: 0; border-radius: 3px; background: none; color: var(--muted, #777);
+  font: inherit; font-size: 11px; line-height: 1; cursor: pointer;
+}
+.glass-label-tools button:hover, .glass-label-tools button[aria-pressed="true"] { color: var(--warning, #b26a00); }
+.glass-label[data-marked] .glass-label-pin { background: color-mix(in srgb, var(--warning, #b26a00) 18%, var(--paper, #fff)); }
+.glass-card-marked { color: var(--warning, #b26a00); font-size: 10px; }
+
+/* G14: the rail entry and the review sheet. */
+.study-due { gap: 4px; }
+.study-due strong { color: var(--accent, #326eaa); }
+.study-due small { color: var(--muted, #777); }
+.srs-panel, .exam-panel {
+  position: fixed; right: 20px; bottom: 92px; z-index: 60;
+  box-sizing: border-box; width: min(360px, calc(100vw - 24px));
+  padding: 12px 14px; border: 1px solid var(--border, #ccc); border-radius: 12px;
+  background: var(--paper, #fff); color: var(--ink, #222);
+  box-shadow: 0 18px 44px -22px #00000080;
+  font: 13px/1.45 var(--interface-font, system-ui, sans-serif);
+}
+.exam-panel { left: 50%; right: auto; bottom: 84px; transform: translateX(-50%); }
+.srs-head, .exam-head { display: flex; align-items: center; gap: 8px; }
+.srs-head strong, .exam-head strong { font-variant-numeric: tabular-nums; }
+.srs-source { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #777); font-size: 11px; }
+.srs-close, .exam-close { flex: none; margin-left: auto; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--muted, #777); font: 16px/1 inherit; cursor: pointer; }
+.srs-close:hover, .exam-close:hover { background: color-mix(in srgb, var(--ink, #222) 8%, transparent); color: var(--ink, #222); }
+.srs-front, .exam-cue { margin: 14px 0 8px; font-size: 16px; line-height: 1.35; font-weight: 600; }
+.exam-cue { flex: 1; margin: 0; font-size: 14px; }
+.srs-back, .exam-answer { margin: 8px 0; padding: 8px 10px; border-left: 2px solid var(--accent, #326eaa); border-radius: 4px; background: color-mix(in srgb, var(--accent, #326eaa) 7%, transparent); }
+.srs-wait, .exam-wait { color: var(--muted, #777); font-size: 12px; }
+.srs-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 10px 0 6px; }
+.srs-grades button, .exam-grades button {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 2px;
+  border: 1px solid var(--border, #ccc); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer;
+}
+.srs-grades button small { color: var(--muted, #777); font-size: 9px; }
+.srs-grades button:hover:not(:disabled), .exam-grades button:hover:not(:disabled) { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.srs-grades button:disabled, .exam-grades button:disabled { opacity: 0.45; cursor: default; }
+.srs-actions, .exam-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.srs-actions button, .exam-actions button, .srs-empty button {
+  padding: 4px 9px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 11px; cursor: pointer;
+}
+.srs-actions button:disabled { opacity: 0.5; cursor: default; }
+.srs-hint { color: var(--muted, #777); font-size: 10px; }
+.srs-error { margin: 8px 0 0; color: var(--error, #b3261e); font-size: 11px; }
+.srs-empty p { margin: 12px 0; }
+.exam-actions { gap: 8px; }
+.exam-filter { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--muted, #777); font-size: 11px; }
+.exam-filter input { accent-color: var(--accent, #326eaa); }
+.exam-grades { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+.bubble-mark { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: none; color: var(--muted, #777); font: inherit; cursor: pointer; }
+.bubble-mark:hover, .bubble-mark[aria-pressed="true"] { color: var(--warning, #b26a00); background: color-mix(in srgb, var(--warning, #b26a00) 10%, transparent); }

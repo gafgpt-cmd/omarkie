@@ -21,6 +21,10 @@ import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validAr
 import {
   cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
 } from "../shared/glass-cards.mjs";
+import { labelFields } from "../shared/glass-labels.mjs";
+import {
+  cardId, cardView, dueStudyCards, normalizeGrade, parseStudyText, previewGrade, srsDefaults, studySummary,
+} from "../shared/srs-core.mjs";
 import {
   decodeNote, encodeNote, inkSvg, insertBlock, mergeAnchorOf, mergeDiff, mergeKindLabel, mergeLines,
   mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
@@ -945,6 +949,120 @@ export class GlassService {
       unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
+  // Study queue: one append-only study.jsonl per vault. A review is never rewritten; the
+  // FSRS schedule is replayed from the card definition plus its answers, so a crash loses nothing.
+  studyFile() {
+    return path.join(this.storeDir, "study.jsonl");
+  }
+
+  async readStudy() {
+    const file = this.studyFile();
+    const text = await readLimited(file, 64 * 1024 * 1024).catch(error => { if (error.code === "ENOENT") return ""; throw error; });
+    const memory = this.memory.get(file) ?? [];
+    return parseStudyText(memory.length ? `${text}${text && !text.endsWith("\n") ? "\n" : ""}${memory.join("")}` : text);
+  }
+
+  currentStudyNote(card) {
+    const note = this.notesById.get(card.noteId);
+    return note ? note.path : card.note;
+  }
+
+  studyCardView(card, study, now = this.now()) {
+    const view = cardView(card, study.reviews, now);
+    return { ...view, note: this.currentStudyNote(card) };
+  }
+
+  async ensureStudyCard(note, request) {
+    const study = await this.readStudy();
+    const id = cardId(note.id, request.magnet);
+    const existing = study.cards.get(id);
+    const front = typeof request.front === "string" ? request.front.trim() : "";
+    const back = typeof request.back === "string" ? request.back : "";
+    if (front.length > srsDefaults.frontLimit) throw new Error(`A card front must be up to ${srsDefaults.frontLimit} characters.`);
+    if (back.length > srsDefaults.backLimit) throw new Error(`A card back must be up to ${srsDefaults.backLimit} characters.`);
+    if (existing && (!front || (existing.front === front && existing.back === back))) return { study, card: existing, created: false };
+    if (!existing && !front) throw new Error("A new study card needs a front.");
+    const record = { op: "card", id, noteId: note.id, note: note.path, magnet: request.magnet,
+      front: existing?.front && !front ? existing.front : front, back: existing && !front ? existing.back : back,
+      source: typeof request.source === "string" ? request.source.slice(0, srsDefaults.sourceLimit) : existing?.source ?? "label",
+      created: existing?.created ?? new Date(this.now()).toISOString() };
+    await this.appendRecord(this.studyFile(), record);
+    return { study: await this.readStudy(), card: (await this.readStudy()).cards.get(id), created: !existing };
+  }
+
+  async srsDue() {
+    this.assertReady();
+    const study = await this.readStudy();
+    const now = this.now();
+    const summary = studySummary(study, now);
+    return { count: summary.due, total: summary.total, learning: summary.learning,
+      due: dueStudyCards(study, now).map(card => this.studyCardView(card, study, now)) };
+  }
+
+  async srsCard(request) {
+    this.assertReady();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    if (typeof request.magnet !== "string" || !request.magnet) throw new Error("--magnet is required.");
+    const { study, card, created } = await this.ensureStudyCard(note, request);
+    return { created, card: this.studyCardView(card, study) };
+  }
+
+  async srsAnswer(request) {
+    this.assertReady();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    if (typeof request.magnet !== "string" || !request.magnet) throw new Error("--magnet is required.");
+    const grade = normalizeGrade(request.grade);
+    if (!grade) throw new Error("Grade must be again, hard, good, easy or 1-4.");
+    const id = cardId(note.id, request.magnet);
+    const existing = (await this.readStudy()).cards.get(id);
+    if (!existing && grade !== "again" && request.create !== true) return { created: false, card: null };
+    const { card } = await this.ensureStudyCard(note, { ...request, magnet: request.magnet });
+    if (request.preview === true) {
+      const study = await this.readStudy();
+      return { created: !existing, card: this.studyCardView(card, study), preview: previewGrade(card, study.reviews, grade, this.now()) };
+    }
+    const record = { op: "review", id, rating: grade, at: new Date(this.now()).toISOString() };
+    await this.appendRecord(this.studyFile(), record);
+    const study = await this.readStudy();
+    return { created: !existing, card: this.studyCardView(card, study), preview: null };
+  }
+
+  async srsReview(request) {
+    this.assertReady();
+    if (typeof request.id !== "string" || !request.id) throw new Error("--card is required.");
+    const grade = normalizeGrade(request.grade);
+    if (!grade) throw new Error("Grade must be again, hard, good, easy or 1-4.");
+    const study = await this.readStudy();
+    const card = study.cards.get(request.id);
+    if (!card) throw new Error("Study card not found.");
+    if (request.preview === true) return { card: this.studyCardView(card, study), preview: previewGrade(card, study.reviews, grade, this.now()) };
+    this.assertWritable();
+    await this.appendRecord(this.studyFile(), { op: "review", id: card.id, rating: grade, at: new Date(this.now()).toISOString() });
+    const next = await this.readStudy();
+    return { card: this.studyCardView(card, next), preview: null };
+  }
+
+  async studyState(request) {
+    this.assertReady();
+    const note = await this.identify(request.note);
+    const study = await this.readStudy();
+    return { note: note.path, exam: study.exams.get(note.id) === true, labelsHidden: study.labels.get(note.id) === true };
+  }
+
+  async studySet(request) {
+    this.assertReady();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const at = new Date(this.now()).toISOString();
+    if (typeof request.exam === "boolean")
+      await this.appendRecord(this.studyFile(), { op: "exam", noteId: note.id, note: note.path, on: request.exam, at });
+    if (typeof request.labelsHidden === "boolean")
+      await this.appendRecord(this.studyFile(), { op: "labels", noteId: note.id, note: note.path, hidden: request.labelsHidden, at });
+    return this.studyState({ note: note.path });
+  }
+
   // Where the vault says attachments go and how its links look; read only, never written.
   async mergeSettingsFor(file, name) {
     let root = this.root;
@@ -1325,8 +1443,15 @@ export class GlassService {
       return this.sync[input.action](input);
     }
     if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card",
-      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up"].includes(input.action)) throw new Error("Unknown Glass action.");
+      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
+      "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (input.action === "srs-due") return this.srsDue();
+    if (input.action === "srs-review") return this.srsReview(input);
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
+    if (input.action === "srs-card") return this.srsCard(input);
+    if (input.action === "srs-answer") return this.srsAnswer(input);
+    if (input.action === "study-state") return this.studyState(input);
+    if (input.action === "study-set") return this.studySet(input);
     if (["set", "delete", "restore", "asset", "asset-display", "card", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
     if (input.action === "merge-preview") return this.mergePreview(input);
     if (input.action === "merge-accept") return this.mergeAccept(input);
@@ -1612,6 +1737,7 @@ function validateMagnetFields(kind, fields, partial) {
   }
   if (kind === "sticker") return stickerFields(partial ? fields : { ...fields, kind: "sticker" }, partial);
   if (kind === "arrow") return arrowFields(partial ? fields : { ...fields, kind: "arrow" }, partial);
+  if (kind === "label") return labelFields(partial ? fields : { ...fields, kind: "label" }, partial);
   if (kind === "card") {
     const values = cardFields(partial ? fields : { ...fields, kind: "card" });
     if (!partial) {
@@ -1710,6 +1836,7 @@ Your notes are untouched; glass lives in this folder.
 - \`glass/\` — one JSONL journal per note that has glass.
 - \`assets/\` — glass images, one folder per note.
 - \`notes.jsonl\` — note id, vault-relative path and fingerprint.
+- \`study.jsonl\` — spaced-repetition cards, their answers, exam mode and hidden labels.
 - \`settings.json\` — vault id and storage mode.
 - \`writer.lock\` — present and owned while one Omarkie instance writes; a second instance opens read-only.
 - \`.gitattributes\` — \`*.jsonl merge=union\`, so git keeps every journal line.
