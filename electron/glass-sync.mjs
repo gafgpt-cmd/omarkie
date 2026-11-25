@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readdir, stat } from "node:fs/promises";
+import { lstat, opendir, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { GlassFinder } from "./glass-finder.mjs";
 import { GlassIndex } from "./glass-index.mjs";
@@ -133,19 +133,10 @@ export class GlassSync {
   async walk() {
     const entries = [];
     async function visit(folder, relative) {
-      let listing;
-      try { listing = await readdir(folder, { withFileTypes: true }); } catch { return; }
-      const files = [];
-      for (const entry of listing) {
-        const name = relative ? `${relative}/${entry.name}` : entry.name;
-        if (ignoredPath(name)) continue;
-        const file = path.join(folder, entry.name);
-        if (entry.isDirectory()) { await visit(file, name); continue; }
-        if (entry.isFile() && !entry.isSymbolicLink()) files.push([file, name]);
-      }
-      // Metadata reads run a few at a time: a big flat folder otherwise leaves the fs thread pool idle between lstat calls.
-      for (let start = 0; start < files.length; start += 32) {
-        const batch = files.slice(start, start + 32);
+      let directory;
+      try { directory = await opendir(folder, { bufferSize: 128 }); } catch { return; }
+      const batch = [];
+      async function flush() {
         const readings = await Promise.all(batch.map(async ([file, name]) => {
           try {
             const metadata = await lstat(file);
@@ -153,7 +144,18 @@ export class GlassSync {
           } catch { return null; }
         }));
         for (const reading of readings) if (reading) entries.push(reading);
+        batch.length = 0;
       }
+      for await (const entry of directory) {
+        const name = relative ? `${relative}/${entry.name}` : entry.name;
+        if (ignoredPath(name)) continue;
+        const file = path.join(folder, entry.name);
+        if (entry.isDirectory()) { await visit(file, name); continue; }
+        if (!entry.isFile()) continue;
+        batch.push([file, name]);
+        if (batch.length === 32) await flush();
+      }
+      if (batch.length) await flush();
     }
     await visit(this.root, "");
     return entries;
