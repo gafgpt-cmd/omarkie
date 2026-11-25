@@ -14,6 +14,7 @@ import {
   Code2,
   Sparkles,
   Layers,
+  Cloud,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { commandGroups, commandKey, commandsByAction, shortcutLabel } from "../commands";
@@ -34,6 +35,7 @@ interface Props {
   learning?: boolean;
   tutor?: { open: boolean; show(): void };
   payload?: { open: boolean; show(): void };
+  sync?: { open: boolean; show(): void };
 }
 export function Toolbar(props: Props) {
   const [open, setOpen] = useState(false),
@@ -103,6 +105,7 @@ export function Toolbar(props: Props) {
           <Code2 size={16} />
         </button>
         {props.payload && <button type="button" className="icon-button" disabled={props.disabled} aria-label={t("Payload")} aria-expanded={props.payload.open} title={t("Payload")} onClick={props.payload.show}><Sparkles size={16} /></button>}
+        {props.sync && <button type="button" className="icon-button" data-testid="sync-button" aria-label={t("Sync")} aria-expanded={props.sync.open} title={t("Sync with your git remote")} onClick={props.sync.show}><Cloud size={16} /></button>}
         <div className="menu-container" ref={root}>
           <button
             onMouseDown={event => { if (window.desktop?.readAloud) event.preventDefault(); }}

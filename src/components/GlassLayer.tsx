@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2 } from "lucide-react";
+import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, Image as ImageIcon, LayoutGrid, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
@@ -53,6 +53,9 @@ import {
 import GlassCompareCard from "./GlassCompareCard";
 import type { MeasureMode } from "./ImageVisuals";
 import "./glass.css";
+import "./board.css";
+
+const BoardView = lazy(() => import("./BoardView"));
 
 interface SnapContext { others: SnapBox[]; column?: SnapColumn; lines: SnapLine[] }
 
@@ -65,6 +68,13 @@ interface Layout {
   loaded?: boolean;
 }
 interface Reply { ok: boolean; value?: GlassReply; error?: string }
+interface BoardMark { id: string; name: string; asset: string }
+
+function boardFromMagnet(magnet: GlassMagnet): BoardMark | null {
+  const fields = (magnet.fields ?? {}) as Record<string, unknown>;
+  if (fields.kind !== "board" || typeof fields.asset !== "string") return null;
+  return { id: magnet.id, name: typeof fields.name === "string" && fields.name ? fields.name : typeof fields.title === "string" && fields.title ? fields.title : "Board", asset: fields.asset };
+}
 
 // A label rides on a picture magnet or a page image; the pin keeps its fractional spot inside that box.
 function labelBox(label: GlassLabel, places: Record<string, GlassPlacement>, boxes: Record<string, EndMark>) {
@@ -211,9 +221,9 @@ function MergeDiff({ rows, stamp }: { rows: MergeRow[]; stamp: string }) {
   </pre>;
 }
 
-export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, reloadNote }: {
+export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, reloadNote, boardEnabled, boardRequest }: {
   editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
-  live?: LiveTutor; reloadNote?(): void | Promise<unknown>;
+  live?: LiveTutor; reloadNote?(): void | Promise<unknown>; boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
 }) {
   const scroller = root.parentElement!;
   const layers = useGlassLayers(note);
@@ -240,6 +250,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [clips, setClips] = useState<ClipPage[]>([]);
   const [extraPages, setExtraPages] = useState<ExtraPage[]>([]);
   const [cutouts, setCutouts] = useState<Cutout[]>([]);
+  const [boards, setBoards] = useState<BoardMark[]>([]);
+  const [boardOpen, setBoardOpen] = useState<{ id: string; name: string } | null>(null);
+  const [boardPicker, setBoardPicker] = useState(false);
+  const handledBoard = useRef(0);
   const [cutMode, setCutMode] = useState<"rect" | "lasso">("rect");
   const [pagePaper, setPagePaper] = useState<(typeof extraPagePapers)[number]>("lined");
   const [capturing, setCapturing] = useState(false);
@@ -523,7 +537,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         loaded.current = true;
         const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [], nextLabels: GlassLabel[] = [];
         const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
-        const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
+        const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [], nextBoards: BoardMark[] = [];
         const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
@@ -565,6 +579,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           } else if (magnet.kind === "compare") {
             const compare = compareFromMagnet(magnet);
             if (compare) nextCompares.push(compare);
+          } else if (magnet.kind === "board") {
+            const board = boardFromMagnet(magnet);
+            if (board) nextBoards.push(board);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
           else if (magnet.kind === "ink") nextInk.push(magnet);
           else incoming.push(magnet);
@@ -582,6 +599,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setSheetLabels(previous => JSON.stringify(previous) === JSON.stringify(nextSheetLabels) ? previous : nextSheetLabels);
         setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
         setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
+        setBoards(previous => JSON.stringify(previous) === JSON.stringify(nextBoards) ? previous : nextBoards);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
@@ -618,6 +636,16 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     window.addEventListener("focus", onFocus);
     return () => { stop?.(); window.removeEventListener("focus", onFocus); };
   }, [load]);
+
+  useEffect(() => {
+    const request = boardRequest;
+    if (!request || request.note !== note || handledBoard.current === request.at) return;
+    handledBoard.current = request.at;
+    if (!boardEnabled) { setNotice("Enable the Board add-on in Settings first."); return; }
+    const board = boards.find(item => item.id === request.magnet);
+    if (!board) { setNotice("Board not found in this note."); return; }
+    setBoardOpen({ id: board.id, name: board.name });
+  }, [boardRequest, boards, note, boardEnabled]);
 
   useEffect(() => {
     const surface = layer.current;
@@ -1742,10 +1770,36 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return rect ? { x: rect.left + Math.min(rect.width / 2, 120), y: rect.top + 4 } : { x: surface.left + 160, y: surface.top + 140 };
   };
 
+  const createBoard = useCallback(async () => {
+    if (!latest.current.note) { setNotice("Save this note first."); return; }
+    if (lockedLayer("board")) { setNotice("The Media layer is locked."); return; }
+    const point = cardPoint();
+    const block = nearestBlock(blocks.current, point);
+    const id = `b${crypto.randomUUID().replaceAll("-", "").slice(0, 10)}`;
+    const request: Record<string, unknown> = { action: "board", mode: "add", magnet: id, name: "Board" };
+    if (block) {
+      const offset = offsetIn(block, point);
+      request.anchor = anchorOf(block);
+      request.x = offset.x + 12;
+      request.y = offset.y + 12;
+      request.w = 280;
+      request.h = 190;
+    }
+    const value = await send(request);
+    if (!value) return;
+    const asset = (value as { asset?: unknown }).asset;
+    const board = { id, name: "Board", asset: typeof asset === "string" ? asset : "" };
+    setBoards(current => [...current, board]);
+    setBoardPicker(false);
+    setBoardOpen({ id, name: board.name });
+  }, [send]);
+
   const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
     <button type="button" data-glass-tool="image" aria-label="Image" title="Image: drop, paste or choose a file" onClick={() => picker.current?.click()}><ImageIcon size={15} /></button>
+    {boardEnabled && <button type="button" data-glass-board aria-label="Boards" title="Boards: optional Excalidraw diagrams"
+      onClick={() => boards.length ? setBoardPicker(true) : void createBoard()}><LayoutGrid size={15} />{boards.length > 0 && <span className="glass-tray-count">{boards.length}</span>}</button>}
     <button type="button" data-glass-tool="label" aria-pressed={tool === "label"} aria-label="Label" title="Label: pin a name on a picture" onClick={() => setTool("label")}><Tag size={15} /></button>
     <input ref={picker} type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple hidden data-glass-file
       onChange={event => {
@@ -2088,6 +2142,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     {study.exam && examOpen && <ExamPanel items={examItems} revealed={revealed} index={examIndex} markedOnly={examMarkedOnly}
       onIndex={setExamIndex} onReveal={revealItem} onMarkedOnly={setExamMarkedOnly} onGrade={previewGrade}
       onClose={() => { setStudyMode({ exam: false }); setExamOpen(false); setRevealed(new Set()); }} />}
+    {boardPicker && createPortal(<div className="board-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setBoardPicker(false); }}>
+      <section className="board-picker" role="dialog" aria-modal="true" aria-label="Boards">
+        <header><h2>Boards</h2><button type="button" aria-label="Close boards" onClick={() => setBoardPicker(false)}>×</button></header>
+        <ul>{boards.map(board => <li key={board.id}><button type="button" data-board-open={board.id}
+          onClick={() => { setBoardPicker(false); setBoardOpen({ id: board.id, name: board.name }); }}>{board.name}</button></li>)}</ul>
+        <button type="button" className="board-picker-new" data-board-new onClick={() => void createBoard()}>New board</button>
+      </section>
+    </div>, document.body)}
+    {boardOpen && note && <Suspense fallback={<div className="board-loading board-loading-fixed" role="status">Loading board…</div>}>
+      <BoardView note={note} magnet={boardOpen.id} name={boardOpen.name} close={() => setBoardOpen(null)} />
+    </Suspense>}
   </>;
 }
 

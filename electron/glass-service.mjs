@@ -216,10 +216,16 @@ export class GlassService {
       await writeFileAtomic(attributes, `${current.replace(/\n?$/, "\n")}*.jsonl merge=union\n`);
     await writeIfMissing(path.join(this.storeDir, "notes.jsonl"), "");
     const settings = path.join(this.storeDir, "settings.json");
-    if (!await info(settings)) {
+    const existing = await readJson(settings);
+    if (!existing) {
       const initial = { version: glassVersion, vaultId: this.vaultId, mode: this.mode, createdAt: new Date().toISOString() };
       assertNoStoreSecrets(initial, "Glass settings");
       await atomicJson(settings, initial);
+    } else if (existing.vaultId !== this.vaultId || existing.mode !== this.mode) {
+      // Sync can create settings before the first glass write; keep its remote fields and add the vault id.
+      const merged = { ...existing, version: glassVersion, vaultId: this.vaultId, mode: this.mode };
+      assertNoStoreSecrets(merged, "Glass settings");
+      await atomicJson(settings, merged);
     }
     this.notesFile = path.join(this.storeDir, "notes.jsonl");
   }
@@ -685,6 +691,20 @@ export class GlassService {
     this.tail = flush.catch(() => {});
     this.flushing = flush;
     try { return await this.flushing; } finally { this.flushing = null; }
+  }
+
+  // After a sync writes journals or notes.jsonl outside this process, reload from disk before the
+  // next reader asks. Pending local lines flush first so nothing is lost.
+  async reloadStore() {
+    this.assertReady();
+    if (this.readOnly) return this.status();
+    await this.flushPending();
+    this.cache.clear();
+    this.memory.clear();
+    this.listing.clear();
+    await this.loadNotes();
+    await this.scanJournals();
+    return this.status();
   }
 
   async readJournal(file) {
@@ -1552,16 +1572,94 @@ export class GlassService {
       index: this.indexStatus ?? null, bring: this.offer ?? null, lost: this.lost ?? [] };
   }
 
+  // A board is one Media-layer magnet whose Excalidraw scene lives in `.omarkie/assets/boards`.
+  // Load and save are separate so the Excalidraw chunk only mounts when a person opens a board.
+  async board(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const mode = request.mode ?? "add";
+    if (!["add", "load", "save"].includes(mode)) throw new Error("Board mode must be add, load or save.");
+    const replay = await this.readJournal(file);
+    if (mode === "add") {
+      if (layerStates(replay.layers).media.locked) throw new Error("The Media layer is locked. Unlock it before adding a board.");
+      const magnetId = request.magnet ?? newMagnetId();
+      if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short board id of letters, digits, _ or -.");
+      const asset = this.boardAssetPath(magnetId);
+      await mkdir(path.dirname(asset.absolute), { recursive: true, mode: 0o700 });
+      await writeIfMissing(asset.absolute, `${JSON.stringify(blankBoard(), null, 2)}\n`);
+      const fields = {
+        kind: "board",
+        layer: "media",
+        asset: asset.relative,
+        name: typeof request.name === "string" && request.name.trim() ? request.name.trim().slice(0, 120) : "Board",
+        title: typeof request.title === "string" && request.title.trim() ? request.title.trim().slice(0, 120) : "Board",
+      };
+      if (request.anchor !== undefined) fields.anchor = request.anchor;
+      for (const key of ["x", "y", "w", "h"]) if (Number.isFinite(request[key])) fields[key] = request[key];
+      const added = await this.add({ note: note.path, magnet: magnetId, fields });
+      return { ...added, asset: asset.relative, scene: blankBoard() };
+    }
+    const { note: name, magnet } = await this.boardMagnet(replay, request.magnet);
+    const { absolute, relative: asset } = this.boardAssetPath(magnet.id);
+    if (mode === "load") {
+      const scene = await this.readBoard(absolute);
+      return { ...this.describe(note, file), magnet: magnetViewFromMap(magnet), asset, ...scene };
+    }
+    const scene = validBoardScene(request.scene);
+    const text = `${JSON.stringify(scene, null, 2)}\n`;
+    if (Buffer.byteLength(text) > boardLimit) throw new Error("A board is limited to 16 MB. Split it into smaller boards.");
+    await mkdir(path.dirname(absolute), { recursive: true, mode: 0o700 });
+    await writeFileAtomic(absolute, text);
+    return { ...this.describe(note, file), magnet: magnetViewFromMap(magnet), asset, bytes: Buffer.byteLength(text), savedAt: new Date().toISOString() };
+  }
+
+  async boardMagnet(replay, id) {
+    if (typeof id !== "string" || !id.trim()) throw new Error("--magnet is required for a board.");
+    const magnet = replay.magnets.get(id);
+    if (!magnet || magnet.deleted?.active) throw new Error("Board not found.");
+    if (magnetViewFromMap(magnet).fields.kind !== "board") throw new Error("That magnet is not a board.");
+    return { magnet };
+  }
+
+  boardAssetPath(id) {
+    const relativePath = `.omarkie/assets/boards/${id}.excalidraw.json`;
+    const absolute = path.join(this.root, ...relativePath.split("/"));
+    return { relative: relativePath, absolute };
+  }
+
+  async readBoard(absolute) {
+    let text;
+    try {
+      text = await readLimited(absolute, boardLimit);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      return { scene: blankBoard(), corrupt: false, missing: true };
+    }
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Array.isArray(parsed.elements)) throw new Error("Not an Excalidraw scene.");
+      return { scene: validBoardScene(parsed), corrupt: false, missing: false };
+    } catch {
+      // Keep the unreadable bytes beside the board; the blank scene only becomes the new file on save.
+      const backup = `${absolute}.corrupt-${Date.now()}`;
+      await copyFile(absolute, backup).catch(() => {});
+      return { scene: blankBoard(), corrupt: true, missing: false };
+    }
+  }
+
   async request(input) {
     if (!input || typeof input !== "object" || typeof input.action !== "string") throw new Error("Invalid Glass request.");
     if (input.action === "status") return this.status();
     if (input.action === "flush") return this.initialized ? this.flushPending() : this.status();
+    if (input.action === "board") return this.board(input);
     if (["map", "find", "bring", "finder", "reindex"].includes(input.action)) {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
     if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
-      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
+      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up", "board",
       "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (input.action === "srs-due") return this.srsDue();
     if (input.action === "srs-review") return this.srsReview(input);
@@ -1837,7 +1935,30 @@ async function checkCardDefinition(fields) {
   await assertCalcDefinition({ formula: fields.formula, inputs: fields.inputs, unit: fields.unit });
 }
 
-// Other magnet kinds stay open for later slices; each mark is validated field by field.
+const boardLimit = 16 * 1024 * 1024;
+
+function blankBoard() {
+  return { type: "excalidraw", version: 2, source: "omarkie", elements: [], appState: { gridSize: 20, gridModeEnabled: true }, files: {} };
+}
+
+// Excalidraw scenes are data only: elements, view state and embedded files. Collaborator maps and
+// callbacks never enter the vault.
+function validBoardScene(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input) || !Array.isArray(input.elements)) throw new Error("A board needs an Excalidraw scene.");
+  if (input.elements.length > 10_000) throw new Error("A board is limited to 10,000 elements.");
+  if (input.appState !== undefined && (typeof input.appState !== "object" || input.appState === null || Array.isArray(input.appState))) throw new Error("Board appState must be an object.");
+  if (input.files !== undefined && (typeof input.files !== "object" || input.files === null || Array.isArray(input.files))) throw new Error("Board files must be an object.");
+  const appState = {};
+  for (const key of ["viewBackgroundColor", "gridSize", "gridModeEnabled", "theme", "currentItemStrokeColor", "currentItemBackgroundColor", "currentItemFontFamily", "currentItemFontSize", "currentItemStrokeWidth", "currentItemStrokeStyle", "currentItemRoughness", "currentItemOpacity", "currentItemFillStyle", "currentItemStrokeSharpness", "currentItemStartArrowhead", "currentItemEndArrowhead", "zoom", "scrollX", "scrollY", "selectedElementIds"])
+    if (input.appState?.[key] !== undefined) appState[key] = input.appState[key];
+  const files = {};
+  for (const [key, file] of Object.entries(input.files ?? {})) {
+    if (!file || typeof file !== "object" || typeof file.dataURL !== "string" || !file.dataURL.startsWith("data:")) continue;
+    files[key] = { id: file.id, mimeType: file.mimeType, dataURL: file.dataURL, created: file.created };
+  }
+  return { type: "excalidraw", version: 2, source: "omarkie", elements: input.elements, appState, files };
+}
+
 function validateMagnetFields(kind, fields, partial) {
   if (kind === "image") {
     const values = imageFields(partial ? fields : { ...fields, kind: "image" }, { partial });

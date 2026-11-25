@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   learningSearch: (id, query) => call("learningSearch", id, query),
   glass: request => call("glass", request),
+  sync: request => call("sync", request),
   captureRegion: rect => call("captureRegion", rect),
   onGlassChanged: callback => {
     const listener = (_, event) => callback(event);

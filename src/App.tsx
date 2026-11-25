@@ -46,6 +46,7 @@ import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 const LearningMode = lazy(() => import("./components/LearningMode"));
+const SyncDialog = lazy(() => import("./components/SyncDialog"));
 
 function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
   if (!folder || !file) return;
@@ -95,6 +96,8 @@ export default function App() {
   const [drawer, setDrawer] = useState(false);
   const [glassOffer, setGlassOffer] = useState<{ count: number; notes?: { path: string; title?: string }[] } | null>(null);
   const [glassBusy, setGlassBusy] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
   const glassDismissed = useRef(false);
   useEffect(() => {
     glassDismissed.current = false;
@@ -441,7 +444,7 @@ export default function App() {
   useEffect(() => {
     editor()?.focus();
   }, [session.activeId]);
-  commands.current = ({ action, document: opened, anchor, line, message }) => {
+  commands.current = ({ action, document: opened, anchor, line, message, note: boardNote, magnet: boardMagnet }) => {
     if (["new", "newWindow", "newTab", "open"].includes(action) && window.desktop?.windowAction) { void host.windowAction(action).catch((error: Error) => session.setMessage(error.message)); return; }
     const context = commandsByAction.get(action)?.context;
     if (readOnly && ((context && context !== "document") || ["delete-word", "undo", "redo", "paste-plain", "image", "table", "link", "reference-link", "footnote", "copy-all-images", "move-all-images", "upload-all-images"].includes(action))) { session.setMessage(t("只读模式已开启，请先在插件管理中关闭或切换只读效果。")); return; }
@@ -484,6 +487,21 @@ export default function App() {
     else if (action === "source") setRenderedView(!renderedView);
     else if (action === "reading-layers") toggleReading();
     else if (action === "glass") toggleGlass();
+    else if (action === "sync") setSyncOpen(true);
+    else if (action === "open-board") {
+      if (!boardNote || !boardMagnet) return;
+      if (!preferences.boardEnabled) { session.setMessage(t("Enable the Board add-on in Settings first.")); return; }
+      void (async () => {
+        const current = vaultRelative(session.folder, active?.path);
+        if (current !== boardNote) {
+          const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === boardNote);
+          if (!file) { session.setMessage(t("Board note is not in this folder.")); return; }
+          const record = await session.openToken(file.token);
+          if (!record) return;
+        }
+        setBoardRequest({ note: boardNote, magnet: boardMagnet, at: Date.now() });
+      })().catch((error: Error) => session.setMessage(error.message));
+    }
     else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
       openFilesRail();
@@ -621,6 +639,7 @@ export default function App() {
         disabled={!active}
         context={editor()?.context() || ""}
         learning={readingSupported ? learningEnabled : undefined}
+        sync={window.desktop?.sync && session.folder ? { open: syncOpen, show: () => setSyncOpen(true) } : undefined}
         tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
         payload={payloadAvailable ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
@@ -740,6 +759,7 @@ export default function App() {
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
+              boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
               glassSaved={active.content === active.savedContent}
               reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
@@ -815,6 +835,7 @@ export default function App() {
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
+      <Suspense fallback={null}>{syncOpen && <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

@@ -46,12 +46,12 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; reloadNote?(): void | Promise<unknown>; boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -573,7 +573,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && (glass
       ? <><GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved}
-          live={live} reloadNote={reloadNote} />
+          live={live} reloadNote={reloadNote} boardEnabled={boardEnabled} boardRequest={boardRequest} />
         <ElementHalo key={`halo:${id}`} root={root} editor={editor} /></>
       : groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />)}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
