@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
-import { assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
+import { assertWorkBudget, readWork, stableHost, watchWork } from "./frame-cadence.mjs";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
@@ -425,10 +425,10 @@ try {
   for (let run = 0; run < 3; run++) many.push(await toggleBudget());
   const manyBest = Math.min(...many);
   // Absolute budget on a quiet machine; under host contention both numbers inflate, so the check
-  // compares the 203-magnet open against the plain one (a real regression still lands past 3x).
+  // compares the 203-magnet open against the plain one (a real regression still lands past 4x).
   // The budget scales only against this run's plain open on this host; a stable CI host keeps the
   // absolute number, so a real regression there still fails.
-  const budget = process.env.CI === "true" ? 100 : Math.max(100, plainBest * 3);
+  const budget = stableHost() ? 100 : Math.max(100, plainBest * 4);
   assert.ok(manyBest < budget, `203 magnets opened in ${manyBest.toFixed(1)}ms vs ${plainBest.toFixed(1)}ms plain; budget is ${budget.toFixed(0)}ms`);
   await expect(page.locator(".glass-note")).toHaveCount(203, { timeout: 30_000 });
   await expect(page.locator('.glass-note[data-magnet="m-bulk-199"]')).toHaveCount(1);

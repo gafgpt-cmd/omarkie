@@ -5,6 +5,11 @@ import assert from "node:assert/strict";
 // with OMARKIE_REAL_COMPOSITOR=1 (documented in tests/perf-desktop.mjs).
 export const realCompositor = () => process.env.OMARKIE_REAL_COMPOSITOR === "1";
 
+// Budgets relax only against a same-run baseline, and never on a stable runner: GitHub Actions
+// sets GITHUB_ACTIONS, so the unscaled numbers are what CI asserts. OMARKIE_STRICT_BUDGETS=1
+// reproduces that run anywhere.
+export const stableHost = () => process.env.GITHUB_ACTIONS === "true" || process.env.OMARKIE_STRICT_BUDGETS === "1";
+
 export function assertFrameCadence(gaps, gesture) {
   const sorted = [...gaps].sort((a, b) => a - b);
   const frames = sorted.length, p95 = sorted[Math.ceil(frames * 0.95) - 1], max = sorted.at(-1);

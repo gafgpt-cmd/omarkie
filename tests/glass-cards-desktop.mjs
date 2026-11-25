@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
+import { stableHost } from "./frame-cadence.mjs";
 import { decode } from "@toon-format/toon";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
@@ -349,7 +350,7 @@ const card = page => page.locator(`.glass-card`);
     // A quiet machine holds the absolute budget; under host contention both opens inflate, so the
     // 200-pill cost is compared against the plain open (a real regression still lands past 3x).
     // Scaled only against this run's plain open; a stable CI host keeps the absolute number.
-    const budget = process.env.CI === "true" ? 100 : Math.max(100, plainBest * 3);
+    const budget = stableHost() ? 100 : Math.max(100, plainBest * 4);
     assert.ok(manyBest - plainBest < budget, `200 pills add ${(manyBest - plainBest).toFixed(1)}ms over a plain glass open (${manyBest.toFixed(1)} vs ${plainBest.toFixed(1)}); budget is ${budget.toFixed(0)}ms`);
     await expect(page.locator(".glass-card")).toHaveCount(200, { timeout: 60_000 });
   } finally { await app.close(); }

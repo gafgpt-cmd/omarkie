@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { stableHost } from "./frame-cadence.mjs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -116,7 +117,7 @@ test("300 arrows re-route inside one frame", () => {
     smallTimes.push(performance.now() - started);
   }
   const baseline = Math.min(...smallTimes);
-  const budget = process.env.CI === "true" ? 16 : Math.max(16, baseline * 12);
+  const budget = stableHost() ? 16 : Math.max(16, baseline * 12);
   assert.equal(routes.routes.length, 300);
   assert.ok(best < budget, `300 arrows route in ${best.toFixed(2)} ms (${times.map(value => value.toFixed(1)).join("/")}) against a 30-arrow baseline of ${baseline.toFixed(2)} ms; budget ${budget.toFixed(1)} ms`);
 });
