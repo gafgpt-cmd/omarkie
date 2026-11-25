@@ -2432,6 +2432,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const place = layout.places[mark.id];
       if (place?.status === "resolved") items.push({ id: mark.id, y: place.y, height: Math.max(24, place.height) });
     }
+    // A handful of marks is a page, not a note: mounting all of them keeps small scenes simple,
+    // and the window only earns its keep once a document carries more than a screenful.
+    if (items.length <= 40) return { mounted: new Set(items.map(item => item.id)), total: items.length, inView: items.length, culled: 0, forced: [] };
     const force = [selected, editing, focusedMagnet].filter((id): id is string => !!id);
     return glassWindow(items, { top: viewport.top, height: viewport.height }, { force });
   }, [magnets, images, stickers, cards, timelines, layout.places, selected, editing, focusedMagnet, viewport.top, viewport.height]);
