@@ -137,8 +137,9 @@ try {
   // Opacity: 40% reaches the magnet without re-rendering it.
   const slider = rail.locator('[data-glass-layer-row="notes"]').getByRole("slider", { name: "Notes & stickers opacity", exact: true });
   await slider.focus();
-  await slider.press("Home");
-  for (let step = 0; step < 40; step += 1) await slider.press("ArrowRight");
+  // One input change, not forty keystrokes: a dropped keypress under load would skew the value.
+  await slider.fill("40");
+  await slider.dispatchEvent("pointerup");
   await expect(slider).toHaveValue("40");
   await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector(".glass-note")).opacity)).toBe("0.4");
 
