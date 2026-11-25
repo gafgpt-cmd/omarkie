@@ -235,7 +235,7 @@ export class GitSync {
     return { committed: true, changed, oid };
   }
 
-  async #fetch(branch, { shallow = false } = {}) {
+  async #fetch(branch, { shallow = false, single = true } = {}) {
     const info = await this.#remoteInfo();
     if (!info.origin) throw syncError("SYNC_NO_ORIGIN", "This repository has no origin remote. Add one in git, then try again.");
     if (!info.configured) {
@@ -250,8 +250,10 @@ export class GitSync {
         dir: this.root,
         url: info.configured.url,
         remote: "origin",
+        // An unborn local branch cannot resolve HEAD, so the first pull asks for every branch.
         ref: branch,
-        singleBranch: true,
+        remoteRef: branch,
+        ...(single ? { singleBranch: true } : {}),
         depth: shallow ? 1 : undefined,
         onAuth: auth,
       });
@@ -416,12 +418,32 @@ export class GitSync {
     }
   }
 
+  // The remote, not a guess, decides the branch: its HEAD symref first, then its only branch.
+  async #remoteBranch(preferred) {
+    const info = await this.#remoteInfo();
+    if (!info.configured) return preferred;
+    const token = await this.tokens.readToken(this.id);
+    const auth = token ? () => ({ username: "omarkie", password: token }) : undefined;
+    let refs;
+    try {
+      refs = await git.listServerRefs({ http: this.http, url: info.configured.url, symrefs: true, onAuth: auth });
+    } catch (error) {
+      throw classify(error);
+    }
+    const heads = refs.filter(ref => typeof ref.ref === "string" && ref.ref.startsWith("refs/heads/")).map(ref => ref.ref.slice("refs/heads/".length));
+    if (heads.includes(preferred)) return preferred;
+    const head = refs.find(ref => ref.ref === "HEAD")?.symrefTarget?.replace(/^refs\/heads\//u, "");
+    if (head && heads.includes(head)) return head;
+    return heads.length === 1 ? heads[0] : preferred;
+  }
+
   async #firstPull(branch) {
-    const fetched = await this.#fetch(branch, { shallow: true });
-    if (!fetched?.fetchHead) return { pulled: 0, empty: true };
-    await this.#fastForward(branch, fetched.fetchHead);
+    const target = await this.#remoteBranch(branch);
+    const fetched = await this.#fetch(target, { shallow: true, single: false });
+    if (!fetched?.fetchHead) return { pulled: 0, empty: true, branch: target };
+    await this.#fastForward(target, fetched.fetchHead);
     const tree = await this.#tree(fetched.fetchHead);
-    return { pulled: tree.size, oid: fetched.fetchHead };
+    return { pulled: tree.size, oid: fetched.fetchHead, branch: target };
   }
 
   async syncNow() {
@@ -442,13 +464,14 @@ export class GitSync {
     if (!info.origin) throw syncError("SYNC_NO_ORIGIN", "This repository has no origin remote. Add one in git, then try again.");
     if (!info.configured) throw syncError("SYNC_REMOTE_UNSUPPORTED", "The repository remote is not HTTPS. Set an HTTPS remote in Sync settings.");
     if (!info.branch) throw syncError("SYNC_NO_BRANCH", "Check out a branch before syncing.");
-    const branch = info.branch;
+    let branch = info.branch;
     await this.#commitLocal();
     const local = await this.#head();
     let result;
     let needsPush = false;
     if (!local) {
       const pulled = await this.#firstPull(branch);
+      branch = pulled.branch ?? branch;
       result = { state: "ok", conflicts: [], pulled: pulled.pulled, journals: [], message: pulled.empty ? "Remote is empty." : "Pulled the vault." };
     } else {
       const fetched = await this.#fetch(branch);

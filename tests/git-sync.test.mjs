@@ -67,6 +67,9 @@ test("two journals diverge offline, merge by reader rules and push through a bar
   const remoteRoot = path.join(root, "remote.git"), vaultA = path.join(root, "a"), vaultB = path.join(root, "b"), appData = path.join(root, "appdata");
   git(root, "init", "--bare", remoteRoot);
   git(remoteRoot, "config", "http.receivepack", "true");
+  // A bare repo's HEAD follows the git default branch, which need not be main; leave it
+  // dangling and even git clone fails, so point it at the branch the vaults push.
+  git(remoteRoot, "symbolic-ref", "HEAD", "refs/heads/main");
   const server = await gitHttpServer(root);
   try {
     for (const vault of [vaultA, vaultB]) {
@@ -108,11 +111,45 @@ test("two journals diverge offline, merge by reader rules and push through a bar
   }
 });
 
+test("a remote whose default branch is not main still syncs, and an empty first pull is not an error", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-sync-trunk-"));
+  const remoteRoot = path.join(root, "remote.git"), vaultA = path.join(root, "a"), vaultB = path.join(root, "b"), appData = path.join(root, "appdata");
+  git(root, "init", "--bare", remoteRoot);
+  git(remoteRoot, "config", "http.receivepack", "true");
+  git(remoteRoot, "symbolic-ref", "HEAD", "refs/heads/trunk");
+  const server = await gitHttpServer(root);
+  try {
+    await mkdir(path.join(vaultA, ".omarkie", "glass"), { recursive: true });
+    git(vaultA, "init", "-b", "trunk");
+    git(vaultA, "config", "user.name", "Test");
+    git(vaultA, "config", "user.email", "test@example.com");
+    git(vaultA, "remote", "add", "origin", `${server.url}/remote.git`);
+    await writeFile(path.join(vaultA, ".omarkie", "glass", "note ~a1b2c3d4.jsonl"), `${JSON.stringify({ op: "set", magnetId: "m1", field: "text", value: "one", hlc: "1-0", device: "a" })}\n`);
+    const a = new GitSync({ root: vaultA, appData, tokenStore: tokenStub });
+    await a.setRemote(`${server.url}/remote.git`, "trunk");
+    assert.equal((await a.syncNow()).state, "ok");
+
+    await mkdir(path.join(vaultB, ".omarkie", "glass"), { recursive: true });
+    git(vaultB, "init");
+    git(vaultB, "config", "user.name", "Test");
+    git(vaultB, "config", "user.email", "test@example.com");
+    git(vaultB, "remote", "add", "origin", `${server.url}/remote.git`);
+    const b = new GitSync({ root: vaultB, appData, tokenStore: tokenStub });
+    const pulled = await b.syncNow();
+    assert.equal(pulled.state, "ok");
+    assert.equal(git(vaultB, "rev-parse", "--abbrev-ref", "HEAD").trim(), "trunk", "the pull follows the remote's branch");
+    assert.match(await readFile(path.join(vaultB, ".omarkie", "glass", "note ~a1b2c3d4.jsonl"), "utf8"), /one/);
+  } finally {
+    await server.close();
+  }
+});
+
 test("a non-journal file changed on both sides stops before writing and reports the conflict", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-sync-conflict-"));
   const remoteRoot = path.join(root, "remote.git"), vaultA = path.join(root, "a"), vaultB = path.join(root, "b"), appData = path.join(root, "appdata");
   git(root, "init", "--bare", remoteRoot);
   git(remoteRoot, "config", "http.receivepack", "true");
+  git(remoteRoot, "symbolic-ref", "HEAD", "refs/heads/main");
   const server = await gitHttpServer(root);
   try {
     for (const vault of [vaultA, vaultB]) {

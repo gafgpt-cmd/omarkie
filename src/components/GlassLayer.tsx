@@ -41,6 +41,8 @@ import {
   extraPageFields, extraPageFromMagnet, extraPagePapers, newClipId, type ClipPage, type Cutout, type ExtraPage, type SheetStroke,
 } from "../glass/clip-model";
 import { lassoOf, regionOf, sheetInkColors } from "../../shared/glass-clips.mjs";
+import { timelineDefaults, timelineFromMagnet, timestampFromMagnet, transcriptLine, type TimelineMark, type TimestampMark } from "../glass/timeline-model";
+import GlassTimeline from "./GlassTimeline";
 import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
 import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
 import { glassLayerOf, layerCounts, type GlassLayerId } from "../../shared/glass-layers.mjs";
@@ -325,6 +327,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [measures, setMeasures] = useState<MeasureMark[]>([]);
   const [compares, setCompares] = useState<CompareMark[]>([]);
   const [voices, setVoices] = useState<VoiceMemo[]>([]);
+  const [timelines, setTimelines] = useState<TimelineMark[]>([]);
+  const [timestamps, setTimestamps] = useState<TimestampMark[]>([]);
   const [voice, setVoice] = useState({ configured: false, valid: false, key: voiceDefaults.defaultKey, language: "auto" });
   const [run, setRun] = useState<VoiceRun>();
   const runRef = useRef<VoiceRun | undefined>(undefined);
@@ -396,11 +400,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const elementBoxes = useRef<Record<string, EndMark>>({});
   const placesRef = useRef<Record<string, GlassPlacement>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, note, tool });
+  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, timelines, timestamps, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
   const localAt = useRef(0), revision = useRef(0);
-  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, note, tool };
+  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, timelines, timestamps, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -436,14 +440,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const needsArrows = latest.current.arrows.length > 0 || latest.current.tool === "arrow"
       || latest.current.labels.length > 0 || latest.current.tool === "label";
     const lines = new Map<string, number | null>();
-    const matchLine = (anchor: Parameters<typeof matchIndexed>[1]) => {
+    const matchLine = (anchor: Parameters<typeof matchIndexed>[1] | undefined) => {
+      if (!anchor) return null;
       const key = JSON.stringify(anchor.landmarks);
       let line = lines.get(key);
       if (line === undefined) { line = matchIndexed(index.current, anchor); lines.set(key, line); }
       return line;
     };
     const paragraphRects = new Map<HTMLElement, DOMRect>();
-    for (const mark of [...latest.current.magnets, ...latest.current.stickers]) {
+    for (const mark of [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines]) {
       const line = matchLine(mark.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[mark.id] = { status: "orphan" }; continue; }
@@ -618,6 +623,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
     const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
     const nextVoices: VoiceMemo[] = [];
+    const nextTimelines: TimelineMark[] = [], nextTimestamps: TimestampMark[] = [];
     const landmarks: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
     for (const magnet of incoming) {
       if (magnet.kind === "sticky") {
@@ -659,6 +665,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       } else if (magnet.kind === "compare") {
         const compare = compareFromMagnet(magnet);
         if (compare) nextCompares.push(compare);
+      } else if (magnet.kind === "timeline") {
+        const timeline = timelineFromMagnet(magnet);
+        if (timeline) nextTimelines.push(timeline);
+      } else if (magnet.kind === "timestamp") {
+        const stamp = timestampFromMagnet(magnet);
+        if (stamp) nextTimestamps.push(stamp);
       } else if (magnet.kind === "voice") {
         const memo = voiceFromMagnet(magnet);
         if (memo) nextVoices.push(memo);
@@ -683,6 +695,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
     setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
     setVoices(previous => JSON.stringify(previous) === JSON.stringify(nextVoices) ? previous : nextVoices);
+    setTimelines(previous => JSON.stringify(previous) === JSON.stringify(nextTimelines) ? previous : nextTimelines);
+    setTimestamps(previous => JSON.stringify(previous) === JSON.stringify(nextTimestamps) ? previous : nextTimestamps);
     return { marks: stickies.length + nextImages.length + nextStickers.length + nextArrows.length + nextCards.length + nextInk.length,
       bubbles: nextComments.length };
   }, []);
@@ -764,7 +778,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [scroller, root, measure]);
 
   const showingArrows = arrows.length > 0 || tool === "arrow" || labels.length > 0 || tool === "label";
-  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, compares, traces, measures, tool, showingArrows, measure]);
+  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, compares, traces, measures, timelines, timestamps, tool, showingArrows, measure]);
 
   // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
   useEffect(() => {
@@ -1479,6 +1493,77 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     void glassCall({ note: latest.current.note, action: "srs-answer", magnet: item.id, grade, preview: true, create: false }).catch(() => undefined);
   }, []);
 
+  // Timeline: attach to the first audio or video on the page, keep the transcript lines that follow it.
+  const createTimeline = useCallback(async () => {
+    if (!latest.current.note) { setNotice("Save the note first."); return; }
+    const media = root.querySelector<HTMLMediaElement>("audio, video");
+    if (!media) { setNotice("This note has no audio or video to pin."); return; }
+    const src = media.currentSrc || media.src || media.querySelector("source")?.src;
+    if (!src) { setNotice("That audio or video has no source."); return; }
+    const element = media.closest<HTMLElement>("[data-cid]");
+    const block = blocks.current.find(item => item.element === element) ?? blocks.current.find(item => item.element?.contains(media)) ?? blocks.current[0];
+    if (!block) { setNotice("Put the audio or video in a paragraph."); return; }
+    const cues: ReturnType<typeof transcriptLine>[] = [];
+    for (let next = element?.nextElementSibling; next && cues.length < timelineDefaults.maxTranscript; next = next.nextElementSibling) {
+      const direct = transcriptLine((next.textContent ?? "").trim());
+      if (direct) cues.push(direct);
+      else {
+        const nested = [...next.querySelectorAll("li, p")].map(item => transcriptLine((item.textContent ?? "").trim())).filter(Boolean);
+        if (!nested.length) break;
+        cues.push(...nested);
+      }
+    }
+    const id = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const name = latest.current.note.split(/[\\/]/u).at(-1)?.replace(/\.[^.]+$/u, "") || "Lecture";
+    const timeline: TimelineMark = {
+      id, kind: "timeline", src, title: name, media: media.tagName === "VIDEO" ? "video" : "audio",
+      duration: Number.isFinite(media.duration) ? media.duration : 0,
+      transcript: cues.filter((cue): cue is NonNullable<typeof cue> => !!cue),
+      anchor: anchorOf(block), x: 32, y: 32, w: 380, h: 320,
+    };
+    setTimelines(current => [...current, timeline]);
+    setSelected(id);
+    setSelectedArrow(undefined);
+    try {
+      const value = await send({ action: "add", magnet: id, fields: {
+        kind: "timeline", src, title: timeline.title, media: timeline.media, duration: timeline.duration,
+        transcript: timeline.transcript, anchor: timeline.anchor, x: timeline.x, y: timeline.y, w: timeline.w, h: timeline.h,
+      } });
+      const stored = value?.magnet && timelineFromMagnet(value.magnet);
+      if (stored) setTimelines(current => current.map(item => item.id === id ? stored : item));
+    } catch (error) {
+      setTimelines(current => current.filter(item => item.id !== id));
+      setNotice(message(error));
+    }
+  }, [root, send]);
+
+  const pinTimestamp = useCallback((timeline: TimelineMark, source: number, label: string) => {
+    const id = `ts-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const fields = { kind: "timestamp", timeline: timeline.id, t: source, label: label.slice(0, 500) };
+    const stamp = timestampFromMagnet({ id, fields });
+    if (!stamp) return;
+    setTimestamps(current => [...current, stamp]);
+    void send({ action: "add", magnet: id, fields }).then(value => {
+      const stored = value?.magnet && timestampFromMagnet(value.magnet);
+      if (stored) setTimestamps(current => current.map(item => item.id === id ? stored : item));
+    }).catch(error => {
+      setTimestamps(current => current.filter(item => item.id !== id));
+      setNotice(message(error));
+    });
+  }, [send]);
+
+  const setTimelineDuration = useCallback((id: string, duration: number) => {
+    if (!(duration > 0)) return;
+    setTimelines(current => current.map(item => item.id === id ? { ...item, duration } : item));
+    void send({ action: "set", magnet: id, fields: { duration } });
+  }, [send]);
+
+  const removeTimeline = useCallback((id: string) => {
+    setTimelines(current => current.filter(item => item.id !== id));
+    setTimestamps(current => current.filter(item => item.timeline !== id));
+    void send({ action: "delete", magnet: id });
+  }, [send]);
+
   const chooseInk = useCallback((next: InkTool | "eraser") => {
     setTool("ink");
     setInkTool(next);
@@ -2086,6 +2171,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     } else if (restored.kind === "card") {
       const card = cardFromMagnet(restored);
       if (card) setCards(current => [...current, card]);
+    } else if (restored.kind === "timeline") {
+      const timeline = timelineFromMagnet(restored);
+      if (timeline) setTimelines(current => [...current, timeline]);
+    } else if (restored.kind === "timestamp") {
+      const stamp = timestampFromMagnet(restored);
+      if (stamp) setTimestamps(current => [...current, stamp]);
     } else if (restored.kind === "label") {
       const label = labelFromMagnet(restored);
       if (label) setLabels(current => [...current, label]);
@@ -2424,6 +2515,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
+    <button type="button" data-glass-tool="timeline" aria-label="Timeline" title="Timeline: pin audio or video, link the transcript"
+      onClick={() => void createTimeline()}><AudioLines size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
     <button type="button" data-glass-tool="image" aria-label="Image" title="Image: drop, paste or choose a file" onClick={() => picker.current?.click()}><ImageIcon size={15} /></button>
     {boardEnabled && <button type="button" data-glass-board aria-label="Boards" title="Boards: optional Excalidraw diagrams"
@@ -2759,6 +2852,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         onMerge={() => void openMerge(stickie.id)}
         {...(stickie.source ? { onJump: () => jumpToSource(stickie.source!) } : {})}
         onDelete={() => removeMark(stickie.id)} />)}
+      {timelines.map(timeline => {
+        const place = layout.places[timeline.id];
+        if (place?.status !== "resolved") return null;
+        return <GlassTimeline key={timeline.id} mark={timeline} timestamps={timestamps} place={{ x: place.x, y: place.y, width: place.width, height: place.height }}
+          selected={selected === timeline.id} onSelect={() => { setSelected(timeline.id); setSelectedArrow(undefined); }}
+          onPin={(time, label) => pinTimestamp(timeline, time, label)}
+          onDuration={duration => setTimelineDuration(timeline.id, duration)}
+          onDelete={() => removeTimeline(timeline.id)} />;
+      })}
       {labels.map(label => {
         const box = labelBox(label, layout.places, elementBoxes.current);
         if (!box) return null;

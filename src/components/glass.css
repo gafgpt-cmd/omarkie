@@ -410,7 +410,7 @@
   font: 12px/1.4 var(--interface-font, system-ui, sans-serif);
 }
 .glass-trash { left: 50%; transform: translateX(-50%); }
-.glass-orphans { left: 12px; }
+.glass-orphans { inset-inline-start: 12px; }
 .glass-trash strong, .glass-orphans strong { display: block; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #777); }
 .glass-trash ul { margin: 0; padding: 0; list-style: none; }
 .glass-trash li, .glass-orphans > span { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
@@ -1626,3 +1626,188 @@ html.glass-capturing .glass-layer { display: none !important; }
 .glass-swap-proposals { display: flex; flex-direction: column; gap: 8px; }
 .glass-swap-proposals article { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--border, #ccc); border-radius: 8px; }
 .glass-swap-foot { padding-top: 4px; border-top: 1px solid var(--border, #ccc); }
+
+/* G19: new-edition re-anchor tray, old and new side by side. Nothing is deleted. */
+.glass-check {
+  position: fixed;
+  bottom: 58px;
+  inset-inline-end: 12px;
+  z-index: 40;
+  width: min(540px, max(220px, calc(100vw - 292px)));
+  max-height: 48vh;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 14px 30px -16px #000000a6;
+  font: 12px/1.4 var(--interface-font, system-ui, sans-serif);
+}
+.glass-check strong { display: block; margin-bottom: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #777); }
+.glass-check ul { margin: 0; padding: 0; list-style: none; }
+.glass-check li { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--border, #ddd); }
+.glass-check li:first-child { border-top: 0; }
+.glass-check-name { grid-column: 1 / -1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glass-check-context { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-width: 0; }
+.glass-check-side { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.glass-check-side small { color: var(--muted, #777); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+.glass-check-side q { display: block; max-height: 4.2em; overflow: hidden; quotes: "“" "”"; }
+.glass-check-old q { opacity: 0.75; text-decoration: line-through; text-decoration-thickness: 1px; }
+.glass-check-score { align-self: start; color: var(--muted, #777); font-variant-numeric: tabular-nums; }
+.glass-check-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.glass-check-actions button, .glass-orphans button { padding: 3px 9px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.glass-check-actions button:hover, .glass-orphans button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-check-actions button:disabled { opacity: 0.5; cursor: default; }
+.glass-check-actions button[data-glass-place]:not(:disabled) { border-color: var(--accent, #326eaa); }
+
+.glass-check-badge {
+  position: absolute;
+  pointer-events: none;
+  max-width: 220px;
+  padding: 1px 6px;
+  border: 1px dashed currentColor;
+  border-radius: 999px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  font: 10.5px/1.5 var(--interface-font, system-ui, sans-serif);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.glass-orphan-context { flex: 1 1 100%; color: var(--muted, #777); quotes: "“" "”"; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* G19 a11y: colour never the only cue; forced colours keep geometry and focus rings. */
+@media (prefers-contrast: more) {
+  .glass-note, .glass-check, .glass-orphans, .glass-trash { border-width: 2px; }
+  .glass-note[data-colour] { outline: 2px solid currentColor; outline-offset: -3px; }
+  .glass-check-old q { opacity: 1; }
+}
+@media (forced-colors: active) {
+  .glass-note, .glass-sticker, .glass-image, .glass-card, .glass-check, .glass-orphans, .glass-trash, .glass-check-badge {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+  .glass-note { border-style: solid; }
+  .glass-note[data-colour="yellow"] { border-style: solid; }
+  .glass-note[data-colour="rose"] { border-style: dashed; }
+  .glass-note[data-colour="blue"] { border-style: dotted; }
+  .glass-note[data-colour="green"] { border-style: double; }
+  .glass-note[data-colour="violet"] { border-style: groove; }
+  .glass-note[data-colour="slate"] { border-style: ridge; }
+  .glass-note:focus-visible, .glass-sticker:focus-visible, .glass-check-badge:focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
+}
+
+/* G19 timeline: player, pins and transcript share source time; the axis never mirrors. */
+.glass-timeline {
+  position: absolute;
+  z-index: 3;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(70vh, 540px);
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 12px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 16px 34px -20px #000000a6;
+  font: 12px/1.4 var(--interface-font, system-ui, sans-serif);
+}
+.glass-timeline[data-selected] { border-color: var(--accent, #326eaa); }
+.glass-timeline-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.glass-timeline-head strong { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.glass-timeline-kind { width: 10px; height: 10px; flex: none; border: 2px solid currentColor; border-radius: 50%; }
+.glass-timeline-kind[data-media="video"] { border-radius: 2px; }
+.glass-timeline-clock { color: var(--muted, #777); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.glass-timeline-close { border: none; background: none; color: var(--muted, #777); font: 16px/1 inherit; cursor: pointer; }
+.glass-timeline-close:hover { color: var(--ink, #333); }
+.glass-timeline audio, .glass-timeline-video { width: 100%; max-height: 180px; border-radius: 8px; }
+.glass-timeline-error { margin: 0; padding: 6px 8px; border-radius: 6px; background: color-mix(in srgb, var(--error, #b3261e) 12%, transparent); color: var(--error, #b3261e); }
+.glass-timeline-track { position: relative; height: 28px; margin: 2px 6px 0; cursor: crosshair; touch-action: none; }
+.glass-timeline-rail, .glass-timeline-progress { position: absolute; top: 12px; height: 3px; border-radius: 999px; pointer-events: none; }
+.glass-timeline-rail { left: 0; right: 0; background: var(--border, #ccc); }
+.glass-timeline-progress { left: 0; background: var(--accent, #326eaa); }
+.glass-timeline-pin {
+  position: absolute;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  margin-inline-start: -12px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transform: translateX(-0%);
+}
+.glass-timeline-pin span { display: block; width: 11px; height: 11px; margin: 6px auto; background: var(--ink, #333); border: 2px solid var(--paper, #fff); transform: rotate(45deg); box-shadow: 0 0 0 1px var(--ink, #333); }
+.glass-timeline-pin[data-active] span { width: 15px; height: 15px; margin: 4px auto; background: var(--accent, #326eaa); }
+.glass-timeline-pin:focus-visible { outline: 2px solid var(--accent, #326eaa); outline-offset: 1px; border-radius: 4px; }
+.glass-timeline-actions { display: flex; align-items: center; gap: 8px; }
+.glass-timeline-actions button { padding: 3px 9px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.glass-timeline-actions button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-timeline-hint { color: var(--muted, #777); font-size: 11px; }
+.glass-timeline-transcript { flex: 1; min-height: 60px; margin: 0; padding: 0; overflow: auto; list-style: none; border-top: 1px solid var(--border, #ddd); }
+.glass-timeline-transcript li { margin: 0; }
+.glass-timeline-transcript button {
+  display: grid;
+  grid-template-columns: 3.6em 1fr;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+.glass-timeline-transcript button:hover { background: color-mix(in srgb, var(--ink, #333) 6%, transparent); }
+.glass-timeline-transcript button[data-active] { background: color-mix(in srgb, var(--accent, #326eaa) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent, #326eaa); }
+.glass-timeline-transcript time { color: var(--muted, #777); font-variant-numeric: tabular-nums; }
+.glass-timeline-transcript button:focus-visible { outline: 2px solid var(--accent, #326eaa); outline-offset: -2px; }
+@media (prefers-contrast: more) {
+  .glass-timeline { border-width: 2px; }
+  .glass-timeline-transcript button[data-active] { outline: 2px solid currentColor; }
+}
+@media (forced-colors: active) {
+  .glass-timeline, .glass-timeline-pin span, .glass-timeline-rail, .glass-timeline-progress { forced-color-adjust: none; background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .glass-timeline-pin span { background: CanvasText; }
+  .glass-timeline-pin[data-active] { outline: 2px solid Highlight; outline-offset: 1px; }
+  .glass-timeline-transcript button[data-active] { outline: 2px solid Highlight; }
+}
+
+/* Offscreen magnets keep a tab stop; the list stays hidden until keyboard focus enters it. */
+.glass-sr-marks {
+  position: fixed;
+  z-index: 45;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 50vh;
+  overflow: auto;
+  padding: 0;
+  width: 1px;
+  height: 1px;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.glass-sr-marks:focus-within {
+  width: auto;
+  height: auto;
+  clip-path: none;
+  padding: 8px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 14px 30px -16px #000000a6;
+}
+.glass-sr-marks button { padding: 4px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: 12px/1.4 var(--interface-font, system-ui, sans-serif); text-align: start; cursor: pointer; }
+.glass-sr-marks button:hover, .glass-sr-marks button:focus-visible { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); outline: 2px solid var(--accent, #326eaa); outline-offset: 1px; }
