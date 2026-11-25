@@ -21,7 +21,7 @@ import "./bubble.css";
 interface Entry { role: "you" | "agent"; text: string; at: string }
 interface Bubble {
   id: string; element: string; elementKind: string; line: number; headings: string[]; text: string; thread: Entry[]; anchor: GlassAnchor;
-  selection?: string;
+  selection?: string; marked: boolean;
 }
 interface Shown { bubble: Bubble; bundle: BubbleBundle; node: HTMLElement; order: number }
 
@@ -52,6 +52,7 @@ function bubbleFrom(magnet: GlassMagnet): Bubble | undefined {
   if (!headings || !thread || !anchor) return;
   return { id: magnet.id, element: fields.element, elementKind: fields.elementKind, line: fields.line,
     headings, text: typeof fields.text === "string" ? fields.text : "", thread, anchor,
+    marked: fields.marked === true,
     ...(typeof fields.selection === "string" && fields.selection ? { selection: fields.selection } : {}) };
 }
 
@@ -78,9 +79,9 @@ function Anchored({ node, placement, gap, along = 0, children }: { node: HTMLEle
   return <div className="bubble-anchor" ref={box}>{children}</div>;
 }
 
-export default function BubbleLayer({ root, editor, note, live, pin, magnets, reload }: {
+export default function BubbleLayer({ root, editor, note, live, pin, magnets, reload, exam = false, reveal }: {
   root: HTMLElement; editor(): EditorHandle | undefined; note: string; live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
-  magnets: GlassMagnet[]; reload(): Promise<void> | undefined;
+  magnets: GlassMagnet[]; reload(): Promise<void> | undefined; exam?: boolean; reveal?(id: string): void;
 }) {
   const scroller = root.parentElement!;
   const cache = useRef<{ text: string; elements: PageElement[] } | undefined>(undefined);
@@ -91,6 +92,12 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
   const [asking, setAsking] = useState(false), [error, setError] = useState(""), [pinned, setPinned] = useState<Set<string>>(new Set());
   const [tick, setTick] = useState(0);
   const frame = useRef(0), textarea = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!exam) return;
+    setOpenId(undefined);
+    setDraft(undefined);
+  }, [exam]);
 
   function model() {
     const text = editor()?.readingContext()?.text;
@@ -103,7 +110,7 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
   async function store(bubble: Bubble, create = false) {
     if (!note || !window.desktop?.glass) throw new Error(t("Glass storage is unavailable."));
     const fields = { kind: "comment", text: bubble.text, element: bubble.element, elementKind: bubble.elementKind,
-      line: bubble.line, headings: bubble.headings, thread: bubble.thread,
+      line: bubble.line, headings: bubble.headings, thread: bubble.thread, marked: bubble.marked,
       ...(bubble.selection ? { selection: bubble.selection } : {}) };
     const response = await window.desktop.glass({ action: "add", note, magnet: bubble.id, ...(create ? { anchor: bubble.anchor } : {}), fields });
     if (!response?.ok) throw new Error(response?.error || t("The bubble could not be saved."));
@@ -148,7 +155,7 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
     const bundle = bubbleBundle(elements, element, { note: note ?? "", quote });
     if (!bundle) return;
     const bubble: Bubble = { id: `b-${crypto.randomUUID()}`, element: element.id, elementKind: element.kind, line: element.line,
-      headings: bundle.headings, text: "", thread: [], anchor, ...(quote.trim() ? { selection: bundle.quote } : {}) };
+      headings: bundle.headings, text: "", thread: [], anchor, marked: false, ...(quote.trim() ? { selection: bundle.quote } : {}) };
     setDraft(bubble);
     open(bubble, bundle.text);
     requestAnimationFrame(() => textarea.current?.focus());
@@ -274,6 +281,7 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
         <button type="button" className="bubble-chip" data-bubble={bubble.id} data-bubble-state={bubble.thread.length ? "thread" : "empty"}
           aria-label={t("Comment bubble")} aria-expanded={openId === bubble.id}
           onClick={() => {
+            if (exam) { reveal?.(bubble.id); return; }
             if (openId === bubble.id) { void close(); return; }
             window.dispatchEvent(new CustomEvent("omarkie:element-dismiss"));
             void flush().then(() => open(bubble, bundle.text));
@@ -286,6 +294,9 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
           <header className="bubble-head">
             <span className="bubble-kind">{t(elementKindName(bubble.elementKind))}</span>
             <span className="bubble-path">{bundle.headings.join(" › ") || t("No heading")}</span>
+            <button type="button" className="bubble-mark" data-bubble-mark aria-pressed={bubble.marked}
+              title={bubble.marked ? t("Marked for exam") : t("Mark for exam")}
+              onClick={() => void store({ ...bubble, marked: !bubble.marked }).catch(failure => setError(failure.message))}>★</button>
             <button type="button" className="bubble-close" aria-label={t("Close comment")} onClick={() => void close()}>×</button>
           </header>
           <details className="bubble-context" data-bubble-context={bubble.element}>

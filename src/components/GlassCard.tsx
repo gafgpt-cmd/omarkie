@@ -28,9 +28,9 @@ function brokenText(state: StaticState) {
 
 // G9: a card is one pill in the margin; unfolding stays on the glass and never reflows the page.
 // The wrapper stays mounted across fold/unfold, so keyboard focus survives; the body's state only exists while open.
-function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, onMerge }: {
+function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, onMerge, onMark }: {
   card: GlassCard; place: Place; note: string; live?: LiveTutor;
-  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
+  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void; onMark(marked: boolean): void;
 }) {
   return <div className="glass-card" data-card={card.id} data-card-kind={card.card} data-card-layer="ai-cards" data-glass-layer="cards"
     data-folded={card.folded || undefined} style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px` }}
@@ -49,9 +49,10 @@ function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, 
       <KindIcon kind={card.card} />
       <span className="glass-card-title">{card.title}</span>
       <small className="glass-card-kind">{kindLabel(card.card)}</small>
+      {card.marked && <span className="glass-card-marked" data-card-marked aria-label={t("Marked for exam")}>★</span>}
       <ChevronDown size={12} className="glass-card-chevron" aria-hidden="true" />
     </button>
-    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} onMerge={onMerge} />}
+    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} onMerge={onMerge} onMark={onMark} />}
   </div>;
 }
 
@@ -60,8 +61,8 @@ export default memo(GlassCardView, (previous, next) =>
   previous.card === next.card && previous.note === next.note && previous.live === next.live
   && previous.place.x === next.place.x && previous.place.y === next.place.y && previous.place.width === next.place.width);
 
-function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
-  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
+function CardBody({ card, note, live, onCached, onDelete, onMerge, onMark }: {
+  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void; onMark(marked: boolean): void;
 }) {
   const [staticState, setStaticState] = useState<StaticState>({ status: "ok" });
   const [choice, setChoice] = useState<number>();
@@ -126,6 +127,8 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
     <header className="glass-card-head">
       <span className="glass-card-heading"><KindIcon kind={card.card} size={13} />{card.card === "ai" ? t("AI cue") : card.title}</span>
       <div className="glass-card-actions">
+        <button type="button" data-card-mark aria-label={t("Mark for exam")} title={card.marked ? t("Marked for exam") : t("Mark for exam")}
+          aria-pressed={card.marked} onClick={() => onMark(!card.marked)}>★</button>
         <button type="button" data-card-open-page title={t("Open as its own note")} onClick={() => void openPage()}>
           <ExternalLink size={13} aria-hidden="true" /><span>{t("Open as page")}</span>
         </button>
@@ -200,7 +203,7 @@ export function NewCardDialog({ blocks, point, close, create }: {
       id: newCardId(), card: kind, title: title.trim(),
       link: kind === "static" ? link.trim() : "", question: kind === "ai" ? question.trim() : "",
       answer: "", answerAt: "", choices: kind === "menu" ? choices : [],
-      anchor: anchorOf(anchorBlock), x: 0, y: 0, w: 300, folded: false,
+      anchor: anchorOf(anchorBlock), x: 0, y: 0, w: 300, folded: false, marked: false,
     });
     close();
   }

@@ -20,6 +20,7 @@ import { safeProposal } from "../editor/markdown";
 import TutorCurtain, { ProposalDiff } from "./TutorCurtain";
 import { useLiveTutor } from "./tutor-live";
 import LearningSearch from "./LearningSearch";
+import StudyQueue from "./StudyQueue";
 import type { StudySearchMatch } from "../types";
 import type { FlashcardPanel } from "./Flashcards";
 import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
@@ -538,6 +539,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       onKeyDown={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); setPeek(true); } }} onKeyUp={() => setPeek(false)} onBlur={() => setPeek(false)}>{t("Peek")}</button>
     <button type="button" onClick={() => openCard()}>{t("学习卡片")}</button>
     <button type="button" onClick={() => setSearching(true)}>{t("Search scraps")}</button>
+    <StudyQueue note={note} />
     <button type="button" disabled={busy} onClick={() => void store(id, { action: "export" }).catch(err => setError(t(err.message)))}>{t("导出笔记和卡片")}</button>
     {undo && <button type="button" disabled={busy} onClick={() => void write(undo)}>{t("撤销")}</button>}
   </div>;
