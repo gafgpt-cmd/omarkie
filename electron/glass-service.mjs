@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import {
-  createClock, glassFileName, glassVersion, newMagnetId, replayJournalText, replayNotesText, visibleMagnets,
+  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, replayJournalText, replayNotesText, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
@@ -468,6 +468,10 @@ export class GlassService {
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
     if (request.text !== undefined) fields.text = request.text;
     if (request.kind !== undefined) fields.kind = request.kind;
+    if (request.anchor !== undefined) {
+      if (!validAnchor(request.anchor)) throw new Error("Invalid Glass anchor.");
+      fields.anchor = { ...request.anchor, version: request.anchor.version ?? anchorVersion };
+    }
     if (request.x !== undefined) fields.x = request.x;
     if (request.y !== undefined) fields.y = request.y;
     if (!Object.keys(fields).length) Object.assign(fields, { kind: "debug", text: "Glass debug magnet", x: 0, y: 0 });

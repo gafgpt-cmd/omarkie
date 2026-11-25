@@ -19,7 +19,7 @@ My Vault/
 ```
 
 - One journal per note, flat, even for 50,000 notes. The short id decides identity; the title is for people and is sanitized for Windows and exFAT (NFC, no `<>:"/\|?*`, no reserved names like `CON`, at most 120 bytes).
-- Each journal line is one change: `{op, magnetId, field, value, hlc, device}`. Lines are appended and fsynced one by one. A half-written last line is ignored on open.
+- Each journal line is one change: `{op, magnetId, field, value, hlc, device}`. Lines are appended and fsynced one by one. A half-written last line is ignored on open. `field: "anchor"` holds the versioned landmark stack; see `glass-anchors.md`.
 - Conflicts resolve per field by hybrid logical clock (time + counter + device), not wall time.
 - `op: "delete"` is a tombstone; deleted magnets stay in the journal and never return. Unknown operation kinds are kept and ignored, never rewritten.
 - `.gitattributes` gives git a line union merge for every JSONL file, so two devices can both keep their lines.

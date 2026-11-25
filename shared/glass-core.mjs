@@ -2,6 +2,33 @@
 // No file system here; electron/glass-service.mjs owns disk, this module stays testable.
 
 export const glassVersion = 1;
+// Anchors are additive: version 1 is a single block landmark, 2 is the six-tier stack.
+export const anchorVersion = 2;
+const anchorKinds = new Set(["block", "fingerprint", "quote", "heading", "neighbours", "position", "spot"]);
+
+export function validAnchor(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const { version, landmarks } = value;
+  if (version !== undefined && version !== 1 && version !== 2) return false;
+  if (!Array.isArray(landmarks) || !landmarks.length || landmarks.length > 12) return false;
+  return landmarks.every(item => {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !anchorKinds.has(item.kind)) return false;
+    if (item.kind === "block") return typeof item.block === "string" && item.block.length <= 262_144
+      && Array.isArray(item.headings) && item.headings.length <= 12 && item.headings.every(heading => typeof heading === "string" && heading.length <= 512);
+    const value = item.value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    switch (item.kind) {
+      case "fingerprint": return typeof value.tag === "string" && value.tag.length <= 64 && typeof value.hash === "string" && value.hash.length <= 64;
+      case "quote": return typeof value.exact === "string" && value.exact.length <= 262_144
+        && typeof value.prefix === "string" && value.prefix.length <= 256 && typeof value.suffix === "string" && value.suffix.length <= 256;
+      case "heading": return Array.isArray(value.path) && value.path.length <= 12 && value.path.every(heading => typeof heading === "string" && heading.length <= 512);
+      case "neighbours": return (value.before === undefined || typeof value.before === "string") && (value.after === undefined || typeof value.after === "string");
+      case "position": return [value.line, value.char, value.word, value.percent].every(number => typeof number === "number" && Number.isFinite(number));
+      case "spot": return [value.x, value.y, value.px, value.py].every(number => typeof number === "number" && Number.isFinite(number));
+      default: return false;
+    }
+  });
+}
 export const nameByteLimit = 120;
 const reserved = new Set(["con", "prn", "aux", "nul",
   ...[1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap(unit => [`com${unit}`, `lpt${unit}`])]);

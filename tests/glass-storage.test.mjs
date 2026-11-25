@@ -320,3 +320,29 @@ ${JSON.stringify({ op: "set", magnetId: "m", field: "x", value: 3, hlc: second, 
   assert.equal(clamped.next(), "64-0");
   assert.equal(clamped.next(), "64-1");
 });
+
+test("landmark anchors round-trip as an additive versioned field", async () => {
+  const environment = await vault();
+  const service = await open(environment);
+  try {
+    const anchor = { version: 2, landmarks: [
+      { kind: "fingerprint", value: { tag: "paragraph", hash: "9f9920e6a9eb837c" } },
+      { kind: "quote", value: { exact: "Contour lines close together mean a steep slope.", prefix: "# Map\n\n", suffix: "\n" } },
+      { kind: "heading", value: { path: ["Map"] } },
+      { kind: "neighbours", value: { before: "abc" } },
+      { kind: "position", value: { line: 3, char: 7, word: 2, percent: 0.1 } },
+      { kind: "spot", value: { x: 0.5, y: 0.5, px: 0, py: 0 } },
+    ] };
+    const added = await service.request({ action: "add", note: "map.md", magnet: "m-anchor", kind: "debug", anchor });
+    assert.deepEqual(added.magnet.fields.anchor, anchor);
+    const journal = await readFile(path.join(environment.folder, ".omarkie", added.journal), "utf8");
+    assert.match(journal, /"field":"anchor"/);
+    const listed = await service.request({ action: "list", note: "map.md" });
+    assert.deepEqual(listed.magnets[0].fields.anchor, anchor);
+    const legacy = { version: 1, landmarks: [{ kind: "block", block: "Contour lines close together mean a steep slope.", headings: ["Map"], line: 3 }] };
+    const old = await service.request({ action: "add", note: "map.md", magnet: "m-legacy", anchor: legacy });
+    assert.deepEqual(old.magnet.fields.anchor, legacy);
+    await assert.rejects(service.request({ action: "add", note: "map.md", magnet: "m-bad", anchor: { version: 2, landmarks: [{ kind: "quote" }] } }), /Invalid Glass anchor/u);
+    await assert.rejects(service.request({ action: "add", note: "map.md", magnet: "m-bad", anchor: { version: 9, landmarks: [] } }), /Invalid Glass anchor/u);
+  } finally { await service.close(); }
+});

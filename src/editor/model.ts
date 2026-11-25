@@ -221,6 +221,11 @@ export class MarkdownDocument {
   replaceSource(source: string, kind = "source-command", selection?: SelectionBookmark) {
     return this.recordChange(0, this.text.length, source, kind, selection, source);
   }
+  private readonly changeListeners = new Set<(from: number, to: number, insert: string, length: number) => void>();
+  onChange(listener: (from: number, to: number, insert: string, length: number) => void) {
+    this.changeListeners.add(listener);
+    return () => { this.changeListeners.delete(listener); };
+  }
   replace(
     from: number,
     to: number,
@@ -260,6 +265,8 @@ export class MarkdownDocument {
     this.text = this.text.slice(0, from) + insert + this.text.slice(to);
     this.selection = selection;
     if (from === to && !insert && !raw) return false;
+    const length = before.text.length;
+    for (const listener of [...this.changeListeners]) listener(from, to, insert, length);
     const now = Date.now(),
       previous = this.undoStack.at(-1),
       end = previous ? previous.from + previous.inserted.length : -1;

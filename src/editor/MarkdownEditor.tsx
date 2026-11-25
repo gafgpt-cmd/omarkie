@@ -64,6 +64,7 @@ export interface EditorHandle {
   imageOffset(image: HTMLImageElement): number | undefined;
   selectionRange(): { from: number; to: number; context: string } | undefined;
   readingContext(): ReadingContext | undefined;
+  trackChanges(listener: (map: (offset: number) => number) => void): () => void;
   replaceRange(from: number, to: number, text: string, expected: string, allowReading?: boolean): boolean;
 }
 interface Props {
@@ -527,6 +528,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           }
           const from = Math.min(anchor, head), to = Math.max(anchor, head);
           return { nodes: doc.nodes, headings: (doc.environment.headings as Heading[] | undefined) || [], from, to, index: doc.nodeIndexNear(from), text: doc.text };
+        },
+        trackChanges: listener => {
+          const doc = model.current;
+          if (!doc) return () => {};
+          return doc.onChange((from, to, insert, length) => {
+            const changes = codeMirror?.ChangeSet.of({ from, to, insert }, length);
+            if (changes) listener(offset => changes.mapPos(offset, 1));
+            else listener(offset => offset <= from ? offset : offset >= to ? offset + insert.length - (to - from) : from + insert.length);
+          });
         },
         replaceRange: (from, to, text, expected, allowReading) => {
           const doc = model.current;
