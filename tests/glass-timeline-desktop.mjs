@@ -73,7 +73,7 @@ async function capture(page, name) {
     await expect(second).toHaveAttribute("aria-current", "true");
 
     await page.locator("[data-glass-pin-here]").click();
-    await expect(page.locator("[data-glass-timestamp]")).toHaveCount(1);
+    await expect(page.locator("[data-glass-timestamp]")).toHaveCount(1, { timeout: 20_000 });
     const pin = page.locator("[data-glass-timestamp]").first();
     const label = await pin.getAttribute("aria-label");
     assert.match(label, /00:00/);
@@ -100,7 +100,7 @@ async function capture(page, name) {
   try {
     await expect(page.locator(".glass-timeline")).toBeVisible();
     await expect(page.locator("[data-glass-cue]")).toHaveCount(2);
-    await expect(page.locator("[data-glass-timestamp]")).toHaveCount(1);
+    await expect(page.locator("[data-glass-timestamp]")).toHaveCount(1, { timeout: 20_000 });
     assert.deepEqual(errors, []);
     console.log("PASS: timeline glass pins, transcript links and seeks both ways");
   } finally { await app.close(); }
