@@ -2229,9 +2229,6 @@ export class GlassService {
     }
     if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "voice-memo", "voice-lecture",
       "layers", "layer", "board", "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up", "timeline", "scrub", "ocr",
-      "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
-      "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
       "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set",
       "swap-options", "swap-apply", "swap-restore", "swap-propose", "swap-dismiss", "swap-state", "swap-settings", "swap-voice"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (input.action === "swap-voice") return this.swapVoice(input);

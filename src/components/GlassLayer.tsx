@@ -2816,6 +2816,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onIndex={setExamIndex} onReveal={revealItem} onMarkedOnly={setExamMarkedOnly} onGrade={previewGrade}
       onClose={() => { setStudyMode({ exam: false }); setExamOpen(false); setRevealed(new Set()); }} />}
     {!scrub && createPortal(panel, document.body)}
+    {swapTarget && note && <GlassSwapPanel note={note} element={swapTarget} live={live}
+      onClose={() => setSwapTarget(undefined)}
+      onApplied={async () => { await reloadNote?.(); await load(); }} />}
     {chip && createPortal(<div className="glass-chip" role="status" data-glass-gesture={chip.kind} data-glass-low={chip.low || undefined}
       style={{ left: `${chip.at.x}px`, top: `${chip.at.y}px` }}>
       <span>{chip.low ? `Possible ${chip.kind}` : chip.kind === "bubble" ? "Bubble on the circled words" : chip.kind === "highlight" ? "Underline became a highlight" : "Connector made"}</span>
