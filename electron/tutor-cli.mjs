@@ -918,6 +918,9 @@ export async function main(argv = process.argv.slice(2)) {
       if (action === "scrub") request.at = opts.at;
       const state = await requestBridge(root, request, 60_000, "glass");
       if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
+      // A journal write that could not land returns without the new magnet; say so instead of {}.
+      if (state.saved === false && action !== "list" && action !== "show" && action !== "timeline" && action !== "scrub")
+        throw new Error("The glass journal could not write just now; try again in a moment.");
       emit(snap ? { ...state, snap } : state);
       return;
     }
