@@ -31,7 +31,8 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
-  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--near <quote> | --anchor <json>] [--file <path>] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--lock] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--magnet <id>] [--vault <dir>]", "Add a magnet. A sticky note needs --kind sticky --near <quote>; an image needs --kind image --file <path>."],
+  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--card <static|ai|menu>] [--title <text>] [--link <note#section>] [--question <text>] [--answer <text>] [--choices <json>] [--near <quote> | --anchor <json>] [--file <path>] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--lock] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--magnet <id>] [--vault <dir>]", "Add a magnet. A sticky note needs --kind sticky --near <quote>; an image needs --kind image --file <path>; a card needs --kind card --card static|ai|menu plus --near or --anchor."],
+  "glass page": ["--note <note.md> --magnet <id> [--vault <dir>]", "Write one card to its own Markdown note; the source note is never edited."],
   "glass move": ["--note <note.md> --magnet <id> --x <px> --y <px> [--w <px>] [--h <px>] [--rot <deg>] [--vault <dir>]", "Move or resize a magnet; x and y are offsets from its anchored paragraph."],
   "glass edit": ["--note <note.md> --magnet <id> [--text <text>] [--color <colour>] [--folded] [--unfold] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--no-tape] [--lock] [--unlock] [--vault <dir>]", "Change a magnet: text, colour, fold, text wrap, rotation, washi tape or lock."],
   "glass delete": ["--note <note.md> --magnet <id> [--vault <dir>]", "Move a magnet to the glass trash; the journal keeps it restorable."],
@@ -153,10 +154,17 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "glass bubble add" || command === "glass bubble reply") requireArgument(Boolean(opts.element?.trim()) && Boolean(opts.text?.trim()), "--element and --text are required.");
     if (command.startsWith("element ")) requireArgument(Boolean(opts.note?.trim()), "--note is required.");
     if (command === "find") requireArgument(Boolean(args[0]?.trim()), "A search query is required.");
-    if (["glass move", "glass edit", "glass delete", "glass restore"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
+    if (["glass move", "glass edit", "glass delete", "glass restore", "glass page"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
     if (command === "glass add") {
       if (opts.kind === "sticky") requireArgument(Boolean(opts.near?.trim()), "--near <quote> is required for a sticky note.");
       if (opts.kind === "image") requireArgument(Boolean(opts.file?.trim()), "--file <path> is required for an image.");
+      if (opts.kind === "card") {
+        requireArgument(["static", "ai", "menu"].includes(opts.card), "--card must be static, ai or menu for a card.");
+        if (opts.card === "static") requireArgument(Boolean(opts.link?.trim()), "--link <note#section> is required for a static card.");
+        if (opts.card === "ai") requireArgument(Boolean(opts.question?.trim()), "--question is required for an AI card.");
+        if (opts.card === "menu") requireArgument(Boolean(opts.choices?.trim()), "--choices <json> is required for a menu card.");
+        requireArgument(Boolean(opts.near?.trim() || opts.anchor !== undefined), "--near or --anchor is required for a card.");
+      }
       requireArgument(["near", "anchor", "file"].some(name => opts[name] !== undefined) || Boolean(opts.text?.trim()), "Supply --near, --anchor, --file, or --text.");
     }
     if (command === "glass move") requireArgument(["x", "y"].every(name => Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== ""), "--x and --y are required numbers.");
@@ -225,6 +233,13 @@ export async function main(argv = process.argv.slice(2)) {
       emit({ bubble: { id: open.id, element: element.id, kind: element.kind, line: element.line, pending: false, thread: bubbleThread(saved.magnet, opts.full) } });
       return;
     }
+    if (command === "glass page") {
+      const { requestBridge } = await import("./tutor-transport.mjs");
+      const state = await requestBridge(root, { op: "glass", action: "card", mode: "page", note: opts.note, magnet: opts.magnet }, 60_000, "glass");
+      if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
+      emit({ document: opts.note, card: state.card, path: state.path, name: state.name, bytes: state.bytes });
+      return;
+    }
     if (command.startsWith("glass ") || command === "vault map" || command === "find") {
       const { requestBridge } = await import("./tutor-transport.mjs");
       const action = command === "vault map" ? "map" : command === "find" ? "find" : command.slice(6);
@@ -239,6 +254,14 @@ export async function main(argv = process.argv.slice(2)) {
         if (opts.tape) fields.tape = true;
         if (opts.lock) fields.locked = true;
         if (opts.folded !== undefined) fields.folded = true;
+        if (opts.kind === "card") {
+          request.card = opts.card;
+          request.layer = "ai-cards";
+          for (const name of ["title", "link", "question", "answer"]) if (opts[name] !== undefined) request[name] = opts[name];
+          if (opts.choices !== undefined) {
+            try { request.choices = JSON.parse(opts.choices); } catch { throw new Error("--choices must be a JSON array of {label, body}."); }
+          }
+        }
         if (opts.file !== undefined) {
           const imagePath = path.resolve(opts.file.trim());
           const metadata = await stat(imagePath).catch(() => null);

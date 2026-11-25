@@ -14,6 +14,9 @@ import {
   assetFile, convertible, displayFile, extensionFor, imageDefaults, imageFields, imageTypeOf, mimeFor,
   orientationSize, scrapImageMagnet,
 } from "../shared/glass-images.mjs";
+import {
+  cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
+} from "../shared/glass-cards.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -484,6 +487,8 @@ export class GlassService {
     if (request.h !== undefined) fields.h = request.h;
     if (!Object.keys(fields).length) throw new Error("Nothing to change.");
     const kind = magnet.fields.get("kind")?.value ?? null;
+    if (kind === "card" && fields.card !== undefined && fields.card !== magnet.fields.get("card")?.value)
+      throw new Error("A card keeps its card kind.");
     const values = validateMagnetFields(kind, fields, true);
     for (const [field, value] of Object.entries(values)) {
       await this.appendRecord(file, { op: "set", magnetId: magnet.id, field, value, hlc: this.clock.next(), device: this.deviceName });
@@ -666,7 +671,7 @@ export class GlassService {
     const magnetId = request.magnet ?? newMagnetId();
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
-    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded"])
+    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded", "card", "layer", "title", "link", "question", "answer", "answerAt", "choices"])
       if (request[key] !== undefined) fields[key] = request[key];
     if (request.image !== undefined) {
       if (!request.image || typeof request.image !== "object" || Array.isArray(request.image)) throw new Error("Invalid image payload.");
@@ -925,6 +930,99 @@ export class GlassService {
       journal: relative(this.storeDir, file), location: this.mode === "inside" ? ".omarkie" : this.storeDir };
   }
 
+  // A static card resolves its section on demand; nothing about the source note is stored or rewritten.
+  async resolveCardLink(noteName, link) {
+    const parsed = parseCardLink(link ?? "");
+    if (!parsed) return { status: "invalid", link: link ?? "", target: null, section: null, heading: null, markdown: "" };
+    const targetName = parsed.target || noteName;
+    const base = noteName.includes("/") ? noteName.slice(0, noteName.lastIndexOf("/")) : "";
+    const stem = targetName.replace(/\.(?:md|markdown|mdown)$/i, "");
+    const candidates = [];
+    const offer = value => { const clean = value.replace(/^\.\//, ""); if (clean && !candidates.includes(clean)) candidates.push(clean); };
+    if (!targetName.includes("/")) {
+      if (base) offer(`${base}/${stem}.md`);
+      offer(`${stem}.md`);
+    } else {
+      offer(`${stem}.md`);
+      if (base) offer(`${base}/${stem}.md`);
+    }
+    if (!targetName.includes("/") && this.sync) {
+      const located = await this.sync.requestIndex("locate", { target: stem }).catch(() => []);
+      for (const pathName of located ?? []) offer(pathName);
+    }
+    for (const candidate of candidates.slice(0, 12)) {
+      const reading = await this.readNoteText(candidate);
+      if (!reading) continue;
+      const section = extractSection(reading, parsed.section);
+      return { status: section.status, link: link ?? "", target: candidate, section: parsed.section || null,
+        heading: section.heading, markdown: section.markdown };
+    }
+    return { status: "missing", link: link ?? "", target: `${stem}.md`, section: parsed.section || null, heading: null, markdown: "" };
+  }
+
+  async readNoteText(name) {
+    let note, file;
+    try { ({ note, file } = await this.validateNote(name)); } catch { return null; }
+    const metadata = await info(file);
+    if (!metadata?.isFile() || metadata.isSymbolicLink() || metadata.size > 4 * 1024 * 1024) return null;
+    return await readFile(file, "utf8");
+  }
+
+  async card(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    if (!this.initialized && await this.existingStore()) await this.initialize();
+    if (!this.initialized) throw new Error("Glass is not initialized in this vault.");
+    const note = this.notesByPath.get(name);
+    if (!note) throw new Error("Glass note not found.");
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet || magnet.deleted?.active) throw new Error("Glass card not found.");
+    const fields = magnetViewFromMap(magnet).fields;
+    if (fields.kind !== "card") throw new Error("That magnet is not a card.");
+    if (request.mode === "resolve") {
+      if (fields.card !== "static") return { ...this.describe(note, file), magnet: magnet.id, card: fields.card, status: "ok" };
+      const resolved = await this.resolveCardLink(name, fields.link);
+      return { ...this.describe(note, file), magnet: magnet.id, card: "static", title: fields.title ?? "", ...resolved };
+    }
+    if (request.mode !== "page") throw new Error("Unknown card request.");
+    this.assertWritable();
+    const card = { card: fields.card, title: fields.title, link: fields.link, question: fields.question, answer: fields.answer, choices: fields.choices };
+    const options = {};
+    if (fields.card === "static") {
+      const resolved = await this.resolveCardLink(name, fields.link);
+      if (resolved.status !== "ok") {
+        throw new Error(resolved.status === "missing" ? `The linked note is missing: ${resolved.target}`
+          : resolved.status === "section-missing" ? `The linked section is missing: ${resolved.section}`
+          : "The card link is not a note or section link.");
+      }
+      options.markdown = resolved.markdown;
+    } else if (fields.card === "ai" && !fields.answer?.trim()) throw new Error("The card has no cached answer yet.");
+    else if (fields.card === "menu" && !fields.choices?.length) throw new Error("The menu card has no choices.");
+    const markdown = cardPageMarkdown(card, options);
+    if (Buffer.byteLength(markdown) > cardDefaults.pageBytes) throw new Error("The card page is too large to write.");
+    const written = await this.writeCardPage(name, cardPageStem(card), markdown);
+    return { ...this.describe(note, file), magnet: magnet.id, card: fields.card, path: written.path, name: written.name, bytes: written.bytes };
+  }
+
+  // The page is a new note; an existing file is never overwritten or appended to.
+  async writeCardPage(noteName, stem, markdown) {
+    const folder = noteName.includes("/") ? noteName.slice(0, noteName.lastIndexOf("/")) : "";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const title = attempt ? `${stem} (${attempt + 1})` : stem;
+      const relativeName = folder ? `${folder}/${title}.md` : `${title}.md`;
+      if (relativeName === noteName) continue;
+      const file = path.join(this.root, ...relativeName.split("/"));
+      let handle;
+      try { handle = await open(file, "wx", 0o600); }
+      catch (error) { if (error.code === "EEXIST") continue; throw error; }
+      try { await handle.writeFile(markdown, "utf8"); await handle.sync(); }
+      finally { await handle.close(); }
+      return { path: relativeName, name: title, bytes: Buffer.byteLength(markdown) };
+    }
+    throw new Error("Too many pages already use that title.");
+  }
+
   status() {
     return { version: glassVersion, initialized: this.initialized === true, vaultId: this.vaultId ?? null, mode: this.mode ?? null, readOnly: this.readOnly === true,
       readOnlyReason: this.readOnly ? this.readOnlyReason ?? null : null, root: this.root,
@@ -942,9 +1040,9 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
-    if (["set", "delete", "restore", "asset", "asset-display"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (["set", "delete", "restore", "asset", "asset-display", "card"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
     if (input.action === "asset") return this.magnetAsset(input);
     if (input.action === "asset-display") return this.assetDisplay(input);
     return this[input.action](input);
@@ -1080,6 +1178,23 @@ function validateMagnetFields(kind, fields, partial) {
       if (!values.asset) throw new Error("An image magnet needs an asset.");
       if (!values.anchor) throw new Error("An image magnet needs an anchor.");
       values.display ??= null;
+    }
+    return values;
+  }
+  if (kind === "card") {
+    const values = cardFields(partial ? fields : { ...fields, kind: "card" });
+    if (!partial) {
+      if (!values.card) throw new Error("A card needs a card kind: static, ai or menu.");
+      if (!values.anchor) throw new Error("A card needs an anchor.");
+      values.layer ??= cardLayer;
+      values.title ??= "";
+      values.x ??= 0;
+      values.y ??= 0;
+      values.w ??= cardDefaults.w;
+      values.folded ??= true;
+      if (values.card === "static" && !values.link) throw new Error("A static card needs a link.");
+      if (values.card === "ai" && !values.question?.trim()) throw new Error("An AI card needs a question.");
+      if (values.card === "menu" && !values.choices?.length) throw new Error("A menu card needs at least one choice.");
     }
     return values;
   }

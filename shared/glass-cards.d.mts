@@ -1,0 +1,36 @@
+export type CardKind = "static" | "ai" | "menu";
+export interface CardChoice { label: string; body: string }
+export interface CardLink { target: string; section: string }
+export interface CardSection {
+  status: "ok" | "empty" | "section-missing";
+  heading: string | null;
+  level: number;
+  markdown: string;
+}
+export interface CardShape {
+  card: CardKind;
+  title?: string;
+  link?: string;
+  question?: string;
+  answer?: string;
+  choices?: CardChoice[];
+}
+
+export const cardKinds: readonly CardKind[];
+export const cardLayer: string;
+export const cardDefaults: {
+  w: number; minW: number; maxW: number; titleLimit: number; linkLimit: number; questionLimit: number;
+  answerLimit: number; atLimit: number; choiceCount: number; labelLimit: number; bodyLimit: number;
+  offsetLimit: number; headingLimit: number; pageBytes: number;
+};
+export const cardFieldNames: Set<string>;
+
+export function parseCardLink(value: unknown): CardLink | null;
+export function cardLink(target: string, section?: string): string;
+export function extractSection(markdown: unknown, section?: string): CardSection;
+export function normalizeChoices(value: unknown): CardChoice[];
+export function cardFields(fields: Record<string, unknown>): Record<string, unknown>;
+export function cardTitle(card: CardShape | undefined): string;
+export function cardIcon(card: CardShape | undefined): "sparkles" | "list" | "book";
+export function cardPageMarkdown(card: CardShape, options?: { markdown?: string }): string;
+export function cardPageStem(card: CardShape): string;

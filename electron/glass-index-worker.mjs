@@ -183,6 +183,15 @@ function file(pathName) {
   return db.prepare("SELECT * FROM files WHERE path = ?").get(pathName) ?? null;
 }
 
+// A card link such as [[Note]] resolves by basename once the vault is indexed; shortest path wins.
+function locate({ target }) {
+  const clean = String(target ?? "").replace(/\.(?:md|markdown|mdown)$/i, "").replace(/^\/+/, "").slice(0, 2048);
+  if (!clean) return [];
+  const escaped = clean.replace(/[\\%_]/g, value => `\\${value}`);
+  return db.prepare(`SELECT path FROM files WHERE kind = 'note' AND (path = ? OR path LIKE ? ESCAPE '\\')
+    ORDER BY length(path), path LIMIT 8`).all(`${clean}.md`, `%/${escaped}.md`).map(row => row.path);
+}
+
 function close() {
   db?.close();
   db = null;
@@ -196,6 +205,7 @@ const operations = {
   magnets: ({ magnets }) => putMagnets(magnets),
   map: () => map(),
   find: ({ query, limit }) => find(query, limit),
+  locate: ({ target }) => locate({ target }),
   file: ({ path: pathName }) => file(pathName),
   snapshot: () => snapshot(),
   close: () => { close(); return true; },

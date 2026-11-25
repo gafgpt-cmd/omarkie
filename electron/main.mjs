@@ -130,8 +130,8 @@ function prepareOperation(phase, change) { return new Promise((resolve, reject) 
 let operationRunning = false;
 let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
-function announceGlass(request) {
-  if (["add", "set", "delete", "restore", "bring"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
+function announceGlass(request, self = false) {
+  if (["add", "set", "delete", "restore", "bring"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action, self });
 }
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
@@ -301,7 +301,7 @@ const handlers = {
     await syncGlass(store?.folder ?? null);
     if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
     const result = await glassRuntime.service.request(request);
-    if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request);
+    if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request, true);
     return result;
   },
   tutorBridge: async ({ sender }, id, request) => {
