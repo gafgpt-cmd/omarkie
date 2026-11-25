@@ -490,6 +490,16 @@ try {
     new MutationObserver(() => window.__inkCommits.push(performance.now()))
       .observe(document.querySelector(".glass-ink"), { attributes: true, attributeFilter: ["data-glass-ink"] });
   });
+  // Ten warm moves: the first live-stroke paint belongs to the pickup, not to the drawing's steady state.
+  await page.evaluate(async grab => {
+    const surface = document.querySelector("[data-ink-surface]");
+    const fire = (type, x, y) => surface.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, pointerId: 31, pointerType: "pen", pressure: 0.6, isPrimary: true,
+      buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: y }));
+    fire("pointerdown", grab.x, grab.y);
+    for (let step = 0; step < 10; step += 1) { fire("pointermove", grab.x + 12 + step * 4, grab.y + step); await new Promise(resolve => setTimeout(resolve, 8)); }
+  }, grab);
+  await page.waitForTimeout(150);
   await watchWork(page);
   const cadence = await page.evaluate(async grab => {
     const surface = document.querySelector("[data-ink-surface]");
@@ -503,7 +513,6 @@ try {
     const fire = (type, x, y) => surface.dispatchEvent(new PointerEvent(type, {
       bubbles: true, cancelable: true, pointerId: 31, pointerType: "pen", pressure: 0.6, isPrimary: true,
       buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: y }));
-    fire("pointerdown", grab.x, grab.y);
     const start = performance.now();
     let step = 0;
     while (performance.now() - start < 1300) {

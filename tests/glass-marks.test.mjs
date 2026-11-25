@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import os from "node:os";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -107,11 +106,19 @@ test("300 arrows re-route inside one frame", () => {
     times.push(performance.now() - started);
   }
   const best = Math.min(...times);
-  // A shared host inflates wall-clock: scale the frame budget by how oversubscribed it is.
-  const load = Math.max(1, os.loadavg()[0] / Math.max(1, os.cpus().length));
-  const budget = 16 * load;
+  // Same-run baseline: routing a tenth of the arrows on this host. CI keeps the absolute frame.
+  const tenth = Array.from({ length: 30 }, (_, index) => many[index]);
+  for (let warm = 0; warm < 2; warm++) routeArrows(tenth, context);
+  const smallTimes = [];
+  for (let run = 0; run < 5; run++) {
+    const started = performance.now();
+    routeArrows(tenth, context);
+    smallTimes.push(performance.now() - started);
+  }
+  const baseline = Math.min(...smallTimes);
+  const budget = process.env.CI === "true" ? 16 : Math.max(16, baseline * 12);
   assert.equal(routes.routes.length, 300);
-  assert.ok(best < budget, `300 arrows route in ${best.toFixed(2)} ms (${times.map(value => value.toFixed(1)).join("/")}); budget ${budget.toFixed(1)} ms`);
+  assert.ok(best < budget, `300 arrows route in ${best.toFixed(2)} ms (${times.map(value => value.toFixed(1)).join("/")}) against a 30-arrow baseline of ${baseline.toFixed(2)} ms; budget ${budget.toFixed(1)} ms`);
 });
 
 test("a deleted paragraph turns its arrow into an orphan, never a crash", () => {
