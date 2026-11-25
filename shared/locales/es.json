@@ -1284,5 +1284,10 @@
   "导出玻璃需要桌面应用": "Exportar cristal requiere la aplicación de escritorio.",
   "导入玻璃导出包需要桌面应用": "Importar un paquete de cristal requiere la aplicación de escritorio.",
   "共享玻璃需要桌面应用": "El cristal compartido necesita la aplicación de escritorio.",
-  "导出选项无效。": "Esa opción de exportación no es válida."
+  "导出选项无效。": "Esa opción de exportación no es válida.",
+  "Dictate the question": "Dicta la pregunta",
+  "No speech was heard.": "No se ha oído voz.",
+  "Speak the question; the transcript stays local": "Habla la pregunta; la transcripción se queda en local",
+  "Stop and transcribe": "Parar y transcribir",
+  "Stop dictation": "Parar el dictado"
 }

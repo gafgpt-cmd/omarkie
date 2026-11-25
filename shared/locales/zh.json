@@ -373,5 +373,10 @@
   "No window to capture.": "没有可截取的窗口。",
   "The capture came back empty.": "截图结果为空。",
   "共享玻璃需要桌面应用": "共享玻璃需要桌面应用。",
-  "导出选项无效。": "导出选项无效。"
+  "导出选项无效。": "导出选项无效。",
+  "Dictate the question": "口述问题",
+  "No speech was heard.": "没有听到语音。",
+  "Speak the question; the transcript stays local": "说出问题；转写只保存在本机",
+  "Stop and transcribe": "停止并转写",
+  "Stop dictation": "停止口述"
 }

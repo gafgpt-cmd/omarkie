@@ -1284,5 +1284,10 @@
   "导出玻璃需要桌面应用": "Exportarea sticlei necesită aplicația desktop.",
   "导入玻璃导出包需要桌面应用": "Importarea unui pachet de sticlă necesită aplicația desktop.",
   "共享玻璃需要桌面应用": "Sticla partajată are nevoie de aplicația desktop.",
-  "导出选项无效。": "Această opțiune de export nu este validă."
+  "导出选项无效。": "Această opțiune de export nu este validă.",
+  "Dictate the question": "Dictează întrebarea",
+  "No speech was heard.": "Nu s-a auzit voce.",
+  "Speak the question; the transcript stays local": "Spune întrebarea; transcrierea rămâne locală",
+  "Stop and transcribe": "Oprește și transcrie",
+  "Stop dictation": "Oprește dictarea"
 }

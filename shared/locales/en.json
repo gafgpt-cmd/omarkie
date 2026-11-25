@@ -1270,5 +1270,10 @@
   "导出玻璃需要桌面应用": "Exporting glass needs the desktop app.",
   "导入玻璃导出包需要桌面应用": "Importing a glass bundle needs the desktop app.",
   "共享玻璃需要桌面应用": "Shared glass needs the desktop app.",
-  "导出选项无效。": "That export option is not valid."
+  "导出选项无效。": "That export option is not valid.",
+  "Dictate the question": "Dictate the question",
+  "No speech was heard.": "No speech was heard.",
+  "Speak the question; the transcript stays local": "Speak the question; the transcript stays local",
+  "Stop and transcribe": "Stop and transcribe",
+  "Stop dictation": "Stop dictation"
 }

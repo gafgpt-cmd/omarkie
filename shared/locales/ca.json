@@ -1284,5 +1284,10 @@
   "导出玻璃需要桌面应用": "Exportar vidre requereix l'aplicació d'escriptori.",
   "导入玻璃导出包需要桌面应用": "Importar un paquet de vidre requereix l'aplicació d'escriptori.",
   "共享玻璃需要桌面应用": "El vidre compartit necessita l’aplicació d’escriptori.",
-  "导出选项无效。": "Aquesta opció d’exportació no és vàlida."
+  "导出选项无效。": "Aquesta opció d’exportació no és vàlida.",
+  "Dictate the question": "Dicta la pregunta",
+  "No speech was heard.": "No s’ha sent veu.",
+  "Speak the question; the transcript stays local": "Parla la pregunta; la transcripció es queda en local",
+  "Stop and transcribe": "Atura i transcriu",
+  "Stop dictation": "Atura el dictat"
 }
