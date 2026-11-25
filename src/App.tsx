@@ -92,10 +92,22 @@ export default function App() {
   const [drawer, setDrawer] = useState(false);
   const [glassOffer, setGlassOffer] = useState<{ count: number; notes?: { path: string; title?: string }[] } | null>(null);
   const [glassBusy, setGlassBusy] = useState(false);
-  useEffect(() => host.onGlassStorage?.(status => {
-    const offer = status?.bring;
-    setGlassOffer(offer?.count ? offer : null);
-  }), []);
+  const glassDismissed = useRef(false);
+  useEffect(() => {
+    glassDismissed.current = false;
+    setGlassOffer(null);
+    if (!session.ready || !session.folder || !host.glass) return;
+    let current = true, received = false;
+    const apply = (status: { bring?: NonNullable<typeof glassOffer> | null } | null) => {
+      if (!current || glassDismissed.current) return;
+      setGlassOffer(status?.bring?.count ? status.bring : null);
+    };
+    const stop = host.onGlassStorage?.(status => { received = true; apply(status); });
+    void host.glass({ action: "status" }).then(status => {
+      if (!received) apply(status as Parameters<typeof apply>[0]);
+    }).catch(() => {});
+    return () => { current = false; stop?.(); };
+  }, [session.ready, session.folder]);
   async function bringGlass() {
     if (!host.glass) return;
     setGlassBusy(true);
@@ -602,7 +614,7 @@ export default function App() {
         <div className="glass-banner" role="status">
           <span>{t("{{count}} notes here already have glass on this computer.", { count: glassOffer.count })}</span>
           <button disabled={glassBusy} onClick={() => void bringGlass()}>{t("Bring glass")}</button>
-          <button className="glass-banner-dismiss" aria-label={t("Dismiss")} onClick={() => setGlassOffer(null)}><X size={15} /></button>
+          <button className="glass-banner-dismiss" aria-label={t("Dismiss")} onClick={() => { glassDismissed.current = true; setGlassOffer(null); }}><X size={15} /></button>
         </div>
       )}
       <Sidebar

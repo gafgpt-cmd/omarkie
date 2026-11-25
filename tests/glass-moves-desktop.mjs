@@ -156,7 +156,15 @@ await source.close();
     const target = "Note 49999.md";
     assert.equal((await axiIn(big, "glass", "list", "--note", target)).magnets.length, 0);
     await page.reload();
-    await banner.waitFor({ timeout: 30_000 });
+    try { await banner.waitFor({ timeout: 30_000 }); }
+    catch (error) {
+      const renderer = await page.evaluate(async () => {
+        const response = await window.desktop.glass({ action: "status" });
+        return { title: document.title, text: document.querySelector(".glass-banner")?.textContent,
+          count: response.value?.bring?.count, scanComplete: response.value?.index?.scanComplete, error: response.error };
+      });
+      throw new Error(`Finder reload: ${JSON.stringify(renderer)}`, { cause: error });
+    }
     await banner.getByRole("button", { name: "Bring glass", exact: true }).click();
     await waitFor(async () => (await axiIn(big, "glass", "list", "--note", target)).magnets[0]?.fields.text === "original magnet");
     await banner.waitFor({ state: "hidden" });
