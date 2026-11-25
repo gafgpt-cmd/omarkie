@@ -3,6 +3,7 @@
 // Pins, transcript cues and the player all speak source time; only labels use display time.
 import type { GlassAnchor, GlassPlacement } from "./anchor-map";
 import type { GlassMagnet } from "./glass-model";
+import { anchorFrom } from "./glass-state.ts";
 
 export interface TrimRange { from: number; to: number }
 export interface TranscriptCue { start: number; end: number; text: string }
@@ -99,7 +100,7 @@ export function timelineFromMagnet(magnet: GlassMagnet): TimelineMark | undefine
     duration: Math.max(0, number(fields.duration)),
     transcript: transcriptOf(fields.transcript),
     trims: trimsOf(fields.trims),
-    anchor: (fields.anchor as GlassAnchor | undefined) ?? undefined,
+    anchor: anchorFrom(fields.anchor),
     x: number(fields.x), y: number(fields.y),
     w: Math.max(240, number(fields.w, timelineDefaults.w)),
     h: Math.max(160, number(fields.h, timelineDefaults.h)),

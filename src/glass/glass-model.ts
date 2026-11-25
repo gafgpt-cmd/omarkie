@@ -86,9 +86,9 @@ export function nearestBlock(blocks: readonly GlassBlock[], point: { x: number; 
 
 // Content-space offset of a point from its paragraph; the layer scrolls with the page,
 // so both rectangles move together and only their difference matters.
-export function offsetIn(block: GlassBlock, point: { x: number; y: number }) {
+export function offsetIn(block: GlassBlock, point: { x: number; y: number }, rtl = false) {
   const element = block.element;
   if (!element) return { x: 0, y: 0 };
   const rect = element.getBoundingClientRect();
-  return { x: snapped(point.x - rect.left), y: snapped(point.y - rect.top) };
+  return { x: snapped(rtl ? rect.right - point.x : point.x - rect.left), y: snapped(point.y - rect.top) };
 }

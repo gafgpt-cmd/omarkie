@@ -349,23 +349,19 @@ export function matchIndexed(index: BlockIndex, anchor: GlassAnchor): number | n
       const inSection = all.filter(candidate => sectionKey(candidate.headings) === section);
       return inSection.length === 1 ? inSection[0].line : null;
     }
-    const starts = (candidate: GlassBlock) => { const other = normalizeText(candidate.block); return other.startsWith(text) || text.startsWith(other); };
+    const starts = (candidate: GlassBlock) => {
+      const other = normalizeText(candidate.block);
+      if (5 * Math.min(other.length, text.length) < 4 * Math.max(other.length, text.length)) return false;
+      return other.startsWith(text) || text.startsWith(other);
+    };
     const prefixed = (sectionsOf(index).get(section) ?? []).filter(starts);
-    if (prefixed.length === 1) return prefixed[0].line;
-    if (prefixed.length > 1) {
-      const inSection = prefixed.filter(candidate => sectionKey(candidate.headings) === section);
-      return inSection.length === 1 ? inSection[0].line : null;
-    }
+    if (prefixed.length) return prefixed.length === 1 ? prefixed[0].line : null;
     return matchFuzzy(text, sectionsOf(index).get(section) ?? []);
   }
   if (fingerprint?.hash) {
     // Hash only the section, and only for anchors that carry no usable quote.
     const same = (sectionsOf(index).get(section) ?? []).filter(candidate => textHash(candidate.block) === fingerprint.hash);
     if (same.length === 1) return same[0].line;
-    if (same.length > 1) {
-      const inSection = same.filter(candidate => sectionKey(candidate.headings) === section);
-      return inSection.length === 1 ? inSection[0].line : null;
-    }
   }
   return null;
 }

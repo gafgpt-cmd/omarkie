@@ -15,6 +15,8 @@ export default function GlassTimeline({ mark, timestamps, place, selected, onSel
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(mark.duration);
   const [error, setError] = useState("");
+  const reportDuration = useRef(onDuration);
+  reportDuration.current = onDuration;
 
   const seek = useCallback((source: number) => {
     const media = player.current;
@@ -45,24 +47,28 @@ export default function GlassTimeline({ mark, timestamps, place, selected, onSel
     const loaded = () => {
       if (!Number.isFinite(media.duration) || media.duration <= 0) return;
       setDuration(media.duration);
-      if (Math.abs(media.duration - mark.duration) > 0.5) onDuration(media.duration);
+      if (Math.abs(media.duration - mark.duration) > 0.5) reportDuration.current(media.duration);
     };
     const tick = () => setTime(media.currentTime);
+    const start = () => setPlaying(true);
     const leave = () => setPlaying(false);
+    const fail = () => setError("This audio or video could not be loaded.");
     media.addEventListener("loadedmetadata", loaded);
     media.addEventListener("timeupdate", tick);
-    media.addEventListener("play", () => setPlaying(true));
+    media.addEventListener("play", start);
     media.addEventListener("pause", leave);
     media.addEventListener("ended", leave);
-    media.addEventListener("error", () => setError("This audio or video could not be loaded."));
+    media.addEventListener("error", fail);
     if (media.readyState >= 1) loaded();
     return () => {
       media.removeEventListener("loadedmetadata", loaded);
       media.removeEventListener("timeupdate", tick);
+      media.removeEventListener("play", start);
       media.removeEventListener("pause", leave);
       media.removeEventListener("ended", leave);
+      media.removeEventListener("error", fail);
     };
-  }, [mark.duration, onDuration]);
+  }, [mark.duration]);
 
   const pins = useMemo(() => timestamps.filter(stamp => stamp.timeline === mark.id), [timestamps, mark.id]);
   const total = duration || Math.max(0, ...cues.map(cue => cue.end), ...pins.map(pin => pin.end ?? pin.t));

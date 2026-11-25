@@ -189,6 +189,12 @@ function MergeDiff({ rows, stamp }: { rows: MergeRow[]; stamp: string }) {
   </pre>;
 }
 
+// Pointer and arrow-key edits speak physical pixels; stored x runs from the inline start, so RTL flips it.
+function inlineX(root: HTMLElement, mark: { x: number; w: number }, patch: { x?: number; w?: number }) {
+  if (getComputedStyle(root).direction !== "rtl") return patch.x ?? mark.x;
+  return mark.x - ((patch.x ?? mark.x) - mark.x) - ((patch.w ?? mark.w) - mark.w);
+}
+
 export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, reloadNote }: {
   editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
   live?: LiveTutor; reloadNote?(): void | Promise<unknown>;
@@ -373,7 +379,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const top = editor()?.topOfLine(row.line);
       if (top === null || top === undefined) { places[id] = { status: "orphan" }; return; }
       const previous = lastPlaces.current[id];
-      places[id] = lastPlaces.current[id] = { status: "resolved", x: previous?.x ?? x, y: top + y, width, height };
+      places[id] = lastPlaces.current[id] = { status: "resolved", x: previous?.x ?? (rtl ? frame.width - width - x : x), y: top + y, width, height };
     };
     for (const mark of [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines]) placed(mark.id, mark.anchor, mark.x, mark.y, mark.w, mark.h);
     const floats: { image: GlassImage; element: HTMLElement; width: number; height: number }[] = [];
@@ -411,7 +417,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         const previous = lastPlaces.current[card.id];
         places[card.id] = top === null || top === undefined
           ? { status: "orphan" }
-          : lastPlaces.current[card.id] = { status: "resolved", x: previous?.x ?? card.x, y: top + card.y + cardRow * 24, width: previous?.width ?? 0, height: 0 };
+          : lastPlaces.current[card.id] = { status: "resolved", x: previous?.x ?? (rtl ? frame.width - card.x : card.x), y: top + card.y + cardRow * 24, width: previous?.width ?? 0, height: 0 };
       }
       cardRow += 1;
     }
@@ -642,9 +648,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [arrows, selectedArrow]);
 
   const patchImage = useCallback((id: string, patch: Partial<GlassImage>, persist = false) => {
+    const image = latest.current.images.find(item => item.id === id);
+    if (image && image.wrap !== "left" && image.wrap !== "right" && !patch.anchor && (patch.x !== undefined || patch.w !== undefined))
+      patch = { ...patch, x: inlineX(root, image, patch) };
     setImages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
     if (persist) void send({ action: "set", magnet: id, fields: patch as Record<string, unknown> });
-  }, [send]);
+  }, [root, send]);
 
   const patchCard = useCallback((id: string, patch: Partial<GlassCard>, persist = true) => {
     setCards(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -776,7 +785,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const sticker = latest.current.stickers.find(item => item.id === id);
       return sticker ? { kind: "sticker" as const, x: sticker.x, y: sticker.y, w: sticker.w, h: sticker.h } : undefined;
     };
-    const place = (id: string, patch: { x: number; y: number; w?: number; h?: number }) => {
+    const place = (id: string, physical: { x: number; y: number; w?: number; h?: number }) => {
+      const mark = findMark(id);
+      const patch = mark ? { ...physical, x: inlineX(root, mark, physical) } : physical;
       setMagnets(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
       setStickers(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
       const fields: Record<string, number> = { x: patch.x, y: patch.y };
@@ -887,14 +898,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       },
     });
     return () => { surface.removeEventListener("pointerdown", track, true); instance.unset(); };
-  }, [paintGuides, resolveSnap, send, settle, snapContext]);
+  }, [paintGuides, resolveSnap, root, send, settle, snapContext]);
 
   const create = useCallback((point: { x: number; y: number }) => {
     const surface = layer.current;
     if (!surface || !latest.current.note) return;
     const block = nearestBlock(blocks.current, point);
     if (!block) return;
-    const offset = offsetIn(block, point);
+    const offset = offsetIn(block, point, getComputedStyle(root).direction === "rtl");
     const stickie: StickyNote = {
       id: newStickyId(), text: "", color: stickyColors[0], anchor: anchorOf(block),
       x: offset.x, y: offset.y, w: stickyDefaults.w, h: stickyDefaults.h, folded: false,
@@ -904,7 +915,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setSelectedArrow(undefined);
     setEditing(stickie.id);
     void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
-  }, [send]);
+  }, [root, send]);
 
   // Timeline: attach to the first audio or video on the page, keep the transcript lines that follow it.
   const createTimeline = useCallback(async () => {
@@ -1092,7 +1103,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (!latest.current.note) return;
     const block = nearestBlock(blocks.current, point);
     if (!block) return;
-    const offset = offsetIn(block, point);
+    const offset = offsetIn(block, point, getComputedStyle(root).direction === "rtl");
     const mark = stickerAt(block, offset);
     if (stickerChoice === "custom") {
       if (!customImage) { setNotice("Choose a custom image first."); fileInput.current?.click(); return; }
@@ -1103,7 +1114,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setSelected(mark.id);
     setSelectedArrow(undefined);
     void send({ action: "add", magnet: mark.id, fields: stickerFields(mark) });
-  }, [customImage, send, stickerChoice]);
+  }, [customImage, root, send, stickerChoice]);
 
   const pickSticker = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1293,11 +1304,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   // Unanchoring keeps the paper where it stood, as a free object, so nothing is lost.
   const unanchorHere = useCallback((id: string) => {
-    const place = lastPlaces.current[id];
-    setMagnets(current => current.map(item => item.id === id ? { ...item, anchor: { landmarks: [] }, x: place?.x ?? item.x, y: place?.y ?? item.y } : item));
+    const place = lastPlaces.current[id], frame = layer.current?.getBoundingClientRect();
+    const x = place && frame && getComputedStyle(root).direction === "rtl" ? frame.width - place.width - place.x : place?.x;
+    setMagnets(current => current.map(item => item.id === id ? { ...item, anchor: { landmarks: [] }, x: x ?? item.x, y: place?.y ?? item.y } : item));
     setKept(current => new Set(current).add(id));
-    void send({ action: "set", magnet: id, fields: { anchor: { landmarks: [] }, x: place?.x ?? 0, y: place?.y ?? 0 } }).then(() => load());
-  }, [load, send]);
+    void send({ action: "set", magnet: id, fields: { anchor: { landmarks: [] }, x: x ?? 0, y: place?.y ?? 0 } }).then(() => load());
+  }, [load, root, send]);
 
   const liftUp = useCallback(async (detail: { id?: string }) => {
     if (!latest.current.note || !detail.id) return;
@@ -1375,6 +1387,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const force = [selected, editing, focusedMagnet].filter((id): id is string => !!id);
     return glassWindow(items, { top: viewport.top, height: viewport.height }, { force });
   }, [magnets, images, stickers, cards, timelines, layout.places, selected, editing, focusedMagnet, viewport.top, viewport.height]);
+  const pendingFocus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const id = pendingFocus.current;
+    if (!id) return;
+    const target = layer.current?.querySelector<HTMLElement>(`[data-magnet="${CSS.escape(id)}"], [data-card="${CSS.escape(id)}"], [data-glass-timeline="${CSS.escape(id)}"]`);
+    if (!target) return;
+    pendingFocus.current = undefined;
+    target.focus();
+  });
   // Every magnet keeps a keyboard stop even when culled: the offscreen list is how Tab reaches it.
   const offscreen = [...magnets, ...images, ...stickers, ...cards, ...timelines]
     .filter(mark => !glassMounts.mounted.has(mark.id) && layout.places[mark.id]?.status !== "orphan");
@@ -1611,7 +1632,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       {offscreenOpen && offscreen.map(mark => <button key={mark.id} type="button" data-glass-offscreen={mark.id}
         onClick={() => {
           setSelected(mark.id);
-          const line = mark.anchor ? matchIndexed(index.current, mark.anchor) : null;
+          pendingFocus.current = mark.id;
+          const line = rowCache.current?.byId.get(mark.id)?.line ?? null;
           if (line !== null) jumpToSource({ line });
         }}>{plainMarkName(mark)}</button>)}
     </nav>}
@@ -1676,7 +1698,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         onRotate={rotate => { setStickers(current => current.map(item => item.id === sticker.id ? { ...item, rotate } : item)); void send({ action: "set", magnet: sticker.id, fields: { rotate } }); }}
         onNudge={(dx, dy) => {
           const step = grid.on ? grid.size : 1;
-          const x = Math.round((sticker.x + dx) / step) * step, y = Math.round((sticker.y + dy) / step) * step;
+          const x = inlineX(root, sticker, { x: Math.round((sticker.x + dx) / step) * step }), y = Math.round((sticker.y + dy) / step) * step;
           setStickers(current => current.map(item => item.id === sticker.id ? { ...item, x, y } : item));
           void send({ action: "set", magnet: sticker.id, fields: { x, y } });
         }}
