@@ -20,6 +20,8 @@ import { InsertDialog } from "./components/InsertDialog";
 import type { InsertKind } from "./components/InsertDialog";
 import { QuickOpen } from "./components/QuickOpen";
 import { Dialog } from "./components/Dialog";
+import { GlassExport } from "./components/GlassExport";
+import { paintGlassPrint } from "./editor/glass-print";
 import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
@@ -83,7 +85,7 @@ export default function App() {
   const [readOnly, setReadOnly] = useState(false);
   const pluginRuntime = useRef<PluginRuntime | null>(null);
   const [typewriter, setTypewriter] = useState(false);
-  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
+  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | "glass-export" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
@@ -170,6 +172,22 @@ export default function App() {
       if (response?.ok) setGlassOn(response.value?.visible === true);
       else { setGlassOn(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
     }).catch((error: Error) => { setGlassOn(!visible); session.setMessage(error.message); });
+  }
+  const sharedSupported = !!window.desktop?.sharedGlassState;
+  const [sharedOn, setSharedOn] = useState(false);
+  useEffect(() => {
+    if (!sharedSupported) return;
+    let current = true;
+    void host.sharedGlassState!({ action: "read" }).then(value => { if (current) setSharedOn(value.shared === true); }).catch(() => {});
+    return () => { current = false; };
+  }, [sharedSupported, session.folder]);
+  function toggleSharedGlass() {
+    if (!sharedSupported) return;
+    const shared = !sharedOn;
+    setSharedOn(shared);
+    void host.sharedGlassState!({ action: "write", shared })
+      .then(value => setSharedOn(value.shared === true))
+      .catch((error: Error) => { setSharedOn(!shared); session.setMessage(error.message); });
   }
   const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
   const readingVisible = learningEnabled && !!active && !focus && painted;
@@ -341,9 +359,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, glass: glassOn };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, glass: glassOn, "shared-glass": sharedOn };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, glassOn, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, glassOn, sharedOn, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -407,20 +425,27 @@ export default function App() {
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setPreferences(next); }
-  async function exportDocument(kind: string, options?: ConversionOptions) {
+  async function exportDocument(kind: string, options?: ConversionOptions, glassScope?: "page" | "flat" | "handout") {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
+    if (glassScope === "handout") document.body.classList.add("printing-handout");
     try {
       await host.persist({ documents: session.documents, activeId: session.activeId });
       await loadHighlighting();
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
+      const glassNote = vaultRelative(session.folder, active.path);
+      if (glassScope && glassNote && host.glass) {
+        const glass = await host.glass({ action: "list", note: glassNote });
+        const magnets = (Array.isArray(glass?.magnets) ? glass.magnets : []).filter((magnet: { deleted?: boolean }) => !magnet.deleted);
+        if (magnets.length) await paintGlassPrint(printDocument.current, { note: glassNote, title: active.name, magnets, scope: glassScope });
+      }
       const result = options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
     } catch (error) { session.setMessage((error as Error).message); }
-    finally { document.body.classList.remove("printing"); exportingRef.current = false; setExporting(false); }
+    finally { document.body.classList.remove("printing", "printing-handout"); exportingRef.current = false; setExporting(false); }
   }
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -484,6 +509,8 @@ export default function App() {
     else if (action === "source") setRenderedView(!renderedView);
     else if (action === "reading-layers") toggleReading();
     else if (action === "glass") toggleGlass();
+    else if (action === "shared-glass") toggleSharedGlass();
+    else if (action === "glass-export" && active) setDialog("glass-export");
     else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
       openFilesRail();
@@ -739,7 +766,7 @@ export default function App() {
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               note={vaultRelative(session.folder, active.path)}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               glassSaved={active.content === active.savedContent}
               reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
@@ -813,6 +840,7 @@ export default function App() {
       />}</Suspense>
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
+      {dialog === "glass-export" && active && <GlassExport key={active.id} note={vaultRelative(session.folder, active.path) ?? ""} close={closeDialog} pdf={scope => exportDocument("pdf", undefined, scope)} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}

@@ -10,6 +10,7 @@ import { t } from "../i18n";
 import { Dialog } from "./Dialog";
 import ElementHalo from "./ElementHalo";
 import GlassLayer from "./GlassLayer";
+import SharedGlassLayer from "./SharedGlassLayer";
 import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } from "./learning-images.tsx";
 import { LearningOverlays, type StudyMark, type StudyOverlay } from "./learning-overlays.tsx";
 import { readingBlocks, readingSelection, type StudySelection } from "./reading-selection";
@@ -43,12 +44,12 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -561,6 +562,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
+    {root && shared && <SharedGlassLayer key={`shared:${id}:${note}`} root={root} editor={editor} note={note} />}
     {root && context && (glass
       ? <><GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved}
           live={live} reloadNote={reloadNote} />

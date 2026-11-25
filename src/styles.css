@@ -787,6 +787,21 @@ svg {
 .printing .print-document .mermaid-block {
   color: #222;
 }
+/* G18 print glass: callouts flow with the page; the handout replaces it. */
+.print-document .glass-print { margin-top: 22px; }
+.print-document .glass-print-card { border-left: 3px solid #9aa4ad; background: #fafafa; margin: 10px 0; padding: 8px 12px; border-radius: 3px; break-inside: avoid; }
+.print-document .glass-print-card strong { display: block; font-size: 12px; letter-spacing: .02em; color: #55606a; }
+.print-document .glass-print-card p { margin: 3px 0; white-space: pre-wrap; }
+.print-document .glass-print-card svg, .print-document .glass-print-card img { max-width: 100%; height: auto; }
+.print-document .glass-print-card[data-kind="sticky"] { border-color: #d8b64a; background: #fffbe8; }
+.print-document .glass-print-card[data-kind="comment"] { border-color: #4d8bcd; background: #f4f8fd; }
+.print-document .glass-print-card[data-kind="card"] { border-color: #8b60bf; background: #faf6ff; }
+.print-document .glass-print-ref { color: #55606a; }
+.print-document .glass-print-arrows, .print-document .glass-print-notes { margin-top: 12px; font-size: 12px; color: #55606a; break-inside: avoid; }
+.print-document .glass-print-notes li { margin: 4px 0; }
+.print-document .glass-print-handout { background: #fbf7ee; color: #2f2a22; padding: 24px; border-radius: 4px; }
+.print-document .glass-print-handout h1 { font-size: 27px; margin-top: 0; }
+.print-document .glass-print-handout .glass-print-source { color: #6f6557; font-size: 12px; }
 @media print {
   body {
     overflow: visible !important;

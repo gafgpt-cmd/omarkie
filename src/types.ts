@@ -170,6 +170,10 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   glass?(request: Record<string, unknown>): Promise<any>;
+  exportGlass?(request: { note: string; mode: string; target?: string; order?: string[] }): Promise<{ out: string; files: string[]; note: string } | null>;
+  importGlass?(): Promise<{ note: string; file: string } | null>;
+  sharedGlass?(note: string): Promise<{ note: string; magnets: { id: string; fields: Record<string, unknown>; kind?: string | null }[]; readOnly: boolean }>;
+  sharedGlassState?(request: { action: "read" | "write"; shared?: boolean }): Promise<{ shared: boolean }>;
   onGlassStorage?(callback: (status: { bring?: { count: number; notes?: { path: string; title?: string }[] } | null } | null) => void): () => void;
   onCommand(callback: (command: Command) => void): () => void;
   payloadRequest?(request: PayloadRequest): Promise<string>;

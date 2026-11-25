@@ -52,6 +52,9 @@ const specs = {
   "glass lift-up": ["--note <note.md> --element <id> [--vault <dir>]", "Copy a page paragraph or picture onto the glass, linked to its source; the note is unchanged."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
   glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
+  "glass shared": ["[--vault <dir>] [--on | --off]", "Read or set the other person's read-only glass layer for a vault."],
+  export: ["--note <note.md> --mode <page|flat|handout|cheatsheet|bundle> --out <path> [--order <ids>] [--target <github|obsidian>] [--vault <dir>]", "Export the page, the page with glass, a glass handout, a cheatsheet in your order, or a re-importable bundle. Writes new files only."],
+  import: ["--bundle <folder> [--vault <dir>]", "Re-import a glass bundle folder; existing notes and journals are kept."],
   "element list": ["--note <note.md> [--kind <kind>] [--vault <dir>] [--full]", "List the page element boxes of a note: id, kind, line, heading path, source box."],
   "element show": ["<id> --note <note.md> [--vault <dir>] [--full]", "Show one element: kind, Markdown, heading path, landmarks and source box."],
   "glass ink list": ["--note <note.md> [--vault <dir>] [--full]", "List ink strokes as SVG paths with the element box each part is anchored to."],
@@ -473,6 +476,32 @@ export async function main(argv = process.argv.slice(2)) {
       const { readGlass, writeGlass, glassFile } = await import("./glass-state.mjs");
       const visible = opts.on || opts.off ? await writeGlass(root, !!opts.on) : await readGlass(root);
       emit({ vault: root, glass: visible ? "on" : "off", state: glassFile(root) });
+      return;
+    }
+    if (command === "glass shared") {
+      requireArgument(!(opts.on && opts.off), "Use either --on or --off.");
+      const { readShared, writeShared, glassFile } = await import("./glass-state.mjs");
+      const shared = opts.on || opts.off ? await writeShared(root, !!opts.on) : await readShared(root);
+      emit({ vault: root, shared: shared ? "on" : "off", state: glassFile(root) });
+      return;
+    }
+    if (command === "export") {
+      requireArgument(Boolean(opts.note?.trim()) && Boolean(opts.mode?.trim()) && Boolean(opts.out?.trim()), "--note, --mode and --out are required.");
+      const { exportGlassNote } = await import("./glass-export.mjs");
+      const mode = opts.mode.trim();
+      if (!["page", "flat", "handout", "cheatsheet", "bundle"].includes(mode)) requireArgument(false, "--mode must be page, flat, handout, cheatsheet or bundle.");
+      const target = opts.target === "obsidian" ? "obsidian" : "github";
+      const order = typeof opts.order === "string" ? opts.order.split(",").map(id => id.trim()).filter(Boolean) : [];
+      const result = await exportGlassNote({ root, note: opts.note.trim(), mode, out: path.resolve(opts.out.trim()), target, order });
+      emit({ vault: root, mode: result.mode, note: result.note, out: path.relative(root, result.out) || result.out,
+        files: result.files.map(file => path.relative(root, file) || file), checksum: result.checksum, untouched: true });
+      return;
+    }
+    if (command === "import") {
+      requireArgument(Boolean(opts.bundle?.trim()), "--bundle is required.");
+      const { importGlassBundle } = await import("./glass-export.mjs");
+      const imported = await importGlassBundle({ root, bundle: path.resolve(opts.bundle.trim()) });
+      emit({ vault: root, note: imported.note, file: path.relative(root, imported.file), journal: imported.journal });
       return;
     }
     const { requestBridge } = await import("./tutor-transport.mjs");
