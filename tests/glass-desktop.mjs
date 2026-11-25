@@ -110,7 +110,14 @@ try {
   await expect(glass).toHaveAttribute("data-glass", "on");
   await pinnedTo(first);
   await capture("light-1440-on");
-  await pressG();
+  const nativeGlassChecked = () => app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("glass").checked);
+  await expect.poll(nativeGlassChecked).toBe(true);
+  await app.evaluate(({ BrowserWindow, Menu }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    const item = Menu.getApplicationMenu().getMenuItemById("glass");
+    item.click({}, window, window.webContents);
+  });
+  await expect.poll(nativeGlassChecked).toBe(false);
   await expect(glass).toHaveCount(0);
   await capture("light-1440-off");
   assert.equal((await axi("glass", "--vault", vault)).glass, "off");
