@@ -8,6 +8,7 @@ import { sourceOffset } from "../editor/model";
 import { host } from "../host";
 import { t } from "../i18n";
 import { Dialog } from "./Dialog";
+import ElementHalo from "./ElementHalo";
 import GlassLayer from "./GlassLayer";
 import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } from "./learning-images.tsx";
 import { LearningOverlays, type StudyMark, type StudyOverlay } from "./learning-overlays.tsx";
@@ -559,7 +560,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && (glass
-      ? <GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved} />
+      ? <><GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved} />
+        <ElementHalo key={`halo:${id}`} root={root} editor={editor} /></>
       : groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />)}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}

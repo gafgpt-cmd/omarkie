@@ -1,10 +1,13 @@
 import type { ReadingContext } from "../editor/MarkdownEditor";
 import { readingBlocks } from "../components/reading-selection.ts";
+import { anchorVersion, captureAnchor, contextWidth, normalizeText, sectionKey, textHash } from "../../shared/anchor-core.mjs";
 
 // Landmark anchors, strongest first (vision: "landmark anchors"):
 // fingerprint, TextQuote, heading path, neighbours, position, spot.
 // Legacy v1 anchors stored one {kind:"block"} landmark; every reader keeps it working.
-export const anchorVersion = 2;
+// captureAnchor, normalizeText, sectionKey and textHash live in shared/anchor-core.mjs so
+// omarkie-axi captures exactly what this renderer stores.
+export { anchorVersion, captureAnchor, normalizeText, sectionKey, textHash };
 
 export interface GlassFingerprint {
   tag: string;
@@ -95,28 +98,8 @@ interface Candidate {
   tier: GlassTier;
 }
 
-const contextWidth = 32;
-
-export function normalizeText(text: string) {
-  return text.normalize("NFC").replace(/\s+/gu, " ").trim();
-}
-
-export function sectionKey(headings: readonly string[]) {
-  return JSON.stringify(headings.map(normalizeText));
-}
-
 function foldText(text: string) {
   return normalizeText(text).normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
-}
-
-export function textHash(text: string) {
-  const value = foldText(text);
-  let hash = 0xcbf29ce484222325n;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
-  }
-  return hash.toString(16).padStart(16, "0");
 }
 
 function grams(text: string) {
@@ -296,24 +279,6 @@ export function resolveAnchor(anchor: GlassAnchor, blocks: readonly GlassBlock[]
   if (tiers.some(candidate => candidate && candidate !== winner && candidate.line === winner.line)) confidence += 0.05;
   if (tiers.some(candidate => candidate && candidate !== winner && candidate.line !== winner.line)) confidence -= 0.1;
   return { line: winner.line, confidence: Math.max(0.05, Math.min(1, confidence)), tier: winner.tier };
-}
-
-export function captureAnchor(block: GlassBlock, blocks: readonly GlassBlock[]): GlassAnchor {
-  const index = blocks.findIndex(item => item.line === block.line);
-  const before = index > 0 ? blocks[index - 1] : undefined, after = index >= 0 && index + 1 < blocks.length ? blocks[index + 1] : undefined;
-  const kind = block.kind ?? "block";
-  const name = kind === "image" ? block.block.match(/!\[[^\]]*\]\(([^)]+)\)/u)?.[1]?.split("/").at(-1) : undefined;
-  return {
-    version: anchorVersion,
-    landmarks: [
-      { kind: "fingerprint", value: { tag: kind, hash: textHash(block.block), ...(name ? { name } : {}) } },
-      { kind: "quote", value: { exact: normalizeText(block.block), prefix: normalizeText(block.prefix ?? "").slice(-contextWidth), suffix: normalizeText(block.suffix ?? "").slice(0, contextWidth) } },
-      { kind: "heading", value: { path: [...block.headings] } },
-      { kind: "neighbours", value: { ...(before ? { before: textHash(before.block) } : {}), ...(after ? { after: textHash(after.block) } : {}) } },
-      { kind: "position", value: { line: block.line, char: block.from ?? 0, word: block.words ?? 0, percent: block.percent ?? 0 } },
-      { kind: "spot", value: { x: 0.5, y: 0.5, px: 0, py: 0 } },
-    ],
-  };
 }
 
 // G1 contract: exact block text in its section, then exact elsewhere, then a 0.8 fuzzy match.

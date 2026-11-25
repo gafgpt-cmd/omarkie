@@ -1109,5 +1109,22 @@
   "预览属性修改": "Previzualizează modificarea proprietății",
   "预览已过期，请重新预览后再应用。": "Previzualizarea este veche. Previzualizează din nou înainte de a aplica.",
   "预览文件夹整理": "Previzualizează pregătirea dosarului",
-  "预览笔记整理": "Previzualizează pregătirea notei"
+  "预览笔记整理": "Previzualizează pregătirea notei",
+  "Paragraph": "Paragraf",
+  "Heading": "Titlu",
+  "List": "Listă",
+  "List item": "Element de listă",
+  "Table": "Tabel",
+  "Cell": "Celulă",
+  "Image": "Imagine",
+  "Embed": "Încorporat",
+  "Formula": "Formulă",
+  "Code": "Cod",
+  "Quote": "Citat",
+  "HTML": "HTML",
+  "Divider": "Separator",
+  "Change": "Schimbă",
+  "Comment": "Comentează",
+  "Element actions": "Acțiuni pentru element",
+  "Selected {{kind}}: {{text}}": "Selectat {{kind}}: {{text}}"
 }

@@ -1098,5 +1098,22 @@
   "预览属性修改": "Preview property change",
   "预览已过期，请重新预览后再应用。": "Preview is stale. Preview again before applying.",
   "预览文件夹整理": "Preview folder make-ready",
-  "预览笔记整理": "Preview note make-ready"
+  "预览笔记整理": "Preview note make-ready",
+  "Paragraph": "Paragraph",
+  "Heading": "Heading",
+  "List": "List",
+  "List item": "List item",
+  "Table": "Table",
+  "Cell": "Cell",
+  "Image": "Image",
+  "Embed": "Embed",
+  "Formula": "Formula",
+  "Code": "Code",
+  "Quote": "Quote",
+  "HTML": "HTML",
+  "Divider": "Divider",
+  "Change": "Change",
+  "Comment": "Comment",
+  "Element actions": "Element actions",
+  "Selected {{kind}}: {{text}}": "Selected {{kind}}: {{text}}"
 }

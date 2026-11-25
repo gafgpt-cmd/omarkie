@@ -1109,5 +1109,22 @@
   "预览属性修改": "Previsualizar el cambio de propiedad",
   "预览已过期，请重新预览后再应用。": "La previsualización está obsoleta. Vuelve a previsualizar antes de aplicar.",
   "预览文件夹整理": "Previsualizar la preparación de la carpeta",
-  "预览笔记整理": "Previsualizar la preparación de la nota"
+  "预览笔记整理": "Previsualizar la preparación de la nota",
+  "Paragraph": "Párrafo",
+  "Heading": "Encabezado",
+  "List": "Lista",
+  "List item": "Elemento de lista",
+  "Table": "Tabla",
+  "Cell": "Celda",
+  "Image": "Imagen",
+  "Embed": "Incrustado",
+  "Formula": "Fórmula",
+  "Code": "Código",
+  "Quote": "Cita",
+  "HTML": "HTML",
+  "Divider": "Separador",
+  "Change": "Cambiar",
+  "Comment": "Comentar",
+  "Element actions": "Acciones del elemento",
+  "Selected {{kind}}: {{text}}": "Seleccionado {{kind}}: {{text}}"
 }

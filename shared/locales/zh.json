@@ -290,5 +290,22 @@
   "未配置朗读：请设置 OMARKIE_TTS。": "未配置朗读：请设置 OMARKIE_TTS。",
   "朗读设置无效：请检查 OMARKIE_TTS。": "朗读设置无效：请检查 OMARKIE_TTS。",
   "无法启动朗读程序：请检查 OMARKIE_TTS。": "无法启动朗读程序：请检查 OMARKIE_TTS。",
-  "朗读程序未能完成播放。": "朗读程序未能完成播放。"
+  "朗读程序未能完成播放。": "朗读程序未能完成播放。",
+  "Paragraph": "段落",
+  "Heading": "标题",
+  "List": "列表",
+  "List item": "列表项",
+  "Table": "表格",
+  "Cell": "单元格",
+  "Image": "图片",
+  "Embed": "嵌入",
+  "Formula": "公式",
+  "Code": "代码",
+  "Quote": "引用",
+  "HTML": "HTML",
+  "Divider": "分隔线",
+  "Change": "更换",
+  "Comment": "注释",
+  "Element actions": "元素操作",
+  "Selected {{kind}}: {{text}}": "已选择 {{kind}}：{{text}}"
 }
