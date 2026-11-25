@@ -12,12 +12,12 @@ const directory = file => lstat(file).then(stat => stat.isDirectory(), () => fal
 // One vault file: the overlay switch and the "never online" switch for this vault.
 export async function readGlassSettings(root) {
   const file = glassFile(root), stat = await lstat(file).catch(missing);
-  const off = { version: 1, visible: false, neverOnline: false };
+  const off = { version: 1, visible: false, neverOnline: false, shared: false };
   if (!stat || !stat.isFile() || stat.isSymbolicLink()) return off;
   try {
     const value = JSON.parse(await readFile(file, "utf8"));
     if (value?.version !== 1) return off;
-    return { version: 1, visible: value.visible === true, neverOnline: value.neverOnline === true };
+    return { version: 1, visible: value.visible === true, neverOnline: value.neverOnline === true, shared: value.shared === true };
   } catch { return off; }
 }
 
@@ -27,6 +27,7 @@ export async function writeGlassSettings(root, patch) {
     version: 1,
     visible: typeof patch?.visible === "boolean" ? patch.visible : current.visible,
     neverOnline: typeof patch?.neverOnline === "boolean" ? patch.neverOnline : current.neverOnline,
+    shared: typeof patch?.shared === "boolean" ? patch.shared : current.shared,
   };
   await mkdir(glassDirectory(root), { recursive: true, mode: 0o700 });
   await atomicWrite(glassFile(root), `${JSON.stringify(next)}\n`);
@@ -44,13 +45,12 @@ export async function writeGlass(root, visible) {
 
 // G18: a second person's glass journal is a separate read-only layer, toggled per vault.
 export async function readShared(root) {
-  return (await readState(root))?.shared === true;
+  return (await readGlassSettings(root)).shared;
 }
 
 export async function writeShared(root, shared) {
   if (typeof shared !== "boolean") throw new Error("Shared glass state must be a boolean.");
-  await writeState(root, { ...(await readState(root)) ?? {}, shared });
-  return shared;
+  return (await writeGlassSettings(root, { shared })).shared;
 }
 
 // Agents change the vault file directly, so the running app follows it instead of caching.

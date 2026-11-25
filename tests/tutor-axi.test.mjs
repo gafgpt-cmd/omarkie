@@ -46,10 +46,10 @@ test("closed vault writes exact-anchor scraps and proposals without writing Mark
   assert.equal((await run(root, "glass")).glass, "off");
   const glassFile = path.join(root, ".omarkie", "glass", "vault.json");
   assert.deepEqual(await run(root, "glass", "--on"), { vault: root, glass: "on", state: glassFile });
-  assert.deepEqual(JSON.parse(await readFile(glassFile, "utf8")), { version: 1, visible: true, neverOnline: false });
+  assert.deepEqual(JSON.parse(await readFile(glassFile, "utf8")), { version: 1, visible: true, neverOnline: false, shared: false });
   assert.equal((await run(root, "glass")).glass, "on");
   assert.deepEqual(await run(root, "glass", "--off", "--vault", root), { vault: root, glass: "off", state: glassFile });
-  assert.deepEqual(JSON.parse(await readFile(glassFile, "utf8")), { version: 1, visible: false, neverOnline: false });
+  assert.deepEqual(JSON.parse(await readFile(glassFile, "utf8")), { version: 1, visible: false, neverOnline: false, shared: false });
   const conflict = await run(root, "glass", "--on", "--off");
   assert.equal(conflict.exit, 2);
   assert.match(conflict.error, /--on or --off/);
