@@ -1,10 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, BookMarked, ChevronDown, ExternalLink, ListChecks, Sparkles, Trash2 } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDownToLine, BookMarked, Calculator, Check, ChevronDown, ExternalLink, GitBranch, ListChecks, Sparkles, Trash2 } from "lucide-react";
 import { findIdentifiers } from "../../shared/bubble-context.mjs";
 import type { CardKind } from "../../shared/glass-cards.mjs";
 import { anchorOf, nearestBlock } from "../glass/glass-model";
 import type { GlassBlock } from "../glass/anchor-map";
 import { newCardId, cardBlock, type GlassCard } from "../glass/card-model";
+import { assertCalcDefinition, normalizeCalcInputs, type CalcInput } from "../../shared/calc-model.mjs";
+import { flowOutline, parseFlowOutline } from "../../shared/flow-model.mjs";
+import { CalcCardBody, FlowCardBody, type CalcValues } from "./GlassLiveCard";
 import { renderPayload } from "./payload-controls";
 import { Dialog } from "./Dialog";
 import type { LiveTutor } from "./tutor-live";
@@ -13,9 +16,12 @@ import { t } from "../i18n";
 interface Place { x: number; y: number; width: number }
 interface StaticState { status: "ok" | "empty" | "section-missing" | "missing" | "invalid" | "error"; markdown?: string; target?: string | null; section?: string | null; message?: string }
 
-const kindLabel = (kind: CardKind) => kind === "ai" ? t("AI") : kind === "menu" ? t("Menu") : t("Section");
+const kindLabel = (kind: CardKind) => kind === "ai" ? t("AI") : kind === "menu" ? t("Menu")
+  : kind === "calc" ? t("Calculator") : kind === "flow" ? t("Decision flow") : t("Section");
 const KindIcon = ({ kind, size = 14 }: { kind: CardKind; size?: number }) =>
-  kind === "ai" ? <Sparkles size={size} aria-hidden="true" /> : kind === "menu" ? <ListChecks size={size} aria-hidden="true" /> : <BookMarked size={size} aria-hidden="true" />;
+  kind === "ai" ? <Sparkles size={size} aria-hidden="true" /> : kind === "menu" ? <ListChecks size={size} aria-hidden="true" />
+  : kind === "calc" ? <Calculator size={size} aria-hidden="true" /> : kind === "flow" ? <GitBranch size={size} aria-hidden="true" />
+  : <BookMarked size={size} aria-hidden="true" />;
 
 function brokenText(state: StaticState) {
   if (state.status === "missing") return t("Note not found: {{name}}", { name: state.target });
@@ -28,10 +34,12 @@ function brokenText(state: StaticState) {
 
 // G9: a card is one pill in the margin; unfolding stays on the glass and never reflows the page.
 // The wrapper stays mounted across fold/unfold, so keyboard focus survives; the body's state only exists while open.
-function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, onMerge }: {
+function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, onMerge, onAccept }: {
   card: GlassCard; place: Place; note: string; live?: LiveTutor;
-  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
+  onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void; onAccept(): void;
 }) {
+  // Inputs stay in the session, not the journal; folding the card must not wipe what was typed.
+  const [calcValues, setCalcValues] = useState<CalcValues>({});
   return <div className="glass-card" data-card={card.id} data-card-kind={card.card} data-card-layer="ai-cards"
     data-folded={card.folded || undefined} style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px` }}
     tabIndex={0} aria-label={t("{{kind}} card: {{title}}", { kind: kindLabel(card.card), title: card.title })}
@@ -49,9 +57,11 @@ function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete, 
       <KindIcon kind={card.card} />
       <span className="glass-card-title">{card.title}</span>
       <small className="glass-card-kind">{kindLabel(card.card)}</small>
+      {card.proposed && <small className="glass-card-proposal-badge" data-card-proposal-badge>{t("Proposal")}</small>}
       <ChevronDown size={12} className="glass-card-chevron" aria-hidden="true" />
     </button>
-    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} onMerge={onMerge} />}
+    {!card.folded && <CardBody card={card} note={note} live={live} onCached={onCached} onDelete={onDelete} onMerge={onMerge}
+      onAccept={onAccept} calcValues={calcValues} onCalcChange={setCalcValues} />}
   </div>;
 }
 
@@ -60,8 +70,9 @@ export default memo(GlassCardView, (previous, next) =>
   previous.card === next.card && previous.note === next.note && previous.live === next.live
   && previous.place.x === next.place.x && previous.place.y === next.place.y && previous.place.width === next.place.width);
 
-function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
-  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void; onMerge(): void;
+function CardBody({ card, note, live, onCached, onDelete, onMerge, onAccept, calcValues, onCalcChange }: {
+  card: GlassCard; note: string; live?: LiveTutor; onCached(answer: string, answerAt: string): void; onDelete(): void;
+  onMerge(): void; onAccept(): void; calcValues: CalcValues; onCalcChange(values: CalcValues): void;
 }) {
   const [staticState, setStaticState] = useState<StaticState>({ status: "ok" });
   const [choice, setChoice] = useState<number>();
@@ -71,6 +82,26 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
   const flags = useMemo(() => card.card === "ai" ? findIdentifiers(`${card.question}\n${block?.block ?? ""}`, { limit: 6 }) : [], [card.card, card.question, block?.block]);
   const blocked = flags.filter(flag => !confirmed.has(flag.signature));
   const mounted = useRef(true);
+  const panel = useRef<HTMLElement>(null);
+  // Keep the whole card in the window: slide it up over the pill when it would run under the toolbar.
+  useLayoutEffect(() => {
+    const element = panel.current;
+    if (!element) return;
+    const fit = () => {
+      element.style.top = "";
+      element.style.maxHeight = "";
+      const rect = element.getBoundingClientRect();
+      const limit = window.innerHeight - 72;
+      if (rect.bottom <= limit) return;
+      const shift = Math.max(8 - rect.top, Math.min(0, limit - rect.bottom));
+      element.style.top = `${shift}px`;
+      element.style.maxHeight = `${Math.max(180, limit - rect.top - shift)}px`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [card.id, card.card]);
   useEffect(() => () => { mounted.current = false; }, []);
 
   const resolve = useCallback(async () => {
@@ -122,21 +153,35 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
   }
 
   const answer = card.answer.trim();
-  return <section className="glass-card-panel" data-card-panel>
+  return <section className="glass-card-panel" data-card-panel ref={panel}>
     <header className="glass-card-head">
       <span className="glass-card-heading"><KindIcon kind={card.card} size={13} />{card.card === "ai" ? t("AI cue") : card.title}</span>
       <div className="glass-card-actions">
         <button type="button" data-card-open-page title={t("Open as its own note")} onClick={() => void openPage()}>
           <ExternalLink size={13} aria-hidden="true" /><span>{t("Open as page")}</span>
         </button>
-        <button type="button" data-card-merge={card.id} aria-label="Merge down into the page" title="Merge down into the page" onClick={onMerge}>
-          <ArrowDownToLine size={13} aria-hidden="true" />
-        </button>
+        {card.card !== "calc" && card.card !== "flow"
+          && <button type="button" data-card-merge={card.id} aria-label="Merge down into the page" title="Merge down into the page" onClick={onMerge}>
+            <ArrowDownToLine size={13} aria-hidden="true" />
+          </button>}
         <button type="button" data-card-delete aria-label={t("Move card to trash")} title={t("Move to trash")} onClick={onDelete}>
           <Trash2 size={13} aria-hidden="true" />
         </button>
       </div>
     </header>
+    {card.proposed && <section className="glass-card-proposal" data-card-proposal>
+      <p><strong>{t("Proposed by an agent")}</strong> {t("Review the formula and citation, then accept.")}</p>
+      <div className="glass-card-proposal-actions">
+        <button type="button" className="glass-card-accept" data-card-accept onClick={onAccept}><Check size={12} aria-hidden="true" />{t("Accept")}</button>
+        <button type="button" data-card-dismiss onClick={onDelete}>{t("Dismiss")}</button>
+      </div>
+    </section>}
+    {card.card === "calc" && (card.proposed
+      ? <LivePreview card={card} />
+      : <CalcCardBody card={card} values={calcValues} onChange={onCalcChange} />)}
+    {card.card === "flow" && (card.proposed
+      ? <LivePreview card={card} />
+      : <FlowCardBody card={card} />)}
     {card.card === "static" && <>
       <p className="glass-card-source" data-card-source>{card.link || t("No link")}</p>
       {staticState.status === "ok"
@@ -178,7 +223,29 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge }: {
   </section>;
 }
 
-// Creation stays explicit: one dialog for the three kinds, anchored to the paragraph under the first visible block.
+// A proposal shows what would go live, but nothing evaluates until the person accepts.
+function LivePreview({ card }: { card: GlassCard }) {
+  return <div className="glass-card-preview" data-card-preview>
+    {card.card === "calc" && <>
+      <p className="glass-card-formula" data-card-formula><span>{t("Formula")}</span> <code>{card.formula}</code> → <strong>{card.unit}</strong></p>
+      <ul className="glass-card-preview-inputs">{card.inputs.map(input => <li key={input.key}>{input.label || input.key} ({input.unit})</li>)}</ul>
+    </>}
+    {card.card === "flow" && card.flow && <pre className="glass-card-flow-outline" data-card-flow-outline>{flowOutline(card.flow).join("\n")}</pre>}
+    <p className="glass-card-citation" data-card-citation><span>{t("Citation")}</span> {card.citation}</p>
+  </div>;
+}
+
+// Input lines: key | label | unit | min | max; empty range cells mean no bound.
+function parseCalcInputLines(source: string): CalcInput[] {
+  return source.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map((line, index) => {
+    const parts = line.split("|").map(part => part.trim());
+    if (parts.length !== 5) throw new Error(`Input line ${index + 1}: use key | label | unit | min | max.`);
+    const [key, label, unit, min, max] = parts;
+    return { key, label, unit, min: min === "" ? null : Number(min), max: max === "" ? null : Number(max) };
+  });
+}
+
+// Creation stays explicit: one dialog for the kinds, anchored to the paragraph under the first visible block.
 export function NewCardDialog({ blocks, point, close, create }: {
   blocks: GlassBlock[]; point: { x: number; y: number };
   close(): void; create(card: GlassCard): void;
@@ -186,29 +253,49 @@ export function NewCardDialog({ blocks, point, close, create }: {
   const [kind, setKind] = useState<CardKind>("static");
   const [title, setTitle] = useState(""), [link, setLink] = useState(""), [question, setQuestion] = useState("");
   const [choiceText, setChoiceText] = useState("");
+  const [citation, setCitation] = useState(""), [formula, setFormula] = useState(""), [outputUnit, setOutputUnit] = useState("");
+  const [inputsText, setInputsText] = useState(""), [flowText, setFlowText] = useState(""), [precision, setPrecision] = useState("2");
+  const [error, setError] = useState("");
   const anchorBlock = nearestBlock(blocks, point) ?? blocks[0];
   const choices = choiceText.split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
     const at = line.indexOf("|");
     return at < 0 ? { label: line, body: "" } : { label: line.slice(0, at).trim(), body: line.slice(at + 1).trim() };
   }).filter(choice => choice.label);
-  const valid = kind === "static" ? !!link.trim() : kind === "ai" ? !!question.trim() : choices.length > 0;
+  const valid = kind === "static" ? !!link.trim()
+    : kind === "ai" ? !!question.trim()
+    : kind === "menu" ? choices.length > 0
+    : kind === "calc" ? !!(formula.trim() && outputUnit.trim() && inputsText.trim() && citation.trim())
+    : !!(flowText.trim() && citation.trim());
 
-  function submit(event: { preventDefault(): void }) {
+  async function submit(event: { preventDefault(): void }) {
     event.preventDefault();
     if (!valid || !anchorBlock) return;
-    create({
-      id: newCardId(), card: kind, title: title.trim(),
-      link: kind === "static" ? link.trim() : "", question: kind === "ai" ? question.trim() : "",
-      answer: "", answerAt: "", choices: kind === "menu" ? choices : [],
-      anchor: anchorOf(anchorBlock), x: 0, y: 0, w: 300, folded: false,
-    });
-    close();
+    setError("");
+    try {
+      let inputs: CalcInput[] = [], flow;
+      if (kind === "calc") {
+        inputs = normalizeCalcInputs(parseCalcInputLines(inputsText));
+        await assertCalcDefinition({ formula: formula.trim(), inputs, unit: outputUnit.trim() });
+      }
+      if (kind === "flow") flow = parseFlowOutline(flowText);
+      create({
+        id: newCardId(), card: kind, title: title.trim(),
+        link: kind === "static" ? link.trim() : "", question: kind === "ai" ? question.trim() : "",
+        answer: "", answerAt: "", choices: kind === "menu" ? choices : [],
+        formula: kind === "calc" ? formula.trim() : "", inputs, unit: kind === "calc" ? outputUnit.trim() : "",
+        citation: kind === "calc" || kind === "flow" ? citation.trim() : "", precision: Number(precision) || 0, flow, proposed: false,
+        anchor: anchorOf(anchorBlock), x: 0, y: 0, w: 300, folded: false,
+      });
+      close();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    }
   }
 
   return <Dialog title={t("New card")} close={close}>
     <form className="glass-card-new" data-card-new onSubmit={submit}>
       <div className="glass-card-kinds" role="group" aria-label={t("Card kind")}>
-        {(["static", "ai", "menu"] as const).map(value => <button type="button" key={value} data-card-new-kind={value}
+        {(["static", "ai", "menu", "calc", "flow"] as const).map(value => <button type="button" key={value} data-card-new-kind={value}
           aria-pressed={kind === value} onClick={() => setKind(value)}><KindIcon kind={value} /><span>{kindLabel(value)}</span></button>)}
       </div>
       <label>{t("Title")}<input value={title} maxLength={200} placeholder={t("Shown in the margin")}
@@ -220,6 +307,29 @@ export function NewCardDialog({ blocks, point, close, create }: {
       {kind === "menu" && <label>{t("Choices, one per line as Label | content")}<textarea value={choiceText} rows={4}
         placeholder={t("What is kerma? | Energy released per unit mass")}
         onChange={event => setChoiceText(event.target.value)} data-card-new-choices required /></label>}
+      {kind === "calc" && <>
+        <label>{t("Formula (input keys, e.g. dose * weight)")}<input value={formula} maxLength={1000} placeholder="dose * weight"
+          onChange={event => setFormula(event.target.value)} data-card-new-formula required /></label>
+        <div className="glass-card-new-row">
+          <label>{t("Output unit")}<input value={outputUnit} maxLength={40} placeholder="mg"
+            onChange={event => setOutputUnit(event.target.value)} data-card-new-unit required /></label>
+          <label>{t("Precision")}<input type="number" min={0} max={6} value={precision}
+            onChange={event => setPrecision(event.target.value)} data-card-new-precision /></label>
+        </div>
+        <label>{t("Inputs, one line each: key | label | unit | min | max")}<textarea value={inputsText} rows={4}
+          placeholder={"weight | Weight | kg | 0 | 200\ndose | Dose | mg/kg | 0 | 10"}
+          onChange={event => setInputsText(event.target.value)} data-card-new-inputs required /></label>
+        <label>{t("Citation (protocol, section or source). Required.")}<input value={citation} maxLength={2000} placeholder="Local protocol §4.2 (2026)"
+          onChange={event => setCitation(event.target.value)} data-card-new-citation required /></label>
+      </>}
+      {kind === "flow" && <>
+        <label>{t("Flow steps")}<textarea value={flowText} rows={7}
+          placeholder={"Question: Is the patient stable?\n- Yes\n  Result: Follow the protocol\n- No\n  Question: Allergic to the drug?\n  - Yes\n    Result: Use the alternative\n  - No\n    Result: Give the loading dose"}
+          onChange={event => setFlowText(event.target.value)} data-card-new-flow required /></label>
+        <label>{t("Citation (protocol, section or source). Required.")}<input value={citation} maxLength={2000} placeholder="Local guideline (2026)"
+          onChange={event => setCitation(event.target.value)} data-card-new-citation required /></label>
+      </>}
+      {error && <p className="glass-card-error" role="alert" data-card-new-error>{error}</p>}
       <p className="glass-card-note">{t("Anchor: {{block}}", { block: (anchorBlock?.block ?? t("the first paragraph")).slice(0, 90) })}</p>
       <div className="glass-card-new-actions">
         <button type="button" onClick={close}>{t("Cancel")}</button>

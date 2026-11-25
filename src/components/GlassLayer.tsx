@@ -315,7 +315,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         places[image.id] = { status: "resolved", x: rect.left - frame.left + image.x, y: rect.top - frame.top + image.y, width: image.w, height: image.h };
       }
     }
-    let cardRow = 0;
+    // Pills keep to the margin column; a pill that would land on another slides down instead of stacking on it.
+    const pillSpots: { x: number; y: number }[] = [];
     for (const card of latest.current.cards) {
       const line = matchLine(card.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
@@ -323,8 +324,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       let rect = paragraphRects.get(element);
       if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
       const spot = pillPlacement(rect, frame);
-      places[card.id] = { status: "resolved", x: spot.x + card.x, y: spot.y + card.y + cardRow * 24, width: spot.width, height: 0 };
-      cardRow += 1;
+      let x = spot.x + card.x, y = spot.y + card.y;
+      while (pillSpots.some(other => Math.abs(other.x - x) < 240 && y < other.y + 24 && other.y < y + 24)) y += 24;
+      pillSpots.push({ x, y });
+      places[card.id] = { status: "resolved", x, y, width: spot.width, height: 0 };
     }
     dropSpacers(flowing);
     placesRef.current = places;
@@ -541,6 +544,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (patch.answer !== undefined) fields.answer = patch.answer;
     if (patch.answerAt !== undefined) fields.answerAt = patch.answerAt;
     if (patch.title !== undefined) fields.title = patch.title;
+    if (patch.proposed !== undefined) fields.proposed = patch.proposed;
     if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
   }, [send]);
 
@@ -572,7 +576,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const card: GlassCard = {
       id: newCardId(), card: "ai", title: question.split(/\r?\n/)[0]?.slice(0, 200) ?? "",
       link: "", question, answer: reply.body, answerAt: new Date().toISOString(),
-      choices: [], anchor: cardAnchor(reply.anchor), x: 0, y: 0, w: 300, folded: false,
+      choices: [], formula: "", inputs: [], unit: "", citation: "", precision: 2, proposed: false,
+      anchor: cardAnchor(reply.anchor), x: 0, y: 0, w: 300, folded: false,
     };
     return !!(await createCard(card))?.magnet;
   }, [createCard]);
@@ -1381,6 +1386,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         <GlassCardView key={card.id} card={card} place={{ x: place.x, y: place.y, width: place.width }} note={note!} live={live}
           onToggle={() => toggleCard(card.id)}
           onCached={(answer, answerAt) => patchCard(card.id, { answer, answerAt })}
+          onAccept={() => patchCard(card.id, { proposed: false })}
           onDelete={() => removeMark(card.id)} onMerge={() => void openMerge(card.id)} />; })}
       {above.map(frame)}
       {under.map(frame)}

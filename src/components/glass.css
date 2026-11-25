@@ -688,7 +688,7 @@
   width: max-content;
   min-width: 230px;
   max-width: min(360px, calc(100vw - 24px));
-  max-height: min(60vh, 440px);
+  max-height: min(72vh, 620px);
   overflow: auto;
   padding: 9px 11px 10px;
   border: 1px solid var(--border, #ccc);
@@ -845,3 +845,123 @@
 }
 .glass-merge-done button { padding: 2px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .glass-merge-done button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+
+/* G16: live cards. A calculator keeps its formula, inputs and citation on the card;
+   a flow walks its decision tree. Neither result is ever written into the note. */
+.glass-card-proposal-badge {
+  flex: none;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--warning, #9a6700) 16%, transparent);
+  color: var(--warning, #9a6700);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.glass-card-proposal {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px dashed color-mix(in srgb, var(--warning, #9a6700) 55%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning, #9a6700) 7%, transparent);
+  font-size: 11px;
+}
+.glass-card-proposal p { margin: 0 0 6px; }
+.glass-card-proposal-actions { display: flex; gap: 6px; }
+.glass-card-proposal-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 5px;
+  background: none;
+  color: var(--ink, #333);
+  font: 11px/1 inherit;
+  cursor: pointer;
+}
+.glass-card-proposal-actions .glass-card-accept { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-card-preview { margin-top: 8px; }
+.glass-card-preview-inputs { margin: 3px 0 0; padding-left: 16px; font-size: 11px; }
+.glass-card-calc, .glass-card-flow { margin-top: 7px; }
+.glass-card-formula { margin: 0 0 7px; font-size: 11.5px; }
+.glass-card-formula > span, .glass-card-citation > span { color: var(--muted, #777); font-size: 9.5px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.glass-card-formula code { padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--ink, #333) 7%, transparent); }
+.glass-card-inputs { display: grid; gap: 6px; }
+.glass-card-input { display: grid; gap: 2px; }
+.glass-card-input-head { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.glass-card-input-head small { color: var(--muted, #777); }
+.glass-card-input input {
+  width: 100%;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 5px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  font: 12px/1 inherit;
+}
+.glass-card-input input[aria-invalid="true"] { border-color: var(--warning, #9a6700); }
+.glass-card-range { color: var(--muted, #777); font-size: 9.5px; }
+.glass-card-flag { color: var(--warning, #9a6700); font-size: 10px; }
+.glass-card-result {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--accent, #326eaa) 7%, transparent);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.glass-card-result strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.glass-card-result small { color: var(--muted, #777); font-size: 9.5px; }
+.glass-card-result[data-card-result-state="error"] { background: none; padding: 0; }
+.glass-card-citation { margin: 8px 0 0; font-size: 10.5px; overflow-wrap: anywhere; }
+.glass-card-trail { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 7px; padding: 0; list-style: none; font-size: 9.5px; color: var(--muted, #777); }
+.glass-card-trail li { padding: 1px 5px; border: 1px solid var(--border, #ddd); border-radius: 999px; }
+.glass-card-flow-question { margin: 0 0 7px; font-weight: 600; font-size: 12px; }
+.glass-card-flow-question::before { content: "? "; color: var(--accent, #326eaa); }
+.glass-card-flow-choices { display: grid; gap: 4px; }
+.glass-card-flow-choices button {
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 5px;
+  background: none;
+  color: var(--ink, #333);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.glass-card-flow-choices button:hover, .glass-card-flow-choices button:focus-visible { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); outline: none; }
+.glass-card-flow-result p { margin: 0; padding: 6px 8px; border-left: 2px solid var(--accent, #326eaa); background: color-mix(in srgb, var(--accent, #326eaa) 7%, transparent); }
+.glass-card-flow-result span { color: var(--muted, #777); font-size: 9.5px; font-weight: 600; text-transform: uppercase; }
+.glass-card-flow-foot { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.glass-card-flow-foot button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 5px;
+  background: none;
+  color: var(--muted, #777);
+  font: 10.5px/1 inherit;
+  cursor: pointer;
+}
+.glass-card-flow-foot button:hover:not(:disabled), .glass-card-flow-foot button:focus-visible { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); outline: none; }
+.glass-card-flow-foot button:disabled { opacity: 0.45; cursor: default; }
+.glass-card-flow-foot button[aria-pressed="true"] { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-card-flow-outline { margin: 7px 0 0; padding: 6px 8px; max-height: 180px; overflow: auto; border-radius: 5px; background: color-mix(in srgb, var(--ink, #333) 5%, transparent); font: 10.5px/1.5 var(--mono-font, ui-monospace, monospace); white-space: pre-wrap; }
+.glass-flow-diagram { margin-top: 7px; padding: 6px; border: 1px solid var(--border, #ddd); border-radius: 5px; overflow: auto; }
+.glass-flow-diagram svg { max-width: 100%; height: auto; }
+.glass-flow-diagram g.node[data-flow-node] { cursor: pointer; }
+.glass-flow-diagram g.node[data-flow-node]:focus-visible { outline: 2px solid var(--accent, #326eaa); outline-offset: 2px; }
+.glass-card-new .glass-card-kinds { flex-wrap: wrap; }
+.glass-card-new .glass-card-kinds button { flex: 1 1 30%; }
+.glass-card-new-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.glass-card-new .glass-card-error { margin: 0 0 10px; }
+[data-appearance="dark"] .glass-card-proposal { color: #e8c97a; border-color: #e8c97a88; }
+[data-appearance="dark"] .glass-card-flag { color: #e8c97a; }

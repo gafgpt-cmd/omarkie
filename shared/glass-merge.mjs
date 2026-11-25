@@ -19,7 +19,10 @@ export function mergeKindLabel(kind, fields = {}) {
   if (kind === "sticky") return "Sticky note → callout";
   if (kind === "image") return "Picture → Markdown image";
   if (kind === "ink") return "Ink → SVG picture";
-  if (kind === "card") return (fields.mode ?? (cardMergeTarget(fields) ? "embed" : "plain")) === "embed" ? "Card → section embed" : "Card → plain Markdown";
+  if (kind === "card") {
+    if (fields.card === "calc" || fields.card === "flow") return "Live card → stays on the glass";
+    return (fields.mode ?? (cardMergeTarget(fields) ? "embed" : "plain")) === "embed" ? "Card → section embed" : "Card → plain Markdown";
+  }
   return `${kind} → Markdown`;
 }
 
@@ -79,6 +82,8 @@ export function mergeLines(kind, fields, { settings, assetPath, assetName } = {}
       lines: [imageLink({ path: assetPath, name: assetName || "Ink", width: 640, linkStyle: settings.linkStyle })] };
   }
   if (kind === "card") {
+    if (fields.card === "calc" || fields.card === "flow")
+      throw new Error("A live card stays on the glass: its formula and citation are not copied into the note, and its result is never written.");
     const target = cardMergeTarget(fields);
     const mode = fields.mode ?? (target ? "embed" : "plain");
     if (mode === "embed") {
