@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, History, Image as ImageIcon, MessageSquarePlus, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, ScanEye, ScanText, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2, Wand2 } from "lucide-react";
+import { ArrowUpRight, AudioLines, Columns2, Eraser, Eye, EyeOff, FileAudio, FileText, GraduationCap, Grid3x3, Highlighter, History, Image as ImageIcon, MessageSquarePlus, Mic, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, ScanEye, ScanText, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2, Wand2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
@@ -54,6 +54,12 @@ import {
   sheetLabelFromMagnet, traceFields, traceFromMagnet, type CompareMark, type MeasureMark, type SheetLabel, type TraceMark,
 } from "../glass/visual-model";
 import GlassCompareCard from "./GlassCompareCard";
+import GlassVoice from "./GlassVoice";
+import { newVoiceId, voiceFromMagnet, voiceMemoDefaults, type VoiceMemo } from "../glass/voice-model";
+import {
+  blobBase64, cancelTranscribe, transcribeCapture, VoiceRecorder, voiceInfo, type CapturePart,
+} from "../voice/voice-client";
+import { timestampLabel, voiceDefaults, voiceKeyMatches } from "../../shared/voice.mjs";
 import type { MeasureMode } from "./ImageVisuals";
 import "./glass.css";
 
@@ -78,6 +84,17 @@ function labelBox(label: GlassLabel, places: Record<string, GlassPlacement>, box
   return boxes[label.target.element];
 }
 interface MergeRow { kind: "context" | "add" | "remove"; text: string }
+interface VoiceRun {
+  id: string;
+  mode: "dictation" | "memo" | "lecture";
+  phase: "recording" | "transcribing" | "saving";
+  startedAt: number;
+  block: GlassBlock;
+  offset: { x: number; y: number };
+  segments: { startMs: number; endMs: number; text: string }[];
+  marks: { atMs: number; label?: string }[];
+  offsetMs: number;
+}
 interface MergePreview {
   note: string; magnet: string; kind: string; label: string; baseHash: string; baseSize: number; eol: string; bom: boolean;
   diff: MergeRow[]; added: string[]; removed: string[]; attachment: string | null; linkStyle: string; attachmentFolder: string;
@@ -100,6 +117,7 @@ interface GlassReply {
   needsUser?: boolean;
   message?: string;
   path?: string;
+  note?: string;
   layers?: Partial<Record<GlassLayerId, { visible?: boolean; locked?: boolean; opacity?: number }>>;
   points?: ScrubPoint[];
   at?: number;
@@ -291,6 +309,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [sheetLabels, setSheetLabels] = useState<SheetLabel[]>([]);
   const [measures, setMeasures] = useState<MeasureMark[]>([]);
   const [compares, setCompares] = useState<CompareMark[]>([]);
+  const [voices, setVoices] = useState<VoiceMemo[]>([]);
+  const [voice, setVoice] = useState({ configured: false, valid: false, key: voiceDefaults.defaultKey, language: "auto" });
+  const [run, setRun] = useState<VoiceRun>();
+  const runRef = useRef<VoiceRun | undefined>(undefined);
+  const recorder = useRef<VoiceRecorder | undefined>(undefined);
+  const voiceTick = useRef<number | undefined>(undefined);
+  const lectureTimer = useRef<number | undefined>(undefined);
   const [sheetsOpen, setSheetsOpen] = useState<Record<string, boolean>>({});
   const [traceTool, setTraceTool] = useState<TraceTool>("pen");
   const [traceColor, setTraceColor] = useState(inkDefaults("pen").color);
@@ -303,7 +328,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
-  const [tool, setTool] = useState<"select" | "sticky" | "label" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout" | "trace" | "measure">("select");
+  const [tool, setTool] = useState<"select" | "sticky" | "label" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout" | "trace" | "measure" | "voice" | "memo" | "lecture">("select");
   const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
   const [customImage, setCustomImage] = useState<string>();
   const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
@@ -355,11 +380,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const elementBoxes = useRef<Record<string, EndMark>>({});
   const placesRef = useRef<Record<string, GlassPlacement>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, note, tool });
+  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
   const localAt = useRef(0), revision = useRef(0);
-  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, note, tool };
+  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, voices, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -412,6 +437,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     }
     const flowing = new Set<string>();
     const mediaShown = layers.media.visible;
+    for (const memo of latest.current.voices) {
+      const line = matchLine(memo.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[memo.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      places[memo.id] = { status: "resolved", x: rect.left - frame.left + memo.x, y: rect.top - frame.top + memo.y, width: memo.w, height: memo.h };
+    }
     for (const image of latest.current.images) {
       const line = matchIndexed(index.current, image.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
@@ -1069,6 +1102,121 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setEditing(stickie.id);
     void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
   }, [send]);
+
+  // G21: one recorder at a time, a pill that names the state, and audio that never leaves the vault.
+  const setVoiceRun = (next: VoiceRun | undefined) => { runRef.current = next; setRun(next); };
+  const leaveVoiceTool = () => { if (["voice", "memo", "lecture"].includes(latest.current.tool)) setTool("select"); };
+  const clearVoiceTimers = () => {
+    if (voiceTick.current) { clearInterval(voiceTick.current); voiceTick.current = undefined; }
+    if (lectureTimer.current) { clearInterval(lectureTimer.current); lectureTimer.current = undefined; }
+  };
+  const beginVoice = async (mode: VoiceRun["mode"], point: { x: number; y: number }) => {
+    if (runRef.current || !latest.current.note) return;
+    if (!voice.configured) { setNotice("Set OMARKIE_STT to use voice."); return; }
+    const block = nearestBlock(blocks.current, point);
+    if (!block) { setNotice("Click a paragraph to record there."); return; }
+    if (mode === "memo" && lockedLayer("image")) { setNotice("Media layer is locked."); return; }
+    if (mode === "dictation" && lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
+    const next: VoiceRun = { id: crypto.randomUUID(), mode, phase: "recording", startedAt: Date.now(), block,
+      offset: offsetIn(block, point), segments: [], marks: [], offsetMs: 0 };
+    const capture = new VoiceRecorder();
+    try { await capture.start(); }
+    catch (failure) { setNotice((failure as Error).message); return; }
+    if (!latest.current.note) { capture.cancel(); return; }
+    recorder.current = capture;
+    setVoiceRun(next);
+    voiceTick.current = window.setInterval(() => setRun(current => current ? { ...current } : current), 500);
+    if (mode === "lecture") lectureTimer.current = window.setInterval(() => void rotateLecture(), voiceDefaults.chunkMs);
+  };
+
+  async function rotateLecture() {
+    const current = runRef.current, capture = recorder.current;
+    if (!current || current.mode !== "lecture" || current.phase !== "recording" || !capture) return;
+    const next = new VoiceRecorder();
+    try { await next.start(); }
+    catch (failure) { setNotice((failure as Error).message); return; }
+    let part;
+    try { part = await capture.stop(); }
+    catch (failure) { next.cancel(); setNotice((failure as Error).message); return; }
+    recorder.current = next;
+    const result = await transcribeCapture(part.wav, { mode: "lecture", language: voice.language, id: current.id });
+    const after = runRef.current;
+    if (!after || after.mode !== "lecture" || after.phase !== "recording") return;
+    const segments = result.ok && result.text
+      ? [...after.segments, { startMs: after.offsetMs, endMs: after.offsetMs + part.durationMs, text: result.text }] : after.segments;
+    if (!result.ok) setNotice(result.message ?? "A lecture chunk was not transcribed.");
+    setVoiceRun({ ...after, segments, offsetMs: after.offsetMs + part.durationMs });
+  }
+
+  async function finishVoice() {
+    const current = runRef.current, capture = recorder.current;
+    if (!current) return;
+    clearVoiceTimers();
+    if (current.mode === "lecture") { await saveLecture(); return; }
+    setVoiceRun({ ...current, phase: "transcribing" });
+    let part;
+    try { part = await capture!.stop(); }
+    catch (failure) { recorder.current = undefined; setVoiceRun(undefined); leaveVoiceTool(); setNotice((failure as Error).message); return; }
+    recorder.current = undefined;
+    const result = await transcribeCapture(part.wav, { mode: current.mode, language: voice.language, id: current.id });
+    if (current.mode === "dictation") {
+      if (!result.ok || !result.text) { setVoiceRun(undefined); leaveVoiceTool(); setNotice(result.message ?? "No speech was heard."); return; }
+      const stickie: StickyNote = { id: newStickyId(), text: result.text, color: stickyColors[0], anchor: anchorOf(current.block),
+        x: current.offset.x, y: current.offset.y, w: stickyDefaults.w, h: stickyDefaults.h, folded: false };
+      setMagnets(items => [...items, stickie]);
+      setVoiceRun(undefined); leaveVoiceTool();
+      void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
+      return;
+    }
+    if (!result.ok) { setVoiceRun(undefined); leaveVoiceTool(); setNotice(result.message ?? "The memo was not transcribed."); return; }
+    const id = newVoiceId();
+    const audio = { base64: await blobBase64(part.blob), mime: part.blob.type };
+    setVoiceRun({ ...current, phase: "saving" });
+    await send({ action: "voice-memo", magnet: id, text: result.text ?? "", durationMs: part.durationMs, lang: voice.language,
+      audio, anchor: anchorOf(current.block), x: current.offset.x, y: current.offset.y,
+      w: voiceMemoDefaults.w, h: voiceMemoDefaults.h });
+    setVoiceRun(undefined); leaveVoiceTool();
+    await load();
+  }
+
+  async function saveLecture() {
+    const current = runRef.current, capture = recorder.current;
+    if (!current) return;
+    clearVoiceTimers();
+    setVoiceRun({ ...current, phase: "saving" });
+    let segments = current.segments, offsetMs = current.offsetMs;
+    if (capture) {
+      let part: CapturePart | undefined;
+      try { part = await capture.stop(); } catch (failure) { setNotice((failure as Error).message); }
+      recorder.current = undefined;
+      if (part) {
+        const result = await transcribeCapture(part.wav, { mode: "lecture", language: voice.language, id: current.id });
+        if (result.ok && result.text) segments = [...segments, { startMs: offsetMs, endMs: offsetMs + part.durationMs, text: result.text }];
+        else if (!result.ok) setNotice(result.message ?? "The last chunk was not transcribed.");
+        offsetMs += part.durationMs;
+      }
+    }
+    if (!segments.length) { setVoiceRun(undefined); leaveVoiceTool(); setNotice("Nothing was transcribed."); return; }
+    const value = await send({ action: "voice-lecture", note: latest.current.note, transcript: segments, marks: current.marks, language: voice.language });
+    setVoiceRun(undefined); leaveVoiceTool();
+    setNotice(value?.note ? `Saved ${String(value.note)}` : "The lecture was not saved.");
+  }
+
+  function markMoment() {
+    const current = runRef.current;
+    if (!current || current.mode !== "lecture") return;
+    const atMs = current.offsetMs + (recorder.current?.durationMs ?? 0);
+    setVoiceRun({ ...current, marks: [...current.marks, { atMs }] });
+  }
+
+  function cancelVoice() {
+    const current = runRef.current;
+    clearVoiceTimers();
+    recorder.current?.cancel();
+    recorder.current = undefined;
+    if (current) cancelTranscribe(current.id);
+    setVoiceRun(undefined); leaveVoiceTool();
+  }
 
   const blockSource = useCallback((block: GlassBlock, path: string) => ({
     element: block.element?.dataset.cid ?? `block-${block.line}`, line: block.line, path,
@@ -2164,11 +2312,67 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return rect ? { x: rect.left + Math.min(rect.width / 2, 120), y: rect.top + 4 } : { x: surface.left + 160, y: surface.top + 140 };
   };
 
+  // The hook decides whether voice exists at all; without OMARKIE_STT the buttons never appear.
+  useEffect(() => {
+    let live = true;
+    void voiceInfo().then(info => {
+      if (live) setVoice({ configured: info.configured, valid: info.valid, key: info.key, language: info.language });
+    });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => () => {
+    clearVoiceTimers();
+    recorder.current?.cancel();
+    recorder.current = undefined;
+    runRef.current = undefined;
+  }, []);
+
+  // Hold the configured key to talk; a quick tap keeps recording until the next tap.
+  useEffect(() => {
+    if (!voice.configured) return;
+    let downAt = 0, holding = false;
+    const down = (event: KeyboardEvent) => {
+      if (!voiceKeyMatches(event, voice.key) || event.repeat || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (runRef.current) { void finishVoice(); return; }
+      downAt = Date.now();
+      holding = true;
+      void beginVoice("dictation", cardPoint());
+    };
+    const up = (event: KeyboardEvent) => {
+      if (!voiceKeyMatches(event, voice.key) || !holding) return;
+      event.preventDefault();
+      holding = false;
+      if (Date.now() - downAt >= 250) void finishVoice();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !runRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancelVoice();
+    };
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    window.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      window.removeEventListener("keydown", escape, true);
+    };
+  }, [voice.configured, voice.key, voice.language]);
+
   const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
     <button type="button" data-glass-tool="image" aria-label="Image" title="Image: drop, paste or choose a file" onClick={() => picker.current?.click()}><ImageIcon size={15} /></button>
     <button type="button" data-glass-tool="label" aria-pressed={tool === "label"} aria-label="Label" title="Label: pin a name on a picture" onClick={() => setTool("label")}><Tag size={15} /></button>
+    {voice.configured && <>
+      <button type="button" data-glass-tool="voice" aria-pressed={tool === "voice"} aria-label="Voice to sticky" title={`Voice: hold ${voice.key}, or click a paragraph`} onClick={() => setTool("voice")}><Mic size={15} /></button>
+      <button type="button" data-glass-tool="memo" aria-pressed={tool === "memo"} aria-label="Voice memo" title="Voice memo: audio plus transcript on the Media layer" onClick={() => setTool("memo")}><AudioLines size={15} /></button>
+      <button type="button" data-glass-tool="lecture" aria-pressed={tool === "lecture"} aria-label="Lecture recording" title="Lecture: transcribe a long session, save it as a new note" onClick={() => setTool("lecture")}><FileAudio size={15} /></button>
+    </>}
     <input ref={picker} type="file" accept="image/*,.heic,.heif,.tif,.tiff" multiple hidden data-glass-file
       onChange={event => {
         const files = [...(event.target.files ?? [])];
@@ -2288,7 +2492,26 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     </div>
     <p className="glass-palette-hint">Set the scale once per picture, then measure. Units are never converted behind your back.</p>
   </div> : null;
-  const panel = <>{tray}{inkPalette ?? marksPalette}{cutoutPalette ?? pagePalette ?? visualPalette}{(selected || selectedArrow) && <div className="glass-selection-actions" role="group" aria-label="Selected mark" data-glass-selection>
+  const voicePalette = (tool === "voice" || tool === "memo" || tool === "lecture") ? <div className="glass-palette glass-palette-voice" data-voice-palette={tool} role="group" aria-label="Voice">
+    <strong>{tool === "memo" ? "Voice memo" : tool === "lecture" ? "Lecture" : "Voice to note"}</strong>
+    <p className="glass-palette-hint">{tool === "memo"
+      ? "Click a paragraph: audio stays on this machine in .omarkie/assets, its transcript is searchable."
+      : tool === "lecture"
+        ? "Start once. Every minute is transcribed locally; Save writes one new note with the marked moments."
+        : `Click a paragraph, or hold ${voice.key}. A quick tap keeps recording until the next tap.`}</p>
+    <p className="glass-palette-hint" data-voice-language>Language: {voice.language === "auto" ? "auto (ES/EN)" : voice.language}</p>
+    {!voice.valid && <p className="glass-palette-hint" role="alert">OMARKIE_STT is not readable. Check the setting value.</p>}
+  </div> : null;
+  const voicePill = run ? <div className="voice-pill" data-voice-pill={run.phase} data-voice-mode={run.mode} role="status">
+    <Mic size={13} aria-hidden="true" />
+    <span className="voice-pill-state">{run.phase === "recording" ? run.mode === "memo" ? "Memo" : run.mode === "lecture" ? "Lecture" : "Dictation" : run.phase === "saving" ? "Saving" : "Transcribing"}</span>
+    {run.phase === "recording" && <time data-voice-clock>{timestampLabel(Date.now() - run.startedAt + run.offsetMs)}</time>}
+    {run.mode === "lecture" && run.phase === "recording" && <button type="button" data-voice-mark onClick={markMoment}>Mark{run.marks.length ? ` (${run.marks.length})` : ""}</button>}
+    {run.phase === "recording" && <button type="button" data-voice-stop={run.mode === "lecture" ? "save" : "stop"}
+      onClick={() => void (run.mode === "lecture" ? saveLecture() : finishVoice())}>{run.mode === "lecture" ? "Save" : "Stop"}</button>}
+    <button type="button" data-voice-cancel onClick={cancelVoice}>Cancel</button>
+  </div> : null;
+  const panel = <>{tray}{voicePalette}{voicePill}{inkPalette ?? marksPalette}{cutoutPalette ?? pagePalette ?? visualPalette}{(selected || selectedArrow) && <div className="glass-selection-actions" role="group" aria-label="Selected mark" data-glass-selection>
     <button type="button" data-glass-xray-open={selected ?? selectedArrow} aria-haspopup="dialog" title="X-ray: exactly what the agent will see"
       onClick={() => { const id = selected ?? selectedArrow; if (id) openXray(id); }}><ScanEye size={14} /> X-ray</button>
   </div>}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
@@ -2324,7 +2547,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       setCalibration(undefined);
     }} />}
   
-{notice && <p className="glass-notice" role="status">{notice}</p>}
+{notice && <p className={["voice", "memo", "lecture"].includes(tool) ? "glass-notice glass-notice-high" : "glass-notice"} role="status">{notice}</p>}
   {mergeDone && <div className="glass-merge-done" role="status" data-glass-merge-done>
     <span>Merged into the page.</span>
     <button type="button" data-glass-merge-undo={mergeDone.id} onClick={() => void undoMerge(mergeDone.id)}>Undo</button>
@@ -2420,7 +2643,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         editor={editor} root={root} note={note} tool={scrub ? null : tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice}
         onStroke={onInkStroke} ocr={ocrMode && !scrub} onOcrPick={ocrPick} />}
-      {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page" || tool === "label") && note && <div className="glass-surface" data-glass-surface data-placement={tool} data-glass-layer="notes" onPointerDown={event => {
+      {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page" || tool === "label" || tool === "voice" || tool === "memo" || tool === "lecture") && note && <div className="glass-surface" data-glass-surface data-placement={tool} data-glass-layer="notes" onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
         if (tool === "sticker") placeSticker({ x: event.clientX, y: event.clientY });
@@ -2428,6 +2651,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         else if (tool === "label") {
           const frame = layer.current?.getBoundingClientRect();
           createLabel({ x: event.clientX - (frame?.left ?? 0), y: event.clientY - (frame?.top ?? 0) });
+        } else if (tool === "voice" || tool === "memo" || tool === "lecture") {
+          if (runRef.current) { if (tool !== "lecture") void finishVoice(); }
+          else void beginVoice(tool === "voice" ? "dictation" : tool, { x: event.clientX, y: event.clientY });
         } else create({ x: event.clientX, y: event.clientY });
       }} />}
       {clips.map(clip => { const place = layout.places[clip.id]; return place?.status !== "resolved" ? null :
@@ -2501,6 +2727,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           onCommit={value => patchCompare(compare.id, { value })}
           onSwap={() => patchCompare(compare.id, { left: compare.right, right: compare.left })}
           onDelete={() => removeMark(compare.id)} />; })}
+      {voices.map(memo => { const place = layout.places[memo.id];
+        return place?.status !== "resolved" ? null :
+          <GlassVoice key={memo.id} memo={memo} place={place} note={note!} selected={selected === memo.id}
+            onSelect={() => { setSelected(memo.id); setSelectedArrow(undefined); }}
+            onDelete={() => removeMark(memo.id)} />; })}
       {above.map(frame)}
       {under.map(frame)}
       {visibleStickers.map(sticker => <StickerView key={sticker.id} sticker={sticker} place={layout.places[sticker.id]} selected={selected === sticker.id}

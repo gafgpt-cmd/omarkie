@@ -237,6 +237,7 @@ async function syncGlassNow(folder) {
   }
 }
 let glassWatch = { folder: null, root: null, close: null };
+let voiceRuntime, voiceRuns = new Map();
 async function syncGlassWatch() {
   const folder = store.folder;
   if (glassWatch.folder === folder) return;
@@ -345,6 +346,20 @@ const handlers = {
   readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  voice: async (_, request = {}) => {
+    const { Voice } = await import("./voice.mjs");
+    voiceRuntime ??= new Voice({ dataDir: app.getPath("userData") });
+    if (request.action === "info") return voiceRuntime.info();
+    if (request.action === "cancel") { voiceRuns.get(request.id)?.abort(); return true; }
+    if (request.action === "transcribe") {
+      const id = typeof request.id === "string" ? request.id.slice(0, 64) : randomUUID();
+      const controller = new AbortController();
+      voiceRuns.set(id, controller);
+      try { return await voiceRuntime.transcribe({ wavBase64: request.wav, mode: request.mode, language: request.language, signal: controller.signal }); }
+      finally { voiceRuns.delete(id); }
+    }
+    throw new Error("Unknown voice action.");
+  },
   glass: async (_, request) => {
     if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
     if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
@@ -884,8 +899,19 @@ app
         });
       };
       created.once("ready-to-show", () => { paintReady = true; revealWindow(); });
-      session.defaultSession.setPermissionRequestHandler((_, __, callback) =>
-        callback(false),
+      // G21: voice needs the microphone and nothing else. Audio-only, main frame, local app origin.
+      const audioPermission = (contents, details) => {
+        if (!contents || contents !== created.webContents) return false;
+        const url = contents.getURL();
+        if (!url.startsWith("file:") && !(development && url.startsWith(development))) return false;
+        if (details?.mediaType !== undefined) return details.mediaType === "audio";
+        return Array.isArray(details?.mediaTypes) && details.mediaTypes.length === 1 && details.mediaTypes[0] === "audio";
+      };
+      session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+        callback(permission === "media" && audioPermission(contents, details)),
+      );
+      session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+        permission === "media" && audioPermission(contents, details),
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       const contents = created.webContents;
