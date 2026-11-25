@@ -149,20 +149,27 @@ try {
   // Plain baseline for the open budget: the glass with no magnets on screen.
   // "g" is the hand's own toggle; the Display menu costs seconds under headless ozone and would hide the mount.
   const toggleBudget = async () => {
-    if ((await glassOf(page).count()) > 0) {
+    // A late write from the previous off-toggle can flip the state under the next press, so a
+    // cycle whose toggle mark never landed is retried instead of measured.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if ((await glassOf(page).count()) > 0) {
+        await richOf(page).click({ position: { x: 4, y: 4 } });
+        await page.keyboard.press("g");
+        await expect(glassOf(page)).toHaveCount(0);
+      }
       await richOf(page).click({ position: { x: 4, y: 4 } });
+      await page.evaluate(() => {
+        performance.clearMarks("omarkie:glass-toggle");
+        performance.clearMarks("omarkie:glass-ready");
+      });
       await page.keyboard.press("g");
-      await expect(glassOf(page)).toHaveCount(0);
+      await expect(glassOf(page)).toHaveAttribute("data-glass", "on");
+      await expect.poll(() => page.evaluate(() => performance.getEntriesByName("omarkie:glass-ready").length), { timeout: 20_000 }).toBe(1);
+      const marked = await page.evaluate(() => performance.getEntriesByName("omarkie:glass-toggle").length);
+      if (marked) return page.evaluate(() => performance.measure("glass-open", "omarkie:glass-toggle", "omarkie:glass-ready").duration);
+      await page.waitForTimeout(150);
     }
-    await richOf(page).click({ position: { x: 4, y: 4 } });
-    await page.evaluate(() => {
-      performance.clearMarks("omarkie:glass-toggle");
-      performance.clearMarks("omarkie:glass-ready");
-    });
-    await page.keyboard.press("g");
-    await expect(glassOf(page)).toHaveAttribute("data-glass", "on");
-    await expect.poll(() => page.evaluate(() => performance.getEntriesByName("omarkie:glass-ready").length), { timeout: 20_000 }).toBe(1);
-    return page.evaluate(() => performance.measure("glass-open", "omarkie:glass-toggle", "omarkie:glass-ready").duration);
+    throw new Error("the glass toggle mark never landed");
   };
   const plain = [];
   for (let run = 0; run < 3; run++) plain.push(await toggleBudget());
