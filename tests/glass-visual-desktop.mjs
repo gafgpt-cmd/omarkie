@@ -170,6 +170,9 @@ try {
   await expect.poll(async () => (await axiIn(vault, env, "glass", "list", "--note", doc)).magnets
     .find(magnet => magnet.id === ids[0]).fields.sheets.find(sheet => sheet.id === sheets[0]).opacity).toBe(40);
   await page.screenshot({ path: path.join(shots, "g15-sheets-1440.png") });
+  // Leave the tracing tool first: its palette floats over the picture's own controls.
+  await page.locator('.glass-tray').getByRole("button", { name: "Select", exact: true }).click();
+  await expect(page.locator('[data-glass-palette="trace"]')).toHaveCount(0);
   await frame.locator("[data-glass-sheets-toggle]").click();
   await page.screenshot({ path: path.join(shots, "g15-traces-1440.png") });
 
