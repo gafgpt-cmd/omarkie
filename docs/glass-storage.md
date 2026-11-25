@@ -52,6 +52,15 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 - On a focused note: `Enter` edits, `F` folds, `Delete` trashes, `Esc` exits editing.
 - G19 scale gap: a local 203-sticky test took 152 ms on its first open against the 100 ms target. Warm runs took 34–41 ms.
 
+## Stickers and arrows
+
+- Sticker tool: pick a built-in mark (star, check, cross, warning, question, heart, 1–9, emoji) or choose a custom PNG/JPEG/WebP/GIF under 300 KB, then click a paragraph.
+- Stickers are paper on the Notes & stickers layer: drag to move, drag the corner grip to scale, turn with the circular handle, `Delete` or the × to trash.
+- Arrow tool: drag from a paragraph or sticker to another. Both ends stay anchored, so edits and reflow re-route the line.
+- Selected arrows offer straight/curved, ink/red/blue/green, solid/open/no head, a label, and delete. Dragging an end near the viewport edge scrolls the page.
+- When the other end is off-screen, the arrow ends in a labelled jump chip; click it to scroll there.
+- Agent parity: `omarkie-axi glass add --note <note.md> --kind sticker --sticker star --near <quote> --magnet m-star`, or `--kind arrow --from element:<id> --to magnet:<id> --style curved --color red --head open --label "dose → mechanism"`.
+
 ## Renderer and agents
 
 The Electron main process owns one `GlassService` per open vault. The renderer calls `window.desktop.glass({action})` and subscribes to `window.desktop.onGlassStorage(status)` for read-only, disk-full and recovery notices.

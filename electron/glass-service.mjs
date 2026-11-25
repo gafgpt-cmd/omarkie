@@ -8,6 +8,7 @@ import {
   anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
   replayJournalText, replayNotesText, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
+import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validArrowEnd, validStickerImage } from "../shared/glass-marks.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -857,8 +858,95 @@ function stickyAnchor(value) {
   });
 }
 
-// Other magnet kinds stay open for later slices; a sticky note is validated field by field.
+const stickerFieldNames = new Set(["kind", "sticker", "image", "anchor", "x", "y", "w", "h", "rotate", "layer"]);
+
+// A sticker is the built-in sheet id or one custom image, plus its box and its paragraph.
+export function stickerFields(fields, partial) {
+  const values = {};
+  for (const [field, value] of Object.entries(fields)) {
+    if (!stickerFieldNames.has(field)) throw new Error(`Unknown sticker field: ${field}.`);
+    if (field === "kind") {
+      if (value !== "sticker") throw new Error("A sticker keeps its kind.");
+      values.kind = value;
+    } else if (field === "sticker") {
+      if (typeof value !== "string" || !stickerIds.includes(value)) throw new Error(`Sticker must be one of: ${stickerIds.join(", ")}.`);
+      values.sticker = value;
+    } else if (field === "image") {
+      if (!validStickerImage(value)) throw new Error("A custom sticker needs a data URL image under 300 KB.");
+      values.image = value;
+    } else if (field === "anchor") {
+      if (!stickyAnchor(value)) throw new Error("A sticker needs one block anchor with its heading path.");
+      values.anchor = value;
+    } else if (field === "layer") {
+      if (value !== stickerLayer) throw new Error("A sticker lands on the notes layer.");
+      values.layer = value;
+    } else if (field === "rotate") {
+      if (!finite(value, -360, 360)) throw new Error("Sticker rotate must be a number between -360 and 360.");
+      values.rotate = Math.round(value);
+    } else {
+      const limits = field === "w" || field === "h" ? [24, 1200] : [-200_000, 200_000];
+      if (!finite(value, limits[0], limits[1])) throw new Error(`Sticker ${field} must be a number between ${limits[0]} and ${limits[1]}.`);
+      values[field] = Math.round(value);
+    }
+  }
+  if (!partial) {
+    if (values.sticker === undefined && values.image === undefined) throw new Error("A sticker needs a built-in sticker id or a custom image.");
+    if (values.sticker !== undefined && values.image !== undefined) throw new Error("A sticker is either built-in or custom, not both.");
+    if (!values.anchor) throw new Error("A sticker needs an anchor.");
+    values.layer ??= stickerLayer;
+    values.x ??= 0;
+    values.y ??= 0;
+    values.w ??= 72;
+    values.h ??= 72;
+    values.rotate ??= 0;
+  }
+  return values;
+}
+
+const arrowFieldNames = new Set(["kind", "from", "to", "style", "color", "head", "label"]);
+
+// An arrow points from one end to another; both ends are stored, so a reflow re-routes it.
+export function arrowFields(fields, partial) {
+  const values = {};
+  for (const [field, value] of Object.entries(fields)) {
+    if (!arrowFieldNames.has(field)) throw new Error(`Unknown arrow field: ${field}.`);
+    if (field === "kind") {
+      if (value !== "arrow") throw new Error("An arrow keeps its kind.");
+      values.kind = value;
+    } else if (field === "from" || field === "to") {
+      if (!validArrowEnd(value)) throw new Error(`Arrow ${field} must be an element with landmarks or a magnet id.`);
+      values[field] = value;
+    } else if (field === "style") {
+      if (!arrowStyles.includes(value)) throw new Error(`Arrow style must be one of: ${arrowStyles.join(", ")}.`);
+      values.style = value;
+    } else if (field === "color") {
+      if (!arrowColors.includes(value)) throw new Error(`Arrow colour must be one of: ${arrowColors.join(", ")}.`);
+      values.color = value;
+    } else if (field === "head") {
+      if (!arrowHeads.includes(value)) throw new Error(`Arrow head must be one of: ${arrowHeads.join(", ")}.`);
+      values.head = value;
+    } else {
+      if (typeof value !== "string" || value.length > 240 || value.includes("\u0000")) throw new Error("Arrow label must be text up to 240 characters.");
+      values.label = value;
+    }
+  }
+  if (!partial) {
+    if (!values.from || !values.to) throw new Error("An arrow needs a from and a to end.");
+    values.style ??= "straight";
+    values.color ??= "ink";
+    values.head ??= "solid";
+    values.label ??= "";
+  }
+  if (values.from && values.to && values.from.kind === values.to.kind &&
+      (values.from.element ?? values.from.magnet) === (values.to.element ?? values.to.magnet))
+    throw new Error("An arrow needs two different ends.");
+  return values;
+}
+
+// Other magnet kinds stay open for later slices; each mark is validated field by field.
 function validateMagnetFields(kind, fields, partial) {
+  if (kind === "sticker") return stickerFields(partial ? fields : { ...fields, kind: "sticker" }, partial);
+  if (kind === "arrow") return arrowFields(partial ? fields : { ...fields, kind: "arrow" }, partial);
   if (kind !== "sticky") {
     if (partial && Object.hasOwn(fields, "kind")) throw new Error("A magnet keeps its kind.");
     return fields;
