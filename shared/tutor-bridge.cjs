@@ -9,6 +9,14 @@ module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
   const agent = value => body(value, 60) && !/[\x00-\x1f\x7f]/.test(value);
   const view = ({ window: _, expires: __, target: ___, reply: ____, ...ask }) => ask;
   const summary = ({ id, verb, doc, block, status }) => ({ id, verb, doc, block, status });
+  // A bubble adds its own neighbours; the curtain sends none. Both keep the ask small.
+  const neighbours = value => {
+    if (value === undefined) return {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const ok = text => text === undefined || typeof text === "string" && text.length <= 4000;
+    if (!ok(value.before) || !ok(value.after)) return null;
+    return { ...(value.before === undefined ? {} : { before: value.before }), ...(value.after === undefined ? {} : { after: value.after }) };
+  };
   const matches = (ask, doc) => !doc || ask.doc === doc;
   const receipt = ask => notify(ask.window, { type: "receipt", id: ask.id, status: ask.status, owner: ask.owner });
   function presence() {
@@ -46,9 +54,11 @@ module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
     return { ok: true };
   }
   function unbind(window) { documents.delete(window); clear(window); presence(); return documents.size; }
-  function submit(window, { question, target, verb } = {}) {
+  function submit(window, { question, target, verb, context, origin } = {}) {
     expire(Date.now());
     const doc = documents.get(window);
+    const around = neighbours(context);
+    if (around === null) return fail("Send a short before and after neighbour.");
     if (!doc || !body(question, 1000) || typeof verb !== "string" || !(verb === "answer" || verb === "propose" || Object.hasOwn(verbs, verb)) || !target || !body(target.block, 24_000) ||
         !body(target.quote, 24_000) || !Array.isArray(target.headings) || target.headings.length > 6 ||
         target.headings.some(heading => typeof heading !== "string" || heading.length > 4096) ||
@@ -57,7 +67,8 @@ module.exports = function tutorBridge(makeId, notify, anchorFor, expiredAt) {
     clear(window);
     const anchor = anchorFor(target);
     const ask = { id: makeId(), window, doc, block: anchor.hash, line: anchor.line, headings: anchor.headings, quote: anchor.quote,
-      paragraph: target.block, question: question.trim(), verb, status: "queued", owner: null, expires: expiredAt() };
+      paragraph: target.block, question: question.trim(), verb, ...(Object.keys(around).length ? { context: around } : {}),
+      ...(origin === "bubble" ? { origin: "bubble" } : {}), status: "queued", owner: null, expires: expiredAt() };
     asks.set(ask.id, ask); receipt(ask);
     if (listener && matches(ask, listener.doc)) finish(claim(listener.doc, listener.owner));
     return { id: ask.id };

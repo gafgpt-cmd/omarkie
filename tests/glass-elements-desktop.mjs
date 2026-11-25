@@ -197,9 +197,12 @@ try {
   assert.equal((await page.evaluate(() => window.__elementActions[0].kind)), "paragraph");
   await pill.getByRole("button", { name: "Comment", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.__elementActions.map(action => action.action))).toEqual(["change", "comment"]);
+  // G5: Comment is a real action, so it opens the bubble and clears the halo.
+  await expect(page.locator(".glass-bubble")).toBeVisible();
   const settled = await targets.paragraph().boundingBox();
   assert.ok(Math.abs(settled.y - paragraphBox.y) < 0.5 && Math.abs(settled.height - paragraphBox.height) < 0.5, "the halo never shifts the page");
   await page.keyboard.press("Escape");
+  await expect(page.locator(".glass-bubble")).toHaveCount(0);
   await expect(pill).toHaveCount(0);
   await expect(selectedBox).toBeHidden();
   await expect(page.locator(".element-halo-live")).toHaveText("");
@@ -217,10 +220,12 @@ try {
   await expect(pill.getByRole("button", { name: "Comment", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__elementActions.map(action => action.action))).toEqual(["change", "comment", "comment"]);
-  await page.keyboard.press("Shift+Tab");
-  await expect(pill.getByRole("button", { name: "Change", exact: true })).toBeFocused();
+  // G5: Comment opens the bubble; Escape closes it before the walk continues.
+  await expect(page.locator(".glass-bubble")).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.locator(".glass-bubble")).toHaveCount(0);
   await expect(selectedBox).toBeHidden();
+  await page.mouse.move(paragraphBox.x + 30, paragraphBox.y + 10);
   await page.keyboard.press("Tab");
   await expect(selectedBox).toHaveAttribute("data-element-kind", "heading");
   await page.keyboard.press("Tab");

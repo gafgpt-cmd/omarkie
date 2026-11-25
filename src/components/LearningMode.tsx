@@ -8,6 +8,7 @@ import { sourceOffset } from "../editor/model";
 import { host } from "../host";
 import { t } from "../i18n";
 import { Dialog } from "./Dialog";
+import BubbleLayer from "./BubbleLayer";
 import ElementHalo from "./ElementHalo";
 import GlassLayer from "./GlassLayer";
 import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } from "./learning-images.tsx";
@@ -561,7 +562,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && (glass
       ? <><GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved} />
-        <ElementHalo key={`halo:${id}`} root={root} editor={editor} /></>
+        <ElementHalo key={`halo:${id}`} root={root} editor={editor} />
+        {note && <BubbleLayer key={`bubbles:${id}`} root={root} editor={editor} note={note} live={live} pin={saveTutorReply} />}</>
       : groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />)}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}
@@ -590,6 +592,10 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
           {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} data-layer-action={activeSheet === "highlights" || undefined} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
         </div>}
         <button type="button" onClick={() => { openCard(selection.target); dismiss(); }}>{t("制作卡片")}</button>
+        {saved && <button type="button" onClick={() => {
+          window.dispatchEvent(new CustomEvent("omarkie:comment-request", { detail: { line: selection.target.line, quote: selection.target.quote } }));
+          dismiss();
+        }}>{t("Comment")}</button>}
         {tutorParagraph && <button type="button" onClick={() => askTutor()}><Sparkles size={15} />{t("Ask Tutor")}</button>}</>}
         {askPayload && selection.payloadSource && <button type="button" onClick={() => { askPayload(selection.payloadSource!); dismiss(); }}><Sparkles size={15} />{t("Payload")}</button>}
       </> : <form onSubmit={event => { event.preventDefault(); void saveNote(); }}>

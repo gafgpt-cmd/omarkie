@@ -8,7 +8,7 @@ import "./glass.css";
 
 interface Box { id: string; placement: GlassPlacement }
 interface Magnet { id: string; kind: string | null; fields: Record<string, unknown> }
-interface Item { id: string; line: number; label: string; context: string; state: "placed" | "check" | "tray"; confidence: number; tier: GlassResolution["tier"] }
+interface Item { id: string; kind: string | null; line: number; label: string; context: string; state: "placed" | "check" | "tray"; confidence: number; tier: GlassResolution["tier"] }
 interface Seed { text: string; label?: string }
 
 const magnetsKey = "omarkie-glass-magnets";
@@ -179,7 +179,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved = 
         if (start !== undefined) mapped.current.set(magnet.id, start);
       }
       const label = typeof magnet.fields.text === "string" && magnet.fields.text.trim() ? magnet.fields.text : magnet.kind ?? magnet.id;
-      resolved.push({ id: magnet.id, line: result.line ?? 0,
+      resolved.push({ id: magnet.id, kind: magnet.kind, line: result.line ?? 0,
         label, context: anchorContext(anchor), state,
         confidence: result.confidence, tier: result.tier });
     }
@@ -216,7 +216,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved = 
 
   const tray = items.filter(item => item.state === "tray");
   const grouped = new Map<number, Item[]>();
-  for (const item of items) if (item.state !== "tray") {
+  for (const item of items) if (item.state !== "tray" && item.kind !== "comment") {
     const badges = grouped.get(item.line);
     if (badges) badges.push(item);
     else grouped.set(item.line, [item]);

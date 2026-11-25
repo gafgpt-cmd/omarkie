@@ -1,6 +1,6 @@
 import type { ReadingTarget } from "../../shared/reading-store.ts";
 export type TutorVerb = "answer" | "propose" | "simplify" | "check" | "explain" | "quiz" | "grade" | "exam" | "glossary";
-export type TutorDraft = { anchor: ReadingTarget; verb: TutorVerb; text?: string; parent?: string };
+export type TutorDraft = { anchor: ReadingTarget; verb: TutorVerb; text?: string; parent?: string; context?: { before?: string; after?: string } };
 export type TutorReply = TutorDraft & { question: string; body: string; id: string; replacement?: string; confidence?: 1 | 2 | 3 };
 export const tutorLabels = {
   answer: "Answer", propose: "Propose edit", simplify: "Simplify", check: "Check correction", explain: "Explain back",
