@@ -27,14 +27,6 @@ export declare const SLOTS: readonly Slot[];
 export declare const ROUTES: readonly Route[];
 export declare const AGENTS: readonly Agent[];
 
-export interface SlotDefault {
-  readonly route: Route;
-  readonly agent: Agent;
-  readonly model: string;
-  readonly fallback: "local" | "off";
-}
-export declare const SLOT_DEFAULTS: { readonly ladder: SlotDefault; readonly estudio: SlotDefault };
-
 export interface Evidence {
   elementId: string;
   quote: string;
@@ -98,7 +90,6 @@ export interface Fold {
 export declare function isLevelId(value: unknown): value is LevelId;
 export declare function isRole(value: unknown): value is Role;
 export declare function levelOf(id: unknown): Level | null;
-export declare function outLangFor(slot: Slot, noteLang: string, estudioLang?: string | null): string;
 export declare function foldProblems(value: unknown): string[];
 export declare function isFold(value: unknown): value is Fold;
 export declare function isFoldLine(value: unknown): value is FoldLine;

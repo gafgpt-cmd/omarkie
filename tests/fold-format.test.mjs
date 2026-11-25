@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
-  CHECK_CLASSES, FOLD_FORMAT, FOLD_VERSION, LEVELS, LEVEL_IDS, ROLES, SLOT_DEFAULTS,
-  evidenceFits, foldProblems, isAuthorText, isEvidence, isFold, isFoldLine, isLevelId, isRole, isWrittenText, levelOf, outLangFor,
+  CHECK_CLASSES, FOLD_FORMAT, FOLD_VERSION, LEVELS, LEVEL_IDS, ROLES,
+  evidenceFits, foldProblems, isAuthorText, isEvidence, isFold, isFoldLine, isLevelId, isRole, isWrittenText, levelOf,
 } from "../shared/fold-format.mjs";
 
 const unitText = "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics.";
@@ -16,7 +16,7 @@ function ladder() {
     format: FOLD_FORMAT,
     version: FOLD_VERSION,
     meta: {
-      slot: "ladder", route: "agent", agent: "opencode", model: SLOT_DEFAULTS.ladder.model,
+      slot: "ladder", route: "agent", agent: "opencode", model: "fixture-model",
       promptVersion: 1, schemaVersion: 1, outLang: "es", created: "2026-11-26T10:00:00Z",
     },
     units: [
@@ -69,21 +69,6 @@ test("roles are clinical and check classes cover the payload-loss list", () => {
   assert.equal(isRole("result"), false);
   assert.equal(ROLES.includes("context"), true);
   assert.deepEqual(CHECK_CLASSES, ["negation", "restriction", "condition", "uncertainty", "number", "scope", "attribution", "pins", "monotonic", "format"]);
-});
-
-test("slot defaults: Ladder on DeepSeek flash through opencode, Estudio on Claude Sonnet; no paid fallback", () => {
-  assert.deepEqual({ ...SLOT_DEFAULTS.ladder }, { route: "agent", agent: "opencode", model: "opencode-go/deepseek-v4.1-flash", fallback: "local" });
-  assert.deepEqual({ ...SLOT_DEFAULTS.estudio }, { route: "agent", agent: "claude", model: "sonnet", fallback: "off" });
-  assert.ok(Object.isFrozen(SLOT_DEFAULTS.ladder) && Object.isFrozen(SLOT_DEFAULTS.estudio));
-});
-
-test("output language: ladder keeps the note's language; Estudio takes the per-note toggle, else the note's", () => {
-  assert.equal(outLangFor("ladder", "es", "en"), "es");
-  assert.equal(outLangFor("estudio", "es", "en"), "en");
-  assert.equal(outLangFor("estudio", "es"), "es");
-  assert.equal(outLangFor("estudio", "en", null), "en");
-  assert.equal(outLangFor("estudio", "en", "xx"), "en");
-  assert.throws(() => outLangFor("ladder", "xx"), TypeError);
 });
 
 test("author text and written text never mix: a model line needs evidence, an author line carries none", () => {

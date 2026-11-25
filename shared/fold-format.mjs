@@ -1,7 +1,7 @@
 // Fold format `omarkie/fold` v1: the stops, whose words a line holds, and guards for stored fold records.
 // Adapted from TextFold (Apache-2.0, Xia Chen) `textfold/ladder.py` and `docs/format.md` at 7dedb2d.
 // Changed: six stops with Estudio, clinical roles, per-line evidence with element ids and offsets, check results,
-// slot routes; levels ordered as the slider reads (Full first). See third-party/textfold/PORTED.md.
+// slot and route of each record; levels ordered as the slider reads (Full first). See third-party/textfold/PORTED.md.
 
 import { languages } from "./languages.mjs";
 
@@ -32,12 +32,6 @@ export const SLOTS = Object.freeze(["ladder", "estudio"]);
 export const ROUTES = Object.freeze(["agent", "payload"]);
 export const AGENTS = Object.freeze(["claude", "codex", "opencode"]);
 
-// Defaults per slot: subscription agents through the local bridge; Payload loopback is the fallback route.
-export const SLOT_DEFAULTS = Object.freeze({
-  ladder: Object.freeze({ route: "agent", agent: "opencode", model: "opencode-go/deepseek-v4.1-flash", fallback: "local" }),
-  estudio: Object.freeze({ route: "agent", agent: "claude", model: "sonnet", fallback: "off" }),
-});
-
 const languageCodes = new Set(languages.map(([code]) => code));
 const hashPattern = /^[0-9a-f]{64}$/;
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -49,12 +43,6 @@ const oneOf = list => value => list.includes(value);
 export const isLevelId = oneOf(LEVEL_IDS);
 export const isRole = oneOf(ROLES);
 export const levelOf = id => LEVELS.find(entry => entry.id === id) ?? null;
-
-// Ladder lines stay in the note's language; Estudio follows the per-note toggle, else the note's language.
-export function outLangFor(slot, noteLang, estudioLang = null) {
-  if (!isLanguage(noteLang)) throw new TypeError(`Unknown note language: ${noteLang}`);
-  return slot === "estudio" && isLanguage(estudioLang) ? estudioLang : noteLang;
-}
 
 // Each check collects problems as "path: reason"; an empty list means valid.
 function keys(value, path, allowed, problems) {

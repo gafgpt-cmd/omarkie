@@ -10,4 +10,4 @@
 
 | Omarkie file | Upstream | Changed |
 |---|---|---|
-| `shared/fold-format.mjs`, `shared/fold-format.d.mts` | `textfold/ladder.py`, `docs/format.md` | six stops with Estudio, slider order, clinical roles, per-line evidence with element ids and offsets, check results, slot routes |
+| `shared/fold-format.mjs`, `shared/fold-format.d.mts` | `textfold/ladder.py`, `docs/format.md` | six stops with Estudio, slider order, clinical roles, per-line evidence with element ids and offsets, check results, slot and route per record |
