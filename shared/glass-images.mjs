@@ -12,7 +12,18 @@ export const imageDefaults = {
   rotateLimit: 360, offsetLimit: 200_000,
 };
 export const imageFieldNames = new Set(["kind", "name", "asset", "display", "bytes", "w", "h", "aspect",
-  "rot", "wrap", "tape", "locked", "anchor", "x", "y"]);
+  "rot", "wrap", "tape", "locked", "anchor", "x", "y", "source"]);
+
+// A lifted copy remembers the page element it came from; "jump to source" reads this.
+export function validSource(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { element, kind, line, path: sourcePath } = value;
+  if (typeof element !== "string" || !element.trim() || element.length > 200) return null;
+  if (kind !== undefined && (typeof kind !== "string" || kind.length > 40)) return null;
+  if (!Number.isInteger(line) || line < 1 || line > 10_000_000) return null;
+  if (typeof sourcePath !== "string" || !sourcePath.trim() || sourcePath.length > 4096) return null;
+  return { element, line, path: sourcePath, ...(kind ? { kind } : {}) };
+}
 
 const types = [
   ["png", "89504e470d0a1a0a"], ["jpeg", "ffd8ff"], ["gif", "47494638"], ["webp", "52494646"],
@@ -128,6 +139,12 @@ export function imageFields(input = {}, { partial = false } = {}) {
         if (!isAssetName(value)) throw new Error("Image display copy must be a plain file name.");
         values.display = value;
         break;
+      case "source": {
+        const source = validSource(value);
+        if (!source) throw new Error("A lifted picture needs its source element and line.");
+        values.source = source;
+        break;
+      }
       case "bytes":
         if (!finite(value, 0, imageDefaults.maxBytes)) throw new Error("Image size must be a number of bytes.");
         values.bytes = Math.round(value);

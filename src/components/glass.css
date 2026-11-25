@@ -765,3 +765,83 @@
   .glass-note, .glass-sticker, .glass-image { transition: none; }
   .glass-note.is-lifting, .glass-sticker.is-lifting, .glass-image.is-lifting { scale: 1; }
 }
+
+/* G11 merge down: diff first, the page only after Accept. */
+.glass-merge-dialog {
+  position: fixed;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(82vh, 780px);
+  overflow-y: auto;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 12px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 28px 60px -24px #000000b3;
+  font: 12px/1.45 var(--interface-font, system-ui, sans-serif);
+}
+.glass-merge-dialog header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 6px; }
+.glass-merge-dialog header div { display: flex; flex: 1; flex-direction: column; gap: 2px; }
+.glass-merge-dialog header strong { font-size: 13px; }
+.glass-merge-dialog header span, .glass-merge-meta, .glass-merge-counts { color: var(--muted, #777); }
+.glass-merge-close { border: none; background: none; color: var(--muted, #777); font: 18px/1 var(--interface-font, inherit); cursor: pointer; }
+.glass-merge-close:hover { color: var(--ink, #333); }
+.glass-merge-meta, .glass-merge-counts { margin: 0 0 8px; }
+.glass-merge-diff {
+  flex: 1;
+  min-height: 72px;
+  max-height: 300px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink, #333) 4%, var(--paper, #fff));
+  color: var(--ink, #333);
+  font: 11.5px/1.5 var(--mono-font, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.glass-merge-diff div[data-diff="add"] { background: color-mix(in srgb, var(--success, #2e7d46) 16%, transparent); }
+.glass-merge-diff div[data-diff="remove"] { background: color-mix(in srgb, var(--error, #b3261e) 14%, transparent); }
+.glass-merge-diff span { display: inline-block; width: 1.2em; color: var(--muted, #777); user-select: none; }
+.glass-merge-stale h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #777); }
+.glass-merge-stale p[role="alert"] { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warning, #b26a00) 14%, transparent); }
+.glass-merge-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.glass-merge-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.glass-merge-actions button:hover { border-color: var(--accent, #326eaa); }
+.glass-merge-actions .glass-merge-accept { border-color: var(--accent, #326eaa); background: color-mix(in srgb, var(--accent, #326eaa) 14%, transparent); }
+.glass-merge-actions button:disabled { opacity: 0.55; cursor: default; }
+.glass-merge-done {
+  position: fixed;
+  left: 50%;
+  bottom: 104px;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 12px 26px -16px #000000a6;
+  font: 12px/1 var(--interface-font, system-ui, sans-serif);
+  transform: translateX(-50%);
+}
+.glass-merge-done button { padding: 2px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.glass-merge-done button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }

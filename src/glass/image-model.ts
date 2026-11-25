@@ -1,7 +1,7 @@
-import { imageDefaults, imageWraps, type ImageWrap } from "../../shared/glass-images.mjs";
+import { imageDefaults, imageWraps, validSource, type ImageWrap } from "../../shared/glass-images.mjs";
 import { anchorFrom } from "./glass-state";
 import type { GlassAnchor } from "./anchor-map";
-import type { GlassMagnet } from "./glass-model";
+import type { GlassMagnet, GlassSource } from "./glass-model";
 
 export type { ImageWrap };
 export const imageWrapModes = imageWraps;
@@ -22,6 +22,7 @@ export interface GlassImage {
   anchor: GlassAnchor;
   x: number;
   y: number;
+  source?: GlassSource;
 }
 
 const number = (value: unknown, fallback: number, min: number, max: number) =>
@@ -34,6 +35,7 @@ export function imageFromMagnet(magnet: GlassMagnet): GlassImage | undefined {
   if (!asset) return;
   const w = number(fields.w, imageDefaults.w, imageDefaults.minW, imageDefaults.maxW);
   const aspect = typeof fields.aspect === "number" && Number.isFinite(fields.aspect) && fields.aspect > 0 ? fields.aspect : w / 180;
+  const source = validSource(fields.source) ?? undefined;
   return {
     id: magnet.id,
     name: typeof fields.name === "string" && fields.name.trim() ? fields.name.slice(0, imageDefaults.nameLimit) : asset,
@@ -50,6 +52,7 @@ export function imageFromMagnet(magnet: GlassMagnet): GlassImage | undefined {
     anchor: anchorFrom(fields.anchor) ?? { landmarks: [] },
     x: number(fields.x, 0, -imageDefaults.offsetLimit, imageDefaults.offsetLimit),
     y: number(fields.y, 0, -imageDefaults.offsetLimit, imageDefaults.offsetLimit),
+    ...(source ? { source } : {}),
   };
 }
 
@@ -58,6 +61,7 @@ export function imageFieldsOf(image: GlassImage): Record<string, unknown> {
     kind: "image", name: image.name, asset: image.asset, display: image.display, bytes: image.bytes,
     w: image.w, h: image.h, aspect: image.aspect, rot: image.rot, wrap: image.wrap,
     tape: image.tape, locked: image.locked, anchor: image.anchor, x: image.x, y: image.y,
+    ...(image.source ? { source: image.source } : {}),
   };
 }
 

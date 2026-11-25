@@ -1,10 +1,13 @@
 import type { GlassAnchor, GlassBlock } from "./anchor-map";
 import { stickyColors } from "../../shared/glass-core.mjs";
+import { validSource } from "../../shared/glass-images.mjs";
 
 // Same six colours the storage core accepts; tests/glass-sticky.test.mjs checks the journal round-trip.
 export { stickyColors };
 export type StickyColor = (typeof stickyColors)[number];
 export const stickyDefaults = { w: 232, h: 168, minW: 152, minH: 104, folded: 46, textLimit: 20_000, grid: 8 } as const;
+
+export interface GlassSource { element: string; line: number; path: string; kind?: string }
 
 export interface StickyNote {
   id: string;
@@ -16,6 +19,7 @@ export interface StickyNote {
   w: number;
   h: number;
   folded: boolean;
+  source?: GlassSource;
 }
 
 export interface GlassMagnet {
@@ -47,6 +51,7 @@ export function stickyFromMagnet(magnet: GlassMagnet): StickyNote | undefined {
   if ((fields.kind ?? magnet.kind) !== "sticky") return;
   const anchor = anchorValue(fields.anchor);
   const color = stickyColors.find(item => item === fields.color) ?? stickyColors[0];
+  const source = validSource(fields.source) ?? undefined;
   return {
     id: magnet.id,
     text: typeof fields.text === "string" ? fields.text.slice(0, stickyDefaults.textLimit) : "",
@@ -57,11 +62,13 @@ export function stickyFromMagnet(magnet: GlassMagnet): StickyNote | undefined {
     w: number(fields.w, stickyDefaults.w, stickyDefaults.minW, 4000),
     h: number(fields.h, stickyDefaults.h, stickyDefaults.minH, 4000),
     folded: fields.folded === true,
+    ...(source ? { source } : {}),
   };
 }
 
 export function stickyFields(note: StickyNote): Record<string, unknown> {
-  return { kind: "sticky", text: note.text, color: note.color, anchor: note.anchor, x: note.x, y: note.y, w: note.w, h: note.h, folded: note.folded };
+  return { kind: "sticky", text: note.text, color: note.color, anchor: note.anchor, x: note.x, y: note.y, w: note.w, h: note.h, folded: note.folded,
+    ...(note.source ? { source: note.source } : {}) };
 }
 
 export function newStickyId() {
