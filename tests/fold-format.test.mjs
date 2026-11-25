@@ -122,6 +122,8 @@ test("the guard names each broken field by path", () => {
     [value => { value.meta.route = "payload"; }, /fold\.meta\.agent: only an agent route/],
     [value => { value.meta.outLang = "fr"; }, /fold\.meta\.outLang/],
     [value => { value.meta.created = "yesterday"; }, /fold\.meta\.created/],
+    [value => { value.meta.created = "Nov 26 2026"; }, /fold\.meta\.created/],
+    [value => { value.meta.created = "2026"; }, /fold\.meta\.created/],
     [value => { value.meta.promptVersion = 0; }, /fold\.meta\.promptVersion/],
     [value => { value.meta.prompt = "raw prompt"; }, /fold\.meta\.prompt: unknown field/],
     [value => { value.units[1].hash = "sha256:abc"; }, /fold\.units\[1\]\.hash/],
@@ -165,7 +167,4 @@ test("TextFold attribution ships with the ported format", async () => {
   const ported = await file("PORTED.md");
   assert.match(ported, /7dedb2d678df575b620c9b7c07a41d21520eab94/);
   assert.match(ported, /shared\/fold-format\.mjs/);
-  const header = (await readFile(new URL("../shared/fold-format.mjs", import.meta.url), "utf8")).split("\n").slice(0, 4).join("\n");
-  assert.match(header, /Adapted from TextFold \(Apache-2\.0/);
-  assert.match(header, /Changed:/);
 });

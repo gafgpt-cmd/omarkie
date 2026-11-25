@@ -106,6 +106,8 @@ function sectionProblems(value, path, problems) {
   for (const stop of ["takeaway", "topic"]) lineProblems(value[stop], `${path}.${stop}`, problems);
 }
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
 function metaProblems(value, path, problems) {
   if (!keys(value, path, ["slot", "route", "agent", "model", "promptVersion", "schemaVersion", "outLang", "created"], problems)) return;
   need(SLOTS.includes(value.slot), `${path}.slot`, "expected a slot", problems);
@@ -116,7 +118,7 @@ function metaProblems(value, path, problems) {
   need(Number.isSafeInteger(value.promptVersion) && value.promptVersion >= 1, `${path}.promptVersion`, "expected a version", problems);
   need(Number.isSafeInteger(value.schemaVersion) && value.schemaVersion >= 1, `${path}.schemaVersion`, "expected a version", problems);
   need(isLanguage(value.outLang), `${path}.outLang`, "expected a supported language", problems);
-  need(typeof value.created === "string" && !Number.isNaN(Date.parse(value.created)), `${path}.created`, "expected an ISO date", problems);
+  need(typeof value.created === "string" && ISO_DATE.test(value.created) && !Number.isNaN(Date.parse(value.created)), `${path}.created`, "expected an ISO date", problems);
 }
 
 const listed = (value, path, check, problems) => Array.isArray(value)
