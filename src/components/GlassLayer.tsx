@@ -685,7 +685,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     };
     const instance = interact(surface);
     let drag: { element: HTMLElement; id: string; x: number; y: number; pageX: number; pageY: number;
-      place?: SnapBox; context: SnapContext } | undefined;
+      place?: SnapBox; context?: SnapContext } | undefined;
     instance.draggable({
       allowFrom: ".glass-note, .glass-note-head, .glass-sticker",
       ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot, .glass-sticker-grip, .glass-sticker-rotate, .glass-sticker-delete",
@@ -698,9 +698,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           const placed = placesRef.current[id];
           dragging.current = true;
           element.classList.add("is-lifting");
+          // Guides are built on the first move, not on the press: picking up 200 magnets must not stall the press.
           drag = { element, id, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY,
-            ...(placed?.status === "resolved" ? { place: { x: placed.x, y: placed.y, w: placed.width, h: placed.height } } : {}),
-            context: snapContext(id) };
+            ...(placed?.status === "resolved" ? { place: { x: placed.x, y: placed.y, w: placed.width, h: placed.height } } : {}) };
         },
         move(event) {
           if (!drag) return;
@@ -708,6 +708,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           const dx = event.pageX - drag.pageX, dy = event.pageY - drag.pageY;
           let x = dx, y = dy;
           if (drag.place) {
+            drag.context ??= snapContext(drag.id);
             const proposal = { x: drag.place.x + dx, y: drag.place.y + dy, w: drag.place.w, h: drag.place.h };
             const result = resolveSnap(proposal, drag.context, event.altKey);
             x += result.x - proposal.x;
@@ -727,7 +728,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           let x = start.x + dx, y = start.y + dy;
           if (start.place) {
             const proposal = { x: start.place.x + dx, y: start.place.y + dy, w: start.place.w, h: start.place.h };
-            const result = resolveSnap(proposal, start.context, event.altKey);
+            const result = resolveSnap(proposal, start.context ?? snapContext(start.id), event.altKey);
             x = start.x + result.x - start.place.x;
             y = start.y + result.y - start.place.y;
           } else if (gridRef.current.on) {

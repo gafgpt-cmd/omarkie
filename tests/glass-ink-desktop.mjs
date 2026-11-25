@@ -520,9 +520,16 @@ try {
     }
     await new Promise(resolve => requestAnimationFrame(resolve));
     cancelAnimationFrame(frame);
-    fire("pointerup", grab.x + 12 + (step * 7) % 240, grab.y + (step * 3) % 16);
+    // The lift writes the stroke once; the smoothness budget covers the drawing, not that one commit.
+    window.__inkLift = { x: grab.x + 12 + (step * 7) % 240, y: grab.y + (step * 3) % 16 };
     return gaps;
   }, grab);
+  const inkWork = await readWork(page);
+  await page.evaluate(() => {
+    const surface = document.querySelector("[data-ink-surface]"), lift = window.__inkLift;
+    surface.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 31,
+      pointerType: "pen", pressure: 0.6, isPrimary: true, buttons: 0, clientX: lift.x, clientY: lift.y }));
+  });
   await page.waitForFunction(() => window.__inkCommits.length > 0, { timeout: 30_000 });
   const timing = await page.evaluate(() => {
     const sorted = [...window.__inkChains].sort((a, b) => a - b);
@@ -533,7 +540,6 @@ try {
   console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms`);
   assert.ok(timing.events > 20, "the drag reaches the ink surface");
   await expect(page.locator(".glass-ink")).toHaveAttribute("data-glass-ink", /./);
-  const inkWork = await readWork(page);
   const inkChains = await page.evaluate(() => [...window.__inkChains]);
   assertWorkBudget({ work: inkChains, longTasks: inkWork.longTasks, gesture: "Drawing over 2,000 strokes" });
   assert.ok(timing.paints > 0, "the live stroke repaints while drawing");
