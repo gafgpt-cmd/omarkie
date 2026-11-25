@@ -845,3 +845,102 @@
 }
 .glass-merge-done button { padding: 2px 8px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .glass-merge-done button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+
+/* G17 smart ink: one chip per gesture, with use / keep / undo. */
+.glass-selection-actions { display: flex; justify-content: flex-end; gap: 6px; padding: 6px 0 0; }
+.glass-selection-actions button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border, #ccc); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.glass-selection-actions button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-chip {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 14px 28px -18px #000000a6;
+  font: 11px/1.2 var(--interface-font, system-ui, sans-serif);
+  transform: translate(-50%, calc(-100% - 14px));
+}
+.glass-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glass-chip[data-glass-low] { border-style: dashed; }
+.glass-chip button { padding: 3px 8px; border: 1px solid var(--border, #ccc); border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.glass-chip button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-chip [data-gesture-undo] { border-color: color-mix(in srgb, var(--warning, #b26a00) 50%, var(--border, #ccc)); }
+
+/* G17 peek lens: the ring only; the hole itself is a clip-path on the glass layer. */
+.glass-lens {
+  position: fixed;
+  z-index: 44;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent, #326eaa) 60%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--paper, #fff) 70%, transparent), 0 10px 30px -18px #000000a6;
+}
+
+/* G17 time scrub: read-only replay over the journal. */
+.glass-scrub {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 8px 12px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 18px 36px -20px #000000a6;
+  font: 12px/1 var(--interface-font, system-ui, sans-serif);
+  transform: translateX(-50%);
+}
+.glass-scrub input[type="range"] { width: min(260px, 40vw); accent-color: var(--accent, #326eaa); }
+.glass-scrub button { padding: 4px 10px; border: 1px solid var(--border, #ccc); border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
+.glass-scrub button:hover { border-color: var(--accent, #326eaa); }
+.glass-scrub button:disabled { opacity: 0.5; cursor: default; }
+.glass-scrub output { color: var(--muted, #777); font-variant-numeric: tabular-nums; }
+[data-glass-scrub="on"] .glass-layer > * { pointer-events: none; }
+[data-glass-scrub="on"] .glass-note,
+[data-glass-scrub="on"] .glass-sticker,
+[data-glass-scrub="on"] .glass-card { outline: none; }
+[data-glass-lens="on"] .glass-layer { transition: none; }
+
+/* G17 X-ray: the exact payload a Send would carry. */
+.glass-xray {
+  position: fixed;
+  inset: 8vh 8vw auto;
+  z-index: 120;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 14px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 30px 80px -30px #000000b3;
+  font: 12px/1.45 var(--interface-font, system-ui, sans-serif);
+  overflow: hidden;
+}
+.glass-xray header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px 8px; }
+.glass-xray header div { display: flex; flex-direction: column; gap: 2px; }
+.glass-xray header strong { font-size: 13px; }
+.glass-xray header span { color: var(--muted, #777); }
+.glass-xray-close { border: none; background: none; color: inherit; font-size: 20px; line-height: 1; cursor: pointer; }
+.glass-xray-meta { margin: 0; padding: 0 16px 10px; color: var(--muted, #777); }
+.glass-xray-meta[data-glass-xray-flags]:not([data-glass-xray-flags="0"]) { color: var(--warning, #b26a00); }
+.glass-xray-body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 16px 16px; overflow: auto; }
+.glass-xray-body h4 { margin: 0 0 6px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted, #777); }
+.glass-xray-body pre { margin: 0; padding: 10px; border: 1px solid var(--border, #ccc); border-radius: 8px; background: color-mix(in srgb, var(--ink, #333) 4%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .glass-xray { inset: 4vh 10px auto; }
+  .glass-xray-body { grid-template-columns: 1fr; }
+  .glass-scrub { bottom: 12px; }
+  .glass-scrub output { display: none; }
+}
