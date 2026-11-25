@@ -171,10 +171,10 @@ try {
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     for (const name of Object.keys(targets)) {
       const before = await hover(name);
+      await expect(hoverBox).toHaveAttribute("data-element-kind", kinds[name]);
       await aligned(name, targets[name]());
       assert.deepEqual(await targets[name]().boundingBox(), before, `${name} does not move when hovered`);
       await capture(page, `${name}-${theme}-${width}`);
-      await expect(hoverBox).toHaveAttribute("data-element-kind", kinds[name]);
     }
     const paragraphBounds = await hover("paragraph");
     await page.mouse.click(paragraphBounds.x + 30, paragraphBounds.y + 10);

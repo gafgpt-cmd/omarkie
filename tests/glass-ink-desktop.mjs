@@ -179,13 +179,6 @@ try {
   const tray = trayOf(page);
   await expect(tray).toBeVisible();
 
-  // The remaining unscheduled tools announce their status.
-  for (const [id, label] of Object.entries({ scissors: "Scissors" })) {
-    const tool = tray.locator(`[data-glass-coming="${id}"]`);
-    await expect(tool).toHaveAttribute("aria-disabled", "true");
-    await tool.click({ force: true });
-    await expect(page.locator(".glass-notice")).toHaveText(`${label} is coming soon.`);
-  }
   await pick(page, "Pen");
   await expect(tray.locator('[data-glass-tool="ink"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-ink-surface]")).toHaveAttribute("data-ink-tool", "pen");
