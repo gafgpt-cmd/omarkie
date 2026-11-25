@@ -107,13 +107,22 @@ try {
   const privateTarget = () => rich.locator("p[data-cid]", { hasText: "Patient: Juan Pérez" });
   async function commentOn(locator) {
     await locator.scrollIntoViewIfNeeded();
-    const box = await locator.boundingBox();
-    assert.ok(box, "element box");
-    await page.mouse.click(box.x + 30, box.y + 10);
+    const bounds = await locator.boundingBox();
+    assert.ok(bounds, "element box");
+    const point = await locator.evaluate(element => {
+      const box = element.getBoundingClientRect();
+      for (const left of [0.5, 0.7, 0.85, 0.15]) for (const top of [0.5, 0.25, 0.75]) {
+        const x = box.left + box.width * left, y = box.top + box.height * top;
+        if (element.contains(document.elementFromPoint(x, y))) return { x, y };
+      }
+      return null;
+    });
+    assert.ok(point, "an exposed point of the element is clickable");
+    await page.mouse.click(point.x, point.y);
     await expect(page.locator(".element-halo-pill")).toBeVisible();
     await page.locator('[data-element-action="comment"]').click();
     await expect(panel).toBeVisible();
-    return box;
+    return bounds;
   }
   async function closeBubble() {
     if (await panel.count()) await page.locator(".bubble-close").click();
@@ -304,7 +313,7 @@ try {
       await page.keyboard.press("g");
     }
     await expect(page.locator(`[data-bubble="${opened.bubble.id}"]`)).toBeVisible({ timeout: 10_000 });
-    await page.locator(`[data-bubble="${opened.bubble.id}"]`).click();
+    await page.locator(`[data-bubble="${opened.bubble.id}"]`).press("Enter");
     await expect(page.locator('.bubble-thread li[data-bubble-role="agent"]')).toContainText("joules per kilogram");
     await expect(page.locator(".bubble-thread li")).toHaveCount(2);
     assert.deepEqual(started, []);
