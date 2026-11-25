@@ -5,6 +5,13 @@
   z-index: 3;
   pointer-events: none;
 }
+/* G12: five shared layers. The store writes these variables once; magnets never re-render. */
+[data-glass-layer="ink"] { opacity: var(--glass-layer-ink-opacity, 1); visibility: var(--glass-layer-ink-visibility, visible); }
+[data-glass-layer="notes"] { opacity: var(--glass-layer-notes-opacity, 1); visibility: var(--glass-layer-notes-visibility, visible); }
+[data-glass-layer="media"] { opacity: var(--glass-layer-media-opacity, 1); visibility: var(--glass-layer-media-visibility, visible); }
+[data-glass-layer="cards"] { opacity: var(--glass-layer-cards-opacity, 1); visibility: var(--glass-layer-cards-visibility, visible); }
+[data-glass-layer="comments"] { opacity: var(--glass-layer-comments-opacity, 1); visibility: var(--glass-layer-comments-visibility, visible); }
+
 /* G10: the optional paper grid, drawn under every magnet and only when asked for. */
 .glass-grid {
   --glass-grid: 8px;

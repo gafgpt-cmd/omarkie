@@ -80,7 +80,7 @@ export function Sidebar(props: Props) {
           aria-haspopup="menu"
           onClick={() => setSwitcher(!switcher)}
         >
-          {props.sheets?.selected ? t("Sheets") : props.tab === "files" ? t("文件", { context: "sidebar" }) : props.tab === "tree" ? t("文件树") : t("大纲")}
+          {props.sheets?.selected ? t("Layers") : props.tab === "files" ? t("文件", { context: "sidebar" }) : props.tab === "tree" ? t("文件树") : t("大纲")}
           <ChevronDown size={12} />
         </button>
         {switcher && (
@@ -98,7 +98,7 @@ export function Sidebar(props: Props) {
                 {tab === "files" ? t("文件", { context: "sidebar" }) : tab === "tree" ? t("文件树") : t("大纲")}
               </button>
             ))}
-            {props.sheets && <button role="menuitemradio" aria-checked={props.sheets.selected} onClick={() => { props.sheets?.show(); setSwitcher(false); }}>{t("Sheets")}</button>}
+            {props.sheets && <button role="menuitemradio" aria-checked={props.sheets.selected} onClick={() => { props.sheets?.show(); setSwitcher(false); }}>{t("Layers")}</button>}
           </div>
         )}
       </div>

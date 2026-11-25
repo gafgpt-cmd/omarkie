@@ -346,3 +346,55 @@ test("landmark anchors round-trip as an additive versioned field", async () => {
     await assert.rejects(service.request({ action: "add", note: "map.md", magnet: "m-bad", anchor: { version: 9, landmarks: [] } }), /Invalid Glass anchor/u);
   } finally { await service.close(); }
 });
+
+test("five shared layers persist one line per field, count each kind and survive restart", async () => {
+  const environment = await vault();
+  const service = await open(environment);
+  let added;
+  try {
+    const empty = await service.request({ action: "layers", note: "map.md" });
+    assert.equal(empty.initialized, false);
+    assert.deepEqual(empty.counts, { ink: 0, notes: 0, media: 0, cards: 0, comments: 0 });
+    const anchor = { version: 1, landmarks: [{ kind: "block", block: "Contour lines close together mean a steep slope.", headings: ["Map"], line: 3 }] };
+    added = await service.request({ action: "add", note: "map.md", magnet: "m-layer", kind: "sticky", text: "layered", anchor });
+    await service.request({ action: "add", note: "map.md", magnet: "m-layer-2", kind: "sticky", text: "twice", anchor });
+    const read = await service.request({ action: "layers", note: "map.md" });
+    assert.equal(read.counts.notes, 2);
+    assert.equal(read.layers.notes.visible, true);
+    assert.equal(read.layers.ink.opacity, 100);
+    const changed = await service.request({ action: "layer", note: "map.md", layer: "notes", visible: false, opacity: 40 });
+    assert.deepEqual(changed.changed.sort(), ["opacity", "visible"]);
+    assert.equal(changed.layers.notes.visible, false);
+    assert.equal(changed.layers.notes.opacity, 40);
+    assert.equal(changed.saved, true);
+    const journal = await readFile(path.join(environment.folder, ".omarkie", added.journal), "utf8");
+    assert.equal(journal.match(/"op":"layer"/g)?.length, 2);
+    await service.request({ action: "layer", note: "map.md", layer: "notes", locked: true });
+    const listed = await service.request({ action: "list", note: "map.md" });
+    assert.equal(listed.layers.notes.locked, true);
+    await assert.rejects(service.request({ action: "layer", note: "map.md", layer: "per-element", visible: false }), /Layer must be one of/u);
+    await assert.rejects(service.request({ action: "layer", note: "map.md", layer: "notes" }), /Supply a layer change/u);
+    await assert.rejects(service.request({ action: "layer", note: "map.md", layer: "notes", opacity: 101 }), /between 0 and 100/u);
+  } finally { await service.close(); }
+  const reopened = await open(environment);
+  try {
+    const layers = await reopened.request({ action: "layers", note: "map.md" });
+    assert.deepEqual(layers.layers.notes, { visible: false, locked: true, opacity: 40 });
+    assert.equal(layers.counts.notes, 2);
+    assert.deepEqual(layers.layers.media, { visible: true, locked: false, opacity: 100 });
+  } finally { await reopened.close(); }
+  // Two devices appending layer fields: the newer clock wins, like magnet fields.
+  const journal = path.join(environment.folder, ".omarkie", added.journal);
+  const text = await readFile(journal, "utf8");
+  const opacity = text.trim().split("\n").map(line => JSON.parse(line)).find(record => record.op === "layer" && record.layer === "notes" && record.field === "opacity");
+  const time = Number.parseInt(opacity.hlc.split("-")[0], 16);
+  const older = { op: "layer", layer: "notes", field: "opacity", value: 90, hlc: `${(time - 1).toString(16)}-0`, device: "a" };
+  const newer = { op: "layer", layer: "media", field: "visible", value: false, hlc: `${(time + 2).toString(16)}-0`, device: "b" };
+  await writeFile(journal, text + `${JSON.stringify(older)}\n${JSON.stringify(newer)}\n`);
+  const merged = await open(environment);
+  try {
+    const layers = await merged.request({ action: "layers", note: "map.md" });
+    assert.equal(layers.layers.notes.opacity, 40);
+    assert.equal(layers.layers.media.visible, false);
+  } finally { await merged.close(); }
+});

@@ -61,8 +61,8 @@ for (const [language] of languages) {
     await expect(button(clean, "应用到源文档")).toBeEnabled();
     await button(clean, "返回源文档").click();
     await button(page, "Learning mode").click();
-    const rail = page.getByRole("complementary", { name: label("Sheets"), exact: true })
-      .or(page.getByRole("group", { name: label("Sheets"), exact: true }));
+    const rail = page.getByRole("complementary", { name: label("Layers"), exact: true })
+      .or(page.getByRole("group", { name: label("Layers"), exact: true }));
     await expect(button(rail, "导出笔记和卡片")).toBeVisible();
     await expect(rail.getByRole("region", { name: label("Understanding"), exact: true })).toBeVisible();
     await expect(button(rail, "Search scraps")).toBeEnabled();

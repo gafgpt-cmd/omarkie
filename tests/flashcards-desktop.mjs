@@ -22,8 +22,8 @@ try {
   page.on("request", request => requests.push(request.url()));
   page.on("pageerror", error => errors.push(error.message));
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
-  const rail = page.getByRole("complementary", { name: "Sheets", exact: true })
-    .or(page.getByRole("group", { name: "Sheets", exact: true }));
+  const rail = page.getByRole("complementary", { name: "Layers", exact: true })
+    .or(page.getByRole("group", { name: "Layers", exact: true }));
   const cards = page.getByRole("complementary", { name: "Study cards", exact: true });
   const study = page.getByRole("complementary", { name: "Test me", exact: true });
   const reveal = study.getByRole("button", { name: "Show answer", exact: true });

@@ -27,7 +27,7 @@ const colorOf = (color: ArrowColor) => color === "red" ? "#cf3b32" : color === "
 
 const ArrowPaths = memo(function ArrowPaths({ routes, arrows, selected, onSelect }: Pick<Props, "routes" | "arrows" | "selected" | "onSelect">) {
   const byId = new Map(arrows.map(arrow => [arrow.id, arrow]));
-  return <svg className="glass-arrow-paths" aria-label="Glass arrows">
+  return <svg className="glass-arrow-paths" aria-label="Glass arrows" data-glass-layer="notes">
     {routes.map(route => {
       const arrow = byId.get(route.id);
       if (!arrow) return null;
@@ -61,7 +61,7 @@ function ArrowJumps({ routes, view, names, scroller }: Pick<Props, "routes" | "v
     const far = jump.far === "to" ? route.to : route.from;
     const ends = names[route.id];
     const name = (jump.far === "to" ? ends?.to : ends?.from) ?? "";
-    return <button type="button" key={route.id} className="glass-arrow-jump" data-arrow-jump={route.id} data-direction={jump.direction}
+    return <button type="button" key={route.id} className="glass-arrow-jump" data-arrow-jump={route.id} data-direction={jump.direction} data-glass-layer="notes"
       style={{ left: `${clamp(jump.point.x, 12, Math.max(12, view.width - 12))}px`,
         top: `${jump.direction === "up" ? view.top + 12 : view.top + view.height - 70}px` }}
       title={name ? `Jump to ${name}` : "Jump to the other end"} aria-label={name ? `Jump to ${name}` : "Jump to the other end"}
@@ -78,7 +78,7 @@ function ArrowTools({ arrow, route, view, onUpdate, onDelete, onSelect }: {
   const [label, setLabel] = useState(arrow.label);
   useEffect(() => setLabel(arrow.label), [arrow.label]);
   const commit = () => { if (label !== arrow.label) onUpdate(arrow.id, { label }); };
-  return <div className="glass-arrow-tools" role="group" aria-label="Arrow" data-arrow-tools={arrow.id}
+  return <div className="glass-arrow-tools" role="group" aria-label="Arrow" data-arrow-tools={arrow.id} data-glass-layer="notes"
     style={{ left: `${clamp(route.label.x, 132, Math.max(132, view.width - 132))}px`, top: `${clamp(route.label.y, view.top + 10, view.top + view.height - 96)}px` }}>
     <div className="glass-arrow-row">
       {arrowStyles.map(style => <button type="button" key={style} data-arrow-style={style} aria-pressed={arrow.style === style}
