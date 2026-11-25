@@ -153,6 +153,9 @@ try {
   await page.keyboard.type(`${added}\n\n`);
   await expect.poll(() => page.evaluate(() => document.querySelector(".cm-content")?.textContent?.startsWith("glass guard text."))).toBe(true);
   assert.equal((await axi("glass", "--vault", vault)).glass, "on", "typing a bare g must not toggle the glass");
+  const editedSource = `${added}\r\n\r\n${source}`;
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(file, "utf8")).toBe(editedSource);
   await setDisplay("Source Code Mode", false);
   await learning(true);
   await expect(rich).toHaveAttribute("contenteditable", "false");
@@ -193,9 +196,7 @@ try {
   await expect(glass).toHaveCount(0);
   await capture("dark-720-off");
   await resize(1440);
-  const markdown = await readFile(file, "utf8");
-  assert.match(markdown, /glass guard text\./);
-  assert.doesNotMatch(markdown, /glass-debug|glass-layer|\{version|visible/);
+  assert.equal(await readFile(file, "utf8"), editedSource, "Glass does not write to Markdown");
   assert.deepEqual(errors, []);
   console.log("PASS: Glass surface follows its paragraph through edits and resize; menu, G and omarkie-axi toggle one per-vault state");
 } finally { await app.close(); }
