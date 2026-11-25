@@ -157,24 +157,28 @@ export default function App() {
   const readingSupported = !!window.desktop?.readingStore;
   const glassSupported = !!window.desktop?.glassState;
   const [glassOn, setGlassOn] = useState(false);
+  // The last press owns the state: a slow write from an earlier toggle must not flip it back.
+  const glassOnRef = useRef(false), glassSeq = useRef(0);
+  const settleGlass = (visible: boolean) => { glassOnRef.current = visible; setGlassOn(visible); };
   useEffect(() => {
     if (!glassSupported) return;
     let current = true;
     void window.desktop!.glassState({ action: "read" }).then((response: { ok: boolean; value?: { visible?: boolean } }) => {
-      if (current && response?.ok) setGlassOn(response.value?.visible === true);
+      if (current && response?.ok) settleGlass(response.value?.visible === true);
     }).catch(() => {});
-    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => setGlassOn(event?.visible === true));
+    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => settleGlass(event?.visible === true));
     return () => { current = false; stop?.(); };
   }, [glassSupported, session.folder]);
   function toggleGlass() {
     if (!glassSupported) return;
-    const visible = !glassOn;
+    const visible = !glassOnRef.current, seq = ++glassSeq.current;
+    settleGlass(visible);
     if (visible) performance.mark("omarkie:glass-toggle");
-    setGlassOn(visible);
     void window.desktop!.glassState({ action: "write", visible }).then((response: { ok: boolean; error?: string; value?: { visible?: boolean } }) => {
-      if (response?.ok) setGlassOn(response.value?.visible === true);
-      else { setGlassOn(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
-    }).catch((error: Error) => { setGlassOn(!visible); session.setMessage(error.message); });
+      if (seq !== glassSeq.current) return;
+      if (response?.ok) settleGlass(response.value?.visible === true);
+      else { settleGlass(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
+    }).catch((error: Error) => { if (seq === glassSeq.current) { settleGlass(!visible); session.setMessage(error.message); } });
   }
   const sharedSupported = !!window.desktop?.sharedGlassState;
   const [sharedOn, setSharedOn] = useState(false);
