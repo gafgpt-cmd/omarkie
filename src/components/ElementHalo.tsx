@@ -2,6 +2,8 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditorHandle } from "../editor/MarkdownEditor";
 import { resolveAnchor } from "../glass/anchor-map";
+import { elementNode } from "../glass/element-node";
+import { elementKindName } from "../glass/element-label";
 import { elementById, markdownElements, type PageElement } from "../../shared/element-model.mjs";
 import { t } from "../i18n";
 import "./element-halo.css";
@@ -35,25 +37,8 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     return cache.current.elements;
   }
 
-  function blockOf(element: PageElement) {
-    return root.querySelector<HTMLElement>(`[data-cid][data-line="${element.blockLine}"]`);
-  }
-
   function nodeOf(element: PageElement, elements: PageElement[]) {
-    const block = blockOf(element);
-    if (!block) return null;
-    if (!nestedKinds.has(element.kind)) return block;
-    const inBlock = elements.filter(other => other.blockLine === element.blockLine);
-    if (element.kind === "table-cell") {
-      const at = inBlock.filter(other => other.kind === "table-cell").indexOf(element);
-      return block.querySelectorAll<HTMLElement>("td, th")[at] ?? block;
-    }
-    if (element.kind === "list-item") {
-      const at = inBlock.filter(other => other.kind === "list-item").indexOf(element);
-      return block.querySelectorAll<HTMLElement>("li")[at] ?? block;
-    }
-    const at = inBlock.filter(other => other.kind === "image" || other.kind === "embed").indexOf(element);
-    return block.querySelectorAll<HTMLElement>("img")[at] ?? block;
+    return elementNode(root, element, elements);
   }
 
   function resolved(target: Element | null, elements: PageElement[]) {
@@ -119,7 +104,7 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     selectNode.current = node ?? undefined;
     selectedId.current = element.id;
     setSelected(shown(element));
-    setAnnounce(t("Selected {{kind}}: {{text}}", { kind: t(kindName(element.kind)), text: shown(element).text }));
+    setAnnounce(t("Selected {{kind}}: {{text}}", { kind: t(elementKindName(element.kind)), text: shown(element).text }));
     schedule();
   }
 
@@ -231,6 +216,8 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
       event.stopPropagation();
       step(event.shiftKey ? -1 : 1);
     };
+    const onDismiss = () => { if (selectElement.current) clear(); };
+    window.addEventListener("omarkie:element-dismiss", onDismiss);
     scroller.addEventListener("pointermove", onMove, { passive: true });
     scroller.addEventListener("pointerleave", onLeave);
     scroller.addEventListener("click", onClick, true);
@@ -242,6 +229,7 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     schedule();
     return () => {
       if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
+      window.removeEventListener("omarkie:element-dismiss", onDismiss);
       scroller.removeEventListener("pointermove", onMove);
       scroller.removeEventListener("pointerleave", onLeave);
       scroller.removeEventListener("click", onClick, true);
@@ -254,10 +242,10 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
 
   return createPortal(<div className="element-halo" ref={layer} data-element-halo="on">
     <div className="element-halo-box" ref={hoverBox} hidden data-element-hover={hover?.id} data-element-kind={hover?.kind}>
-      {hover && <span className="element-halo-label">{t(kindName(hover.kind))}</span>}
+      {hover && <span className="element-halo-label">{t(elementKindName(hover.kind))}</span>}
     </div>
     <div className="element-halo-box is-selected" ref={selectBox} hidden data-element-selected={selected?.id} data-element-kind={selected?.kind}>
-      {selected && <span className="element-halo-label">{t(kindName(selected.kind))}</span>}
+      {selected && <span className="element-halo-label">{t(elementKindName(selected.kind))}</span>}
     </div>
     {selected && <div className="element-halo-pill" ref={pill} role="group" aria-label={t("Element actions")}>
       <button type="button" data-element-action="change" onClick={() => emit("change")}>{t("Change")}</button>
@@ -267,9 +255,3 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
   </div>, scroller);
 }
 
-const kindNames: Record<string, string> = { paragraph: "Paragraph", heading: "Heading", list: "List", "list-item": "List item", table: "Table",
-  "table-cell": "Cell", image: "Image", embed: "Embed", formula: "Formula", code: "Code", callout: "Callout", quote: "Quote", html: "HTML", divider: "Divider" };
-
-function kindName(kind: string) {
-  return kindNames[kind] ?? kind;
-}

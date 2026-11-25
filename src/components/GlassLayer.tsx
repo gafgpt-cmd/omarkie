@@ -184,7 +184,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         const value = await glassCall({ note: path, action: "list" });
         loaded.current = true;
         setMagnets(storable(value.magnets));
-        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky");
+        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky" && magnet.kind !== "comment");
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setTrash(storable(value.trash));
         setSaved("saved");

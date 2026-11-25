@@ -88,6 +88,8 @@
 - Glass overlay state is per vault: `omarkie-axi glass [--on | --off] [--vault <dir>]` reads or sets `.omarkie/glass/vault.json` (the overlay toggle, beside the per-note magnet journals), and an open window follows the file live. `G` or the Display menu toggles the same state.
 - With Glass on, hover for the element type or click to select. In the document, Tab and Shift+Tab walk elements; Enter focuses the actions, and Escape returns to the document.
 - `omarkie-axi element list --note <note.md>` lists elements and their IDs. `omarkie-axi element show <id> --note <note.md>` shows one element's Markdown and heading path.
+- Hover an element or select text, then **Comment** to open a bubble anchored to it. Type one question, open **X-ray preview** to see the exact text, heading path and neighbours that will leave the machine. Names, medical record numbers and birth dates are flagged wherever they appear in what would be sent (element text, quote, question, headings, neighbours), and **Send** stays blocked until each is removed or confirmed. **Send** asks the connected local agent; the reply threads in the bubble, and **Pin as cue card** saves a compact cue on the Tutor answers sheet. Without an agent the bubble stays a plain local comment.
+- With Omarkie open, `omarkie-axi glass bubble add --note <note.md> --element <id> --text "<question>"` opens a bubble; `glass bubble list --pending` shows what waits for an agent; `glass bubble reply --note <note.md> --element <id> --text "<answer>"` answers the newest pending bubble on that element. Bubbles and threads persist in the magnet journal and survive restart.
 
 ### Preview media
 
