@@ -107,7 +107,8 @@ async function open() {
   }
   await expect(rich).toHaveAttribute("contenteditable", "false");
   await page.evaluate(() => localStorage.setItem("omarkie-theme", "light"));
-  if ((await page.locator(".glass-layer").count()) === 0) await pressG();
+  const persistedGlass = await page.evaluate(async () => (await window.desktop.glassState({ action: "read" })).value?.visible === true);
+  if (!persistedGlass) await pressG();
   await expect(page.locator(".glass-layer")).toHaveAttribute("data-glass", "on");
   return { app, page, rich, errors };
 }

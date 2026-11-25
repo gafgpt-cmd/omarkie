@@ -188,6 +188,7 @@ try {
   assert.match(firstId, /^m-/);
   await expect(firstNote.locator(".glass-note-text")).toBeFocused();
   await page.keyboard.type("Peel me");
+  await expect(firstNote.locator("textarea")).toHaveValue("Peel me");
   await expect.poll(async () => (await axi("glass", "list", "--note", doc)).magnets[0]?.fields.text, { timeout: 15_000 }).toBe("Peel me");
   const journal = await axi("glass", "list", "--note", doc);
   assert.equal(journal.magnets.length, 1);
@@ -334,7 +335,7 @@ try {
         await shot(page, `trash-undo-${suffix}`);
         await page.locator(`[data-glass-restore="${secondId}"]`).click();
         await expect(foldedPin).toHaveAttribute("data-folded", "true");
-        await caseTray.locator("[data-glass-trash]").click();
+        await expect(page.getByRole("dialog", { name: "Glass trash" })).toBeHidden();
         await caseTray.locator('[data-glass-coming="ink"]').click({ force: true });
         await expect(page.getByRole("status").filter({ hasText: "Ink is coming soon." })).toBeVisible();
         await shot(page, `unavailable-${suffix}`);
@@ -386,6 +387,8 @@ try {
   await page.keyboard.press("Control+Home");
   await page.keyboard.type("Glass guard text.\n\n");
   await expect.poll(() => page.evaluate(() => document.querySelector(".cm-content")?.textContent?.startsWith("Glass guard text."))).toBe(true);
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(file, "utf8")).toMatch(/Glass guard text\./);
   await sourceMode(page, false);
   await learning(page, true);
   await expect(glassOf(page)).toHaveAttribute("data-glass", "on");
@@ -393,7 +396,6 @@ try {
   const pinnedAfter = await pinned();
   assert.ok(Math.abs(pinnedAfter - pinnedBefore) <= 2, `the sticky note followed its paragraph (${pinnedBefore} → ${pinnedAfter})`);
   assert.equal(fieldsOf(await axi("glass", "show", "--note", doc, "--magnet", firstId)).anchor.landmarks[0].block, second);
-  assert.match(await readFile(file, "utf8"), /Glass guard text\./);
 
   // Restart: everything is still there, in the same place.
   const placeBefore = await noteOf(page, firstId).boundingBox();
@@ -433,13 +435,7 @@ try {
   await expect(page.locator('.glass-note[data-magnet="m-bulk-199"]')).toHaveCount(1);
 
   // Capture real renderer frames while trusted pointer input moves a sticky.
-  const dragAdded = await page.evaluate(async ([text, heading]) => {
-    const result = await window.desktop.glass({ action: "add", note: "practice.md", magnet: "m-drag",
-      fields: { kind: "sticky", text: "drag me", color: "yellow", anchor: { landmarks: [{ kind: "block", block: text, headings: [heading] }] }, x: 8, y: 8, w: 232, h: 168 } });
-    return (result?.value ?? result)?.magnet?.id ?? null;
-  }, [first, heading]);
-  assert.equal(dragAdded, "m-drag");
-  const sample = noteOf(page, "m-drag");
+  const sample = noteOf(page, firstId);
   await expect(sample).toHaveCount(1, { timeout: 20_000 });
   const grip = await center(page, sample.locator(".glass-note-head"));
   await page.mouse.move(grip.x, grip.y);
@@ -450,26 +446,29 @@ try {
     const note = document.querySelector(`.glass-note[data-magnet="${id}"]`);
     const frames = [];
     const start = performance.now();
-    let left = note.style.left;
+    let position = note.style.transform;
     while (performance.now() - start < 1200) {
       await new Promise(resolve => requestAnimationFrame(resolve));
-      if (note.style.left === left) continue;
-      left = note.style.left;
+      if (note.style.transform === position) continue;
+      position = note.style.transform;
       frames.push(performance.now());
     }
     return frames.slice(1).map((time, index) => time - frames[index]);
-  }, "m-drag");
-  const gesture = async () => {
+  }, firstId);
+  const gesture = app.evaluate(async ({ BrowserWindow }, grip) => {
+    const view = BrowserWindow.getAllWindows()[0].webContents;
     const start = performance.now();
     for (let step = 0; performance.now() - start < 1300; step++) {
-      await page.mouse.move(grip.x + 8 + step % 70, grip.y + 12);
+      view.sendInputEvent({ type: "mouseMove", x: Math.round(grip.x + 8 + step % 70), y: Math.round(grip.y + 12), modifiers: ["leftButtonDown"] });
+      await new Promise(resolve => setTimeout(resolve, 8));
     }
-  };
-  const [frames] = await Promise.all([captureFrames, gesture()]);
+  }, grip);
+  const [frames] = await Promise.all([captureFrames, gesture]);
   await page.mouse.up();
   const sorted = frames.sort((a, b) => a - b);
   const p50 = sorted[Math.floor(sorted.length / 2)];
   const p95 = sorted[Math.floor(sorted.length * 0.95)];
+  console.log(`budget: plain ${plain.map(value => value.toFixed(1)).join("/")}ms; 203 magnets ${many.map(value => value.toFixed(1)).join("/")}ms; drag ${frames.length} moving frames in 1.2s, p50 ${p50?.toFixed(1)}ms, p95 ${p95?.toFixed(1)}ms`);
   if (fullEvidence) {
     assert.ok(frames.length >= 60 && p50 <= 18 && p95 <= 24,
       `drag: ${frames.length} moving frames in 1.2s, p50 ${p50?.toFixed(1)}ms, p95 ${p95?.toFixed(1)}ms`);
@@ -485,6 +484,8 @@ try {
   await page.keyboard.press("Shift+End");
   await page.keyboard.press("Delete");
   await expect.poll(async () => blockBox(page, second)).toBeNull();
+  await page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(file, "utf8")).not.toContain(second);
   await learning(page, true);
   await expect(glassOf(page)).toHaveAttribute("data-glass", "on");
   await expect(page.locator(".glass-orphans")).toBeVisible({ timeout: 15_000 });

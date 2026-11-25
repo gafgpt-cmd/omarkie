@@ -47,13 +47,15 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
 }) {
   const [draft, setDraft] = useState(note.text);
   const committed = useRef(note.text), latest = useRef(note.text), text = useRef<HTMLTextAreaElement>(null);
+  const writeText = useRef(onText);
+  writeText.current = onText;
   latest.current = draft;
   const flush = useCallback(() => {
     if (latest.current === committed.current) return;
     committed.current = latest.current;
-    onText(latest.current);
-  }, [onText]);
-  useEffect(() => () => { if (latest.current !== committed.current) { committed.current = latest.current; onText(latest.current); } }, [onText]);
+    writeText.current(latest.current);
+  }, []);
+  useEffect(() => flush, [flush]);
   useEffect(() => {
     if (draft === committed.current) return;
     const timer = setTimeout(flush, 400);
@@ -174,26 +176,30 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return run;
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     const path = latest.current.note;
-    if (!path) { loaded.current = true; return; }
-    try {
-      const value = await glassCall({ note: path, action: "list" });
-      setMagnets(storable(value.magnets));
-      const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky");
-      setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
-      setTrash(storable(value.trash));
-      setSaved("saved");
-    } catch (error) { setSaved("error"); setNotice(message(error)); }
-    loaded.current = true;
+    if (!path) return;
+    const run = queue.current.then(async () => {
+      try {
+        const value = await glassCall({ note: path, action: "list" });
+        loaded.current = true;
+        setMagnets(storable(value.magnets));
+        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky");
+        setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
+        setTrash(storable(value.trash));
+        setSaved("saved");
+      } catch (error) { setSaved("error"); setNotice(message(error)); }
+    });
+    queue.current = run;
+    return run;
   }, []);
 
   useEffect(() => {
     void load();
     const subscribe = window.desktop?.onGlassChanged;
     if (!subscribe) return;
-    return subscribe((event: { note?: string } | undefined) => {
-      if (event?.note === latest.current.note) void load();
+    return subscribe((event: { note?: string; action?: string } | undefined) => {
+      if (event && (event.note === latest.current.note || event.action === "bring" && !event.note)) void load();
     });
   }, [load]);
 
@@ -239,6 +245,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     surface.addEventListener("pointerdown", track, true);
     const noteElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note") ?? target) as HTMLElement;
     const instance = interact(surface);
+    let drag: { element: HTMLElement; id: string; x: number; y: number; pageX: number; pageY: number } | undefined;
     instance.draggable({
       allowFrom: ".glass-note, .glass-note-head",
       ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot",
@@ -249,28 +256,21 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           if (!stickie) return;
           dragging.current = true;
           element.classList.add("is-lifting");
-          element.dataset.drag = JSON.stringify({ id: stickie.id, left: parseFloat(element.style.left) || 0, top: parseFloat(element.style.top) || 0,
-            x: stickie.x, y: stickie.y, pageX: event.pageX, pageY: event.pageY });
+          drag = { element, id: stickie.id, x: stickie.x, y: stickie.y, pageX: event.pageX, pageY: event.pageY };
         },
         move(event) {
-          const element = noteElement(event.target), drag = element.dataset.drag;
-          if (!drag) return;
-          const start = JSON.parse(drag);
-          element.style.left = `${start.left + event.pageX - start.pageX}px`;
-          element.style.top = `${start.top + event.pageY - start.pageY}px`;
+          if (drag) drag.element.style.transform = `translate3d(${event.pageX - drag.pageX}px, ${event.pageY - drag.pageY}px, 0)`;
         },
         end(event) {
-          const element = noteElement(event.target), drag = element.dataset.drag;
+          const start = drag;
+          drag = undefined;
           dragging.current = false;
-          element.classList.remove("is-lifting");
-          if (!drag) return;
-          const start = JSON.parse(drag);
-          delete element.dataset.drag;
-          const stickie = latest.current.magnets.find(item => item.id === start.id);
-          if (!stickie) return;
+          if (!start) return;
+          start.element.classList.remove("is-lifting");
+          start.element.style.removeProperty("transform");
           const x = snapped(start.x + event.pageX - start.pageX), y = snapped(start.y + event.pageY - start.pageY);
-          update(stickie.id, { x, y });
-          void send({ action: "set", magnet: stickie.id, fields: { x, y } });
+          update(start.id, { x, y });
+          void send({ action: "set", magnet: start.id, fields: { x, y } });
         },
       },
     }).resizable({

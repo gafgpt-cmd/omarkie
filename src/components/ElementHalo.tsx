@@ -188,7 +188,7 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     if (!surface) return;
     const onMove = (event: PointerEvent) => {
       const target = event.target as Element | null;
-      if (!target || surface.contains(target)) return;
+      if (!target || surface.contains(target) || target.closest("[data-glass='on']")) return;
       pending.current = target;
       schedule();
     };
@@ -202,13 +202,14 @@ export default function ElementHalo({ root, editor }: { root: HTMLElement; edito
     };
     const onClick = (event: MouseEvent) => {
       const target = event.target as Element | null;
-      if (!target || surface.contains(target)) return;
+      if (!target || surface.contains(target) || target.closest("[data-glass='on']")) return;
       const hit = resolved(target, model());
       if (hit) select(hit.element, hit.node);
       else clear();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || !["Escape", "Enter", "Tab"].includes(event.key)) return;
+      if (event.target instanceof Element && event.target.closest("[data-glass='on']")) return;
       if (document.querySelector('[role="dialog"], dialog[open]')) return;
       if (event.key === "Escape") {
         if (!selectElement.current) return;
