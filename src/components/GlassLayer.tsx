@@ -1984,7 +1984,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
-      {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page" || tool === "label") && note && <div className="glass-surface" data-glass-surface data-glass-layer="notes" onPointerDown={event => {
+      {(tool === "sticky" || tool === "sticker" || tool === "clip" || tool === "extra-page" || tool === "label") && note && <div className="glass-surface" data-glass-surface data-placement={tool} data-glass-layer="notes" onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
         if (tool === "sticker") placeSticker({ x: event.clientX, y: event.clientY });

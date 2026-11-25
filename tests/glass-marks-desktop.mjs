@@ -198,8 +198,8 @@ try {
     if (id === "warning") await page.mouse.click(redFlag.x + 40, redFlag.y + 8);
     else await page.mouse.click(sheet.x + 60 + (index % 6) * 90, sheet.y + 8 + Math.floor(index / 6) * 110);
     await expect(page.locator(`.glass-sticker[data-sticker="${id}"]`)).toHaveCount(1);
-    await page.keyboard.press("Escape");
   }
+  await page.keyboard.press("Escape");
   // Delete each through the sticker and the keyboard, keeping the star and the red warning.
   for (const id of builtIn) {
     if (id === "star" || id === "warning") continue;

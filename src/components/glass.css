@@ -190,10 +190,12 @@
 .glass-surface {
   position: absolute;
   inset: 0;
-  z-index: 8;
   pointer-events: auto;
   cursor: crosshair;
 }
+/* A label lands on a picture, so that placement must sit above every magnet; the other tools stay
+   under the marks, which keeps an existing sticker or note selectable while they are armed. */
+.glass-surface[data-placement="label"] { z-index: 8; }
 /* Sticky note: a paper magnet, never a text overlay. */
 .glass-note {
   --note-paper: #fbed9d;
