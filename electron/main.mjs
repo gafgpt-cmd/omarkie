@@ -635,6 +635,15 @@ app
       quitAfterPreferences = true;
       void Promise.all(preferenceWrites).then(() => { quitAfterPreferences = false; app.quit(); });
     });
+    // Glass records append asynchronously; a quit right after a click must not drop the last ones.
+    let quitAfterGlass = false;
+    app.on("before-quit", event => {
+      if (!glassRuntime.service) return;
+      event.preventDefault();
+      if (quitAfterGlass) return;
+      quitAfterGlass = true;
+      void closeGlassRuntime().catch(() => {}).then(() => { quitAfterGlass = false; app.quit(); });
+    });
     protocol.handle("omarkie", async request => {
       try {
         if (new URL(request.url).searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
