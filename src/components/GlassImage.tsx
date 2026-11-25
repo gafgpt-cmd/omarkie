@@ -157,7 +157,7 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
   }
 
   const rotation = `rotate(${image.rot}deg)`;
-  return <div ref={frame} className="glass-image" data-magnet={image.id} data-wrap={image.wrap} data-glass-image
+  return <div ref={frame} className="glass-image" data-magnet={image.id} data-wrap={image.wrap} data-glass-image data-glass-layer="media"
     data-locked={image.locked || undefined} data-tape={image.tape || undefined} data-selected={selected || undefined}
     data-busy={busy || undefined} tabIndex={0} role="group" aria-label={`Image, ${image.name}`}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px`, height: `${place.height}px`, "--glass-image-rot": rotation } as React.CSSProperties}

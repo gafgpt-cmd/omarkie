@@ -124,7 +124,7 @@ export function parseJournalText(text) {
 
 export function replayJournalText(text) {
   const { lines, incomplete } = parseJournalText(text);
-  const magnets = new Map(), unknown = [];
+  const magnets = new Map(), layers = new Map(), unknown = [];
   const seen = new Set();
   let invalid = 0, duplicates = 0;
   const clocks = [];
@@ -135,6 +135,17 @@ export function replayJournalText(text) {
     let record;
     try { record = JSON.parse(line); } catch { invalid += 1; continue; }
     if (!record || typeof record !== "object" || Array.isArray(record)) { invalid += 1; continue; }
+    if (record.op === "layer") {
+      if (typeof record.layer !== "string" || !record.layer || record.layer.length > 40) { invalid += 1; continue; }
+      const hlc = record.hlc, device = typeof record.device === "string" ? record.device : "";
+      if (!parseClock(hlc)) { invalid += 1; continue; }
+      if (!["visible", "locked", "opacity"].includes(record.field)) { invalid += 1; continue; }
+      clocks.push(hlc);
+      let fields = layers.get(record.layer);
+      if (!fields) { fields = new Map(); layers.set(record.layer, fields); }
+      if (isNewer(hlc, device, fields.get(record.field))) fields.set(record.field, { value: record.value, hlc, device });
+      continue;
+    }
     if (record.op !== "set" && record.op !== "del" && record.op !== "delete" && record.op !== "restore") {
       if (parseClock(record.hlc)) clocks.push(record.hlc);
       unknown.push(record);
@@ -164,7 +175,7 @@ export function replayJournalText(text) {
       ? { value: null, removed: true, hlc, device }
       : { value: record.value, removed: false, hlc, device });
   }
-  return { magnets, lines, unknown, invalid, duplicates, incomplete: incomplete.length, clocks };
+  return { magnets, layers, lines, unknown, invalid, duplicates, incomplete: incomplete.length, clocks };
 }
 
 function magnetOf(magnets, id) {

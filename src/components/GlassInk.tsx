@@ -394,7 +394,7 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
       <InkPaths placed={placed} pathOf={pathOf} />
     </svg>
     {active && createPortal(<>
-      <div ref={surface} className="glass-ink-surface" data-ink-surface data-ink-tool={tool} data-ink-mode={tool === "eraser" ? eraser : undefined}
+      <div ref={surface} className="glass-ink-surface" data-ink-surface data-glass-layer="ink" data-ink-tool={tool} data-ink-mode={tool === "eraser" ? eraser : undefined}
         onPointerDown={startGesture}
         onPointerMove={event => { trackCursor(event); moveGesture(event.nativeEvent); }}
         onPointerUp={event => endGesture(event.nativeEvent)}

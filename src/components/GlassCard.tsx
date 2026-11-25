@@ -32,7 +32,7 @@ function GlassCardView({ card, place, note, live, onToggle, onCached, onDelete }
   card: GlassCard; place: Place; note: string; live?: LiveTutor;
   onToggle(): void; onCached(answer: string, answerAt: string): void; onDelete(): void;
 }) {
-  return <div className="glass-card" data-card={card.id} data-card-kind={card.card} data-card-layer="ai-cards"
+  return <div className="glass-card" data-card={card.id} data-card-kind={card.card} data-card-layer="ai-cards" data-glass-layer="cards"
     data-folded={card.folded || undefined} style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px` }}
     tabIndex={0} aria-label={t("{{kind}} card: {{title}}", { kind: kindLabel(card.card), title: card.title })}
     onKeyDown={event => {

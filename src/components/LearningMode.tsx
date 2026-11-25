@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, 
 import { createPortal } from "react-dom";
 import { FolderOpen, Layers, LockKeyhole, PencilLine, Sparkles, StickyNote } from "lucide-react";
 import { sourceLines } from "../../shared/source-lines.mjs";
+import { studySheetLayer, type GlassLayerId } from "../../shared/glass-layers.mjs";
 import type { ConfidenceLevel, ReadingAnchor, ReadingResults, ReadingTarget, SheetColour, StudyItem } from "../../shared/reading-store.ts";
 import type { EditorHandle } from "../editor/MarkdownEditor";
 import { sourceOffset } from "../editor/model";
@@ -10,6 +11,7 @@ import { t } from "../i18n";
 import { Dialog } from "./Dialog";
 import ElementHalo from "./ElementHalo";
 import GlassLayer from "./GlassLayer";
+import GlassLayers from "./GlassLayers";
 import { FloatImages, StudyImage, imageTransfer, readImageBytes, scrapDrag } from "./learning-images.tsx";
 import { LearningOverlays, type StudyMark, type StudyOverlay } from "./learning-overlays.tsx";
 import { readingBlocks, readingSelection, type StudySelection } from "./reading-selection";
@@ -515,6 +517,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     proposals={scraps.filter(scrap => scrap.kind === "proposal").map(proposalCard)} />, tutor.root);
   const counts = new Map<string, number>();
   for (const item of study.entries) if ("sheet" in item) counts.set(item.sheet, (counts.get(item.sheet) ?? 0) + 1);
+  const studyCounts: Partial<Record<GlassLayerId, number>> = {};
+  for (const [sheet, count] of counts) { const layer = studySheetLayer(sheet); studyCounts[layer] = (studyCounts[layer] ?? 0) + count; }
   const previewButton = <button type="button" aria-pressed={preview} onClick={togglePreview}>{t("即时渲染")}</button>;
   const cleanButton = <button type="button" aria-pressed={cleanVisible} onClick={toggleClean}>{t("清理转换文本…")}</button>;
   const baseLayer = <span className="layers-canvas"><LockKeyhole size={14} /><small>L0</small>{t("源文档")}</span>;
@@ -548,16 +552,20 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     })}</div>
   </section>;
   return <>
-    {sheetsRoot && createPortal(<aside className="layers-rail study-rail" aria-label={t("Sheets")}>
-      <header><h2><Layers size={15} />{t("Sheets")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
+    {sheetsRoot && createPortal(<aside className="layers-rail study-rail" aria-label={t("Layers")}>
+      <header><h2><Layers size={15} />{t("Layers")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
+      <GlassLayers note={note} glassOn={glass} saved={saved} compact={false} studyCounts={studyCounts} onNotice={setError} />
       {baseLayer}{previewButton}{cleanButton}
+      <h3 className="study-sheet-heading">{t("Study sheets")}</h3>
       {saved ? <><ul>{sheetButtons}</ul>{tools}{understanding}
         {picking && <div className="study-move" role="status"><p>{t("Choose a paragraph, another scrap, or the loose tray.")}</p><button type="button" onClick={() => setPicking(undefined)}>{t("取消")}</button></div>}
       </> : <p>{t("请先打开文件夹并保存文档。")}</p>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </aside>, sheetsRoot)}
-    <div className="study-chips" role="group" aria-label={t("Sheets")}>
-      <div className="study-chip-row">{baseLayer}{previewButton}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>{saved && <>{tools}{understanding}</>}
+    <div className="study-chips" role="group" aria-label={t("Layers")}>
+      <div className="study-chip-row">{baseLayer}{previewButton}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>
+      <GlassLayers note={note} glassOn={glass} saved={saved} compact studyCounts={studyCounts} onNotice={setError} />
+      {saved && <>{tools}{understanding}</>}
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}

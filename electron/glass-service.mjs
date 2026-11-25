@@ -21,6 +21,7 @@ import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validAr
 import {
   cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
 } from "../shared/glass-cards.mjs";
+import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -917,7 +918,7 @@ export class GlassService {
     const file = this.journalFor(note);
     const imported = await this.importScraps(note).catch(() => 0);
     const replay = await this.readJournal(file);
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), imported,
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), layers: layerStates(replay.layers), imported,
       unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
@@ -935,8 +936,38 @@ export class GlassService {
       return { ...this.describe(note, file), magnet: magnet ? magnetViewFromMap(magnet) : null,
         deleted: !!magnet?.deleted?.active, pending: this.pending.length };
     }
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay),
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), layers: layerStates(replay.layers),
       unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
+  }
+
+  // Layers exist per note: the panel reads their state with the current magnet counts.
+  async layers(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    if (!this.initialized && await this.existingStore()) await this.initialize();
+    const empty = { note: name, id: null, journal: null, layers: layerStates(), counts: layerCounts([]), initialized: false, pending: this.pending.length };
+    if (!this.initialized) return empty;
+    const note = this.notesByPath.get(name);
+    if (!note) return empty;
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file);
+    return { ...this.describe(note, file), layers: layerStates(replay.layers),
+      counts: layerCounts(visibleMagnets(replay.magnets)), pending: this.pending.length };
+  }
+
+  // One journal line per changed field, so two devices merging journals keep the newest value alone.
+  async layer(request) {
+    this.assertWritable();
+    if (!validGlassLayer(request.layer)) throw new Error("Layer must be one of: ink, notes, media, cards, comments.");
+    const patch = layerPatch(request);
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    for (const [field, value] of Object.entries(patch))
+      await this.appendRecord(file, { op: "layer", layer: request.layer, field, value, hlc: this.clock.next(), device: this.deviceName });
+    const replay = await this.readJournal(file);
+    this.notify();
+    return { ...this.describe(note, file), layer: request.layer, changed: Object.keys(patch), layers: layerStates(replay.layers),
+      counts: layerCounts(visibleMagnets(replay.magnets)), pending: this.pending.length, saved: this.pending.length === 0 };
   }
 
   describe(note, file) {
@@ -1054,7 +1085,7 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "layers", "layer"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
     if (["set", "delete", "restore", "asset", "asset-display", "card"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
     if (input.action === "asset") return this.magnetAsset(input);

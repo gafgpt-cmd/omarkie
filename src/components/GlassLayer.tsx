@@ -30,6 +30,8 @@ import GlassCardView, { NewCardDialog } from "./GlassCard";
 import GlassImageFrame from "./GlassImage";
 import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
 import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
+import { glassLayerOf, layerCounts, type GlassLayerId } from "../../shared/glass-layers.mjs";
+import { publishGlassLayers, useGlassLayers } from "../glass/layers";
 import { elementNode } from "../glass/element-node";
 import { elementKindName } from "../glass/element-label";
 import { snapBox, snapDefaults, snapSetting, type SnapBox, type SnapColumn, type SnapGuide, type SnapLine } from "../../shared/glass-snap.mjs";
@@ -51,6 +53,7 @@ interface GlassReply {
   trash?: GlassMagnet[];
   magnet?: GlassMagnet | null;
   saved?: boolean;
+  layers?: Partial<Record<GlassLayerId, { visible?: boolean; locked?: boolean; opacity?: number }>>;
 }
 interface Viewport { top: number; height: number; width: number; page: number }
 const comingSoon = [
@@ -128,7 +131,7 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
   }, [note.text]);
   useEffect(() => { if (editing) text.current?.focus(); }, [editing]);
   if (place.status === "orphan") return null;
-  return <div className="glass-note" data-magnet={note.id} data-colour={note.color} data-folded={note.folded || undefined}
+  return <div className="glass-note" data-magnet={note.id} data-colour={note.color} data-folded={note.folded || undefined} data-glass-layer="notes"
     data-selected={selected || undefined} data-editing={editing || undefined} tabIndex={0} aria-label={`Sticky note, ${note.color}`}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${note.folded ? stickyDefaults.folded : place.width}px`, height: `${note.folded ? stickyDefaults.folded : place.height}px` }}
     onPointerDown={onSelect} onDoubleClick={() => onEdit(true)} onKeyDown={event => {
@@ -161,6 +164,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   live?: LiveTutor;
 }) {
   const scroller = root.parentElement!;
+  const layers = useGlassLayers(note);
+  const layersRef = useRef(layers);
+  layersRef.current = layers;
+  const lockedLayer = (kind: string) => { const id = glassLayerOf(kind); return !!id && layersRef.current[id].locked; };
   const layer = useRef<HTMLDivElement>(null);
   const fixture = useMemo(glassFixture, []);
   const seeds = useMemo(landmarkSeeds, []);
@@ -263,11 +270,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       places[mark.id] = { status: "resolved", x: rect.left - frame.left + mark.x, y: rect.top - frame.top + mark.y, width: mark.w, height: mark.h };
     }
     const flowing = new Set<string>();
+    const mediaShown = layers.media.visible;
     for (const image of latest.current.images) {
       const line = matchIndexed(index.current, image.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[image.id] = { status: "orphan" }; continue; }
-      if (image.wrap === "left" || image.wrap === "right") {
+      if (mediaShown && (image.wrap === "left" || image.wrap === "right")) {
         // A float may use at most 60% of the measure, so its text keeps a readable column.
         const limit = Math.round((element.clientWidth || 0) * 0.6);
         const width = limit > 0 ? Math.max(imageDefaults.minW, Math.min(image.w, limit)) : image.w;
@@ -339,7 +347,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (serialized === fingerprint.current) return;
     fingerprint.current = serialized;
     setLayout({ places, routes: routed.routes, names, orphanArrows: routed.orphans, fixture: marker, loaded: loaded.current });
-  }, [dropSpacers, editor, fixture, flow, root, scroller, seeds]);
+  }, [dropSpacers, editor, fixture, flow, layers, root, scroller, seeds]);
 
   useEffect(() => () => { for (const spacer of spacers.current.values()) spacer.remove(); spacers.current.clear(); }, []);
 
@@ -370,15 +378,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return run;
   }, []);
 
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
     const path = latest.current.note;
     if (!path) return;
+    const mine = ++loadSeq.current;
     const run = queue.current.then(async () => {
       try {
         const startedAt = revision.current;
         const value = await glassCall({ note: path, action: "list" });
         // A write that landed while this list was in flight wins; its optimistic state is newer.
-        if (revision.current !== startedAt) return;
+        if (revision.current !== startedAt || mine !== loadSeq.current) return;
         loaded.current = true;
         const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [];
         const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
@@ -411,6 +421,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
         setTrash(value.trash ?? []);
+        publishGlassLayers(path, value.layers, layerCounts(value.magnets ?? []));
         setSaved("saved");
       } catch (error) { setSaved("error"); setNotice(message(error)); }
     });
@@ -506,6 +517,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [send]);
 
   const createCard = useCallback((card: GlassCard) => {
+    if (lockedLayer("card")) { setNotice("AI cards layer is locked."); return Promise.resolve(undefined); }
     const closing = card.folded ? [] : latest.current.cards.filter(item => !item.folded);
     setCards(current => [...current.map(item => closing.some(open => open.id === item.id) ? { ...item, folded: true } : item)
       .filter(item => item.id !== card.id), card]);
@@ -740,6 +752,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const create = useCallback((point: { x: number; y: number }) => {
     const surface = layer.current;
     if (!surface || !latest.current.note) return;
+    if (lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
     const block = nearestBlock(blocks.current, point);
     if (!block) return;
     const offset = offsetIn(block, point);
@@ -775,6 +788,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
 
   // Drop, paste or choose a file: the original is kept and a light copy is made for big photos.
   const addImages = useCallback(async (files: File[], point: { x: number; y: number }) => {
+    if (lockedLayer("image")) { setNotice("Media layer is locked."); return; }
     if (!latest.current.note) { setNotice("Save this note first."); return; }
     for (const file of files) {
       if (file.size > imageDefaults.maxBytes) { setNotice(`${file.name} is larger than ${Math.round(imageDefaults.maxBytes / 1024 / 1024)} MB.`); continue; }
@@ -908,6 +922,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   // An arrow joins two marks or page elements; both ends stay anchored.
   const createArrow = useCallback((from: ArrowMark["from"], to: ArrowMark["to"]) => {
     if (!latest.current.note || arrowEndKey(from) === arrowEndKey(to)) return;
+    if (lockedLayer("arrow")) { setNotice("Notes & stickers layer is locked."); return; }
     const arrow: ArrowMark = { id: `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       from, to, style: arrowStyle, color: arrowColor, head: arrowHead, label: "" };
     setArrows(current => [...current, arrow]);
@@ -964,9 +979,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, []);
 
   const removeMark = useCallback((id: string) => {
+    const kind = magnets.some(item => item.id === id) ? "sticky" : stickers.some(item => item.id === id) ? "sticker"
+      : arrows.some(item => item.id === id) ? "arrow" : cards.some(item => item.id === id) ? "card"
+      : images.some(item => item.id === id) ? "image" : undefined;
+    if (kind && lockedLayer(kind)) { setNotice("That layer is locked."); return; }
     forget(id);
     void send({ action: "delete", magnet: id });
-  }, [forget, send]);
+  }, [arrows, cards, forget, images, magnets, send, stickers]);
 
   const restore = useCallback(async (magnet: GlassMagnet) => {
     const value = await send({ action: "restore", magnet: magnet.id });
@@ -1178,7 +1197,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         magnets={ink} send={send} reloadInk={load} saved={saved} eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />}
-      {(tool === "sticky" || tool === "sticker") && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
+      {(tool === "sticky" || tool === "sticker") && note && <div className="glass-surface" data-glass-surface data-glass-layer="notes" onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
         if (tool === "sticker") placeSticker({ x: event.clientX, y: event.clientY });
@@ -1190,7 +1209,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         : <div className="glass-debug" data-glass-object="fixture" data-glass-status="orphan" />)}
       {visible.map(stickie => <StickyView key={stickie.id} note={stickie} place={layout.places[stickie.id]} selected={selected === stickie.id}
         editing={editing === stickie.id} onSelect={() => { setSelected(stickie.id); setSelectedArrow(undefined); setEditing(undefined); }}
-        onEdit={editingNow => setEditing(editingNow ? stickie.id : undefined)}
+        onEdit={editingNow => {
+          if (editingNow && lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
+          setEditing(editingNow ? stickie.id : undefined);
+        }}
         onText={text => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, text } : item)); void send({ action: "set", magnet: stickie.id, fields: { text } }); }}
         onFold={folded => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, folded } : item)); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
         onColor={color => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, color } : item)); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
