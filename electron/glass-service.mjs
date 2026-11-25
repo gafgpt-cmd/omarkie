@@ -8,6 +8,9 @@ import {
   anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
   replayJournalText, replayNotesText, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
+import {
+  inkColors, inkWidths, validInkBox, validInkColor, validInkParts, validInkSize, validInkTool,
+} from "../shared/ink-core.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -660,7 +663,7 @@ export class GlassService {
     const magnetId = request.magnet ?? newMagnetId();
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
-    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded"])
+    for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded", "layer", "tool", "size", "parts"])
       if (request[key] !== undefined) fields[key] = request[key];
     if (fields.anchor !== undefined && fields.kind !== "sticky") {
       if (!validAnchor(fields.anchor)) throw new Error("Invalid Glass anchor.");
@@ -857,8 +860,54 @@ function stickyAnchor(value) {
   });
 }
 
-// Other magnet kinds stay open for later slices; a sticky note is validated field by field.
+const inkFieldNames = new Set(["kind", "layer", "tool", "color", "size", "parts"]);
+
+// Ink: a palette colour and a known nib for its tool, then parts that each carry their own
+// element anchor and 1-4000 points inside that box.
+function inkFieldValues(fields) {
+  const values = {};
+  for (const [field, value] of Object.entries(fields)) {
+    if (!inkFieldNames.has(field)) throw new Error(`Unknown ink field: ${field}.`);
+    if (field === "kind") {
+      if (value !== "ink") throw new Error("Ink keeps its kind.");
+      values.kind = "ink";
+    } else if (field === "layer") {
+      if (value !== "ink") throw new Error("Ink stays on the ink layer.");
+      values.layer = "ink";
+    } else if (field === "tool") {
+      if (!validInkTool(value)) throw new Error("Ink tool must be pen or highlighter.");
+      values.tool = value;
+    } else if (field === "color") {
+      if (typeof value !== "string" || !Object.values(inkColors).some(palette => palette.includes(value))) throw new Error("Ink colour is not in the palette.");
+      values.color = value;
+    } else if (field === "size") {
+      if (typeof value !== "number" || !Object.values(inkWidths).some(widths => widths.includes(value))) throw new Error("Ink size is not a known nib width.");
+      values.size = value;
+    } else {
+      if (!validInkParts(value)) throw new Error("Ink parts need a box, an anchor and 1-4,000 points each, 24 parts at most.");
+      for (const part of value) {
+        if (!validInkBox(part.box)) throw new Error("Ink part box is not a block, list item, or table cell.");
+        if (!validAnchor(part.anchor)) throw new Error("Ink part has an invalid anchor.");
+      }
+      values.parts = value;
+    }
+  }
+  return values;
+}
+
+// Other magnet kinds stay open for later slices; a sticky note and ink are validated field by field.
 function validateMagnetFields(kind, fields, partial) {
+  if (kind === "ink") {
+    const values = inkFieldValues(partial ? fields : { ...fields, kind: "ink" });
+    if (!partial) {
+      if (!values.tool || !values.color) throw new Error("Ink needs a tool and a colour.");
+      if (!validInkColor(values.tool, values.color)) throw new Error("Ink colour does not belong to that tool.");
+      if (!validInkSize(values.tool, values.size)) throw new Error("Ink nib width does not belong to that tool.");
+      if (!values.parts) throw new Error("Ink needs its stroke parts.");
+      values.layer ??= "ink";
+    }
+    return values;
+  }
   if (kind !== "sticky") {
     if (partial && Object.hasOwn(fields, "kind")) throw new Error("A magnet keeps its kind.");
     return fields;

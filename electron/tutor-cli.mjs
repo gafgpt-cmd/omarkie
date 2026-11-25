@@ -41,6 +41,8 @@ const specs = {
   glass: ["[--vault <dir>] [--on | --off]", "Read or set the Glass overlay state for a vault."],
   "element list": ["--note <note.md> [--kind <kind>] [--vault <dir>] [--full]", "List the page element boxes of a note: id, kind, line, heading path, source box."],
   "element show": ["<id> --note <note.md> [--vault <dir>] [--full]", "Show one element: kind, Markdown, heading path, landmarks and source box."],
+  "glass ink list": ["--note <note.md> [--vault <dir>] [--full]", "List ink strokes as SVG paths with the element box each part is anchored to."],
+  "glass ink delete": ["--note <note.md> --magnet <id> [--vault <dir>]", "Delete one ink stroke; the journal keeps it restorable."],
   "glass finder": ["[--vault <dir>]", "Show glass this computer already knows from other folders."],
   "glass bring": ["[--note <note.md>] [--vault <dir>]", "Bring known glass for one note, or every matching note, into this vault."],
   "vault map": ["[--vault <dir>]", "Review counts per kind, biggest folders, unindexed files and lost glass."],
@@ -81,6 +83,41 @@ async function stickyAnchor(root, note, quote) {
   const [block] = matches;
   return { landmarks: [{ kind: "block", block: block.block, headings: block.headings, line: block.line }] };
 }
+// Ink reads as SVG paths in percent of the element box, each part naming the element it follows.
+async function inkListing(root, note, magnets, full) {
+  const { openStudy, vaultRoot } = await import("./tutor-store.mjs");
+  const { markdownElements } = await import("../shared/element-model.mjs");
+  const { normalizeText } = await import("../shared/anchor-core.mjs");
+  const { inkPath } = await import("../shared/ink-core.mjs");
+  const study = await openStudy(await vaultRoot(root), note, true);
+  const elements = markdownElements(study.content);
+  const ink = magnets.flatMap(magnet => {
+    const fields = magnet.fields ?? {};
+    if ((fields.kind ?? magnet.kind) !== "ink" || !Array.isArray(fields.parts)) return [];
+    return [{
+      id: magnet.id, tool: fields.tool, color: fields.color, size: fields.size,
+      parts: fields.parts.map(part => {
+        const landmark = (part.anchor?.landmarks ?? []).find(item => item.kind === "quote");
+        const text = normalizeText(landmark?.value?.exact ?? "");
+        const heading = (part.anchor?.landmarks ?? []).find(item => item.kind === "heading");
+        const headings = heading?.value?.path ?? [];
+        const section = JSON.stringify(headings);
+        const element = elements.find(item => normalizeText(item.markdown) === text && JSON.stringify(item.headings) === section)
+          ?? elements.find(item => normalizeText(item.markdown) === text);
+        return {
+          box: part.box,
+          element: element ? { id: element.id, kind: element.kind, line: element.line } : null,
+          headings: headings.join(" › "),
+          quote: preview(text, false, 120),
+          path: inkPath(part.points.map(([x, y, pressure]) => [x * 100, y * 100, pressure]), { tool: fields.tool, size: fields.size }),
+          ...(full ? { points: part.points } : { pointCount: part.points.length }),
+        };
+      }),
+    }];
+  });
+  return { note, count: ink.length, units: "path is in percent of the anchored element box", ink };
+}
+
 function summaries(asks) { return asks.map(({ id, verb, doc, block, status }) => ({ id, verb, doc, block, status })); }
 function skim(ask, full = false) {
   return { id: ask.id, verb: ask.verb, doc: ask.doc, block: ask.block, status: ask.status,
@@ -92,6 +129,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { console.log(pkg.version); return; }
   let command = argv[0]?.startsWith("-") || !argv.length ? "home" : argv[0];
   if (["ask", "doc", "scraps", "scrap", "setup", "glass", "element", "vault"].includes(command) && argv[1] && !argv[1].startsWith("-")) command += ` ${argv[1]}`;
+  if (command === "glass ink" && argv[2] && !argv[2].startsWith("-")) command += ` ${argv[2]}`;
   const spec = Object.hasOwn(specs, command) ? specs[command] : null;
   if (argv.includes("--help")) {
     if (!spec || command === "home") emit({ description: live, commands: Object.keys(specs).filter(name => name !== "context").map(usage) });
@@ -138,7 +176,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (command.startsWith("glass ")) requireArgument(["glass status", "glass finder", "glass bring"].includes(command) || Boolean(opts.note?.trim()), "--note is required.");
     if (command.startsWith("element ")) requireArgument(Boolean(opts.note?.trim()), "--note is required.");
     if (command === "find") requireArgument(Boolean(args[0]?.trim()), "A search query is required.");
-    if (["glass move", "glass edit", "glass delete", "glass restore"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
+    if (["glass move", "glass edit", "glass delete", "glass restore", "glass ink delete"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
     if (command === "glass add") requireArgument(opts.kind === "sticky" ? Boolean(opts.near?.trim()) : true, "--near <quote> is required for a sticky note.");
     if (command === "glass move") requireArgument(["x", "y"].every(name => Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== ""), "--x and --y are required numbers.");
     if (command === "glass edit") requireArgument([opts.text, opts.color, opts.folded, opts.unfold].some(value => value !== undefined), "Supply --text, --color, --folded, or --unfold.");
@@ -159,6 +197,19 @@ export async function main(argv = process.argv.slice(2)) {
       if (!element) { error(`No element ${args[0]} in this note.`, usage(command)); return; }
       emit({ element: { id: element.id, kind: element.kind, line: element.line, headings: element.headings, box: box(element),
         markdown: preview(element.markdown, opts.full), landmarks: element.landmarks.landmarks } });
+      return;
+    }
+    if (command === "glass ink list" || command === "glass ink delete") {
+      const { requestBridge } = await import("./tutor-transport.mjs");
+      if (command === "glass ink delete") {
+        const state = await requestBridge(root, { op: "glass", action: "delete", note: opts.note, magnet: opts.magnet }, 60_000, "glass");
+        if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
+        emit({ note: opts.note, magnet: opts.magnet, deleted: true, changed: state.changed !== false });
+        return;
+      }
+      const state = await requestBridge(root, { op: "glass", action: "list", note: opts.note }, 60_000, "glass");
+      if (!state) throw new Error("Glass is not running in this vault. Open the folder in Omarkie first.");
+      emit(await inkListing(root, opts.note, state.magnets ?? [], opts.full));
       return;
     }
     if (command.startsWith("glass ") || command === "vault map" || command === "find") {

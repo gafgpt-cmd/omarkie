@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Highlighter, MousePointer2, PenLine, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2 } from "lucide-react";
+import { ArrowUpRight, Eraser, Highlighter, MousePointer2, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
 import { fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
 import GlassLandmarks, { landmarkSeeds } from "./GlassLandmarks";
+import GlassInk, { type InkHistoryApi } from "./GlassInk";
+import { inkColors, inkDefaults, inkWidths, type InkTool } from "../../shared/ink-core.mjs";
 import type { StudyOverlay } from "./learning-overlays";
 import {
   anchorOf, nearestBlock, newStickyId, offsetIn, snapped, stickyDefaults, stickyFields, stickyFromMagnet, stickyColors,
@@ -22,8 +24,6 @@ interface GlassReply {
   saved?: boolean;
 }
 const comingSoon = [
-  { id: "ink", label: "Ink", icon: PenLine },
-  { id: "highlighter", label: "Highlighter", icon: Highlighter },
   { id: "sticker", label: "Sticker", icon: Star },
   { id: "arrow", label: "Arrow", icon: ArrowUpRight },
   { id: "card", label: "Card", icon: SquareStack },
@@ -108,7 +108,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [magnets, setMagnets] = useState<StickyNote[]>([]);
   const [trash, setTrash] = useState<StickyNote[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {} });
-  const [tool, setTool] = useState<"select" | "sticky">("select");
+  const [tool, setTool] = useState<"select" | "sticky" | "ink">("select");
+  const [inkTool, setInkTool] = useState<InkTool | "eraser">("pen");
+  const [inkSize, setInkSize] = useState(inkDefaults("pen").size);
+  const [inkColor, setInkColor] = useState(inkDefaults("pen").color);
+  const [eraserMode, setEraserMode] = useState<"bite" | "stroke">("bite");
+  const [inkHistory, setInkHistory] = useState({ undo: false, redo: false });
+  const inkApi = useRef<InkHistoryApi | null>(null);
   const [selected, setSelected] = useState<string>();
   const [editing, setEditing] = useState<string>();
   const [openTrash, setOpenTrash] = useState(false);
@@ -184,7 +190,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         const value = await glassCall({ note: path, action: "list" });
         loaded.current = true;
         setMagnets(storable(value.magnets));
-        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky");
+        const incoming = (value.magnets ?? []).filter(magnet => magnet.kind !== "sticky" && magnet.kind !== "ink");
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setTrash(storable(value.trash));
         setSaved("saved");
@@ -327,6 +333,18 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
   }, [send]);
 
+  const chooseInk = useCallback((next: InkTool | "eraser") => {
+    setTool("ink");
+    setInkTool(next);
+    if (next === "eraser") return;
+    setInkSize(current => inkWidths[next].includes(current) ? current : inkDefaults(next).size);
+    setInkColor(current => inkColors[next].includes(current) ? current : inkDefaults(next).color);
+  }, []);
+
+  const inkHistoryChange = useCallback((undo: boolean, redo: boolean) => {
+    setInkHistory(current => current.undo === undo && current.redo === redo ? current : { undo, redo });
+  }, []);
+
   const createAtCenter = useCallback(() => {
     const surface = layer.current;
     if (!surface) return;
@@ -355,11 +373,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const target = event.target instanceof Element ? event.target : null;
       if (target?.closest("input, textarea, [contenteditable='true'], .cm-content")) return;
       if (event.key === "n" || event.key === "N") { event.preventDefault(); createAtCenter(); }
-      else if (event.key === "Escape") { setSelected(undefined); setEditing(undefined); setOpenTrash(false); }
+      else if (event.key === "p" || event.key === "P") { event.preventDefault(); chooseInk("pen"); }
+      else if (event.key === "h" || event.key === "H") { event.preventDefault(); chooseInk("highlighter"); }
+      else if (event.key === "e" || event.key === "E") { event.preventDefault(); chooseInk("eraser"); }
+      else if (event.key === "Escape") { setTool("select"); setSelected(undefined); setEditing(undefined); setOpenTrash(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [createAtCenter]);
+  }, [chooseInk, createAtCenter]);
 
   const orphans = magnets.filter(stickie => layout.places[stickie.id]?.status === "orphan");
   const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
@@ -368,14 +389,37 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
+    <button type="button" data-glass-tool="ink" aria-pressed={tool === "ink" && inkTool !== "eraser"} aria-label="Pen" title="Pen (P)" onClick={() => chooseInk("pen")}><PenLine size={15} /></button>
+    <button type="button" data-glass-tool="highlighter" aria-pressed={tool === "ink" && inkTool === "highlighter"} aria-label="Highlighter" title="Highlighter (H)" onClick={() => chooseInk("highlighter")}><Highlighter size={15} /></button>
+    <button type="button" data-glass-tool="eraser" aria-pressed={tool === "ink" && inkTool === "eraser"} aria-label="Eraser" title="Eraser (E)" onClick={() => chooseInk("eraser")}><Eraser size={15} /></button>
+    <span className="glass-tray-rule" aria-hidden="true" />
     {comingSoon.map(({ id, label, icon: Icon }) => <button type="button" key={id} data-glass-coming={id} aria-disabled="true"
       aria-label={label} title={`${label} — coming soon`} onClick={() => setNotice(`${label} is coming soon.`)}><Icon size={15} /></button>)}
+    <span className="glass-tray-rule" aria-hidden="true" />
+    <button type="button" data-ink-undo aria-label="Undo ink" title="Undo ink" disabled={!inkHistory.undo}
+      onClick={() => inkApi.current?.undo()}><Undo2 size={15} /></button>
+    <button type="button" data-ink-redo aria-label="Redo ink" title="Redo ink" disabled={!inkHistory.redo}
+      onClick={() => inkApi.current?.redo()}><Redo2 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-trash aria-expanded={openTrash} aria-haspopup="dialog" aria-label={`Glass trash, ${trash.length}`}
       title="Glass trash" onClick={() => setOpenTrash(open => !open)}><Trash2 size={15} /><span className="glass-tray-count" data-glass-trash-count>{trash.length}</span></button>
     <span className="glass-tray-status" data-glass-saved={saved} role="status">{statusLabel}</span>
   </div>;
-  const panel = <>{tray}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+  const palette = tool === "ink" ? <div className="glass-palette" role="group" aria-label="Ink colours and widths" data-ink-palette>
+    {inkTool === "eraser" ? <>
+      <button type="button" data-ink-eraser="bite" aria-pressed={eraserMode === "bite"} title="Rub out part of a stroke" onClick={() => setEraserMode("bite")}>Bite</button>
+      <button type="button" data-ink-eraser="stroke" aria-pressed={eraserMode === "stroke"} title="Rub out whole strokes" onClick={() => setEraserMode("stroke")}>Whole stroke</button>
+    </> : <>
+      {inkColors[inkTool].map(colour => <button type="button" key={colour} className="glass-palette-colour" data-ink-colour={colour}
+        aria-label={`Ink ${colour}`} aria-pressed={inkColor === colour} style={{ background: colour }} onClick={() => setInkColor(colour)} />)}
+      {inkTool === "pen" && <span className="glass-tray-rule" aria-hidden="true" />}
+      {inkTool === "pen" && inkWidths.pen.map(width => <button type="button" key={width} data-ink-width={width}
+        aria-label={`Pen width ${width}`} aria-pressed={inkSize === width} onClick={() => setInkSize(width)}>
+        <span className="glass-palette-tip" style={{ height: `${width}px` }} />
+      </button>)}
+    </>}
+  </div> : null;
+  const panel = <>{tray}{palette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
     <strong>Glass trash</strong>
     {trash.length ? <ul>{trash.map(stickie => <li key={stickie.id}>
       <span>{stickie.text.trim() ? stickie.text.trim().slice(0, 48) : "Empty note"}</span>
@@ -393,6 +437,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
+      <GlassInk editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
+        eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />
       {tool === "sticky" && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
