@@ -1136,10 +1136,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           if (start.place) {
             const proposal = { x: start.place.x + dx, y: start.place.y + dy, w: start.place.w, h: start.place.h };
             const result = resolveSnap(proposal, start.context ?? snapContext(start.id), event.altKey);
-            // A guide a hair away from where the mark was dropped is noise, not an alignment.
-            const pullX = Math.abs(result.x - proposal.x) < 2 ? 0 : result.x - proposal.x;
-            const pullY = Math.abs(result.y - proposal.y) < 2 ? 0 : result.y - proposal.y;
-            const moved = dx + pullX, raised = dy + pullY;
+            const moved = result.x - start.place.x, raised = result.y - start.place.y;
             x = start.x + (rtl ? -moved : moved);
             y = start.y + raised;
           } else if (gridRef.current.on) {

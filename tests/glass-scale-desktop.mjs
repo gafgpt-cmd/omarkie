@@ -170,9 +170,10 @@ let cold;
     await page.mouse.move(target.x + 100, target.y, { steps: 6 });
     await page.mouse.up();
     const leftOf = () => page.evaluate(id => Number.parseFloat(document.querySelector(`[data-magnet="${id}"]`)?.style.left ?? ""), target.id);
-    await expect.poll(leftOf, { timeout: 15_000 }).toBeGreaterThanOrEqual(target.left + 99);
+    // Alignment guides may pull the mark by up to the snap threshold; the hand's 100 px survives.
+    await expect.poll(leftOf, { timeout: 15_000 }).toBeGreaterThanOrEqual(target.left + 94);
     const moved = await leftOf();
-    assert.ok(moved - target.left >= 99 && moved - target.left <= 102, `RTL drag +100 px moved the rendered left by ${(moved - target.left).toFixed(1)} px`);
+    assert.ok(moved - target.left >= 94 && moved - target.left <= 106, `RTL drag +100 px moved the rendered left by ${(moved - target.left).toFixed(1)} px`);
     const beforeCreate = await page.evaluate(() => [...document.querySelectorAll("[data-magnet]")].map(node => node.dataset.magnet));
     await page.locator('[data-glass-tool="sticky"]').click();
     await page.mouse.click(620, 420);
