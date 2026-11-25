@@ -133,7 +133,6 @@ ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== wi
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
 let operationRunning = false;
 let bibliography;
-let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
 
 // G17 agent parity: an ink magnet id is the region. The renderer rasterises the stroke it is
 // already painting, then the local OCR hook reads it. Read-only; no journal write.

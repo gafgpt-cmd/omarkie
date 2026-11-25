@@ -239,8 +239,7 @@ const bubblePending = thread => thread.length > 0 && thread.at(-1).role === "you
 export async function main(argv = process.argv.slice(2)) {
   if (argv.length === 1 && ["--version", "-v", "-V"].includes(argv[0])) { console.log(pkg.version); return; }
   let command = argv[0]?.startsWith("-") || !argv.length ? "home" : argv[0];
-  if (["doc", "element", "exam", "vault", "scrap", "scraps", "setup", "glass", "ask", "srs", "compare", "measure", "voice", "memo"].includes(command) && argv[1] && !argv[1].startsWith("-")) {
-  if (["doc", "element", "exam", "vault", "scrap", "scraps", "setup", "glass", "ask", "srs", "compare", "measure", "sync", "board"].includes(command) && argv[1] && !argv[1].startsWith("-")) {
+  if (["doc", "element", "exam", "vault", "scrap", "scraps", "setup", "glass", "ask", "srs", "compare", "measure", "voice", "memo", "sync", "board"].includes(command) && argv[1] && !argv[1].startsWith("-")) {
     command += ` ${argv[1]}`;
     if (["glass bubble", "glass layers", "glass card", "glass label", "glass ink", "glass tracing"].includes(command) && argv[2] && !argv[2].startsWith("-")) command += ` ${argv[2]}`;
   }
