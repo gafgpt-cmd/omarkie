@@ -112,6 +112,8 @@
   "Unlock layer": "Unlock layer",
   "{{layer}} opacity": "{{layer}} opacity",
   "{{layer}} layer, {{count}} marks": "{{layer}} layer, {{count}} marks",
+  "{{layer}} layer, {{count}} marks_one": "{{layer}} layer, {{count}} mark",
+  "{{layer}} layer, {{count}} marks_other": "{{layer}} layer, {{count}} marks",
   "Could not change the layer.": "Could not change the layer.",
   "Notes": "Notes",
   "Highlights": "Highlights",
