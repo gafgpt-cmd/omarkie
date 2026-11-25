@@ -445,7 +445,8 @@ try {
     await page.mouse.move(start.x + 20 + step * 4, start.y + 30 + step * 3);
     await delay(16);
   }
-  // The drag itself is the interaction: watch long tasks and per-move work from here.
+  // The drag itself is the interaction: let the 200-magnet mount settle, then watch from here.
+  await page.waitForTimeout(250);
   await watchWork(page);
   const costs = [], dragCosts = [];
   while (costs.length < 40) {
