@@ -501,10 +501,17 @@ try {
   await expect.poll(() => readFile(file, "utf8")).not.toContain(second);
   await learning(page, true);
   await expect(glassOf(page)).toHaveAttribute("data-glass", "on");
-  await expect(page.locator(".glass-orphans")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(`[data-glass-orphan="${firstId}"]`)).toContainText("Peel me");
-  await expect(page.locator('[data-glass-orphan="m-agent"]')).toContainText("Edited by agent");
-  await expect(noteOf(page, firstId)).toHaveCount(0);
+  // Emptying the paragraph leaves the anchors without their words: both notes ask where they belong,
+  // with the old quote beside the new paragraph instead of silently moving.
+  await expect(page.locator(".glass-check")).toBeVisible({ timeout: 15_000 });
+  const peelRow = page.locator(`[data-glass-check="${firstId}"]`);
+  await expect(peelRow).toContainText("Peel me");
+  await expect(peelRow).toContainText("Old");
+  await expect(page.locator('[data-glass-check="m-agent"]')).toContainText("Edited by agent");
+  await page.locator(`[data-glass-check="${firstId}"] [data-glass-keep]`).click();
+  await expect(page.locator(`[data-glass-check="${firstId}"]`)).toHaveCount(0);
+  await page.locator('[data-glass-check="m-agent"] [data-glass-place]').first().click();
+  await expect(page.locator('[data-glass-check="m-agent"]')).toHaveCount(0);
   if (fullEvidence) {
     for (const theme of ["light", "dark"]) {
       if (theme === "dark") {
@@ -512,7 +519,7 @@ try {
         await page.reload();
         await ready(page);
         await learning(page, true);
-        await expect(page.locator(".glass-orphans")).toBeVisible();
+        await expect(page.locator(".glass-check")).toBeVisible();
       }
       for (const width of [1440, 720]) {
         await resize(app, page, width);
