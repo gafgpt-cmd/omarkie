@@ -6,6 +6,8 @@ Omarkie works with Typora-style CSS themes and runs a subset of the community pl
 
 Open **Display → Plugin Manager**, or use **Preferences → Manage plugins**. Plugins are off initially. Their enabled state and configuration persist locally. Enable a plugin to apply its default effect, use **Toggle effect** or its shortcut to change it, and disable it to unload it. Effect toggles are session state unless the upstream plugin explicitly saves its configuration.
 
+Electron commits plugin settings before quitting. Existing browser-stored settings carry over.
+
 | Plugin | Upstream file | Adapted behavior | Default shortcut |
 | --- | --- | --- | --- |
 | Auto numbering | `auto_number.js` | Numbers headings in the text, the sidebar outline and `[TOC]` with CSS counters; exported HTML/PDF keeps the numbers; **Plugin commands** toggles each scope and picks a layout (decimal from H1 or H2, Roman, CJK thesis style, none) | — |

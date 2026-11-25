@@ -77,6 +77,8 @@ export default function App() {
   const backgroundRequest = useRef(0);
   const [installedPlugins, setInstalledPlugins] = useState<PluginDefinition[]>([]);
   const [pluginPreferences, setPluginPreferences] = useState(loadPluginPreferences);
+  const initialPluginPreferences = useRef(pluginPreferences);
+
   const [pluginStates, setPluginStates] = useState<Record<string, PluginState>>({});
   const [readOnly, setReadOnly] = useState(false);
   const pluginRuntime = useRef<PluginRuntime | null>(null);
@@ -283,7 +285,13 @@ export default function App() {
     if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
   }, [painted, dialog === "plugins"]);
-  useEffect(() => { localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences)); }, [pluginPreferences]);
+  useLayoutEffect(() => {
+    if (window.desktop?.savePluginPreferences) {
+      if (pluginPreferences !== initialPluginPreferences.current || localStorage.getItem(pluginPreferenceKey) !== null)
+        window.desktop.savePluginPreferences(JSON.stringify(pluginPreferences));
+    } else localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
+  }, [pluginPreferences]);
+
   useEffect(() => {
     if (!session.ready || !active) return;
     for (const definition of runtimeDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
@@ -420,7 +428,7 @@ export default function App() {
   }, [theme]);
   useEffect(() => {
     const sync = (event: StorageEvent) => {
-      if (event.key === pluginPreferenceKey) setPluginPreferences(loadPluginPreferences());
+      if (event.key === pluginPreferenceKey && !window.desktop?.savePluginPreferences) setPluginPreferences(loadPluginPreferences());
       if (event.key === "omarkie-theme") setTheme(event.newValue || "light");
       if (event.key === "omarkie-preferences" && !window.desktop?.savePreferences) setPreferences(loadPreferences());
       if (event.key === backgroundRevisionKey) void refreshBackground().catch(error => session.setMessage(error.message));

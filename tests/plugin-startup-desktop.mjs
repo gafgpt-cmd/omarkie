@@ -82,7 +82,7 @@ try {
   await verifyPaint(page, 'rich', true);
   const loaded = await pluginResources();
   assert.equal(loaded.length, 1); assert.match(loaded[0], /read_only/);
-  await page.evaluate(() => localStorage.setItem('omarkie-plugins-v1', JSON.stringify({ learning_mode: { enabled: true } })));
+  await page.evaluate(() => window.desktop.savePluginPreferences(JSON.stringify({ learning_mode: { enabled: true } })));
   requested = [];
   await page.addInitScript(() => {
     const mark = performance.mark.bind(performance);

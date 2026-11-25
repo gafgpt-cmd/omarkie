@@ -33,5 +33,8 @@ export const bundledPlugins: PluginDefinition[] = [
 ].map(plugin => ({ ...plugin, builtin: true }));
 export const pluginPreferenceKey = "omarkie-plugins-v1";
 export function loadPluginPreferences(): PluginPreferences {
-  try { const parsed = JSON.parse(localStorage.getItem(pluginPreferenceKey) || "{}"); return parsed && !Array.isArray(parsed) && typeof parsed === "object" ? parsed : {}; } catch { return {}; }
+  try {
+    const parsed = JSON.parse(window.desktop?.loadPluginPreferences?.() ?? localStorage.getItem(pluginPreferenceKey) ?? "{}");
+    return parsed && !Array.isArray(parsed) && typeof parsed === "object" ? parsed : {};
+  } catch { return {}; }
 }

@@ -594,40 +594,45 @@ app
     if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
     applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());
     ipcMain.on("app:language", event => { event.returnValue = event.sender === window?.webContents ? { language, choice: languageChoice } : null; });
-    const preferenceFile = path.join(store.dataDir, "preferences.json");
-    let savedPreferences = await readFile(preferenceFile, "utf8").catch(error => {
-      if (error.code !== "ENOENT") console.error(error);
-      return null;
-    });
-    let pendingPreferences = savedPreferences, preferenceWrite, quitAfterPreferences = false;
-    ipcMain.on("app:preferences", (event, update) => {
-      if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) {
-        event.returnValue = null;
-        return;
-      }
-      if (update === undefined) { event.returnValue = pendingPreferences; return; }
-      event.returnValue = null;
-      if (typeof update !== "string" || update.length > 128 * 1024) return;
-      try {
-        const value = JSON.parse(update);
-        if (!value || typeof value !== "object" || Array.isArray(value)) return;
-      } catch { return; }
-      pendingPreferences = update;
-      if (pendingPreferences === savedPreferences || preferenceWrite) return;
-      preferenceWrite = (async () => {
-        while (pendingPreferences !== savedPreferences) {
-          const snapshot = pendingPreferences;
-          await atomicWrite(preferenceFile, snapshot);
-          savedPreferences = snapshot;
+    const preferenceWrites = new Set();
+    await Promise.all([["app:preferences", "preferences.json"], ["app:plugin-preferences", "plugin-preferences.json"]].map(async ([channel, name]) => {
+      const file = path.join(store.dataDir, name);
+      let saved = await readFile(file, "utf8").catch(error => {
+        if (error.code !== "ENOENT") console.error(error);
+        return null;
+      });
+      let pending = saved, writing;
+      ipcMain.on(channel, (event, update) => {
+        if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) {
+          event.returnValue = null;
+          return;
         }
-      })().catch(showError).finally(() => { preferenceWrite = undefined; });
-    });
+        if (update === undefined) { event.returnValue = pending; return; }
+        event.returnValue = null;
+        if (typeof update !== "string" || update.length > 128 * 1024) return;
+        try {
+          const value = JSON.parse(update);
+          if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        } catch { return; }
+        pending = update;
+        if (pending === saved || writing) return;
+        writing = (async () => {
+          while (pending !== saved) {
+            const snapshot = pending;
+            await atomicWrite(file, snapshot);
+            saved = snapshot;
+          }
+        })().catch(showError).finally(() => { preferenceWrites.delete(writing); writing = undefined; });
+        preferenceWrites.add(writing);
+      });
+    }));
+    let quitAfterPreferences = false;
     app.on("before-quit", event => {
-      if (!preferenceWrite) return;
+      if (!preferenceWrites.size) return;
       event.preventDefault();
       if (quitAfterPreferences) return;
       quitAfterPreferences = true;
-      void preferenceWrite.then(() => { quitAfterPreferences = false; app.quit(); });
+      void Promise.all(preferenceWrites).then(() => { quitAfterPreferences = false; app.quit(); });
     });
     protocol.handle("omarkie", async request => {
       try {

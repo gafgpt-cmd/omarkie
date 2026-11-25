@@ -149,7 +149,10 @@ try {
   if (qa) await page.screenshot({ path: path.join(qa, "learning-images-720.png") });
 
   await app.close();
+  const plugins = JSON.parse(await readFile(path.join(tmp, "plugin-preferences.json"), "utf8"));
+  assert.equal(plugins.learning_mode.enabled, true);
   app = await launch(); page = await app.firstWindow(); observe();
+  await expect(button(page, "Learning mode")).toHaveAttribute("aria-pressed", "true");
   await expect(paragraph(second).getByRole("img", { name: local, exact: true })).toBeVisible();
   await expect(image(local)).toHaveAttribute("data-side", "right");
   await button(sheets(), "Images").click();
