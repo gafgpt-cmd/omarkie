@@ -132,6 +132,7 @@ let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
 function announceGlass(request) {
   if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "merge-accept", "merge-undo", "lift-up",
+    "swap-apply", "swap-restore", "swap-propose", "swap-dismiss",
     "srs-card", "srs-answer", "srs-review", "study-set"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
 
@@ -339,6 +340,18 @@ const handlers = {
     return { base64: bytes.toString("base64"), mime: "image/png", width: image.getSize().width, height: image.getSize().height };
   },
   tutorBridge: async ({ sender }, id, request) => {
+    // Offline QA and demo machines: a fixed reply keeps the Tutor bridge testable with no agent.
+    const stub = process.env.OMARKIE_TUTOR_STUB?.trim();
+    if (stub && request?.action === "submit") {
+      let text = stub;
+      try {
+        const shaped = JSON.parse(stub);
+        text = shaped?.redraw && /mermaid/i.test(String(request.question ?? "")) ? shaped.redraw : shaped?.rewrite ?? stub;
+      } catch { /* plain text stays the reply */ }
+      const reply = { type: "reply", lease: request.lease, id: "local-stub", text };
+      setTimeout(() => { if (!sender.isDestroyed()) sender.send("tutor:event", reply); }, 0);
+      return { id: "local-stub" };
+    }
     if (request?.action === "detach" && !tutorLoading) return;
     tutorLoading ??= import("./tutor-session.mjs").then(module => { tutorSessions = module.tutorSessions(store); });
     await tutorLoading;

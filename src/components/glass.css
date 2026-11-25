@@ -1356,3 +1356,97 @@ html.glass-capturing .glass-layer { display: none !important; }
 .glass-dialog-row button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
 .glass-dialog-row button:disabled { opacity: 0.5; cursor: default; }
 [data-appearance="dark"] .glass-sheets, [data-appearance="dark"] .glass-compare-card, [data-appearance="dark"] .glass-dialog { background: color-mix(in srgb, var(--paper, #222) 94%, #6b6250); }
+
+/* G22 swap panel: one fixed rail, candidates on top, the page stays visible beside it. */
+.glass-swap-panel {
+  position: fixed;
+  z-index: 92;
+  top: 72px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 12px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 28px 60px -24px #000000b3;
+  font: 12px/1.45 var(--interface-font, system-ui, sans-serif);
+}
+.glass-swap-head { display: flex; align-items: center; gap: 8px; }
+.glass-swap-head strong { flex: 1; font-size: 13px; }
+.glass-swap-head button { border: none; background: none; color: var(--muted, #777); cursor: pointer; }
+.glass-swap-head button:hover { color: var(--ink, #333); }
+.glass-swap-complaint { display: flex; flex-direction: column; gap: 4px; color: var(--muted, #777); }
+.glass-swap-complaint textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink, #333) 3%, var(--paper, #fff));
+  color: var(--ink, #333);
+  font: inherit;
+}
+.glass-swap-voice, .glass-swap-chips, .glass-swap-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.glass-swap-voice button, .glass-swap-chips button, .glass-swap-actions button, .glass-swap-proposals button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.glass-swap-voice button:hover, .glass-swap-chips button:hover, .glass-swap-actions button:hover { border-color: var(--accent, #326eaa); color: var(--accent, #326eaa); }
+.glass-swap-chips button[aria-pressed="true"] { border-color: var(--accent, #326eaa); background: color-mix(in srgb, var(--accent, #326eaa) 14%, transparent); }
+.glass-swap-voice button[data-recording="on"] { border-color: var(--error, #b3261e); color: var(--error, #b3261e); }
+.glass-swap-voice button:disabled, .glass-swap-chips button:disabled, .glass-swap-actions button:disabled { opacity: 0.5; cursor: default; }
+.glass-swap-online, .glass-swap-foot label { display: flex; align-items: center; gap: 6px; color: var(--muted, #777); }
+.glass-swap-progress { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted, #777); }
+.glass-swap-notice { margin: 0; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--accent, #326eaa) 12%, transparent); }
+.glass-swap-warnings { margin: 0; padding-left: 18px; color: var(--muted, #777); }
+.glass-swap-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.glass-swap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.glass-swap-card:hover, .glass-swap-card[aria-pressed="true"] { border-color: var(--accent, #326eaa); }
+.glass-swap-card[aria-pressed="true"] { background: color-mix(in srgb, var(--accent, #326eaa) 10%, transparent); }
+.glass-swap-face { display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 6px; background: color-mix(in srgb, var(--ink, #333) 5%, var(--paper, #fff)); }
+.glass-swap-face img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.glass-swap-face pre { margin: 0; padding: 4px; overflow: hidden; font: 10px/1.35 var(--mono-font, ui-monospace, monospace); white-space: pre-wrap; }
+.glass-swap-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.glass-swap-meta { overflow: hidden; color: var(--muted, #777); text-overflow: ellipsis; white-space: nowrap; }
+.glass-swap-compare { border: 1px solid var(--border, #ccc); border-radius: 8px; padding: 4px; }
+.glass-swap-textdiff { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.glass-swap-textdiff h4, .glass-swap-preview h4, .glass-swap-proposals h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #777); }
+.glass-swap-textdiff pre { margin: 0; max-height: 180px; overflow: auto; white-space: pre-wrap; font: 11px/1.45 var(--mono-font, ui-monospace, monospace); }
+.glass-swap-mermaid { max-height: 220px; overflow: auto; border: 1px solid var(--border, #ccc); border-radius: 8px; padding: 6px; }
+.glass-swap-problem { margin: 0; color: var(--error, #b3261e); }
+.glass-swap-preview, .glass-swap-proposals { padding: 8px; border: 1px solid var(--accent, #326eaa); border-radius: 10px; }
+.glass-swap-diff { display: flex; flex-direction: column; max-height: 220px; overflow: auto; padding: 6px 8px; border: 1px solid var(--border, #ccc); border-radius: 8px; background: color-mix(in srgb, var(--ink, #333) 4%, var(--paper, #fff)); font: 11px/1.5 var(--mono-font, ui-monospace, monospace); white-space: pre-wrap; }
+.glass-swap-diff span[data-kind="add"] { background: color-mix(in srgb, var(--success, #2e7d46) 16%, transparent); }
+.glass-swap-diff span[data-kind="remove"] { background: color-mix(in srgb, var(--error, #b3261e) 14%, transparent); }
+.glass-swap-footnote { margin: 0; color: var(--muted, #777); font-size: 11px; }
+.glass-swap-hint { margin: 0; color: var(--muted, #777); }
+.glass-swap-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; border-radius: 8px; background: color-mix(in srgb, var(--ink, #333) 5%, transparent); }
+.glass-swap-proposals { display: flex; flex-direction: column; gap: 8px; }
+.glass-swap-proposals article { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid var(--border, #ccc); border-radius: 8px; }
+.glass-swap-foot { padding-top: 4px; border-top: 1px solid var(--border, #ccc); }

@@ -13,7 +13,7 @@ export const imageDefaults = {
   rotateLimit: 360, offsetLimit: 200_000,
 };
 export const imageFieldNames = new Set(["kind", "name", "asset", "display", "bytes", "w", "h", "aspect",
-  "rot", "wrap", "tape", "locked", "anchor", "x", "y", "source", "sheets", "activeSheet", "scale"]);
+  "rot", "wrap", "tape", "locked", "anchor", "x", "y", "source", "sheets", "activeSheet", "scale", "coverOf"]);
 
 // A lifted copy remembers the page element it came from; "jump to source" reads this.
 export function validSource(value) {
@@ -139,6 +139,11 @@ export function imageFields(input = {}, { partial = false } = {}) {
         if (value === null) { values.display = null; break; }
         if (!isAssetName(value)) throw new Error("Image display copy must be a plain file name.");
         values.display = value;
+        break;
+      case "coverOf":
+        if (value === null) { values.coverOf = null; break; }
+        if (typeof value !== "string" || !value.trim() || value.length > 200) throw new Error("A cover names the page element it hides.");
+        values.coverOf = value.trim();
         break;
       case "source": {
         const source = validSource(value);

@@ -9,20 +9,37 @@ export const glassFile = root => path.join(glassDirectory(root), "vault.json");
 const missing = error => { if (error.code !== "ENOENT") throw error; return null; };
 const directory = file => lstat(file).then(stat => stat.isDirectory(), () => false);
 
-export async function readGlass(root) {
+// One vault file: the overlay switch and the "never online" switch for this vault.
+export async function readGlassSettings(root) {
   const file = glassFile(root), stat = await lstat(file).catch(missing);
-  if (!stat || !stat.isFile() || stat.isSymbolicLink()) return false;
+  const off = { version: 1, visible: false, neverOnline: false };
+  if (!stat || !stat.isFile() || stat.isSymbolicLink()) return off;
   try {
     const value = JSON.parse(await readFile(file, "utf8"));
-    return value?.version === 1 && value.visible === true;
-  } catch { return false; }
+    if (value?.version !== 1) return off;
+    return { version: 1, visible: value.visible === true, neverOnline: value.neverOnline === true };
+  } catch { return off; }
+}
+
+export async function writeGlassSettings(root, patch) {
+  const current = await readGlassSettings(root);
+  const next = {
+    version: 1,
+    visible: typeof patch?.visible === "boolean" ? patch.visible : current.visible,
+    neverOnline: typeof patch?.neverOnline === "boolean" ? patch.neverOnline : current.neverOnline,
+  };
+  await mkdir(glassDirectory(root), { recursive: true, mode: 0o700 });
+  await atomicWrite(glassFile(root), `${JSON.stringify(next)}\n`);
+  return next;
+}
+
+export async function readGlass(root) {
+  return (await readGlassSettings(root)).visible;
 }
 
 export async function writeGlass(root, visible) {
   if (typeof visible !== "boolean") throw new Error("Glass state must be a boolean.");
-  await mkdir(glassDirectory(root), { recursive: true, mode: 0o700 });
-  await atomicWrite(glassFile(root), `${JSON.stringify({ version: 1, visible })}\n`);
-  return visible;
+  return (await writeGlassSettings(root, { visible })).visible;
 }
 
 // Agents change the vault file directly, so the running app follows it instead of caching.
@@ -36,7 +53,8 @@ export function watchGlass(root, notify) {
         clearTimeout(timer);
         timer = setTimeout(async () => {
           if (closed) return;
-          notify(await readGlass(root));
+          const settings = await readGlassSettings(root);
+          notify(settings.visible, settings);
           if (watcher && target !== glass && await directory(glass)) {
             watcher.close();
             watcher = undefined;
