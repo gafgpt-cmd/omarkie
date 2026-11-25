@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import interact from "interactjs";
-import { ArrowUpRight, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, Paperclip, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2 } from "lucide-react";
+import { ArrowUpRight, Columns2, Eraser, Eye, EyeOff, FileText, GraduationCap, Grid3x3, Highlighter, Image as ImageIcon, MousePointer2, Paperclip, PenLine, Pencil, Redo2, Ruler, Scissors, SquareStack, Star, StickyNote as StickyIcon, Tag, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
@@ -45,6 +45,13 @@ import { publishGlassLayers, useGlassLayers } from "../glass/layers";
 import { elementNode } from "../glass/element-node";
 import { elementKindName } from "../glass/element-label";
 import { snapBox, snapDefaults, snapSetting, type SnapBox, type SnapColumn, type SnapGuide, type SnapLine } from "../../shared/glass-snap.mjs";
+import { compareDirection, measurePrecisions, measureUnits, scaleFromLine, type MeasurePrecision, type MeasureUnit, type Point2, type TraceTool } from "../../shared/glass-visual.mjs";
+import {
+  compareFields, compareFromMagnet, measureFields, measureFromMagnet, newVisualId, sheetLabelFields,
+  sheetLabelFromMagnet, traceFields, traceFromMagnet, type CompareMark, type MeasureMark, type SheetLabel, type TraceMark,
+} from "../glass/visual-model";
+import GlassCompareCard from "./GlassCompareCard";
+import type { MeasureMode } from "./ImageVisuals";
 import "./glass.css";
 
 interface SnapContext { others: SnapBox[]; column?: SnapColumn; lines: SnapLine[] }
@@ -246,9 +253,23 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [examOpen, setExamOpen] = useState(false);
   const [examMarkedOnly, setExamMarkedOnly] = useState(true);
   const [examIndex, setExamIndex] = useState(0);
+  const [traces, setTraces] = useState<TraceMark[]>([]);
+  const [sheetLabels, setSheetLabels] = useState<SheetLabel[]>([]);
+  const [measures, setMeasures] = useState<MeasureMark[]>([]);
+  const [compares, setCompares] = useState<CompareMark[]>([]);
+  const [sheetsOpen, setSheetsOpen] = useState<Record<string, boolean>>({});
+  const [traceTool, setTraceTool] = useState<TraceTool>("pen");
+  const [traceColor, setTraceColor] = useState(inkDefaults("pen").color);
+  const [traceSize, setTraceSize] = useState(inkDefaults("pen").size);
+  const [labelMode, setLabelMode] = useState(false);
+  const [labelText, setLabelText] = useState("Label");
+  const [measureMode, setMeasureMode] = useState<MeasureMode | undefined>();
+  const [calibration, setCalibration] = useState<{ image: string; line: [Point2, Point2]; frame: [number, number] } | undefined>();
+  const [compareOpen, setCompareOpen] = useState(false);
+
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
-  const [tool, setTool] = useState<"select" | "sticky" | "label" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout">("select");
+  const [tool, setTool] = useState<"select" | "sticky" | "label" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout" | "trace" | "measure">("select");
   const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
   const [customImage, setCustomImage] = useState<string>();
   const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
@@ -282,11 +303,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const elementBoxes = useRef<Record<string, EndMark>>({});
   const placesRef = useRef<Record<string, GlassPlacement>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, note, tool });
+  const latest = useRef({ magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
   const localAt = useRef(0), revision = useRef(0);
-  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, note, tool };
+  latest.current = { magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, study, compares, traces, measures, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -397,6 +418,15 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
       places[cutout.id] = { status: "resolved", x: rect.left - frame.left + cutout.x, y: rect.top - frame.top + cutout.y, width: cutout.w, height: cutout.h };
     }
+    for (const compare of latest.current.compares) {
+      const line = matchLine(compare.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[compare.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      places[compare.id] = { status: "resolved", x: rect.left - frame.left + compare.x, y: rect.top - frame.top + compare.y,
+        width: compare.w, height: compare.h };
+    }
     dropSpacers(flowing);
     placesRef.current = places;
     let routed: { routes: ArrowRoute[]; orphans: string[] } = { routes: [], orphans: [] };
@@ -493,6 +523,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         loaded.current = true;
         const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [], nextLabels: GlassLabel[] = [];
         const nextClips: ClipPage[] = [], nextPages: ExtraPage[] = [], nextCutouts: Cutout[] = [];
+        const nextTraces: TraceMark[] = [], nextSheetLabels: SheetLabel[] = [], nextMeasures: MeasureMark[] = [], nextCompares: CompareMark[] = [];
         const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
@@ -522,6 +553,18 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           } else if (magnet.kind === "cutout") {
             const cutout = cutoutFromMagnet(magnet);
             if (cutout) nextCutouts.push(cutout);
+          } else if (magnet.kind === "trace") {
+            const trace = traceFromMagnet(magnet);
+            if (trace) nextTraces.push(trace);
+          } else if (magnet.kind === "sheet-label") {
+            const label = sheetLabelFromMagnet(magnet);
+            if (label) nextSheetLabels.push(label);
+          } else if (magnet.kind === "measure") {
+            const measure = measureFromMagnet(magnet);
+            if (measure) nextMeasures.push(measure);
+          } else if (magnet.kind === "compare") {
+            const compare = compareFromMagnet(magnet);
+            if (compare) nextCompares.push(compare);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
           else if (magnet.kind === "ink") nextInk.push(magnet);
           else incoming.push(magnet);
@@ -535,6 +578,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setClips(previous => JSON.stringify(previous) === JSON.stringify(nextClips) ? previous : nextClips);
         setExtraPages(previous => JSON.stringify(previous) === JSON.stringify(nextPages) ? previous : nextPages);
         setCutouts(previous => JSON.stringify(previous) === JSON.stringify(nextCutouts) ? previous : nextCutouts);
+        setTraces(previous => JSON.stringify(previous) === JSON.stringify(nextTraces) ? previous : nextTraces);
+        setSheetLabels(previous => JSON.stringify(previous) === JSON.stringify(nextSheetLabels) ? previous : nextSheetLabels);
+        setMeasures(previous => JSON.stringify(previous) === JSON.stringify(nextMeasures) ? previous : nextMeasures);
+        setCompares(previous => JSON.stringify(previous) === JSON.stringify(nextCompares) ? previous : nextCompares);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
@@ -593,7 +640,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [scroller, root, measure]);
 
   const showingArrows = arrows.length > 0 || tool === "arrow" || labels.length > 0 || tool === "label";
-  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, tool, showingArrows, measure]);
+  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, compares, traces, measures, tool, showingArrows, measure]);
 
   // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
   useEffect(() => {
@@ -647,6 +694,49 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (patch.title !== undefined) fields.title = patch.title;
     if (patch.proposed !== undefined) fields.proposed = patch.proposed;
     if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  const patchCompare = useCallback((id: string, patch: Partial<CompareMark>, persist = true) => {
+    setCompares(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+    if (!persist) return;
+    const fields: Record<string, unknown> = {};
+    for (const key of ["left", "right", "value", "direction", "before", "after", "anchor", "x", "y", "w", "h"] as const)
+      if (patch[key] !== undefined) fields[key] = patch[key];
+    if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  const addTrace = useCallback((fields: Record<string, unknown>) => {
+    const id = newVisualId("tr"), trace = traceFromMagnet({ id, fields });
+    if (!trace) return;
+    setTraces(current => [...current, trace]);
+    void send({ action: "add", magnet: id, fields: traceFields(trace) });
+  }, [send]);
+
+  const addSheetLabel = useCallback((fields: Record<string, unknown>) => {
+    const id = newVisualId("sl"), label = sheetLabelFromMagnet({ id, fields });
+    if (!label) return;
+    setSheetLabels(current => [...current, label]);
+    void send({ action: "add", magnet: id, fields: sheetLabelFields(label) });
+  }, [send]);
+
+  const addMeasure = useCallback((image: string, type: MeasureMark["type"], points: Point2[]) => {
+    const id = newVisualId("ms"), measure = measureFromMagnet({ id, fields: { kind: "measure", layer: "measure", image, type, points } });
+    if (!measure) return;
+    setMeasures(current => [...current, measure]);
+    void send({ action: "add", magnet: id, fields: measureFields(measure) });
+  }, [send]);
+
+  const createCompare = useCallback((leftId: string, rightId: string, value = 50) => {
+    const left = latest.current.images.find(image => image.id === leftId);
+    const right = latest.current.images.find(image => image.id === rightId);
+    if (!left || !right || left.id === right.id) return;
+    const width = Math.min(420, Math.max(160, left.w));
+    const height = Math.round(Math.min(420, Math.max(120, width / left.aspect)));
+    const compare: CompareMark = { id: newVisualId("cmp"), left: left.id, right: right.id, value,
+      direction: compareDirection(left.aspect, right.aspect), before: "Before", after: "After", anchor: left.anchor,
+      x: 0, y: 0, w: width, h: height };
+    setCompares(current => [...current, compare]);
+    void send({ action: "add", magnet: compare.id, fields: compareFields(compare) });
   }, [send]);
 
   const createCard = useCallback((card: GlassCard) => {
@@ -1185,7 +1275,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       const wrap = point.x < (box?.left ?? 0) + (box?.width ?? 0) / 2 ? "left" : "right";
       const draft: GlassImage = { id, name: file.name || "Image", asset: "", display: null, bytes: file.size, w: width,
         h: Math.max(imageDefaults.minH, Math.round(width / aspect)), aspect, rot: 0, wrap, tape: false, locked: false,
-        anchor: anchorOf(block), x: 0, y: 0 };
+        anchor: anchorOf(block), x: 0, y: 0, sheets: [], activeSheet: null, scale: null };
       setImages(current => [...current, draft]);
       setSelected(id);
       setSelectedArrow(undefined);
@@ -1359,6 +1449,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setArrows(current => current.filter(item => item.id !== id));
     setCards(current => current.filter(item => item.id !== id));
     setLabels(current => current.filter(item => item.id !== id));
+    setTraces(current => current.filter(item => item.id !== id && item.image !== id));
+    setSheetLabels(current => current.filter(item => item.id !== id && item.image !== id));
+    setMeasures(current => current.filter(item => item.id !== id && item.image !== id));
+    setCompares(current => current.filter(item => item.id !== id && item.left !== id && item.right !== id));
     setSelected(current => current === id ? undefined : current);
     setSelectedArrow(current => current === id ? undefined : current);
   }, []);
@@ -1394,6 +1488,18 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     } else if (restored.kind === "label") {
       const label = labelFromMagnet(restored);
       if (label) setLabels(current => [...current, label]);
+    } else if (restored.kind === "trace") {
+      const trace = traceFromMagnet(restored);
+      if (trace) setTraces(current => [...current, trace]);
+    } else if (restored.kind === "sheet-label") {
+      const label = sheetLabelFromMagnet(restored);
+      if (label) setSheetLabels(current => [...current, label]);
+    } else if (restored.kind === "measure") {
+      const measure = measureFromMagnet(restored);
+      if (measure) setMeasures(current => [...current, measure]);
+    } else if (restored.kind === "compare") {
+      const compare = compareFromMagnet(restored);
+      if (compare) setCompares(current => [...current, compare]);
     } else void load();
     setOpenTrash(false);
   }, [load, send]);
@@ -1563,6 +1669,23 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onLiveSize={(width, height) => liveImageSize(image.id, width, height)}
       onMerge={() => void openMerge(image.id)}
       {...(image.source ? { onJump: () => jumpToSource(image.source!) } : {})}
+      visual={{
+        sheets: image.sheets, activeSheet: image.activeSheet,
+        traces: traces.filter(trace => trace.image === image.id), labels: sheetLabels.filter(label => label.image === image.id),
+        measures: measures.filter(measure => measure.image === image.id), scale: image.scale,
+        sheetsOpen: !!sheetsOpen[image.id], tracing: tool === "trace", traceTool, traceColor, traceSize, labelMode, labelText,
+        measuring: tool === "measure" ? measureMode ?? null : null,
+        onActiveSheet: id => patchImage(image.id, { activeSheet: id }, true),
+        onTrace: fields => addTrace(fields), onLabel: fields => addSheetLabel(fields),
+        onMeasure: (type, points) => addMeasure(image.id, type, points),
+        onCalibration: line => setCalibration({ image: image.id, line, frame: [place.width, place.height] }),
+        onDraw: () => { setTool("trace"); setMeasureMode(undefined); setSelected(image.id); },
+        onRemoveSheet: sheetId => {
+          for (const mark of [...traces, ...sheetLabels]) if (mark.image === image.id && mark.sheet === sheetId) removeMark(mark.id);
+        },
+        onToggleSheets: () => setSheetsOpen(previous => ({ ...previous, [image.id]: !previous[image.id] })),
+        onSheetsOpen: open => setSheetsOpen(previous => ({ ...previous, [image.id]: open })),
+      }}
       onDelete={() => removeMark(image.id)} />;
   };
 
@@ -1641,6 +1764,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="clip" aria-pressed={tool === "clip"} aria-label="Paper clip" title="Paper clip: a mini-page pinned to a paragraph (⌘⇧K)" onClick={() => setTool("clip")}><Paperclip size={15} /></button>
     <button type="button" data-glass-tool="extra-page" aria-pressed={tool === "extra-page"} aria-label="Extra page" title="Extra page: a blank sheet beside a paragraph" onClick={() => setTool("extra-page")}><FileText size={15} /></button>
     <button type="button" data-glass-tool="cutout" aria-pressed={tool === "cutout"} aria-label="Scissors" title="Scissors: cut a rectangle or lasso from the page" onClick={() => setTool("cutout")}><Scissors size={15} /></button>
+    <button type="button" data-glass-tool="trace" aria-pressed={tool === "trace"} aria-label="Tracing sheet" title="Tracing sheets: draw over a picture"
+      onClick={() => { setTool("trace"); setMeasureMode(undefined); setTraceColor(inkDefaults(traceTool).color); setTraceSize(inkDefaults(traceTool).size); }}><Pencil size={15} /></button>
+    <button type="button" data-glass-tool="measure" aria-pressed={tool === "measure"} aria-label="Ruler and angle" title="Measure: set scale, then line or angle"
+      onClick={() => setTool("measure")}><Ruler size={15} /></button>
+    <button type="button" data-glass-compare aria-haspopup="dialog" aria-expanded={compareOpen} aria-label="Compare images" title="Compare two images"
+      onClick={() => setCompareOpen(true)}><Columns2 size={15} /></button>
     <button type="button" data-glass-grid aria-pressed={grid.on} aria-expanded={tool === "grid"} aria-label="Grid" title="Grid: line magnets up with the paper" onClick={() => setTool(current => current === "grid" ? "select" : "grid")}><Grid3x3 size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
     <button type="button" data-glass-tool="card" aria-haspopup="dialog" aria-label="Card" title="Card: section, tutor answer or quiz"
@@ -1699,7 +1828,36 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     </div>
     <p className="glass-palette-hint">Pick paper, then click a paragraph. The sheet never pushes text.</p>
   </div> : null;
-  const panel = <>{tray}{cutoutPalette ?? pagePalette ?? inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+  const visualPalette = tool === "trace" ? <div className="glass-palette" role="group" aria-label="Tracing sheet pen" data-glass-palette="trace">
+    <p className="glass-palette-title">Tracing sheet</p>
+    <div className="glass-palette-row">
+      {(["pen", "highlighter"] as const).map(kind => <button type="button" key={kind} data-trace-tool={kind} aria-pressed={traceTool === kind}
+        aria-label={kind === "pen" ? "Tracing pen" : "Tracing highlighter"} title={kind === "pen" ? "Pen" : "Highlighter"}
+        onClick={() => { setTraceTool(kind); setTraceColor(inkDefaults(kind).color); setTraceSize(inkDefaults(kind).size); }}>{kind === "pen" ? "Pen" : "Highlighter"}</button>)}
+      <span className="glass-tray-rule" aria-hidden="true" />
+      <button type="button" data-trace-label-mode aria-pressed={labelMode} title="Click the picture to pin a label"
+        onClick={() => setLabelMode(current => !current)}>Label</button>
+      <input className="glass-label-input" data-trace-label-text aria-label="Sheet label text" value={labelText} maxLength={200}
+        onChange={event => setLabelText(event.target.value)} />
+    </div>
+    <div className="glass-palette-row">
+      {inkColors[traceTool].map(colour => <button type="button" key={colour} className="glass-palette-colour" data-trace-colour={colour}
+        aria-label={`Tracing ink ${colour}`} aria-pressed={traceColor === colour} style={{ background: colour }} onClick={() => setTraceColor(colour)} />)}
+      {inkWidths.pen.map(width => <button type="button" key={width} data-trace-width={width} aria-label={`Tracing width ${width}`}
+        aria-pressed={traceSize === width} onClick={() => setTraceSize(width)}><span className="glass-palette-tip" style={{ height: `${width}px` }} /></button>)}
+    </div>
+    <p className="glass-palette-hint">Open the picture's sheets, pick Muscles, Nerves or Vessels, then draw. Each sheet flips on its own.</p>
+  </div> : tool === "measure" ? <div className="glass-palette" role="group" aria-label="Ruler and angle" data-glass-palette="measure">
+    <p className="glass-palette-title">Measure</p>
+    <div className="glass-palette-row">
+      <button type="button" data-measure-mode="scale" aria-pressed={measureMode === "scale"} title="Draw a known length and type its real value"
+        onClick={() => setMeasureMode("scale")}>Set scale</button>
+      <button type="button" data-measure-mode="line" aria-pressed={measureMode === "line"} onClick={() => setMeasureMode("line")}>Line</button>
+      <button type="button" data-measure-mode="angle" aria-pressed={measureMode === "angle"} onClick={() => setMeasureMode("angle")}>Angle</button>
+    </div>
+    <p className="glass-palette-hint">Set the scale once per picture, then measure. Units are never converted behind your back.</p>
+  </div> : null;
+  const panel = <>{tray}{cutoutPalette ?? pagePalette ?? visualPalette ?? inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
     <strong>Glass trash</strong>
     {trash.length ? <ul>{trash.map(magnet => <li key={magnet.id}>
       <span>{magnetLabel(magnet)}</span>
@@ -1723,7 +1881,16 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       setSelected(backTo.id);
       setBackTo(undefined);
     }}>Back to {backTo.label}</button>
-  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}
+  </div>}
+  {compareOpen && <CompareDialog images={images} selected={selected} close={() => setCompareOpen(false)}
+    create={(left, right) => { createCompare(left, right); setCompareOpen(false); }} />}
+  {calibration && <ScaleDialog line={calibration.line} frame={calibration.frame} close={() => setCalibration(undefined)}
+    apply={(length, unit, precision) => {
+      patchImage(calibration.image, { scale: scaleFromLine(calibration.line, length, unit, precision, calibration.frame) }, true);
+      setCalibration(undefined);
+    }} />}
+  
+{notice && <p className="glass-notice" role="status">{notice}</p>}
   {mergeDone && <div className="glass-merge-done" role="status" data-glass-merge-done>
     <span>Merged into the page.</span>
     <button type="button" data-glass-merge-undo={mergeDone.id} onClick={() => void undoMerge(mergeDone.id)}>Undo</button>
@@ -1891,6 +2058,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           onMark={marked => patchCard(card.id, { marked })}
           onAccept={() => patchCard(card.id, { proposed: false })}
           onDelete={() => removeMark(card.id)} onMerge={() => void openMerge(card.id)} />; })}
+      {compares.map(compare => { const place = layout.places[compare.id];
+        if (place?.status !== "resolved" || !note) return null;
+        return <GlassCompareCard key={compare.id} compare={compare} place={place} note={note} images={images}
+          onChange={value => patchCompare(compare.id, { value }, false)}
+          onCommit={value => patchCompare(compare.id, { value })}
+          onSwap={() => patchCompare(compare.id, { left: compare.right, right: compare.left })}
+          onDelete={() => removeMark(compare.id)} />; })}
       {above.map(frame)}
       {under.map(frame)}
       {visibleStickers.map(sticker => <StickerView key={sticker.id} sticker={sticker} place={layout.places[sticker.id]} selected={selected === sticker.id}
@@ -1915,6 +2089,60 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onIndex={setExamIndex} onReveal={revealItem} onMarkedOnly={setExamMarkedOnly} onGrade={previewGrade}
       onClose={() => { setStudyMode({ exam: false }); setExamOpen(false); setRevealed(new Set()); }} />}
   </>;
+}
+
+// The calibration dialog: one drawn line, its real length, and the unit, which is never converted.
+function ScaleDialog({ line, frame, close, apply }: {
+  line: [Point2, Point2]; frame: [number, number]; close(): void;
+  apply(length: number, unit: MeasureUnit, precision: MeasurePrecision): void;
+}) {
+  const [length, setLength] = useState("10");
+  const [unit, setUnit] = useState<MeasureUnit>("mm");
+  const [precision, setPrecision] = useState<MeasurePrecision>(1);
+  const pixels = Math.round(Math.hypot((line[1][0] - line[0][0]) * frame[0], (line[1][1] - line[0][1]) * frame[1]));
+  const value = Number(length);
+  const valid = Number.isFinite(value) && value > 0;
+  return <div className="glass-dialog glass-scale-dialog" role="dialog" aria-modal="true" aria-label="Set image scale" data-scale-dialog>
+    <strong>Set scale</strong>
+    <p className="glass-dialog-hint">Your line is {pixels}px on the glass. Type the real length it represents.</p>
+    <label>Real length <input data-scale-length type="number" min="0.0001" step="any" value={length}
+      onChange={event => setLength(event.target.value)} /></label>
+    <label>Unit <select data-scale-unit value={unit} onChange={event => setUnit(event.target.value as MeasureUnit)}>
+      {measureUnits.map(name => <option key={name} value={name}>{name}</option>)}
+    </select></label>
+    <label>Decimals <select data-scale-precision value={precision} onChange={event => setPrecision(Number(event.target.value) as MeasurePrecision)}>
+      {measurePrecisions.map(count => <option key={count} value={count}>{count}</option>)}
+    </select></label>
+    <p className="glass-dialog-hint">Changing the unit keeps the number: nothing is converted silently.</p>
+    <div className="glass-dialog-row">
+      <button type="button" data-scale-apply disabled={!valid} onClick={() => apply(value, unit, precision)}>Use scale</button>
+      <button type="button" data-scale-cancel onClick={close}>Cancel</button>
+    </div>
+  </div>;
+}
+
+// Pick the two pictures for one compare card; swap lives on the card itself.
+function CompareDialog({ images, selected, close, create }: {
+  images: GlassImage[]; selected?: string; close(): void; create(left: string, right: string): void;
+}) {
+  const preferred = images.find(image => image.id === selected)?.id ?? images[0]?.id ?? "";
+  const [left, setLeft] = useState(preferred);
+  const [right, setRight] = useState(images.find(image => image.id !== preferred)?.id ?? "");
+  const valid = images.length > 1 && !!left && !!right && left !== right;
+  return <div className="glass-dialog glass-compare-dialog" role="dialog" aria-modal="true" aria-label="Compare two images" data-compare-dialog>
+    <strong>Compare</strong>
+    <p className="glass-dialog-hint">Both pictures stay local on the glass.</p>
+    <label>Before <select data-compare-left value={left} onChange={event => setLeft(event.target.value)}>
+      {images.map(image => <option key={image.id} value={image.id}>{image.name}</option>)}
+    </select></label>
+    <label>After <select data-compare-right value={right} onChange={event => setRight(event.target.value)}>
+      {images.map(image => <option key={image.id} value={image.id}>{image.name}</option>)}
+    </select></label>
+    <div className="glass-dialog-row">
+      <button type="button" data-compare-create disabled={!valid} onClick={() => create(left, right)}>Add compare</button>
+      <button type="button" data-compare-cancel onClick={close}>Cancel</button>
+    </div>
+  </div>;
 }
 
 // The jump chip names the far end: a page element's kind and words, or the mark itself.

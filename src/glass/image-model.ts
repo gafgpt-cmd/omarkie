@@ -1,4 +1,5 @@
-import { imageDefaults, imageWraps, validSource, type ImageWrap } from "../../shared/glass-images.mjs";
+import { imageDefaults, imageWraps, validSource, type ImageWrap, type ImageSheet } from "../../shared/glass-images.mjs";
+import { validScale, validSheets, type ImageScale } from "../../shared/glass-visual.mjs";
 import { anchorFrom } from "./glass-state";
 import type { GlassAnchor } from "./anchor-map";
 import type { GlassMagnet, GlassSource } from "./glass-model";
@@ -23,6 +24,9 @@ export interface GlassImage {
   x: number;
   y: number;
   source?: GlassSource;
+  sheets: ImageSheet[];
+  activeSheet: string | null;
+  scale: ImageScale | null;
 }
 
 const number = (value: unknown, fallback: number, min: number, max: number) =>
@@ -36,6 +40,9 @@ export function imageFromMagnet(magnet: GlassMagnet): GlassImage | undefined {
   const w = number(fields.w, imageDefaults.w, imageDefaults.minW, imageDefaults.maxW);
   const aspect = typeof fields.aspect === "number" && Number.isFinite(fields.aspect) && fields.aspect > 0 ? fields.aspect : w / 180;
   const source = validSource(fields.source) ?? undefined;
+  const sheets = validSheets(fields.sheets) ?? [];
+  const active = sheets.some(sheet => sheet.id === fields.activeSheet) ? fields.activeSheet as string : sheets[0]?.id ?? null;
+  const scale = validScale(fields.scale);
   return {
     id: magnet.id,
     name: typeof fields.name === "string" && fields.name.trim() ? fields.name.slice(0, imageDefaults.nameLimit) : asset,
@@ -53,6 +60,9 @@ export function imageFromMagnet(magnet: GlassMagnet): GlassImage | undefined {
     x: number(fields.x, 0, -imageDefaults.offsetLimit, imageDefaults.offsetLimit),
     y: number(fields.y, 0, -imageDefaults.offsetLimit, imageDefaults.offsetLimit),
     ...(source ? { source } : {}),
+    sheets,
+    activeSheet: active,
+    scale,
   };
 }
 
@@ -62,6 +72,8 @@ export function imageFieldsOf(image: GlassImage): Record<string, unknown> {
     w: image.w, h: image.h, aspect: image.aspect, rot: image.rot, wrap: image.wrap,
     tape: image.tape, locked: image.locked, anchor: image.anchor, x: image.x, y: image.y,
     ...(image.source ? { source: image.source } : {}),
+    ...(image.sheets.length ? { sheets: image.sheets, activeSheet: image.activeSheet } : {}),
+    ...(image.scale ? { scale: image.scale } : {}),
   };
 }
 

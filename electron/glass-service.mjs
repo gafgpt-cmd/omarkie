@@ -19,6 +19,9 @@ import {
 } from "../shared/ink-core.mjs";
 import { arrowColors, arrowHeads, arrowStyles, stickerIds, stickerLayer, validArrowEnd, validStickerImage } from "../shared/glass-marks.mjs";
 import {
+  validCompareFields, validMeasureFields, validSheetLabelFields, validTraceFields,
+} from "../shared/glass-visual.mjs";
+import {
   cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
 } from "../shared/glass-cards.mjs";
 import { clipFieldValues, cutoutFieldValues, extraPageFieldValues, sheetTitle } from "../shared/glass-clips.mjs";
@@ -1860,6 +1863,21 @@ function validateMagnetFields(kind, fields, partial) {
   if (kind === "sticker") return stickerFields(partial ? fields : { ...fields, kind: "sticker" }, partial);
   if (kind === "arrow") return arrowFields(partial ? fields : { ...fields, kind: "arrow" }, partial);
   if (kind === "label") return labelFields(partial ? fields : { ...fields, kind: "label" }, partial);
+  if (kind === "compare") {
+    const values = validCompareFields({ ...fields, ...(partial ? {} : { kind: "compare", layer: "compare" }) }, { partial });
+    if (!values) throw new Error("A compare card needs two different pictures, a value 0-100, a direction, labels and a box.");
+    return values;
+  }
+  if (kind === "trace" || kind === "sheet-label" || kind === "measure") {
+    if (partial) throw new Error("A visual mark keeps its geometry; delete it and add a new one.");
+    const values = kind === "trace" ? validTraceFields({ ...fields, kind: "trace", layer: "trace" })
+      : kind === "sheet-label" ? validSheetLabelFields({ ...fields, kind: "sheet-label", layer: "trace" })
+        : validMeasureFields({ ...fields, kind: "measure", layer: "measure" });
+    if (!values) throw new Error(kind === "trace" ? "A tracing stroke needs a picture, a sheet, a tool, a width and 2-4,000 points."
+      : kind === "sheet-label" ? "A sheet label needs a picture, a sheet, a point, text and a label size."
+        : "A measure needs a picture, a type, and two or three points.");
+    return values;
+  }
   if (kind === "card") {
     const values = cardFields(partial ? fields : { ...fields, kind: "card" });
     if (!partial) {
