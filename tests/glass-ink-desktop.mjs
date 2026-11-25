@@ -10,6 +10,7 @@ import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
+import { assertFrameCadence } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 // G7: the pencil. Pen, highlighter and eraser over a real page, split per element box,
@@ -178,8 +179,8 @@ try {
   const tray = trayOf(page);
   await expect(tray).toBeVisible();
 
-  // Pencil case: pen, highlighter and eraser are real tools now; the rest still say so.
-  for (const [id, label] of Object.entries({ sticker: "Sticker", arrow: "Arrow", card: "Card", scissors: "Scissors" })) {
+  // The remaining unscheduled tools announce their status.
+  for (const [id, label] of Object.entries({ card: "Card", scissors: "Scissors" })) {
     const tool = tray.locator(`[data-glass-coming="${id}"]`);
     await expect(tool).toHaveAttribute("aria-disabled", "true");
     await tool.click({ force: true });
@@ -519,8 +520,7 @@ try {
     await new Promise(resolve => requestAnimationFrame(resolve));
     cancelAnimationFrame(frame);
     fire("pointerup", grab.x + 12 + (step * 7) % 240, grab.y + (step * 3) % 16);
-    gaps.sort((a, b) => a - b);
-    return { frames: gaps.length, max: gaps.at(-1), p95: gaps[Math.ceil(gaps.length * 0.95) - 1] };
+    return gaps;
   }, grab);
   await page.waitForFunction(() => window.__inkCommits.length > 0, { timeout: 30_000 });
   const timing = await page.evaluate(() => {
@@ -529,18 +529,12 @@ try {
       p50: sorted[Math.floor(sorted.length / 2)], p95: sorted[Math.floor(sorted.length * 0.95)],
       commit: window.__inkCommits[0] - window.__inkUp };
   });
-  console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms; drawing rAF p95 ${cadence.p95?.toFixed(1)}ms, max ${cadence.max?.toFixed(1)}ms over ${cadence.frames} frames`);
+  console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms`);
   assert.ok(timing.events > 20, "the drag reaches the ink surface");
   assert.ok(timing.p95 <= 16, `drawing a stroke on 2,000 keeps pointer->path inside one frame (p95 ${timing.p95?.toFixed(1)}ms)`);
   assert.ok(timing.paints > 0, "the live stroke repaints while drawing");
   assert.ok(timing.commit <= 1500, `committing the 2,001st stroke does not lock the app (${timing.commit?.toFixed(0)}ms)`);
-  if (process.platform !== "linux" || process.env.OMARKIE_TEST_DISPLAY) {
-    assert.ok(cadence.frames >= 60, `drawing produced only ${cadence.frames} frames in 1.3 s`);
-    // At 60 Hz, >25 ms (1.5 refresh intervals) indicates a missed refresh.
-    // The p95 bound allows sub-ms variance in the nominal 16.67 ms timestamps.
-    assert.ok(cadence.max <= 25, `2,000 strokes must not miss a refresh (max ${cadence.max.toFixed(1)}ms, limit 25ms)`);
-    assert.ok(cadence.p95 <= 17.5, `2,000 strokes must stay at 60 Hz (p95 ${cadence.p95.toFixed(1)}ms, limit 17.5ms)`);
-  } else console.log("Frame cadence requires an isolated display; the headless backend throttles animation frames.");
+  assertFrameCadence(cadence, "Drawing over 2,000 strokes");
   assert.ok(await page.evaluate(() => document.querySelector(".glass-ink").getAttribute("data-glass-ink") !== null));
 
   assert.deepEqual(errors, []);

@@ -127,7 +127,7 @@ test("the service stores the original, the light copy, and survives a restart", 
   assert.equal(await readFile(path.join(environment.folder, "notes/Photo note.md"), "utf8"), "# Photo\n\nOne paragraph under the picture.\n");
 });
 
-test("a vault with only learning mode scraps opens the glass and migrates them", async () => {
+test("concurrent readers see a complete legacy image in a scraps-only vault", async () => {
   const hash = "c".repeat(64);
   const store = { v: 1, entry: { id: "legacy-only", type: "scrap", document: "notes/Photo note.md", deleted: false, body: "Cell membrane",
     image: { hash, width: 200, height: 100, side: "left" },
@@ -138,9 +138,16 @@ test("a vault with only learning mode scraps opens the glass and migrates them",
   await mkdir(path.join(environment.folder, ".omarkie", "scraps"), { recursive: true });
   await writeFile(path.join(environment.folder, ".omarkie", "scraps", hash), png);
   const service = await new GlassService({ root: environment.folder, appData: environment.data, device: "test-device" }).open();
-  const result = await service.request({ action: "list", note: "notes/Photo note.md" });
-  assert.equal(result.imported, 1, JSON.stringify(result).slice(0, 500));
-  assert.ok(result.magnets.some(magnet => magnet.id === "m-scrap-legacy-only"), "scrap became a glass image without a prior write");
+  const request = { action: "list", note: "notes/Photo note.md" };
+  const results = await Promise.all(Array.from({ length: 4 }, () => service.request(request)));
+  for (const result of results) {
+    const images = result.magnets.filter(magnet => magnet.id === "m-scrap-legacy-only");
+    assert.equal(images.length, 1);
+    assert.equal(images[0].fields.anchor.landmarks[0].block, "One paragraph under the picture.");
+  }
+  const later = await service.request(request);
+  assert.equal(later.imported, 0);
+  assert.equal(later.magnets.length, 1);
   await service.close();
 });
 

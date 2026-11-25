@@ -166,7 +166,7 @@ try {
   const plainBest = Math.min(...plain);
 
   // Pencil case: every tool answers; later-slice tools say so and never pretend to work.
-  const coming = { sticker: "Sticker", arrow: "Arrow", card: "Card", scissors: "Scissors" };
+  const coming = { card: "Card", scissors: "Scissors" };
   for (const [id, label] of Object.entries(coming)) {
     const tool = caseTray.locator(`[data-glass-coming="${id}"]`);
     await expect(tool).toHaveAttribute("aria-disabled", "true");

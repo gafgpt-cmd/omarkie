@@ -3,10 +3,16 @@ import { createPortal } from "react-dom";
 import interact from "interactjs";
 import { ArrowUpRight, Eraser, Highlighter, Image as ImageIcon, MousePointer2, PenLine, Redo2, Scissors, SquareStack, Star, StickyNote as StickyIcon, Trash2, Undo2 } from "lucide-react";
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
+import type { PageElement } from "../../shared/element-model.mjs";
+import { markdownElements } from "../../shared/element-model.mjs";
 import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
+import { arrowEndKey, customStickerBytes, type ArrowColor, type ArrowHead, type ArrowStyle } from "../../shared/glass-marks.mjs";
 import { fixtureAnchor, glassFixture, rememberFixtureAnchor } from "../glass/glass-state";
 import GlassLandmarks, { landmarkSeeds } from "./GlassLandmarks";
 import BubbleLayer from "./BubbleLayer";
+import ArrowOverlay, { type Hit } from "./ArrowOverlay";
+import StickerView from "./StickerView";
+import StickerArt from "./StickerArt";
 import type { LiveTutor } from "./tutor-live";
 import type { TutorReply } from "./tutor-verbs";
 import GlassInk, { type InkHistoryApi } from "./GlassInk";
@@ -20,9 +26,20 @@ import { displayNeeded, imageDefaults, imageTypeOf } from "../../shared/glass-im
 import { imageFromMagnet, type GlassImage } from "../glass/image-model";
 import { imageCopy } from "../glass/glass-assets";
 import GlassImageFrame from "./GlassImage";
+import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
+import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
+import { elementNode } from "../glass/element-node";
+import { elementKindName } from "../glass/element-label";
 import "./glass.css";
 
-interface Layout { places: Record<string, GlassPlacement>; fixture?: GlassPlacement; loaded?: boolean }
+interface Layout {
+  places: Record<string, GlassPlacement>;
+  routes: ArrowRoute[];
+  names: Record<string, { from: string; to: string }>;
+  orphanArrows: string[];
+  fixture?: GlassPlacement;
+  loaded?: boolean;
+}
 interface Reply { ok: boolean; value?: GlassReply; error?: string }
 interface GlassReply {
   magnets?: GlassMagnet[];
@@ -30,9 +47,8 @@ interface GlassReply {
   magnet?: GlassMagnet | null;
   saved?: boolean;
 }
+interface Viewport { top: number; height: number; width: number; page: number }
 const comingSoon = [
-  { id: "sticker", label: "Sticker", icon: Star },
-  { id: "arrow", label: "Arrow", icon: ArrowUpRight },
   { id: "card", label: "Card", icon: SquareStack },
   { id: "scissors", label: "Scissors", icon: Scissors },
 ] as const;
@@ -46,11 +62,6 @@ async function glassCall(request: Record<string, unknown>): Promise<GlassReply> 
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
-const magnetLabel = (magnet: GlassMagnet) => {
-  const fields = magnet.fields ?? {};
-  if (fields.kind === "image") return typeof fields.name === "string" && fields.name.trim() ? fields.name : "Image";
-  return typeof fields.text === "string" && fields.text.trim() ? fields.text.trim() : "Empty note";
-};
 const imageFiles = (data: DataTransfer | null) => {
   if (!data) return [];
   const files = [...data.files];
@@ -66,6 +77,16 @@ async function fileBase64(file: File) {
   for (let index = 0; index < bytes.length; index += 32_768) text += String.fromCharCode(...bytes.subarray(index, index + 32_768));
   return btoa(text);
 }
+const snippet = (text: string) => text.length > 28 ? `${text.slice(0, 28).toWellFormed()}…` : text;
+const magnetLabel = (magnet: GlassMagnet) => {
+  if (magnet.kind === "image") return typeof magnet.fields.name === "string" && magnet.fields.name.trim() ? magnet.fields.name.slice(0, 48) : "Image";
+  if (magnet.kind === "sticky") return typeof magnet.fields.text === "string" && magnet.fields.text.trim() ? magnet.fields.text.trim().slice(0, 48) : "Empty note";
+  if (magnet.kind === "sticker") return stickerName({ sticker: typeof magnet.fields.sticker === "string" ? magnet.fields.sticker : undefined,
+    image: typeof magnet.fields.image === "string" ? magnet.fields.image : undefined });
+  if (magnet.kind === "arrow") return typeof magnet.fields.label === "string" && magnet.fields.label.trim() ? `Arrow: ${snippet(magnet.fields.label.trim())}` : "Arrow";
+  if (typeof magnet.fields.text === "string" && magnet.fields.text.trim()) return snippet(magnet.fields.text.trim());
+  return magnet.kind ? `${magnet.kind[0].toUpperCase()}${magnet.kind.slice(1)}` : "Glass mark";
+};
 
 // One sticky note: paper, six colours, fold to a dot, delete to the trash, typing saved as it settles.
 function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, onFold, onColor, onDelete }: {
@@ -136,16 +157,25 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [comments, setComments] = useState<GlassMagnet[]>([]);
   const [magnets, setMagnets] = useState<StickyNote[]>([]);
   const [images, setImages] = useState<GlassImage[]>([]);
-  const [trash, setTrash] = useState<GlassMagnet[]>([]);
-  const [layout, setLayout] = useState<Layout>({ places: {} });
-  const [tool, setTool] = useState<"select" | "sticky" | "ink">("select");
   const [inkTool, setInkTool] = useState<InkTool | "eraser">("pen");
   const [inkSize, setInkSize] = useState(inkDefaults("pen").size);
   const [inkColor, setInkColor] = useState(inkDefaults("pen").color);
   const [eraserMode, setEraserMode] = useState<"bite" | "stroke">("bite");
   const [inkHistory, setInkHistory] = useState({ undo: false, redo: false });
   const inkApi = useRef<InkHistoryApi | null>(null);
+  const [stickers, setStickers] = useState<StickerMark[]>([]);
+  const [arrows, setArrows] = useState<ArrowMark[]>([]);
+  const [trash, setTrash] = useState<GlassMagnet[]>([]);
+  const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
+  const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow">("select");
+  const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
+  const [customImage, setCustomImage] = useState<string>();
+  const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
+  const [arrowColor, setArrowColor] = useState<ArrowColor>(arrowDefaults.color);
+  const [arrowHead, setArrowHead] = useState<ArrowHead>(arrowDefaults.head);
   const [selected, setSelected] = useState<string>();
+  const [selectedArrow, setSelectedArrow] = useState<string>();
+  const [viewport, setViewport] = useState<Viewport>({ top: 0, height: 0, width: 0, page: 0 });
   const [editing, setEditing] = useState<string>();
   const [openTrash, setOpenTrash] = useState(false);
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -154,10 +184,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const blocks = useRef<GlassBlock[]>([]), index = useRef<BlockIndex>(indexBlocks([]));
   const spacers = useRef(new Map<string, HTMLSpanElement>());
   const picker = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, note, tool });
+  const elements = useRef<{ text: string; list: PageElement[] }>({ text: "", list: [] });
+  const elementBoxes = useRef<Record<string, EndMark>>({});
+  const placesRef = useRef<Record<string, GlassPlacement>>({});
+  const fileInput = useRef<HTMLInputElement>(null);
+  const latest = useRef({ magnets, images, stickers, arrows, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
-  latest.current = { magnets, images, note, tool };
+  latest.current = { magnets, images, stickers, arrows, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -190,12 +224,19 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const byLine = new Map(blocks.current.map(block => [block.line, block]));
     const frame = surface.getBoundingClientRect();
     const places: Record<string, GlassPlacement> = {};
-    for (const stickie of latest.current.magnets) {
-      const line = matchIndexed(index.current, stickie.anchor);
+    const needsArrows = latest.current.arrows.length > 0 || latest.current.tool === "arrow";
+    const lines = new Map<string, number | null>();
+    const matchLine = (anchor: Parameters<typeof matchIndexed>[1]) => {
+      const key = JSON.stringify(anchor.landmarks);
+      if (!lines.has(key)) lines.set(key, matchIndexed(index.current, anchor));
+      return lines.get(key) ?? null;
+    };
+    for (const mark of [...latest.current.magnets, ...latest.current.stickers]) {
+      const line = needsArrows ? matchLine(mark.anchor) : matchIndexed(index.current, mark.anchor);
       const element = line === null ? undefined : byLine.get(line)?.element;
-      if (!element) { places[stickie.id] = { status: "orphan" }; continue; }
+      if (!element) { places[mark.id] = { status: "orphan" }; continue; }
       const rect = element.getBoundingClientRect();
-      places[stickie.id] = { status: "resolved", x: rect.left - frame.left + stickie.x, y: rect.top - frame.top + stickie.y, width: stickie.w, height: stickie.h };
+      places[mark.id] = { status: "resolved", x: rect.left - frame.left + mark.x, y: rect.top - frame.top + mark.y, width: mark.w, height: mark.h };
     }
     const flowing = new Set<string>();
     for (const image of latest.current.images) {
@@ -217,6 +258,35 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       }
     }
     dropSpacers(flowing);
+    placesRef.current = places;
+    let routed: { routes: ArrowRoute[]; orphans: string[] } = { routes: [], orphans: [] };
+    const names: Record<string, { from: string; to: string }> = {};
+    // Element boxes and arrow routing cost one rect per paragraph; skip them until arrows need the page.
+    if (needsArrows) {
+      const text = editor()?.readingContext()?.text;
+      if (text !== undefined && text !== elements.current.text) elements.current = { text, list: markdownElements(text) };
+      const list = elements.current.list;
+      const boxes: Record<string, EndMark> = {};
+      for (const element of list) {
+        const node = elementNode(root, element, list);
+        const rect = node?.getBoundingClientRect();
+        if (!rect?.width || !rect.height) continue;
+        boxes[element.id] = { x: rect.left - frame.left, y: rect.top - frame.top, width: rect.width, height: rect.height };
+      }
+      elementBoxes.current = boxes;
+      const ends: ArrowEndContext = {
+        line: matchLine,
+        elementAt: (line, id) => {
+          const at = list.filter(element => element.blockLine === line);
+          const chosen = (id ? at.find(element => element.id === id) : undefined) ?? at[0];
+          return chosen ? boxes[chosen.id] : undefined;
+        },
+        magnet: id => { const place = places[id]; return place?.status === "resolved" ? place : undefined; },
+      };
+      routed = routeArrows(latest.current.arrows, ends);
+      for (const arrow of latest.current.arrows)
+        names[arrow.id] = { from: endName(arrow.from, list, ends, latest.current), to: endName(arrow.to, list, ends, latest.current) };
+    } else elementBoxes.current = {};
     let marker: GlassPlacement | undefined;
     if (fixture && !seeds?.length) {
       let anchor = fixtureAnchor();
@@ -227,10 +297,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       if (anchor) marker = placeAnchor(anchor, { x: 0, y: 0 }, blocks.current, surface);
     }
     if (!mounted.current) { mounted.current = true; performance.mark("omarkie:glass-mounted"); }
-    const serialized = JSON.stringify([places, marker ?? null, loaded.current]);
+    const serialized = JSON.stringify([places, routed.routes, names, routed.orphans, marker ?? null, loaded.current]);
     if (serialized === fingerprint.current) return;
     fingerprint.current = serialized;
-    setLayout({ places, fixture: marker, loaded: loaded.current });
+    setLayout({ places, routes: routed.routes, names, orphanArrows: routed.orphans, fixture: marker, loaded: loaded.current });
   }, [dropSpacers, editor, fixture, flow, root, seeds]);
 
   useEffect(() => () => { for (const spacer of spacers.current.values()) spacer.remove(); spacers.current.clear(); }, []);
@@ -267,7 +337,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       try {
         const value = await glassCall({ note: path, action: "list" });
         loaded.current = true;
-        const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [];
+        const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [];
+        const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
             const sticky = stickyFromMagnet(magnet);
@@ -275,11 +346,19 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           } else if (magnet.kind === "image") {
             const picture = imageFromMagnet(magnet);
             if (picture) nextImages.push(picture);
+          } else if (magnet.kind === "sticker") {
+            const stamp = stickerFromMagnet(magnet);
+            if (stamp) nextStickers.push(stamp);
+          } else if (magnet.kind === "arrow") {
+            const arrow = arrowFromMagnet(magnet);
+            if (arrow) nextArrows.push(arrow);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
           else if (magnet.kind !== "ink") incoming.push(magnet);
         }
         setMagnets(stickies);
         setImages(nextImages);
+        setStickers(nextStickers);
+        setArrows(nextArrows);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setTrash(value.trash ?? []);
@@ -322,7 +401,30 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     };
   }, [scroller, root, measure]);
 
-  useEffect(() => { measure(); }, [magnets, images, measure]);
+  const showingArrows = arrows.length > 0 || tool === "arrow";
+  useEffect(() => { measure(); }, [magnets, images, stickers, arrows, showingArrows, measure]);
+
+  // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
+  useEffect(() => {
+    if (!showingArrows) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const next = { top: scroller.scrollTop, height: scroller.clientHeight, width: scroller.clientWidth, page: Math.max(scroller.scrollHeight, scroller.clientHeight) };
+      setViewport(previous => previous.top === next.top && previous.height === next.height && previous.width === next.width && previous.page === next.page ? previous : next);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
+    scroller.addEventListener("scroll", schedule, { passive: true });
+    const sizes = new ResizeObserver(schedule);
+    sizes.observe(scroller);
+    sizes.observe(root);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      scroller.removeEventListener("scroll", schedule);
+      sizes.disconnect();
+    };
+  }, [scroller, root, showingArrows]);
 
   useEffect(() => {
     if (!notice) return;
@@ -330,9 +432,13 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const update = useCallback((id: string, patch: Partial<StickyNote>) => {
-    setMagnets(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
-  }, []);
+  useEffect(() => {
+    if (selected && !magnets.some(item => item.id === selected) && !images.some(item => item.id === selected) && !stickers.some(item => item.id === selected)) setSelected(undefined);
+  }, [magnets, images, stickers, selected]);
+
+  useEffect(() => {
+    if (selectedArrow && !arrows.some(item => item.id === selectedArrow)) setSelectedArrow(undefined);
+  }, [arrows, selectedArrow]);
 
   const patchImage = useCallback((id: string, patch: Partial<GlassImage>, persist = false) => {
     setImages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
@@ -342,24 +448,38 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   useEffect(() => {
     const surface = layer.current;
     if (!surface) return;
-    // interact hands listeners the interactable element, not the note under the pointer, so remember it.
+    // interact hands listeners the interactable element, not the mark under the pointer, so remember it.
     let downSource: Element | null = null;
     const track = (event: Event) => { downSource = event.target as Element; };
     surface.addEventListener("pointerdown", track, true);
-    const noteElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note") ?? target) as HTMLElement;
+    const markElement = (target: Element) => ((downSource ?? target).closest?.(".glass-note, .glass-sticker") ?? target) as HTMLElement;
+    const findMark = (id: string) => {
+      const sticky = latest.current.magnets.find(item => item.id === id);
+      if (sticky) return { kind: "sticky" as const, x: sticky.x, y: sticky.y, w: sticky.w, h: sticky.h };
+      const sticker = latest.current.stickers.find(item => item.id === id);
+      return sticker ? { kind: "sticker" as const, x: sticker.x, y: sticker.y, w: sticker.w, h: sticker.h } : undefined;
+    };
+    const place = (id: string, patch: { x: number; y: number; w?: number; h?: number }) => {
+      setMagnets(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+      setStickers(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+      const fields: Record<string, number> = { x: patch.x, y: patch.y };
+      if (patch.w !== undefined) fields.w = patch.w;
+      if (patch.h !== undefined) fields.h = patch.h;
+      void send({ action: "set", magnet: id, fields });
+    };
     const instance = interact(surface);
-    let drag: { element: HTMLElement; id: string; x: number; y: number; pageX: number; pageY: number } | undefined;
+    let drag: { element: HTMLElement; id: string; kind: "sticky" | "sticker"; x: number; y: number; pageX: number; pageY: number } | undefined;
     instance.draggable({
-      allowFrom: ".glass-note, .glass-note-head",
-      ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot",
+      allowFrom: ".glass-note, .glass-note-head, .glass-sticker",
+      ignoreFrom: ".glass-note-text, .glass-note-tools, .glass-note-grip, .glass-note-dot, .glass-sticker-grip, .glass-sticker-rotate, .glass-sticker-delete",
       listeners: {
         start(event) {
-          const element = noteElement(event.target);
-          const stickie = latest.current.magnets.find(item => item.id === element.dataset.magnet);
-          if (!stickie) return;
+          const element = markElement(event.target);
+          const mark = findMark(element.dataset.magnet ?? "");
+          if (!mark) return;
           dragging.current = true;
           element.classList.add("is-lifting");
-          drag = { element, id: stickie.id, x: stickie.x, y: stickie.y, pageX: event.pageX, pageY: event.pageY };
+          drag = { element, id: element.dataset.magnet!, kind: mark.kind, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY };
         },
         move(event) {
           if (drag) drag.element.style.transform = `translate3d(${event.pageX - drag.pageX}px, ${event.pageY - drag.pageY}px, 0)`;
@@ -372,47 +492,58 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           start.element.classList.remove("is-lifting");
           start.element.style.removeProperty("transform");
           const x = snapped(start.x + event.pageX - start.pageX), y = snapped(start.y + event.pageY - start.pageY);
-          update(start.id, { x, y });
-          void send({ action: "set", magnet: start.id, fields: { x, y } });
+          place(start.id, { x, y });
         },
       },
     }).resizable({
-      edges: { right: ".glass-note-grip-right", bottom: ".glass-note-grip-bottom" },
+      edges: { right: ".glass-note-grip-right, .glass-sticker-grip", bottom: ".glass-note-grip-bottom" },
       listeners: {
         start(event) {
-          const element = noteElement(event.target);
-          const stickie = latest.current.magnets.find(item => item.id === element.dataset.magnet);
-          if (!stickie) return;
+          const element = markElement(event.target);
+          const mark = findMark(element.dataset.magnet ?? "");
+          if (!mark) return;
           dragging.current = true;
           const rect = element.getBoundingClientRect();
-          element.dataset.resize = JSON.stringify({ id: stickie.id, width: rect.width, height: rect.height, pageX: event.pageX, pageY: event.pageY });
+          element.dataset.resize = JSON.stringify({ id: element.dataset.magnet, kind: mark.kind, width: rect.width, height: rect.height, pageX: event.pageX, pageY: event.pageY });
         },
         move(event) {
-          const element = noteElement(event.target), drag = element.dataset.resize;
-          if (!drag) return;
-          const start = JSON.parse(drag);
+          const element = markElement(event.target), data = element.dataset.resize;
+          if (!data) return;
+          const start = JSON.parse(data);
+          if (start.kind === "sticker") {
+            const size = Math.max(24, Math.min(1200, Math.round(start.width + event.pageX - start.pageX)));
+            element.style.width = `${size}px`;
+            element.style.height = `${size}px`;
+            element.dataset.size = String(size);
+            return;
+          }
           const width = Math.max(stickyDefaults.minW, start.width + event.pageX - start.pageX), height = Math.max(stickyDefaults.minH, start.height + event.pageY - start.pageY);
           element.style.width = `${width}px`;
           element.style.height = `${height}px`;
           element.dataset.size = JSON.stringify({ width, height });
         },
         end(event) {
-          const element = noteElement(event.target), drag = element.dataset.resize;
+          const element = markElement(event.target), data = element.dataset.resize;
           dragging.current = false;
-          if (!drag) return;
-          const start = JSON.parse(drag), size = JSON.parse(element.dataset.size ?? "null");
+          if (!data) return;
+          const start = JSON.parse(data), size = element.dataset.size;
           delete element.dataset.resize;
           delete element.dataset.size;
-          const stickie = latest.current.magnets.find(item => item.id === start.id);
-          if (!stickie || !size) return;
-          const width = snapped(size.width), height = snapped(size.height);
-          update(stickie.id, { w: width, h: height });
-          void send({ action: "set", magnet: stickie.id, fields: { w: width, h: height } });
+          if (size === undefined) return;
+          if (start.kind === "sticker") {
+            const id = element.dataset.magnet!;
+            const edge = snapped(Math.max(24, Number(size)));
+            place(id, { x: findMark(id)?.x ?? 0, y: findMark(id)?.y ?? 0, w: edge, h: edge });
+            return;
+          }
+          const id = element.dataset.magnet!;
+          const box = JSON.parse(size);
+          place(id, { x: findMark(id)?.x ?? 0, y: findMark(id)?.y ?? 0, w: snapped(box.width), h: snapped(box.height) });
         },
       },
     });
     return () => { surface.removeEventListener("pointerdown", track, true); instance.unset(); };
-  }, [send, update]);
+  }, [send]);
 
   const create = useCallback((point: { x: number; y: number }) => {
     const surface = layer.current;
@@ -426,6 +557,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     };
     setMagnets(current => [...current, stickie]);
     setSelected(stickie.id);
+    setSelectedArrow(undefined);
     setEditing(stickie.id);
     void send({ action: "add", magnet: stickie.id, fields: stickyFields(stickie) });
   }, [send]);
@@ -470,6 +602,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         anchor: anchorOf(block), x: 0, y: 0 };
       setImages(current => [...current, draft]);
       setSelected(id);
+      setSelectedArrow(undefined);
       try {
         const value = await send({ action: "add", magnet: id, fields: { anchor: draft.anchor, w: width, aspect },
           image: { base64: await fileBase64(file), name: file.name, displayBase64: display, wrap } });
@@ -531,22 +664,122 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (spacer) { spacer.style.width = `${width}px`; spacer.style.height = `${height}px`; }
   }, []);
 
-  const remove = useCallback((object: { id: string }) => {
-    setMagnets(current => current.filter(item => item.id !== object.id));
-    setImages(current => current.filter(item => item.id !== object.id));
-    if (selected === object.id) setSelected(undefined);
-    void send({ action: "delete", magnet: object.id });
-  }, [selected, send]);
+  // A sticker lands on the Notes & stickers layer: built-in sheet art or one custom image.
+  const placeSticker = useCallback((point: { x: number; y: number }) => {
+    if (!latest.current.note) return;
+    const block = nearestBlock(blocks.current, point);
+    if (!block) return;
+    const offset = offsetIn(block, point);
+    const mark = stickerAt(block, offset);
+    if (stickerChoice === "custom") {
+      if (!customImage) { setNotice("Choose a custom image first."); fileInput.current?.click(); return; }
+      mark.image = customImage;
+      delete mark.sticker;
+    } else mark.sticker = stickerChoice;
+    setStickers(current => [...current, mark]);
+    setSelected(mark.id);
+    setSelectedArrow(undefined);
+    void send({ action: "add", magnet: mark.id, fields: stickerFields(mark) });
+  }, [customImage, send, stickerChoice]);
+
+  const pickSticker = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!/^image\/(?:png|jpeg|webp|gif)$/.test(file.type)) { setNotice("Sticker images must be PNG, JPEG, WebP or GIF."); return; }
+    if (file.size > customStickerBytes) { setNotice("Sticker image is too large (max 300 KB)."); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = typeof reader.result === "string" ? reader.result : "";
+      if (!image.startsWith("data:image/") || image.length > customStickerBytes) { setNotice("That image could not be used as a sticker."); return; }
+      setCustomImage(image);
+      setStickerChoice("custom");
+    };
+    reader.onerror = () => setNotice("That image could not be read.");
+    reader.readAsDataURL(file);
+  }, []);
+
+  // An arrow joins two marks or page elements; both ends stay anchored.
+  const createArrow = useCallback((from: ArrowMark["from"], to: ArrowMark["to"]) => {
+    if (!latest.current.note || arrowEndKey(from) === arrowEndKey(to)) return;
+    const arrow: ArrowMark = { id: `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      from, to, style: arrowStyle, color: arrowColor, head: arrowHead, label: "" };
+    setArrows(current => [...current, arrow]);
+    setSelectedArrow(arrow.id);
+    setSelected(undefined);
+    void send({ action: "add", magnet: arrow.id, fields: arrowFields(arrow) });
+  }, [arrowColor, arrowHead, arrowStyle, send]);
+
+  const updateArrow = useCallback((id: string, patch: Partial<ArrowMark>) => {
+    setArrows(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+    const fields: Record<string, unknown> = {};
+    for (const key of ["style", "color", "head", "label", "from", "to"] as const)
+      if (patch[key] !== undefined) fields[key] = patch[key];
+    if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  const hitTest = useCallback((clientX: number, clientY: number): Hit | undefined => {
+    const surface = layer.current;
+    if (!surface) return;
+    const frame = surface.getBoundingClientRect();
+    const x = clientX - frame.left, y = clientY - frame.top;
+    let best: { hit: Hit; area: number } | undefined;
+    const inside = (box: { x: number; y: number; width: number; height: number }) =>
+      x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
+    for (const [id, mark] of Object.entries(placesRef.current)) {
+      if (mark.status !== "resolved" || !inside(mark)) continue;
+      const sticky = latest.current.magnets.find(item => item.id === id);
+      const sticker = latest.current.stickers.find(item => item.id === id);
+      const area = mark.width * mark.height;
+      if (!best || area < best.area) best = { area, hit: { end: { kind: "magnet", magnet: id }, box: mark,
+        name: sticky ? (sticky.text.trim() ? snippet(sticky.text.trim()) : "Sticky note") : sticker ? stickerName(sticker) : "Glass mark" } };
+    }
+    for (const [id, box] of Object.entries(elementBoxes.current)) {
+      if (!inside(box)) continue;
+      const area = box.width * box.height;
+      if (best && area >= best.area) continue;
+      const element = elements.current.list.find(item => item.id === id);
+      if (!element) continue;
+      const block = blocks.current.find(item => item.element?.dataset.cid === id) ?? blocks.current.find(item => item.line === element.blockLine);
+      const anchor = block ? anchorOf(block) : { landmarks: [{ kind: "block" as const, block: element.text, headings: element.headings, line: element.line }] };
+      best = { area, hit: { end: { kind: "element", element: id, anchor }, box, name: `${elementKindName(element.kind)}: ${snippet(element.text)}` } };
+    }
+    return best?.hit;
+  }, []);
+
+  const forget = useCallback((id: string) => {
+    setMagnets(current => current.filter(item => item.id !== id));
+    setImages(current => current.filter(item => item.id !== id));
+    setStickers(current => current.filter(item => item.id !== id));
+    setArrows(current => current.filter(item => item.id !== id));
+    setSelected(current => current === id ? undefined : current);
+    setSelectedArrow(current => current === id ? undefined : current);
+  }, []);
+
+  const removeMark = useCallback((id: string) => {
+    forget(id);
+    void send({ action: "delete", magnet: id });
+  }, [forget, send]);
 
   const restore = useCallback(async (magnet: GlassMagnet) => {
     const value = await send({ action: "restore", magnet: magnet.id });
-    if (!value) return;
-    const stickie = value.magnet && stickyFromMagnet(value.magnet);
-    const picture = value.magnet && imageFromMagnet(value.magnet);
-    if (stickie) setMagnets(current => [...current.filter(item => item.id !== stickie.id), stickie]);
-    if (picture) setImages(current => [...current.filter(item => item.id !== picture.id), picture]);
+    if (!value?.magnet) return;
+    const restored = value.magnet;
+    if (restored.kind === "sticky") {
+      const note = stickyFromMagnet(restored);
+      if (note) setMagnets(current => [...current, note]);
+    } else if (restored.kind === "image") {
+      const picture = imageFromMagnet(restored);
+      if (picture) setImages(current => [...current, picture]);
+    } else if (restored.kind === "sticker") {
+      const mark = stickerFromMagnet(restored);
+      if (mark) setStickers(current => [...current, mark]);
+    } else if (restored.kind === "arrow") {
+      const arrow = arrowFromMagnet(restored);
+      if (arrow) setArrows(current => [...current, arrow]);
+    } else void load();
     setOpenTrash(false);
-  }, [send]);
+  }, [load, send]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -557,18 +790,24 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       else if (event.key === "p" || event.key === "P") { event.preventDefault(); chooseInk("pen"); }
       else if (event.key === "h" || event.key === "H") { event.preventDefault(); chooseInk("highlighter"); }
       else if (event.key === "e" || event.key === "E") { event.preventDefault(); chooseInk("eraser"); }
-      else if (event.key === "Escape") { setTool("select"); setSelected(undefined); setEditing(undefined); setOpenTrash(false); }
+      else if (event.key === "Escape") { setTool(current => current === "ink" ? "select" : current); setSelected(undefined); setSelectedArrow(undefined); setEditing(undefined); setOpenTrash(false); }
+      else if ((event.key === "Delete" || event.key === "Backspace") && selectedArrow) { event.preventDefault(); removeMark(selectedArrow); }
+      else if ((event.key === "Delete" || event.key === "Backspace") && selected && stickers.some(item => item.id === selected)) {
+        event.preventDefault();
+        removeMark(selected);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [chooseInk, createAtCenter]);
+  }, [chooseInk, createAtCenter, removeMark, selected, selectedArrow, stickers]);
 
-  const orphans = magnets.filter(stickie => layout.places[stickie.id]?.status === "orphan");
-  const orphanImages = images.filter(image => layout.places[image.id]?.status === "orphan");
+  const orphans = [...magnets, ...images, ...stickers].filter(mark => layout.places[mark.id]?.status === "orphan");
   const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
   const shown = images.filter(image => layout.places[image.id]?.status === "resolved");
   const under = shown.filter(image => image.wrap === "behind");
   const above = shown.filter(image => image.wrap !== "behind");
+  const visibleStickers = stickers.filter(mark => layout.places[mark.id]?.status === "resolved");
+  const orphanArrows = arrows.filter(arrow => layout.orphanArrows.includes(arrow.id));
   const statusLabel = !note ? "Save this note first" : saved === "saving" ? "Saving" : saved === "error" ? "Not saved" : saved === "saved" ? "Saved" : "Glass";
 
   useEffect(() => {
@@ -584,13 +823,48 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const column = image.wrap === "behind" || image.wrap === "front" ? 0 : blocks.current.find(block => block.line === line)?.element?.clientWidth ?? 0;
     const maxWidth = column ? Math.max(imageDefaults.minW, Math.round(column * 0.6)) : undefined;
     return <GlassImageFrame key={image.id} image={image} place={place} selected={selected === image.id} note={note} scroller={scroller}
-      paintHost={underHost} maxWidth={maxWidth} onSelect={() => { setSelected(image.id); setEditing(undefined); }}
+      paintHost={underHost} maxWidth={maxWidth} onSelect={() => { setSelected(image.id); setSelectedArrow(undefined); setEditing(undefined); }}
       onPatch={(patch, persist) => patchImage(image.id, patch, persist)}
       onDrop={drop => imageDrop(image, drop)}
       onLiveSize={(width, height) => liveImageSize(image.id, width, height)}
-      onDelete={() => remove(image)} />;
+      onDelete={() => removeMark(image.id)} />;
   };
 
+  const marksPalette = tool === "sticker" ? <div className="glass-palette" role="group" aria-label="Stickers" data-glass-palette="sticker">
+    <p className="glass-palette-title">Stickers</p>
+    <div className="glass-palette-row">
+      {stickerIds.map(id => <button type="button" key={id} data-sticker={id} aria-pressed={stickerChoice === id}
+        aria-label={stickerName({ sticker: id })} title={stickerName({ sticker: id })}
+        onClick={() => { setStickerChoice(id); setCustomImage(undefined); }}>
+        <StickerArt id={id} label={stickerName({ sticker: id })} />
+      </button>)}
+    </div>
+    <div className="glass-palette-row">
+      <button type="button" className="glass-palette-custom" data-sticker-custom aria-pressed={stickerChoice === "custom"}
+        onClick={() => fileInput.current?.click()}>Custom image…</button>
+      <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden data-sticker-file onChange={pickSticker} />
+      {customImage && <span className="glass-palette-hint">Custom sticker ready</span>}
+    </div>
+    <p className="glass-palette-hint">Pick a sticker, then click a paragraph.</p>
+  </div> : tool === "arrow" ? <div className="glass-palette" role="group" aria-label="Arrows" data-glass-palette="arrow">
+    <p className="glass-palette-title">Arrows</p>
+    <div className="glass-palette-row">
+      <button type="button" data-arrow-style="straight" aria-pressed={arrowStyle === "straight"} aria-label="Straight arrow" title="Straight"
+        onClick={() => setArrowStyle("straight")}>╱</button>
+      <button type="button" data-arrow-style="curved" aria-pressed={arrowStyle === "curved"} aria-label="Curved arrow" title="Curved"
+        onClick={() => setArrowStyle("curved")}>⌒</button>
+      <span className="glass-tray-rule" aria-hidden="true" />
+      {(["ink", "red", "blue", "green"] as const).map(colour => <button type="button" key={colour} data-arrow-pick-colour={colour}
+        aria-pressed={arrowColor === colour} aria-label={`${colour} arrow`} title={colour} className="glass-arrow-swatch"
+        style={{ color: colour === "red" ? "#cf3b32" : colour === "blue" ? "#2f6fb5" : colour === "green" ? "#2f9e5f" : "var(--ink, #333)" }}
+        onClick={() => setArrowColor(colour)}>●</button>)}
+      <span className="glass-tray-rule" aria-hidden="true" />
+      {(["solid", "open", "none"] as const).map(shape => <button type="button" key={shape} data-arrow-pick-head={shape}
+        aria-pressed={arrowHead === shape} aria-label={`${shape} head`} title={shape} onClick={() => setArrowHead(shape)}>
+        {shape === "solid" ? "▸" : shape === "open" ? "›" : "—"}</button>)}
+    </div>
+    <p className="glass-palette-hint">Drag from a paragraph or sticker to another; the far end scrolls into view.</p>
+  </div> : null;
   const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
@@ -606,6 +880,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="ink" aria-pressed={tool === "ink" && inkTool !== "eraser"} aria-label="Pen" title="Pen (P)" onClick={() => chooseInk("pen")}><PenLine size={15} /></button>
     <button type="button" data-glass-tool="highlighter" aria-pressed={tool === "ink" && inkTool === "highlighter"} aria-label="Highlighter" title="Highlighter (H)" onClick={() => chooseInk("highlighter")}><Highlighter size={15} /></button>
     <button type="button" data-glass-tool="eraser" aria-pressed={tool === "ink" && inkTool === "eraser"} aria-label="Eraser" title="Eraser (E)" onClick={() => chooseInk("eraser")}><Eraser size={15} /></button>
+    <button type="button" data-glass-tool="sticker" aria-pressed={tool === "sticker"} aria-label="Sticker" title="Stickers" onClick={() => setTool("sticker")}><Star size={15} /></button>
+    <button type="button" data-glass-tool="arrow" aria-pressed={tool === "arrow"} aria-label="Arrow" title="Arrow between two things" onClick={() => setTool("arrow")}><ArrowUpRight size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
     {comingSoon.map(({ id, label, icon: Icon }) => <button type="button" key={id} data-glass-coming={id} aria-disabled="true"
       aria-label={label} title={`${label} — coming soon`} onClick={() => setNotice(`${label} is coming soon.`)}><Icon size={15} /></button>)}
@@ -619,7 +895,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       title="Glass trash" onClick={() => setOpenTrash(open => !open)}><Trash2 size={15} /><span className="glass-tray-count" data-glass-trash-count>{trash.length}</span></button>
     <span className="glass-tray-status" data-glass-saved={saved} role="status">{statusLabel}</span>
   </div>;
-  const palette = tool === "ink" ? <div className="glass-palette" role="group" aria-label="Ink colours and widths" data-ink-palette>
+  const inkPalette = tool === "ink" ? <div className="glass-palette" role="group" aria-label="Ink colours and widths" data-ink-palette>
     {inkTool === "eraser" ? <>
       <button type="button" data-ink-eraser="bite" aria-pressed={eraserMode === "bite"} title="Rub out part of a stroke" onClick={() => setEraserMode("bite")}>Bite</button>
       <button type="button" data-ink-eraser="stroke" aria-pressed={eraserMode === "stroke"} title="Rub out whole strokes" onClick={() => setEraserMode("stroke")}>Whole stroke</button>
@@ -633,17 +909,21 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       </button>)}
     </>}
   </div> : null;
-  const panel = <>{tray}{palette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
+  const panel = <>{tray}{inkPalette ?? marksPalette}{openTrash && <div className="glass-trash" role="dialog" aria-label="Glass trash">
     <strong>Glass trash</strong>
     {trash.length ? <ul>{trash.map(magnet => <li key={magnet.id}>
-      <span>{magnetLabel(magnet).slice(0, 48)}</span>
+      <span>{magnetLabel(magnet)}</span>
       <button type="button" data-glass-restore={magnet.id} onClick={() => void restore(magnet)}>Undo</button>
     </li>)}</ul> : <p>Nothing deleted.</p>}
-  </div>}{orphans.length + orphanImages.length > 0 && <div className="glass-orphans" role="group" aria-label="Magnets whose paragraph is gone">
+  </div>}{(orphans.length > 0 || orphanArrows.length > 0) && <div className="glass-orphans" role="group" aria-label="Marks whose paragraph is gone">
     <strong>Anchor lost</strong>
-    {[...orphans, ...orphanImages].map(object => <span key={object.id} data-glass-orphan={object.id}>
-      <span>{("name" in object ? object.name : object.text.trim()) .slice(0, 32) || "Empty note"}</span>
-      <button type="button" aria-label="Move orphan to trash" onClick={() => remove(object)}>×</button>
+    {orphans.map(mark => <span key={mark.id} data-glass-orphan={mark.id}>
+      <span>{"text" in mark ? mark.text.trim().slice(0, 32) || "Empty note" : "name" in mark ? mark.name.slice(0, 32) : stickerName(mark)}</span>
+      <button type="button" aria-label="Move orphan to trash" onClick={() => removeMark(mark.id)}>×</button>
+    </span>)}
+    {orphanArrows.map(arrow => <span key={arrow.id} data-glass-orphan-arrow={arrow.id}>
+      <span>{arrow.label.trim() ? `Arrow: ${snippet(arrow.label.trim())}` : "Arrow with a lost end"}</span>
+      <button type="button" aria-label="Move orphan arrow to trash" onClick={() => removeMark(arrow.id)}>×</button>
     </span>)}
   </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}</>;
 
@@ -654,26 +934,55 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
       <GlassInk editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
         eraser={eraserMode} api={inkApi} onHistory={inkHistoryChange} onNotice={setNotice} />
-      {tool === "sticky" && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
+      {(tool === "sticky" || tool === "sticker") && note && <div className="glass-surface" data-glass-surface onPointerDown={event => {
         if (event.button !== 0) return;
         event.preventDefault();
-        create({ x: event.clientX, y: event.clientY });
+        if (tool === "sticker") placeSticker({ x: event.clientX, y: event.clientY });
+        else create({ x: event.clientX, y: event.clientY });
       }} />}
       {layout.fixture && (layout.fixture.status === "resolved"
         ? <div className="glass-debug" data-glass-object="fixture" data-glass-status="resolved"
             style={{ left: `${layout.fixture.x}px`, top: `${layout.fixture.y}px`, width: `${layout.fixture.width}px`, height: `${layout.fixture.height}px` }} />
         : <div className="glass-debug" data-glass-object="fixture" data-glass-status="orphan" />)}
       {visible.map(stickie => <StickyView key={stickie.id} note={stickie} place={layout.places[stickie.id]} selected={selected === stickie.id}
-        editing={editing === stickie.id} onSelect={() => { setSelected(stickie.id); setEditing(undefined); }}
+        editing={editing === stickie.id} onSelect={() => { setSelected(stickie.id); setSelectedArrow(undefined); setEditing(undefined); }}
         onEdit={editingNow => setEditing(editingNow ? stickie.id : undefined)}
-        onText={text => { update(stickie.id, { text }); void send({ action: "set", magnet: stickie.id, fields: { text } }); }}
-        onFold={folded => { update(stickie.id, { folded }); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
-        onColor={color => { update(stickie.id, { color }); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
-        onDelete={() => remove(stickie)} />)}
+        onText={text => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, text } : item)); void send({ action: "set", magnet: stickie.id, fields: { text } }); }}
+        onFold={folded => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, folded } : item)); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
+        onColor={color => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, color } : item)); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
+        onDelete={() => removeMark(stickie.id)} />)}
       {above.map(frame)}
       {under.map(frame)}
+      {visibleStickers.map(sticker => <StickerView key={sticker.id} sticker={sticker} place={layout.places[sticker.id]} selected={selected === sticker.id}
+        onSelect={() => { setSelected(sticker.id); setSelectedArrow(undefined); }}
+        onRotate={rotate => { setStickers(current => current.map(item => item.id === sticker.id ? { ...item, rotate } : item)); void send({ action: "set", magnet: sticker.id, fields: { rotate } }); }}
+        onNudge={(dx, dy) => {
+          const x = snapped(sticker.x + dx), y = snapped(sticker.y + dy);
+          setStickers(current => current.map(item => item.id === sticker.id ? { ...item, x, y } : item));
+          void send({ action: "set", magnet: sticker.id, fields: { x, y } });
+        }}
+        onDelete={() => removeMark(sticker.id)} />)}
+      {note && (arrows.length > 0 || tool === "arrow") && <ArrowOverlay routes={layout.routes} arrows={arrows} selected={selectedArrow} view={viewport} names={layout.names}
+        tool={tool === "arrow"} style={arrowStyle} color={arrowColor} scroller={scroller} hitTest={hitTest}
+        onCreate={createArrow} onSelect={id => { setSelectedArrow(id); if (id) setSelected(undefined); }}
+        onDelete={removeMark} onUpdate={updateArrow} onMissing={() => setNotice("Start on a paragraph or a sticker.")} />}
     </div>, scroller)}
     {createPortal(<div className="glass-under" data-glass-under><div className="glass-under-host" ref={setUnderHost} /></div>, scroller)}
     {createPortal(panel, document.body)}
   </>;
+}
+
+// The jump chip names the far end: a page element's kind and words, or the mark itself.
+function endName(end: ArrowMark["from"], list: readonly PageElement[], ends: ArrowEndContext,
+  latest: { magnets: StickyNote[]; stickers: StickerMark[] }) {
+  if (end.kind === "magnet") {
+    const sticky = latest.magnets.find(item => item.id === end.magnet);
+    if (sticky) return sticky.text.trim() ? snippet(sticky.text.trim()) : "Sticky note";
+    const sticker = latest.stickers.find(item => item.id === end.magnet);
+    return sticker ? stickerName(sticker) : "Glass mark";
+  }
+  const line = ends.line(end.anchor);
+  const candidates = line === null ? [] : list.filter(element => element.blockLine === line);
+  const element = candidates.find(item => item.id === end.element) ?? candidates[0];
+  return element ? `${elementKindName(element.kind)}: ${snippet(element.text)}` : "Page element";
 }
