@@ -42,6 +42,60 @@ jobs:
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"
 
+  chaos:
+    # Daily-life chaos rows: unprivileged everywhere, plus the FUSE helper (no root at run time).
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y fuse3 libfuse3-dev gcc pkg-config
+      - run: node tests/chaos/run.mjs --group js --json chaos-js.json
+      - run: node tests/chaos/run.mjs --group fuse --json chaos-fuse.json
+      - run: node tests/chaos/run.mjs --group regressions --json chaos-regressions.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-results
+          path: chaos-*.json
+
+  chaos-drives:
+    # Real loop-mounted vfat/exFAT/NTFS sticks. Needs passwordless sudo for losetup and mount;
+    # the job prints that requirement and exits green when the runner has none.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y dosfstools exfatprogs ntfs-3g util-linux e2fsprogs
+      - name: Drive-image rows (root)
+        run: |
+          if sudo -n true 2>/dev/null; then
+            sudo -n env PATH="$PATH" node tests/chaos/run.mjs --group drives --strict --json chaos-drives.json
+          else
+            echo "::notice::drives rows skipped: this runner needs passwordless sudo, losetup, mount, mkfs.vfat, mkfs.exfat, mkfs.ntfs"
+            echo "drives rows skipped: runner needs passwordless sudo + loop devices (see tests/chaos/README.md)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-drives
+          path: chaos-drives.json
+          if-no-files-found: ignore
+
   macos-native:
     # Fleet CI is Ubicloud Linux; the macOS runner is GitHub-hosted and runs
     # only on manual dispatch.

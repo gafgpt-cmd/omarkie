@@ -7,7 +7,7 @@ const networkFileSystems = new Set(["fuse", "fuseblk", "fuse.sshfs", "fuse.rclon
 
 const quietFor = 300;
 const maxWait = 2_000;
-const pollEvery = 5_000;
+const pollEveryDefault = 5_000;
 
 export function ignoredPath(relative) {
   return relative.split("/").some(part => ignored.includes(part));
@@ -18,9 +18,9 @@ function relativeOf(root, file) {
   return value.startsWith("..") || path.isAbsolute(value) ? null : value.split(path.sep).join("/");
 }
 
-export async function pollingRequired(root, env = process.env) {
-  if (["1", "true", "yes"].includes(String(env.OMARKIE_GLASS_POLL ?? "").toLowerCase())) return true;
-  if (process.platform !== "linux") return false;
+// The filesystem under a path, from the longest mount prefix. No root needed.
+export async function mountInfo(root) {
+  if (process.platform !== "linux") return null;
   try {
     const mounts = (await readFile("/proc/mounts", "utf8")).split("\n").filter(Boolean).map(line => {
       const [device, mount, type] = line.split(" ");
@@ -31,8 +31,15 @@ export async function pollingRequired(root, env = process.env) {
       if (!mount.mount || !root.startsWith(mount.mount === "/" ? "/" : `${mount.mount}/`) && root !== mount.mount) continue;
       if (!best || mount.mount.length > best.mount.length) best = mount;
     }
-    return !!best && networkFileSystems.has(best.type) || !!best?.device?.startsWith("//");
-  } catch { return false; }
+    return best;
+  } catch { return null; }
+}
+
+export async function pollingRequired(root, env = process.env) {
+  if (["1", "true", "yes"].includes(String(env.OMARKIE_GLASS_POLL ?? "").toLowerCase())) return true;
+  if (process.platform !== "linux") return false;
+  const best = await mountInfo(root);
+  return !!best && networkFileSystems.has(best.type) || !!best?.device?.startsWith("//");
 }
 
 async function snapshot(root) {
@@ -57,7 +64,7 @@ async function snapshot(root) {
 }
 
 // Native inotify when present, Node's recursive watch otherwise, polling for network and FUSE mounts.
-export async function createWatcher({ root, onBatch, env = process.env, onMode } = {}) {
+export async function createWatcher({ root, onBatch, env = process.env, onMode, pollEvery = pollEveryDefault } = {}) {
   let closed = false, mode = "none", subscription = null, nodeWatcher = null, pollTimer = null, previous = null;
   let pending = new Map(), quietTimer = null, maxTimer = null;
 

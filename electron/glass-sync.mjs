@@ -3,7 +3,7 @@ import { lstat, opendir, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { GlassFinder } from "./glass-finder.mjs";
 import { GlassIndex } from "./glass-index.mjs";
-import { createWatcher, ignoredPath } from "./glass-watcher.mjs";
+import { createWatcher, ignoredPath, mountInfo } from "./glass-watcher.mjs";
 import { isNotePath, noteKey, planMoves } from "../shared/glass-moves.mjs";
 
 
@@ -27,6 +27,15 @@ function shapeOf(head, fileName) {
 }
 
 const missing = error => { if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error; return null; };
+
+// FAT and exFAT stamp whole seconds (2 s on FAT), so size plus an equal mtime is not proof of
+// unchanged content: a same-size edit inside the stamp window keeps the old signature.
+const coarseTypes = new Set(["vfat", "fat", "msdos", "umsdos", "exfat"]);
+const coarseStamp = value => Number.isFinite(value) && value % 1_000 === 0;
+async function coarseFilesystem(root) {
+  const mount = await mountInfo(root).catch(() => null);
+  return !!mount && coarseTypes.has(mount.type);
+}
 
 // One index, one watcher and one mover per open vault.
 export class GlassSync {
@@ -190,8 +199,9 @@ export class GlassSync {
     this.indexed = 0;
     this.error = null;
     try {
-      const previous = new Map((await this.index.request("snapshot")).map(row => [row.path, row]));
+      const previous = new Map((await this.requestIndex("snapshot")).map(row => [row.path, row]));
       const entries = await this.walk();
+      this.coarseFs = await coarseFilesystem(this.root);
       const sample = entries.find(entry => entry.kind === "note")?.path;
       this.caseInsensitive = await this.detectCase(sample);
       await this.rebuildNoteKeys();
@@ -203,7 +213,7 @@ export class GlassSync {
       let batch = [];
       const flush = async () => {
         if (!batch.length) return;
-        await this.index.request("files", { files: batch });
+        await this.requestIndex("files", { files: batch });
         indexed += batch.length;
         this.indexed = indexed;
         batch = [];
@@ -217,7 +227,8 @@ export class GlassSync {
           const prior = previous.get(entry.path);
           const noteId = this.noteFor(entry.path)?.id ?? null;
           if (entry.kind === "note") {
-            if (prior?.hash && prior.size === entry.size && prior.mtime === entry.mtime) {
+            if (prior?.hash && prior.size === entry.size && prior.mtime === entry.mtime
+              && !this.coarseFs && !coarseStamp(entry.mtime)) {
               if (prior.note_id !== noteId) batch.push({ ...entry, noteId });
               return;
             }
@@ -235,7 +246,7 @@ export class GlassSync {
       await flush();
 
       const stale = [...previous.keys()].filter(file => !seen.has(file));
-      if (stale.length) await this.index.request("remove", { paths: stale });
+      if (stale.length) await this.requestIndex("remove", { paths: stale });
 
       for (const reading of readings) {
         const note = this.noteFor(reading.path);
@@ -245,6 +256,20 @@ export class GlassSync {
           .catch(error => { this.error = error.message; });
       }
 
+      // A case-insensitive drive folds `Kerma.md` and `kerma.md` onto one file: follow the spelling
+      // the drive now reports, so the stored path can never go stale after a case-only rename.
+      if (this.caseInsensitive) {
+        const folded = new Map([...seen].map(pathName => [caseFold(pathName), pathName]));
+        for (const note of tracked) {
+          if (seen.has(note.path)) continue;
+          const actual = folded.get(caseFold(note.path));
+          if (!actual || actual === note.path) continue;
+          if (!this.service.readOnly) {
+            await this.service.recordMove(note, actual).catch(error => { this.error = error.message; });
+          }
+        }
+        if (tracked.length) await this.rebuildNoteKeys();
+      }
       const present = this.caseInsensitive && tracked.length ? new Set([...seen].map(caseFold)) : seen;
       const missingNotes = tracked.filter(note => !present.has(caseFold(note.path)));
       this.lost = [];
@@ -321,7 +346,7 @@ export class GlassSync {
   }
 
   async publishNotes() {
-    await this.index.request("notes", { notes: this.service.currentNotes().map(note => ({ id: note.id, path: note.path,
+    await this.requestIndex("notes", { notes: this.service.currentNotes().map(note => ({ id: note.id, path: note.path,
       title: note.title, fingerprint: note.fingerprint ?? null })) });
   }
 
@@ -347,7 +372,7 @@ export class GlassSync {
     const magnets = await this.service.magnetsForIndex().catch(() => []);
     const signature = magnets.map(magnet => `${magnet.id}:${magnet.text}:${magnet.noteId}`).join("\n");
     if (signature === this.magnetSignature) return;
-    await this.index.request("magnets", { magnets });
+    await this.requestIndex("magnets", { magnets });
     this.magnetSignature = signature;
   }
 
@@ -372,6 +397,8 @@ export class GlassSync {
 
   async applyEvents(events) {
     if (this.closed) return;
+    // A sync client dropping a journal copy is an event the note watcher can never see.
+    const absorbed = await this.service.absorbConflictCopies().catch(error => { this.error = error.message; return null; });
     let full = false;
     const removed = new Set();
     const readings = [];
@@ -404,10 +431,15 @@ export class GlassSync {
         files.push({ ...reading, noteId: note.id });
       } else files.push({ path: relative, kind, size: metadata.size, mtime: metadata.mtimeMs, noteId: null });
     }
-    if (files.length) await this.index.request("files", { files });
-    if (removed.size) await this.index.request("remove", { paths: [...removed] });
+    if (files.length) await this.requestIndex("files", { files });
+    if (removed.size) await this.requestIndex("remove", { paths: [...removed] });
     if (full) return this.scan("directory-change");
-    return this.reconcile({ removed, readings });
+    const status = await this.reconcile({ removed, readings });
+    if (absorbed?.lines) {
+      await this.publishNotes();
+      await this.publishMagnets();
+    }
+    return status;
   }
 
   async reconcile({ removed, readings }) {
@@ -470,7 +502,7 @@ export class GlassSync {
     const reading = await this.readNote({ path: relative, size: metadata.size, mtime: metadata.mtimeMs, kind: "note" });
     if (!reading) return null;
     reading.noteId = this.noteFor(relative)?.id ?? null;
-    await this.index.request("files", { files: [reading] });
+    await this.requestIndex("files", { files: [reading] });
     await this.rebuildNoteKeys();
     return reading.path;
   }
