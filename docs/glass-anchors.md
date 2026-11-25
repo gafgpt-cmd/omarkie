@@ -36,6 +36,7 @@ Version 1 (`{"kind":"block", block, headings, line}`) still reads. Unknown ops s
 | < 0.5 | tray | "Check placement" list, old context, one click |
 
 A tie never guesses: two identical paragraphs in the same section go to the tray.
+A badge sits below its paragraph without covering its text. Multiple magnets on one paragraph wrap. The tray stays above the status bar.
 
 ## Matching
 

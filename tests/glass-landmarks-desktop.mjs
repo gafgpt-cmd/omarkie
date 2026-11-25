@@ -10,6 +10,7 @@ import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { requestBridge } from "../electron/tutor-transport.mjs";
 
 const home = await mkdtemp(path.join(os.tmpdir(), "omarkie-glass-landmarks-"));
 const vault = path.join(home, "vault"), doc = "landmarks.md", file = path.join(vault, doc);
@@ -122,6 +123,28 @@ async function inspect(page, expected) {
 async function capture(page, name) {
   if (qa) await page.screenshot({ path: path.join(qa, `glass-g2b-${name}.png`) });
 }
+async function inspectPlacementLayout(page) {
+  await expect.poll(() => page.locator(".glass-magnet-row").evaluateAll(rows => rows.length > 0 && rows.every(row => {
+    const origin = row.closest(".study-placement").getBoundingClientRect();
+    const badges = [...row.children].map(badge => badge.getBoundingClientRect());
+    return badges.every((badge, i) => badge.left >= origin.left && badge.right <= origin.right &&
+      badges.slice(0, i).every(other => badge.top >= other.bottom || badge.left >= other.right));
+  }))).toBe(true);
+  const readable = page.locator(".rich-document").getByText("Gamma paragraph now covers interleaving different topics.", { exact: true });
+  const check = page.locator('[data-glass-object="m-g2b-3"]');
+  await expect(check.getByText("check me", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const [badge, text] = await Promise.all([check.boundingBox(), readable.boundingBox()]);
+    return !!badge && !!text && badge.y >= text.y + text.height;
+  }).toBe(true);
+  await expect.poll(async () => {
+    const [tray, status] = await Promise.all([
+      page.getByRole("complementary", { name: "Check placement" }).boundingBox(),
+      page.locator(".statusbar").boundingBox(),
+    ]);
+    return !!tray && !!status && tray.y + tray.height <= status.y;
+  }).toBe(true);
+}
 
 const first = await open();
 try {
@@ -133,6 +156,7 @@ try {
 
 await writeFile(file, edited, "utf8");
 await writeFile(path.join(home, "session.json"), JSON.stringify(session(edited)), "utf8");
+const replacement = "Delta paragraph about mixing three problem types.";
 
 const second = await open();
 try {
@@ -144,9 +168,11 @@ try {
   assert.equal(byId["m-g2b-3"].confidence, "check", "a rewritten paragraph lands dotted, not silently");
   assert.deepEqual(result.trayIds, ["m-g2b-5"], "a deleted paragraph waits in the tray");
   assert.deepEqual(second.errors, []);
+  await inspectPlacementLayout(second.page);
   await capture(second.page, "light-1440-tray");
   await second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 900));
   await expect.poll(() => second.page.evaluate(() => innerWidth)).toBe(720);
+  await inspectPlacementLayout(second.page);
   await capture(second.page, "light-720-tray");
   await second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
   await expect.poll(() => second.page.evaluate(() => innerWidth)).toBe(1440);
@@ -161,24 +187,55 @@ try {
     await expect(second.page.locator("[data-glass-tray-item]")).toHaveCount(1);
   }
   await reloadTheme("omarchy-dark");
+  await inspectPlacementLayout(second.page);
   await capture(second.page, "dark-1440-tray");
   await second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(720, 900));
   await expect.poll(() => second.page.evaluate(() => innerWidth)).toBe(720);
+  await inspectPlacementLayout(second.page);
   await capture(second.page, "dark-720-tray");
   await second.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
   await expect.poll(() => second.page.evaluate(() => innerWidth)).toBe(1440);
   await reloadTheme("light");
   const tray = second.page.locator('[data-glass-tray-item="m-g2b-5"] button');
-  await tray.click();
+  await tray.press("Enter");
+  await expect(second.page.getByRole("status").filter({ hasText: "Click the paragraph this magnet belongs to." })).toBeVisible();
+  await capture(second.page, "light-1440-placing");
   await second.rich.locator('[data-cid]', { hasText: "Delta paragraph about mixing problem types." }).click();
   await expect(second.page.locator(".glass-tray")).toHaveCount(0);
   await expect(second.page.locator(".glass-magnet")).toHaveCount(5);
   const moved = await second.page.locator('[data-glass-object="m-g2b-5"]').getAttribute("data-glass-confidence");
   assert.equal(moved, "placed", "clicking a paragraph re-anchors the tray magnet");
+  const badges = second.page.locator(".glass-magnet-row").filter({ has: second.page.locator('[data-glass-object="m-g2b-5"]') });
+  await expect(badges.locator(".glass-magnet")).toHaveCount(2);
+  await expect.poll(async () => {
+    const [delta, epsilon] = await Promise.all(["4", "5"].map(id => badges.locator(`[data-glass-object="m-g2b-${id}"]`).boundingBox()));
+    return !!delta && !!epsilon && (epsilon.x >= delta.x + delta.width || delta.x >= epsilon.x + epsilon.width ||
+      epsilon.y >= delta.y + delta.height || delta.y >= epsilon.y + epsilon.height);
+  }, { message: "Two magnets on the same paragraph do not overlap" }).toBe(true);
   assert.equal((await readFile(file, "utf8")), edited, "glass never rewrites the page");
   await capture(second.page, "light-1440-replaced");
   const listed = await axi("glass", "list", "--note", doc);
   assert.equal(listed.magnets.length, 5, "no magnet is deleted while re-anchoring");
+  await second.rich.getByText(magnets[3], { exact: true }).selectText();
+  await second.page.keyboard.press("Alt+Enter");
+  await expect(second.page.getByRole("group", { name: "Selection actions" })).toBeVisible();
+  await second.page.keyboard.press("p");
+  const tutor = second.page.getByRole("complementary", { name: "Tutor", exact: true });
+  const instructions = tutor.getByRole("textbox", { name: "Instructions (optional)" });
+  await instructions.fill("Specify three problem types."); await instructions.press("Enter");
+  await expect.poll(() => requestBridge(vault, { op: "home" }, 1200).then(value => value?.asks[0]?.verb)).toBe("propose");
+  const { ask } = await requestBridge(vault, { op: "poll", owner: "Fixture tutor" }, 3_000);
+  assert.equal(ask.paragraph, magnets[3]);
+  await requestBridge(vault, { op: "reply", id: ask.id, text: replacement }, 3_000);
+  await tutor.getByRole("button", { name: "Accept into Markdown", exact: true }).click();
+  await expect(second.rich.getByText(replacement, { exact: true })).toBeVisible();
+  await second.page.keyboard.press("ControlOrMeta+s");
+  await expect.poll(() => readFile(file, "utf8")).toBe(edited.replace(magnets[3], replacement));
+  await expect.poll(async () => {
+    const { magnets: stored } = await axi("glass", "list", "--note", doc);
+    const quotes = new Map(stored.map(magnet => [magnet.id, magnet.fields.anchor.landmarks.find(landmark => landmark.kind === "quote").value.exact]));
+    return [3, 4, 5].map(id => quotes.get(`m-g2b-${id}`));
+  }).toEqual([magnets[2], replacement, replacement]);
   assert.deepEqual(second.errors, []);
   console.log("PASS: five debug magnets survive insert, move, rewrite, section reorder and delete; deleted one re-anchors from the tray");
 } finally { await second.app.close(); }

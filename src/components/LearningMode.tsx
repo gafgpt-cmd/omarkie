@@ -42,12 +42,12 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
+export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, tutor, askPayload, openFiles, openCard, openSearchHit, cards }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; glass: boolean;
+  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean;
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -498,7 +498,6 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     tucks: [...(ink.get(line) ?? []).map(inkCard), ...scraps.filter(scrap => !scrap.folded).map(scrap => scrapCard(scrap))],
   });
   const root = context && rendered ? document.querySelector<HTMLElement>(".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden]) > .rich-document") : null;
-  const scroller = root?.parentElement instanceof HTMLElement ? root.parentElement : null;
   const floats = !peek && root && context ? context.nodes.flatMap(node => {
     const images = byLine.get(node.line)?.images;
     return images?.length ? [{ blockId: node.id, content: images.map(scrap => imageCard(scrap, true)) }] : [];
@@ -559,8 +558,9 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </div>
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
-    {scroller && glass && <GlassLayer key={id} editor={editor} scroller={scroller} note={note} saved={saved} />}
-    {root && context && groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />}
+    {root && context && (glass
+      ? <GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved} />
+      : groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />)}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}
     {saved && !peek && !tutor?.open && (loose.length > 0 || looseInk.length > 0 || picking || dragging || cards) && <div className="layers-right study-right" data-drop-only={!!dragging && !loose.length && !looseInk.length && !cards || undefined}>

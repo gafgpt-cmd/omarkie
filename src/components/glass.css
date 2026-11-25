@@ -35,22 +35,28 @@
 }
 
 /* G2b: landmark magnets. Solid = placed; dotted = check me; tray = no confident home. */
+.glass-magnet-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .glass-magnet {
-  position: absolute;
-  z-index: 1;
-  transform: translate(-50%, -50%);
-  max-width: 200px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(250px, 100%);
   padding: 2px 9px;
   border: 1px solid var(--accent);
   border-radius: 999px;
   background: var(--paper);
   color: var(--accent);
-  font: 11px/1.7 var(--interface-font, inherit);
+  font: 12px/1.6 var(--interface-font, system-ui);
   white-space: nowrap;
   pointer-events: none;
 }
 .glass-magnet > span {
-  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -58,21 +64,11 @@
   border-width: 2px;
   border-style: dotted;
 }
-.glass-magnet[data-glass-confidence="check"]::after {
-  content: "check me";
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  padding: 0 4px;
-  background: var(--paper);
-  color: var(--accent);
-  font-size: 10px;
-  white-space: nowrap;
-}
+.glass-magnet small { font-size: 10px; }
 .glass-tray {
   position: fixed;
   right: 16px;
-  bottom: 16px;
+  bottom: 38px;
   z-index: 20;
   width: min(340px, calc(100vw - 32px));
   max-height: min(50vh, 420px);
