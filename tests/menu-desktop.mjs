@@ -146,8 +146,21 @@ async function sourceText() {
   await command("source");
   return text;
 }
-try {
-  await launch();
+async function auditFontRestart() {
+  await preferences().getByLabel("Text font", { exact: true }).selectOption("literata");
+  await preferences().getByLabel("Heading font", { exact: true }).selectOption("inter");
+  await preferences().getByLabel("Code font", { exact: true }).selectOption("jetbrains-mono");
+  await preferences().getByLabel("Interface font", { exact: true }).selectOption("lato");
+  await preferences().getByLabel("Body font size", { exact: true }).fill("19");
+  await application.close(); await launch();
+  await expect(rich()).toHaveCSS("font-size", "19px");
+  await expect(rich()).toHaveCSS("font-family", /Literata/);
+  await expect(rich().locator("h1")).toHaveCSS("font-family", /Inter/);
+  await expect(rich().locator(".fence-body:visible").first()).toHaveCSS("font-family", /JetBrains/);
+  await expect(page.locator(".menu-bar-item > button").first()).toHaveCSS("font-family", /Lato/);
+  pass("Font and size restart persistence", "19 px Literata survives a full app restart");
+}
+async function auditFull() {
   await expect.poll(() => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("bold").enabled)).toBe(true);
   await command("source");
   await expect.poll(() => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("bold").enabled)).toBe(false);
@@ -243,18 +256,7 @@ try {
     await size.fill(String(n)); await expect(rich()).toHaveCSS("font-size", `${n}px`);
   }
   pass("Body font size increase/decrease/bounds", "Computed font size follows the control from 12 to 28 px");
-  await preferences().getByLabel("Text font", { exact: true }).selectOption("literata");
-  await preferences().getByLabel("Heading font", { exact: true }).selectOption("inter");
-  await preferences().getByLabel("Code font", { exact: true }).selectOption("jetbrains-mono");
-  await preferences().getByLabel("Interface font", { exact: true }).selectOption("lato");
-  await size.fill("19");
-  await application.close(); await launch();
-  await expect(rich()).toHaveCSS("font-size", "19px");
-  await expect(rich()).toHaveCSS("font-family", /Literata/);
-  await expect(rich().locator("h1")).toHaveCSS("font-family", /Inter/);
-  await expect(rich().locator(".fence-body:visible").first()).toHaveCSS("font-family", /JetBrains/);
-  await expect(page.locator(".menu-bar-item > button").first()).toHaveCSS("font-family", /Lato/);
-  pass("Font and size restart persistence", "19 px Literata survives a full app restart");
+  await auditFontRestart();
   await menu("Omarkie", "Preferences…");
   await preferences().getByRole("button", { name: "Restore Toypora classic reading", exact: true }).click({ force: true });
   await expect(rich()).toHaveCSS("font-size", "16px");
@@ -991,6 +993,15 @@ try {
     assert.deepEqual(visible.filter(item => !invokedActions.has(item.action)).map(item => item.action), []);
     pass("Menu inventory coverage", "Every supported shared command was invoked in the built app", `${visible.length} supported commands; unsupported window/tab entries hidden`);
   }
+}
+try {
+  await launch();
+  if (process.argv.includes("--font-restart-only")) {
+    await page.getByRole("button", { name: "space-explainer.md", exact: true }).click({ force: true });
+    await expect(rich().getByRole("heading", { name: /How Far Is a Light-Year/ })).toBeVisible();
+    await menu("Omarkie", "Preferences…");
+    await auditFontRestart();
+  } else await auditFull();
   assert.deepEqual(errors, []);
   assert.deepEqual(checks.filter(check => check.result === "FAIL"), []);
   completed = true;

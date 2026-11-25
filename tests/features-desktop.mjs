@@ -133,7 +133,6 @@ try {
   await page.keyboard.press("F9");
   passed.push("F8 dims inactive blocks and F9 toggles typewriter scrolling");
   await page.keyboard.press("ControlOrMeta+,");
-  const preferences = page.getByRole("dialog", { name: "偏好设置", exact: true });
   await preferences.getByLabel("高亮：==文字==").uncheck();
   await expect(rich.locator("mark")).toHaveCount(0);
   await preferences.getByLabel("高亮：==文字==").check();

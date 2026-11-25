@@ -69,6 +69,7 @@ The screenshots use five of the built-in themes: Toyzetlr, Toypora, Toyzetlr Nig
 | **White paper · Omarchy headings** | Classic white page | Omarchy headings, Liberation Sans text |
 
 Under **Preferences → Fonts**, choose the text, heading, code and interface fonts independently: Open Sans, PT Serif, Merriweather, Lato, Vollkorn, Literata, Inter, JetBrains Mono, Arimo, Tinos, your available Omarchy font, or the system fonts. Local-only fonts appear when they are installed. **Restore Toypora classic reading** brings back the classic set in one click.
+On Electron, font and size changes survive an immediate quit. No extra Save step.
 
 | Toypora | Omarchy | Fonts |
 | --- | --- | --- |
