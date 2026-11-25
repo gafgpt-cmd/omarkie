@@ -6,6 +6,9 @@ import budgets from "./perf-budgets.json" with { type: "json" };
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import { runGlassIndexScale } from "./glass-index-fixture.mjs";
 
+// Display cadence is only asserted on a real compositor: OMARKIE_REAL_COMPOSITOR=1 ./scripts perf run.
+// CI and Xvfb draw in software, so the desktop suites assert handler work and long tasks instead
+// (tests/frame-cadence.mjs).
 const runs = Number(process.env.OMARKIE_PERF_RUNS ?? 3);
 assert.ok(Number.isSafeInteger(runs) && runs > 0, "OMARKIE_PERF_RUNS must be a positive integer");
 assert.ok(process.platform !== "linux" || process.env.OMARKIE_TEST_DISPLAY, "Linux performance checks require an isolated X display via OMARKIE_TEST_DISPLAY; see README.");

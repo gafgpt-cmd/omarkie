@@ -15,7 +15,7 @@ interface Props {
   style: ArrowStyle;
   color: ArrowColor;
   scroller: HTMLElement;
-  hitTest(x: number, y: number): Hit | undefined;
+  hitTest(x: number, y: number, known?: DOMRect): Hit | undefined;
   onCreate(from: ArrowEnd, to: ArrowEnd): void;
   onSelect(id?: string): void;
   onDelete(id: string): void;
@@ -153,27 +153,36 @@ export default function ArrowOverlay(props: Props) {
   }, []);
 
   useEffect(() => {
-    let scrollTime: number | undefined;
+    let scrollTime: number | undefined, zoneRect: DOMRect | undefined, pageRect: DOMRect | undefined, rectFor: Drag | undefined;
     const step = (time: number) => {
       frame.current = undefined;
       const point = last.current, state = drag.current;
       last.current = undefined;
       if (!point || !state) return;
       const current = live.current;
-      const rect = current.scroller.getBoundingClientRect(), zone = 52;
+      // One layout read per frame: the zone and page rects only move when this drag scrolls.
+      if (rectFor !== state) { rectFor = state; pageRect = undefined; zoneRect = undefined; }
+      const rect = zoneRect ??= current.scroller.getBoundingClientRect();
+      const zone = 52;
       const direction = point.y < rect.top + zone ? -1 : point.y > rect.bottom - zone ? 1 : 0;
       if (direction) {
         const delta = Math.min(64, Math.max(0, time - (scrollTime ?? time - 16.7)));
         current.scroller.scrollBy(0, direction * delta * 1.1);
+        zoneRect = undefined;
+        pageRect = undefined;
         scrollTime = time;
         last.current = point;
         frame.current = requestAnimationFrame(step);
       } else scrollTime = undefined;
-      const at = local(point.x, point.y);
-      const hit = current.hitTest(point.x, point.y);
+      // The product's own work for this frame: hit test, geometry and the two path writes.
+      const own = performance.now();
+      const pageBox = pageRect ??= root.current?.getBoundingClientRect();
+      const at = pageBox ? { x: point.x - pageBox.left, y: point.y - pageBox.top } : { x: point.x, y: point.y };
+      const hit = current.hitTest(point.x, point.y, pageBox);
       if ("end" in state) redrawEnd(state, at);
       else drawPreview(at);
       showSnap(hit);
+      document.documentElement.dataset.glassArrowMs = (performance.now() - own).toFixed(2);
     };
     const move = (event: PointerEvent) => {
       if (!drag.current) return;

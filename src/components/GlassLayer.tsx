@@ -692,6 +692,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         },
         move(event) {
           if (!drag) return;
+          const startedAt = performance.now();
           const dx = event.pageX - drag.pageX, dy = event.pageY - drag.pageY;
           let x = dx, y = dy;
           if (drag.place) {
@@ -701,6 +702,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
             y += result.y - proposal.y;
           }
           drag.element.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+          surface.dataset.dragMs = (performance.now() - startedAt).toFixed(2);
         },
         end(event) {
           const start = drag;
@@ -963,24 +965,28 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
   }, [send]);
 
-  const hitTest = useCallback((clientX: number, clientY: number): Hit | undefined => {
+  const hitTest = useCallback((clientX: number, clientY: number, known?: DOMRect): Hit | undefined => {
     const surface = layer.current;
     if (!surface) return;
-    const frame = surface.getBoundingClientRect();
+    // A drag frame already read this rect; the second read would force another layout.
+    const frame = known ?? surface.getBoundingClientRect();
     const x = clientX - frame.left, y = clientY - frame.top;
     let best: { hit: Hit; area: number } | undefined;
     const inside = (box: { x: number; y: number; width: number; height: number }) =>
       x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
-    for (const [id, mark] of Object.entries(placesRef.current)) {
-      if (mark.status !== "resolved" || !inside(mark)) continue;
+    // No per-frame allocation: this runs inside every drag frame over the whole page.
+    for (const id in placesRef.current) {
+      const mark = placesRef.current[id];
+      if (!mark || mark.status !== "resolved" || !inside(mark)) continue;
       const sticky = latest.current.magnets.find(item => item.id === id);
       const sticker = latest.current.stickers.find(item => item.id === id);
       const area = mark.width * mark.height;
       if (!best || area < best.area) best = { area, hit: { end: { kind: "magnet", magnet: id }, box: mark,
         name: sticky ? (sticky.text.trim() ? snippet(sticky.text.trim()) : "Sticky note") : sticker ? stickerName(sticker) : "Glass mark" } };
     }
-    for (const [id, box] of Object.entries(elementBoxes.current)) {
-      if (!inside(box)) continue;
+    for (const id in elementBoxes.current) {
+      const box = elementBoxes.current[id];
+      if (!box || !inside(box)) continue;
       const area = box.width * box.height;
       if (best && area >= best.area) continue;
       const element = elements.current.list.find(item => item.id === id);
