@@ -134,7 +134,10 @@ const flowCard = page => page.locator('.glass-card[data-card-kind="flow"]');
     await expect(calc.locator("[data-card-value]")).toHaveText("480");
     await calc.locator('[data-card-input="weight"] input').fill("70");
 
-    // A mismatched output unit is refused with the unit named.
+    // A mismatched output unit is refused with the unit named. Fold the open card first: its panel
+    // floats over the page and would swallow the click on the paragraph below it.
+    await calc.locator("[data-card-pill]").click();
+    await expect(calc.locator("[data-card-panel]")).toHaveCount(0);
     await rich.locator("p[data-cid]", { hasText: secondLine }).click();
     const mismatch = await openDialog(page, "calc");
     await mismatch.locator("[data-card-new-title]").fill("Wrong unit");
