@@ -142,6 +142,7 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  content-visibility: auto;
   pointer-events: auto;
   border: 1px solid var(--note-edge);
   border-radius: 3px;
@@ -590,3 +591,113 @@
 .glass-palette-colour[aria-pressed="true"] { outline: 2px solid var(--ink, #333); outline-offset: 1px; }
 .glass-palette-tip { display: block; width: 16px; border-radius: 999px; background: currentColor; }
 [data-appearance="dark"] .glass-palette { background: color-mix(in srgb, var(--paper, #222) 92%, #6b6250); }
+
+/* G9: cards are short links in the margin. A pill unfolds in place; the page never reflows. */
+.glass-card {
+  position: absolute;
+  z-index: 2;
+  max-width: min(300px, calc(100vw - 24px));
+  color: var(--ink, #333);
+  font: 12px/1.45 var(--interface-font, system-ui, sans-serif);
+  pointer-events: auto;
+}
+.glass-card:not([data-folded]) { z-index: 3; }
+.glass-card-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent, #326eaa) 45%, var(--border, #ccc));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper, #fff) 94%, var(--accent, #326eaa));
+  color: var(--accent, #326eaa);
+  font: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 2px #0000000f;
+}
+.glass-card-pill:hover, .glass-card-pill:focus-visible { background: color-mix(in srgb, var(--accent, #326eaa) 10%, var(--paper, #fff)); outline: none; }
+.glass-card-pill:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #326eaa) 45%, transparent); }
+.glass-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.glass-card-kind { flex: none; color: var(--muted, #777); font-size: 9px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.glass-card-chevron { flex: none; transition: transform 130ms ease; }
+[data-folded] .glass-card-chevron { transform: rotate(-90deg); }
+.glass-card-panel {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  width: max-content;
+  min-width: 230px;
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: min(60vh, 440px);
+  overflow: auto;
+  padding: 9px 11px 10px;
+  border: 1px solid var(--border, #ccc);
+  border-right: 2px solid var(--accent, #326eaa);
+  border-radius: 8px;
+  background: var(--paper, #fff);
+  color: var(--ink, #333);
+  box-shadow: 0 10px 28px -14px #00000073;
+  animation: glass-card-unfold 130ms cubic-bezier(0.2, 0.8, 0.3, 1);
+  transform-origin: top right;
+}
+@keyframes glass-card-unfold { from { opacity: 0; transform: translateX(4px) scale(0.98); } }
+@media (prefers-reduced-motion: reduce) { .glass-card-panel { animation: none; } .glass-card-chevron { transition: none; } }
+.glass-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.glass-card-heading { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-weight: 600; }
+.glass-card-heading svg { flex: none; color: var(--accent, #326eaa); }
+.glass-card-actions { display: flex; align-items: center; gap: 4px; }
+.glass-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  white-space: nowrap;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted, #777);
+  font: 11px/1 inherit;
+  cursor: pointer;
+}
+.glass-card-actions button:hover, .glass-card-actions button:focus-visible { border-color: var(--border, #ccc); color: var(--ink, #333); outline: none; }
+.glass-card-source { margin: 6px 0 0; color: var(--muted, #777); font-size: 10px; overflow-wrap: anywhere; }
+.glass-card-panel .payload-result { margin-top: 6px; font-size: 12px; }
+.glass-card-panel .payload-result > :first-child { margin-top: 0; }
+.glass-card-panel .payload-result > :last-child { margin-bottom: 0; }
+.glass-card-broken { margin: 8px 0 0; padding: 6px 8px; border-radius: 5px; background: color-mix(in srgb, var(--error, #b3261e) 9%, transparent); color: var(--error, #b3261e); font-size: 11px; }
+.glass-card-question { margin: 6px 0 0; font-style: italic; }
+.glass-card-question::before { content: "? "; color: var(--accent, #326eaa); font-style: normal; }
+.glass-card-empty { margin: 8px 0 0; color: var(--muted, #777); }
+.glass-card-flags { margin-top: 8px; padding: 6px 8px; border: 1px dashed color-mix(in srgb, var(--warning, #9a6700) 55%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--warning, #9a6700) 7%, transparent); font-size: 11px; }
+.glass-card-flags p { margin: 0 0 4px; }
+.glass-card-flags ul { margin: 0; padding: 0; list-style: none; }
+.glass-card-flags li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.glass-card-flags code { overflow-wrap: anywhere; }
+.glass-card-flags label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.glass-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 9px; }
+.glass-card-ask { height: 24px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--accent, #326eaa) 55%, transparent); border-radius: 999px; background: none; color: var(--accent, #326eaa); font: 11px/1 inherit; cursor: pointer; }
+.glass-card-ask:hover:not(:disabled) { background: color-mix(in srgb, var(--accent, #326eaa) 8%, transparent); }
+.glass-card-ask:disabled { opacity: 0.55; cursor: default; }
+.glass-card-cache { color: var(--muted, #777); font-size: 9.5px; text-align: right; }
+.glass-card-menu { margin-top: 7px; border-top: 1px solid var(--border, #ddd); }
+.glass-card-choice { border-bottom: 1px solid var(--border, #ddd); }
+.glass-card-choice:last-child { border-bottom: 0; }
+.glass-card-choice > button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 26px; padding: 4px 0; border: 0; background: none; color: var(--ink, #333); font: inherit; text-align: left; cursor: pointer; }
+.glass-card-choice > button:hover { color: var(--accent, #326eaa); }
+.glass-card-choice[aria-expanded] > button svg { transition: transform 120ms ease; }
+.glass-card-choice > button[aria-expanded="true"] svg { transform: rotate(180deg); }
+.glass-card-choice .payload-result { margin: 0 0 8px; }
+.glass-card-page { margin: 8px 0 0; color: var(--accent, #326eaa); font-size: 10px; overflow-wrap: anywhere; }
+.glass-card-error { margin: 8px 0 0; color: var(--error, #b3261e); font-size: 11px; }
+[data-appearance="dark"] .glass-card-flags { color: #e8c97a; border-color: #e8c97a88; }
+[data-appearance="dark"] .glass-card-panel { box-shadow: 0 1px 2px #00000059, 0 14px 30px -16px #000000e6; }
+/* Creation is a dialog, never a surprise. */
+.glass-card-new .glass-card-kinds { display: flex; gap: 6px; margin-bottom: 14px; }
+.glass-card-new .glass-card-kinds button { display: inline-flex; align-items: center; gap: 5px; flex: 1; justify-content: center; height: 30px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--ink); font: 12px/1 inherit; cursor: pointer; }
+.glass-card-new .glass-card-kinds button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.glass-card-new .glass-card-note { margin: -6px 0 14px; color: var(--muted); font-size: 10.5px; overflow-wrap: anywhere; }
+.glass-card-new .glass-card-new-actions { display: flex; justify-content: flex-end; gap: 8px; }

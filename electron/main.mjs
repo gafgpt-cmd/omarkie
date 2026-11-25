@@ -133,6 +133,7 @@ let glassRuntime = { folder: null, root: null, service: null, sync: null, close:
 function announceGlass(request) {
   if (["add", "set", "delete", "restore", "bring"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
+
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
   const run = glassQueue.then(() => syncGlassNow(folder));

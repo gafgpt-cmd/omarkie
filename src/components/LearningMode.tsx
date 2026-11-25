@@ -563,7 +563,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     {searching && <LearningSearch id={id} open={openSearchHit} close={() => setSearching(false)} />}
     {root && context && (glass
       ? <><GlassLayer key={id} editor={editor} root={root} nodes={context.nodes} groups={groups} note={note} saved={glassSaved}
-          live={live} pin={saveTutorReply} />
+          live={live} />
         <ElementHalo key={`halo:${id}`} root={root} editor={editor} /></>
       : groups.length > 0 && <LearningOverlays root={root} nodes={context.nodes} groups={groups} />)}
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}

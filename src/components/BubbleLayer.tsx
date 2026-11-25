@@ -261,7 +261,10 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
   async function card(entry: Entry, index: number) {
     if (!current) return;
     const target: ReadingTarget = { block: current.bundle.text, quote: current.bundle.quote, line: current.bubble.line, headings: current.bubble.headings };
-    const reply: TutorReply = { id: `${current.bubble.id}:${index}`, anchor: target, verb: "answer", body: entry.text, question: question.trim() };
+    let previous = index - 1;
+    while (previous >= 0 && current.bubble.thread[previous]?.role !== "you") previous -= 1;
+    const asked = current.bubble.thread[previous]?.text ?? "";
+    const reply: TutorReply = { id: `${current.bubble.id}:${index}`, anchor: target, verb: "answer", body: entry.text, question: asked };
     if (await pin(reply)) setPinned(values => new Set(values).add(reply.id));
   }
 

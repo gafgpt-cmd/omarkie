@@ -5,6 +5,7 @@
   z-index: 3;
   pointer-events: none;
 }
+.bubble-layer:has(.glass-bubble) { z-index: 4; }
 .bubble-anchor {
   position: absolute;
   top: 0;

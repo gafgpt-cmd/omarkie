@@ -156,7 +156,12 @@ try {
   const pin = panel.getByRole("button", { name: "Pin as cue card", exact: true });
   await pin.click();
   await expect(panel.getByRole("button", { name: "Pinned as card", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: `Fold or unfold: ${answerText}`, exact: true })).toBeVisible();
+  const cue = page.locator('.glass-card[data-card-kind="ai"]');
+  await expect(cue).toHaveCount(1);
+  await expect(cue).toContainText("Why does mass matter for kerma?");
+  await expect(cue).toContainText("energy per mass");
+  const pinnedCue = (await axi("glass", "list", "--note", doc)).magnets.find(magnet => magnet.fields?.card === "ai");
+  assert.equal(pinnedCue?.fields.answer, answerText, "a pinned answer is written to the card journal");
   const listed = await axi("glass", "bubble", "list", "--note", doc);
   const savedBubble = listed.bubbles.find(bubble => bubble.question === "Why does mass matter for kerma?");
   assert.ok(savedBubble, "the CLI sees the bubble");

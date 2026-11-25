@@ -180,7 +180,7 @@ try {
   await expect(tray).toBeVisible();
 
   // The remaining unscheduled tools announce their status.
-  for (const [id, label] of Object.entries({ card: "Card", scissors: "Scissors" })) {
+  for (const [id, label] of Object.entries({ scissors: "Scissors" })) {
     const tool = tray.locator(`[data-glass-coming="${id}"]`);
     await expect(tool).toHaveAttribute("aria-disabled", "true");
     await tool.click({ force: true });

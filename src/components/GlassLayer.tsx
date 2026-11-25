@@ -25,6 +25,8 @@ import {
 import { displayNeeded, imageDefaults, imageTypeOf } from "../../shared/glass-images.mjs";
 import { imageFromMagnet, type GlassImage } from "../glass/image-model";
 import { imageCopy } from "../glass/glass-assets";
+import { cardAnchor, cardFieldsOf, cardFromMagnet, newCardId, pillPlacement, type GlassCard } from "../glass/card-model";
+import GlassCardView, { NewCardDialog } from "./GlassCard";
 import GlassImageFrame from "./GlassImage";
 import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
 import { arrowDefaults, arrowFields, arrowFromMagnet, routeArrows, type ArrowEndContext, type ArrowMark, type ArrowRoute, type EndMark } from "../glass/arrow-model";
@@ -49,7 +51,6 @@ interface GlassReply {
 }
 interface Viewport { top: number; height: number; width: number; page: number }
 const comingSoon = [
-  { id: "card", label: "Card", icon: SquareStack },
   { id: "scissors", label: "Scissors", icon: Scissors },
 ] as const;
 const imageFile = /\.(?:png|jpe?g|gif|webp|avif|heic|heif|tiff?)$/i;
@@ -80,6 +81,7 @@ async function fileBase64(file: File) {
 const snippet = (text: string) => text.length > 28 ? `${text.slice(0, 28).toWellFormed()}…` : text;
 const magnetLabel = (magnet: GlassMagnet) => {
   if (magnet.kind === "image") return typeof magnet.fields.name === "string" && magnet.fields.name.trim() ? magnet.fields.name.slice(0, 48) : "Image";
+  if (magnet.kind === "card") return typeof magnet.fields.title === "string" && magnet.fields.title.trim() ? magnet.fields.title.slice(0, 48) : "Card";
   if (magnet.kind === "sticky") return typeof magnet.fields.text === "string" && magnet.fields.text.trim() ? magnet.fields.text.trim().slice(0, 48) : "Empty note";
   if (magnet.kind === "sticker") return stickerName({ sticker: typeof magnet.fields.sticker === "string" ? magnet.fields.sticker : undefined,
     image: typeof magnet.fields.image === "string" ? magnet.fields.image : undefined });
@@ -145,9 +147,9 @@ function StickyView({ note, place, selected, editing, onSelect, onEdit, onText, 
   </div>;
 }
 
-export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live, pin }: {
+export default function GlassLayer({ editor, root, nodes, groups, note, saved: documentSaved, live }: {
   editor(): EditorHandle | undefined; root: HTMLElement; nodes: ReadingContext["nodes"]; groups: StudyOverlay[]; note?: string; saved: boolean;
-  live?: LiveTutor; pin(reply: TutorReply): Promise<boolean>;
+  live?: LiveTutor;
 }) {
   const scroller = root.parentElement!;
   const layer = useRef<HTMLDivElement>(null);
@@ -166,6 +168,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const inkApi = useRef<InkHistoryApi | null>(null);
   const [stickers, setStickers] = useState<StickerMark[]>([]);
   const [arrows, setArrows] = useState<ArrowMark[]>([]);
+  const [cards, setCards] = useState<GlassCard[]>([]);
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
   const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
   const [tool, setTool] = useState<"select" | "sticky" | "ink" | "sticker" | "arrow">("select");
@@ -174,6 +177,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(arrowDefaults.style);
   const [arrowColor, setArrowColor] = useState<ArrowColor>(arrowDefaults.color);
   const [arrowHead, setArrowHead] = useState<ArrowHead>(arrowDefaults.head);
+  const [cardOpen, setCardOpen] = useState(false);
   const [selected, setSelected] = useState<string>();
   const [selectedArrow, setSelectedArrow] = useState<string>();
   const [viewport, setViewport] = useState<Viewport>({ top: 0, height: 0, width: 0, page: 0 });
@@ -189,10 +193,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const elementBoxes = useRef<Record<string, EndMark>>({});
   const placesRef = useRef<Record<string, GlassPlacement>>({});
   const fileInput = useRef<HTMLInputElement>(null);
-  const latest = useRef({ magnets, images, stickers, arrows, note, tool });
+  const latest = useRef({ magnets, images, stickers, arrows, cards, note, tool });
   const fingerprint = useRef(""), mounted = useRef(false), ready = useRef(false), loaded = useRef(!note), dragging = useRef(false);
   const queue = useRef(Promise.resolve<unknown>(undefined));
-  latest.current = { magnets, images, stickers, arrows, note, tool };
+  const localAt = useRef(0), revision = useRef(0);
+  latest.current = { magnets, images, stickers, arrows, cards, note, tool };
 
   // A wrapped picture reserves its box in the paragraph, so the page text flows around it.
   const flow = useCallback((image: GlassImage, element: HTMLElement, width = image.w, height = image.h) => {
@@ -261,6 +266,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         places[image.id] = { status: "resolved", x: rect.left - frame.left + image.x, y: rect.top - frame.top + image.y, width: image.w, height: image.h };
       }
     }
+    let cardRow = 0;
+    for (const card of latest.current.cards) {
+      const line = matchLine(card.anchor);
+      const element = line === null ? undefined : byLine.get(line)?.element;
+      if (!element) { places[card.id] = { status: "orphan" }; continue; }
+      let rect = paragraphRects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+      const spot = pillPlacement(rect, frame);
+      places[card.id] = { status: "resolved", x: spot.x + card.x, y: spot.y + card.y + cardRow * 24, width: spot.width, height: 0 };
+      cardRow += 1;
+    }
     dropSpacers(flowing);
     placesRef.current = places;
     let routed: { routes: ArrowRoute[]; orphans: string[] } = { routes: [], orphans: [] };
@@ -317,6 +333,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const send = useCallback((request: Record<string, unknown>) => {
     const path = latest.current.note;
     if (!path) return Promise.resolve(undefined);
+    localAt.current = Date.now();
+    revision.current += 1;
     const run = queue.current.then(async () => {
       setSaved("saving");
       try {
@@ -339,9 +357,12 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (!path) return;
     const run = queue.current.then(async () => {
       try {
+        const startedAt = revision.current;
         const value = await glassCall({ note: path, action: "list" });
+        // A write that landed while this list was in flight wins; its optimistic state is newer.
+        if (revision.current !== startedAt) return;
         loaded.current = true;
-        const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [];
+        const stickies: StickyNote[] = [], nextImages: GlassImage[] = [], nextStickers: StickerMark[] = [], nextArrows: ArrowMark[] = [], nextCards: GlassCard[] = [];
         const incoming: GlassMagnet[] = [], nextComments: GlassMagnet[] = [], nextInk: GlassMagnet[] = [];
         for (const magnet of value.magnets ?? []) {
           if (magnet.kind === "sticky") {
@@ -356,6 +377,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           } else if (magnet.kind === "arrow") {
             const arrow = arrowFromMagnet(magnet);
             if (arrow) nextArrows.push(arrow);
+          } else if (magnet.kind === "card") {
+            const card = cardFromMagnet(magnet);
+            if (card) nextCards.push(card);
           } else if (magnet.kind === "comment") nextComments.push(magnet);
           else if (magnet.kind === "ink") nextInk.push(magnet);
           else incoming.push(magnet);
@@ -364,6 +388,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         setImages(nextImages);
         setStickers(nextStickers);
         setArrows(nextArrows);
+        setCards(previous => JSON.stringify(previous) === JSON.stringify(nextCards) ? previous : nextCards);
         setLandmarks(previous => JSON.stringify(previous) === JSON.stringify(incoming) ? previous : incoming);
         setComments(previous => JSON.stringify(previous) === JSON.stringify(nextComments) ? previous : nextComments);
         setInk(previous => !previous.length && !nextInk.length ? previous : nextInk);
@@ -375,13 +400,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return run;
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     void load();
     const subscribe = window.desktop?.onGlassChanged;
     const stop = subscribe?.((event: { note?: string; action?: string } | undefined) => {
       if (event && (event.note === latest.current.note || event.action === "bring" && !event.note)) void load();
     });
-    const onFocus = () => { if (loaded.current) void load(); };
+    // A focus reload must not clobber a click that just started writing; the journal echo is authoritative.
+    const onFocus = () => { if (loaded.current && Date.now() - localAt.current > 500) void load(); };
     window.addEventListener("focus", onFocus);
     return () => { stop?.(); window.removeEventListener("focus", onFocus); };
   }, [load]);
@@ -391,7 +417,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (!surface) return;
     let frame = 0;
     const schedule = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); }); };
-    measure();
     const sizes = new ResizeObserver(schedule);
     sizes.observe(scroller);
     sizes.observe(root);
@@ -408,7 +433,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }, [scroller, root, measure]);
 
   const showingArrows = arrows.length > 0 || tool === "arrow";
-  useEffect(() => { measure(); }, [magnets, images, stickers, arrows, showingArrows, measure]);
+  useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, showingArrows, measure]);
 
   // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
   useEffect(() => {
@@ -450,6 +475,50 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setImages(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
     if (persist) void send({ action: "set", magnet: id, fields: patch as Record<string, unknown> });
   }, [send]);
+
+  const patchCard = useCallback((id: string, patch: Partial<GlassCard>, persist = true) => {
+    setCards(current => current.map(item => item.id === id ? { ...item, ...patch } : item));
+    if (!persist) return;
+    const fields: Record<string, unknown> = {};
+    if (patch.folded !== undefined) fields.folded = patch.folded;
+    if (patch.answer !== undefined) fields.answer = patch.answer;
+    if (patch.answerAt !== undefined) fields.answerAt = patch.answerAt;
+    if (patch.title !== undefined) fields.title = patch.title;
+    if (Object.keys(fields).length) void send({ action: "set", magnet: id, fields });
+  }, [send]);
+
+  const createCard = useCallback((card: GlassCard) => {
+    const closing = card.folded ? [] : latest.current.cards.filter(item => !item.folded);
+    setCards(current => [...current.map(item => closing.some(open => open.id === item.id) ? { ...item, folded: true } : item)
+      .filter(item => item.id !== card.id), card]);
+    for (const open of closing) void send({ action: "set", magnet: open.id, fields: { folded: true } });
+    const fields = cardFieldsOf(card);
+    if (card.answer) { fields.answer = card.answer; fields.answerAt = card.answerAt; }
+    return send({ action: "add", magnet: card.id, fields });
+  }, [send]);
+
+  // One card unfolds at a time: a popup must not bury its neighbours under a stack of panels.
+  const toggleCard = useCallback((id: string) => {
+    const target = latest.current.cards.find(item => item.id === id);
+    if (!target) return;
+    const folded = !target.folded;
+    const closing = folded ? [] : latest.current.cards.filter(item => item.id !== id && !item.folded);
+    setCards(current => current.map(item => item.id === id ? { ...item, folded }
+      : closing.some(open => open.id === item.id) ? { ...item, folded: true } : item));
+    void send({ action: "set", magnet: id, fields: { folded } });
+    for (const open of closing) void send({ action: "set", magnet: open.id, fields: { folded: true } });
+  }, [send]);
+
+  // A bubble pins its answer as an AI card on the glass; the markdown note keeps only the comment.
+  const pinCard = useCallback(async (reply: TutorReply) => {
+    const question = reply.question.trim() || reply.anchor.quote || reply.anchor.block.slice(0, 240);
+    const card: GlassCard = {
+      id: newCardId(), card: "ai", title: question.split(/\r?\n/)[0]?.slice(0, 200) ?? "",
+      link: "", question, answer: reply.body, answerAt: new Date().toISOString(),
+      choices: [], anchor: cardAnchor(reply.anchor), x: 0, y: 0, w: 300, folded: false,
+    };
+    return !!(await createCard(card))?.magnet;
+  }, [createCard]);
 
   useEffect(() => {
     const surface = layer.current;
@@ -758,6 +827,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setImages(current => current.filter(item => item.id !== id));
     setStickers(current => current.filter(item => item.id !== id));
     setArrows(current => current.filter(item => item.id !== id));
+    setCards(current => current.filter(item => item.id !== id));
     setSelected(current => current === id ? undefined : current);
     setSelectedArrow(current => current === id ? undefined : current);
   }, []);
@@ -783,6 +853,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     } else if (restored.kind === "arrow") {
       const arrow = arrowFromMagnet(restored);
       if (arrow) setArrows(current => [...current, arrow]);
+    } else if (restored.kind === "card") {
+      const card = cardFromMagnet(restored);
+      if (card) setCards(current => [...current, card]);
     } else void load();
     setOpenTrash(false);
   }, [load, send]);
@@ -807,9 +880,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return () => window.removeEventListener("keydown", onKey);
   }, [chooseInk, createAtCenter, removeMark, selected, selectedArrow, stickers]);
 
-  const orphans = [...magnets, ...images, ...stickers].filter(mark => layout.places[mark.id]?.status === "orphan");
+  const orphans = [...magnets, ...images, ...stickers, ...cards].filter(mark => layout.places[mark.id]?.status === "orphan");
   const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
   const shown = images.filter(image => layout.places[image.id]?.status === "resolved");
+  const shownCards = cards.filter(card => layout.places[card.id]?.status === "resolved");
   const under = shown.filter(image => image.wrap === "behind");
   const above = shown.filter(image => image.wrap !== "behind");
   const visibleStickers = stickers.filter(mark => layout.places[mark.id]?.status === "resolved");
@@ -871,6 +945,16 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     </div>
     <p className="glass-palette-hint">Drag from a paragraph or sticker to another; the far end scrolls into view.</p>
   </div> : null;
+  const cardPoint = () => {
+    const surface = scroller.getBoundingClientRect();
+    const view = editor()?.view();
+    const line = view ? view.state.doc.lineAt(view.state.selection.main.head).number : -1;
+    const block = blocks.current.find(item => item.line === line && item.element)
+      ?? nearestBlock(blocks.current, { x: surface.left + 160, y: surface.top + 140 });
+    const rect = block?.element?.getBoundingClientRect();
+    return rect ? { x: rect.left + Math.min(rect.width / 2, 120), y: rect.top + 4 } : { x: surface.left + 160, y: surface.top + 140 };
+  };
+
   const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="sticky" aria-pressed={tool === "sticky"} aria-label="Sticky note" title="Sticky note (N)" onClick={() => setTool("sticky")}><StickyIcon size={15} /></button>
@@ -889,6 +973,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <button type="button" data-glass-tool="sticker" aria-pressed={tool === "sticker"} aria-label="Sticker" title="Stickers" onClick={() => setTool("sticker")}><Star size={15} /></button>
     <button type="button" data-glass-tool="arrow" aria-pressed={tool === "arrow"} aria-label="Arrow" title="Arrow between two things" onClick={() => setTool("arrow")}><ArrowUpRight size={15} /></button>
     <span className="glass-tray-rule" aria-hidden="true" />
+    <button type="button" data-glass-tool="card" aria-haspopup="dialog" aria-label="Card" title="Card: section, tutor answer or quiz"
+      onClick={() => setCardOpen(true)}><SquareStack size={15} /></button>
     {comingSoon.map(({ id, label, icon: Icon }) => <button type="button" key={id} data-glass-coming={id} aria-disabled="true"
       aria-label={label} title={`${label} — coming soon`} onClick={() => setNotice(`${label} is coming soon.`)}><Icon size={15} /></button>)}
     <span className="glass-tray-rule" aria-hidden="true" />
@@ -924,19 +1010,21 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   </div>}{(orphans.length > 0 || orphanArrows.length > 0) && <div className="glass-orphans" role="group" aria-label="Marks whose paragraph is gone">
     <strong>Anchor lost</strong>
     {orphans.map(mark => <span key={mark.id} data-glass-orphan={mark.id}>
-      <span>{"text" in mark ? mark.text.trim().slice(0, 32) || "Empty note" : "name" in mark ? mark.name.slice(0, 32) : stickerName(mark)}</span>
+      <span>{"text" in mark ? mark.text.trim().slice(0, 32) || "Empty note" : "name" in mark ? mark.name.slice(0, 32) : "card" in mark ? mark.title.slice(0, 32) || "Card" : stickerName(mark)}</span>
       <button type="button" aria-label="Move orphan to trash" onClick={() => removeMark(mark.id)}>×</button>
     </span>)}
     {orphanArrows.map(arrow => <span key={arrow.id} data-glass-orphan-arrow={arrow.id}>
       <span>{arrow.label.trim() ? `Arrow: ${snippet(arrow.label.trim())}` : "Arrow with a lost end"}</span>
       <button type="button" aria-label="Move orphan arrow to trash" onClick={() => removeMark(arrow.id)}>×</button>
     </span>)}
-  </div>}{notice && <p className="glass-notice" role="status">{notice}</p>}</>;
+  </div>}{cardOpen && note && <NewCardDialog blocks={blocks.current}
+    point={cardPoint()}
+    close={() => setCardOpen(false)} create={card => { void createCard(card); setCardOpen(false); }} />}{notice && <p className="glass-notice" role="status">{notice}</p>}</>;
 
   return <>
     <GlassLandmarks editor={editor} root={root} nodes={nodes} groups={groups} note={note}
       saved={documentSaved} magnets={landmarks} seeds={seeds} />
-    {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pin} magnets={comments} reload={load} />}
+    {note && <BubbleLayer editor={editor} root={root} note={note} live={live} pin={pinCard} magnets={comments} reload={load} />}
     {createPortal(<div className="glass-layer" ref={layer} data-glass="on">
       {(ink.length > 0 || tool === "ink" || inkHistory.undo || inkHistory.redo) && <GlassInk
         editor={editor} root={root} note={note} tool={tool === "ink" ? inkTool : null} color={inkColor} size={inkSize}
@@ -958,6 +1046,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         onFold={folded => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, folded } : item)); void send({ action: "set", magnet: stickie.id, fields: { folded } }); }}
         onColor={color => { setMagnets(current => current.map(item => item.id === stickie.id ? { ...item, color } : item)); void send({ action: "set", magnet: stickie.id, fields: { color } }); }}
         onDelete={() => removeMark(stickie.id)} />)}
+      {shownCards.map(card => { const place = layout.places[card.id]; return place?.status !== "resolved" ? null :
+        <GlassCardView key={card.id} card={card} place={{ x: place.x, y: place.y, width: place.width }} note={note!} live={live}
+          onToggle={() => toggleCard(card.id)}
+          onCached={(answer, answerAt) => patchCard(card.id, { answer, answerAt })}
+          onDelete={() => removeMark(card.id)} />; })}
       {above.map(frame)}
       {under.map(frame)}
       {visibleStickers.map(sticker => <StickerView key={sticker.id} sticker={sticker} place={layout.places[sticker.id]} selected={selected === sticker.id}
