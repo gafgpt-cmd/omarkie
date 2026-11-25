@@ -358,7 +358,10 @@ const card = page => page.locator(`.glass-card`);
     // room for a shared host while a real regression still lands past it.
     const budget = stableHost() ? 100 : Math.max(100, plainBest * 8);
     assert.ok(manyBest - plainBest < budget, `200 pills add ${(manyBest - plainBest).toFixed(1)}ms over a plain glass open (${manyBest.toFixed(1)} vs ${plainBest.toFixed(1)}); budget is ${budget.toFixed(0)}ms`);
-    await expect(page.locator(".glass-card")).toHaveCount(200, { timeout: 60_000 });
+    // Two hundred cards exist; the mount window holds only those near the viewport.
+    await expect.poll(() => page.evaluate(() => Number(document.querySelector(".glass-layer")?.dataset.glassTotal ?? 0))).toBeGreaterThanOrEqual(200);
+    const mountedCards = await page.locator(".glass-card").count();
+    assert.ok(mountedCards > 0 && mountedCards < 200, `two hundred cards mount a window (${mountedCards})`);
   } finally { await app.close(); }
 
   // E. Frames: a shown window gives real renderer frames; the budget above stays hidden for stable timing.
@@ -367,7 +370,8 @@ const card = page => page.locator(`.glass-card`);
     const page = framesApp.page;
     await openGlass(page, "Bench");
     await resize(framesApp.app, page, 1440);
-    await expect(page.locator(".glass-card")).toHaveCount(200, { timeout: 60_000 });
+    await expect.poll(() => page.evaluate(() => Number(document.querySelector(".glass-layer")?.dataset.glassTotal ?? 0))).toBeGreaterThanOrEqual(200);
+    await expect(page.locator(".glass-card").first()).toBeVisible({ timeout: 60_000 });
     await page.evaluate(() => {
       window.__g9frames = []; window.__g9stop = false;
       const tick = time => { window.__g9frames.push(time); if (!window.__g9stop) requestAnimationFrame(tick); };
