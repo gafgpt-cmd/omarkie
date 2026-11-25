@@ -20,6 +20,7 @@ const kindLayers = {
   sticker: "notes",
   arrow: "notes",
   image: "media",
+  voice: "media",
   clip: "notes",
   "extra-page": "notes",
   cutout: "media",

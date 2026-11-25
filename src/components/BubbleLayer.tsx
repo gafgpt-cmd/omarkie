@@ -10,6 +10,8 @@ import { anchorFrom } from "../glass/glass-state";
 import type { GlassMagnet } from "../glass/glass-model";
 import { elementNode } from "../glass/element-node";
 import { elementKindName } from "../glass/element-label";
+import { Mic, Square } from "lucide-react";
+import { transcribeCapture, VoiceRecorder, voiceInfo } from "../voice/voice-client";
 import { t } from "../i18n";
 import { renderPayload } from "./payload-controls";
 import type { LiveTutor } from "./tutor-live";
@@ -92,6 +94,46 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
   const [asking, setAsking] = useState(false), [error, setError] = useState(""), [pinned, setPinned] = useState<Set<string>>(new Set());
   const [tick, setTick] = useState(0);
   const frame = useRef(0), textarea = useRef<HTMLTextAreaElement>(null);
+  // G21: speaking into the bubble only fills the question; Send still needs the X-ray pass.
+  const recorder = useRef<VoiceRecorder | undefined>(undefined);
+  const [mic, setMic] = useState<"idle" | "recording" | "transcribing">("idle");
+  const [voiceReady, setVoiceReady] = useState(false);
+  const [voiceLanguage, setVoiceLanguage] = useState("auto");
+
+  useEffect(() => {
+    let live = true;
+    void voiceInfo().then(info => {
+      if (!live) return;
+      setVoiceReady(info.configured);
+      setVoiceLanguage(info.language);
+    });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => () => { recorder.current?.cancel(); recorder.current = undefined; }, []);
+
+  async function dictate() {
+    if (mic === "recording") {
+      const capture = recorder.current;
+      if (!capture) return;
+      setMic("transcribing");
+      try {
+        const part = await capture.stop();
+        const result = await transcribeCapture(part.wav, { mode: "ask", language: voiceLanguage });
+        if (!result.ok || !result.text) setError(result.message ?? t("No speech was heard."));
+        else setQuestion(current => (current.trim() ? `${current.trim()} ${result.text}` : result.text!).slice(0, maxQuestion));
+      } catch (failure) { setError((failure as Error).message); }
+      finally { recorder.current = undefined; setMic("idle"); }
+      return;
+    }
+    if (mic !== "idle") return;
+    const capture = new VoiceRecorder();
+    try { await capture.start(); }
+    catch (failure) { setError((failure as Error).message); return; }
+    recorder.current = capture;
+    setError("");
+    setMic("recording");
+  }
 
   useEffect(() => {
     if (!exam) return;
@@ -136,6 +178,9 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
 
   async function close() {
     if (openId === draft?.id) await flush();
+    recorder.current?.cancel();
+    recorder.current = undefined;
+    setMic("idle");
     setOpenId(undefined); setError("");
   }
 
@@ -323,6 +368,12 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
                 placeholder={t("Ask one thing about this element")} />
             </label>
             <div className="bubble-actions">
+              {voiceReady && <button type="button" className="bubble-mic" data-bubble-mic={mic} aria-pressed={mic === "recording"}
+                aria-label={mic === "recording" ? t("Stop dictation") : t("Dictate the question")}
+                title={mic === "recording" ? t("Stop and transcribe") : t("Speak the question; the transcript stays local")}
+                disabled={mic === "transcribing" || asking} onClick={() => void dictate()}>
+                {mic === "recording" ? <Square size={11} /> : <Mic size={12} />}
+              </button>}
               <button type="button" className="bubble-xray-toggle" aria-expanded={xray} onClick={() => setXray(value => !value)}>{t("X-ray preview")}</button>
               {live
                 ? <button type="submit" className="primary-button" data-bubble-send disabled={asking || blocked.length > 0 || !question.trim() || !sentText.trim()}>

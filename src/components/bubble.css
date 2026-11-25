@@ -140,6 +140,22 @@
   cursor: pointer;
 }
 .bubble-xray-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+.bubble-mic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+}
+.bubble-mic:hover, .bubble-mic:focus-visible { border-color: var(--accent); color: var(--accent); }
+.bubble-mic[data-bubble-mic="recording"] { border-color: var(--error, #b3261e); color: var(--error, #b3261e); background: color-mix(in srgb, var(--error, #b3261e) 10%, transparent); }
+.bubble-mic:disabled { opacity: 0.55; cursor: progress; }
 .bubble-actions .primary-button {
   margin-left: auto;
   padding: 2px 14px;

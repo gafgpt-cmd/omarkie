@@ -37,6 +37,10 @@ import {
 import { markdownElements } from "../shared/element-model.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
 import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
+import {
+  chapterMarks, cleanTranscript, timestampLabel, validSpeakerSegments, validVoiceLanguage, validVoiceWav,
+  voiceDefaults, voiceMimes,
+} from "../shared/voice.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -728,7 +732,8 @@ export class GlassService {
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
     for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded", "layer", "tool", "size", "parts", "card", "title", "link", "question", "answer", "answerAt", "choices",
-      "strokes", "source", "region", "lasso", "notePath", "savedAt", "aspect", "name", "asset", "display", "bytes", "locked"])
+      "strokes", "source", "region", "lasso", "notePath", "savedAt", "aspect", "name", "asset", "display", "bytes", "locked",
+      "audio", "mime", "duration", "lang", "segments"])
       if (request[key] !== undefined) fields[key] = request[key];
     if (request.image !== undefined) {
       if (!request.image || typeof request.image !== "object" || Array.isArray(request.image)) throw new Error("Invalid image payload.");
@@ -852,6 +857,15 @@ export class GlassService {
     const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
     if (!magnet) throw new Error("Glass magnet not found.");
     const fields = magnetViewFromMap(magnet).fields;
+    if (fields.kind === "voice") {
+      if (!fields.audio) throw new Error("This memo has no stored audio.");
+      const asset = path.join(this.assetDir(file), fields.audio);
+      const metadata = await info(asset);
+      if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("The audio file is missing.");
+      const bytes = await readFile(asset);
+      return { note: name, magnet: magnet.id, name: fields.audio, which: "audio", mime: fields.mime,
+        bytes: bytes.length, base64: bytes.toString("base64") };
+    }
     if (fields.kind !== "image" && fields.kind !== "cutout") throw new Error("That magnet has no picture.");
     const directory = this.assetDir(file);
     const wanted = request.which === "original" ? fields.asset : fields.display ?? fields.asset;
@@ -1543,6 +1557,71 @@ export class GlassService {
       name: written.name, bytes: written.bytes, created: true };
   }
 
+  // The renderer records; the service owns the immutable audio copy and the transcript magnet.
+  async voiceMemo(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const audio = request.audio;
+    if (!audio || typeof audio !== "object" || Array.isArray(audio)) throw new Error("A voice memo needs its recorded audio.");
+    if (!voiceMimes.includes(audio.mime)) throw new Error(`Voice audio must be one of: ${voiceMimes.join(", ")}.`);
+    if (typeof audio.base64 !== "string" || !audio.base64) throw new Error("A voice memo needs its recorded audio.");
+    const bytes = Buffer.from(audio.base64, "base64");
+    if (!bytes.length) throw new Error("A voice memo needs its recorded audio.");
+    if (bytes.length > voiceDefaults.memoBytes) throw new Error("That recording is too large to store.");
+    if (audio.mime === "audio/wav" && !validVoiceWav(bytes))
+      throw new Error("A WAV memo must be 16 kHz mono PCM signed 16-bit.");
+    const directory = this.assetDir(file);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const name = `voice-${hashBytes(bytes).slice(0, 16)}.${voiceExtensions[audio.mime]}`;
+    if (!await info(path.join(directory, name))) await writeBytesAtomic(path.join(directory, name), bytes);
+    const stored = await this.add({ note: request.note, magnet: request.magnet, fields: {
+      kind: "voice", text: cleanTranscript(request.text), audio: name, mime: audio.mime,
+      duration: Number(request.durationMs) || 0, lang: request.lang ?? "auto",
+      ...(request.segments ? { segments: request.segments } : {}),
+      anchor: request.anchor, x: request.x ?? 0, y: request.y ?? 0, w: request.w ?? 320, h: request.h ?? 64,
+    } });
+    return { ...stored, audio: name, mime: audio.mime, bytes: bytes.length };
+  }
+
+  // Lecture mode writes exactly one new note, on Save, then pins its chapter timestamps.
+  async voiceLecture(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const { note: source } = await this.validateNote(request.note);
+    const segments = validSpeakerSegments(request.transcript);
+    if (!segments?.length) throw new Error("A lecture needs at least one transcribed segment.");
+    const marks = Array.isArray(request.marks) ? request.marks.slice(0, voiceDefaults.markLimit) : [];
+    const chapters = chapterMarks(segments, marks);
+    const at = new Date();
+    const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")} ${String(at.getHours()).padStart(2, "0")}${String(at.getMinutes()).padStart(2, "0")}`;
+    const stem = sanitizeTitle(`Lecture ${stamp}`);
+    const paragraphs = segments.map(segment => `${timestampLabel(segment.startMs)} ${segment.text}`);
+    const body = `---\ntype: Reference\ntitle: ${JSON.stringify(stem)}\ntags: [lecture]\ngenerated: { by: "process:voice", at: ${JSON.stringify(at.toISOString())} }\n---\n\n# ${stem}\n\n## Transcript\n\n${paragraphs.join("\n\n")}\n`;
+    if (Buffer.byteLength(body) > voiceDefaults.transcriptBytes) throw new Error("That lecture transcript is too large for one note.");
+    const written = await this.writeCardPage(source, stem, body);
+    const note = await this.identify(written.path);
+    const file = this.journalFor(note);
+    const magnets = [];
+    for (const chapter of chapters) {
+      let index = 0;
+      for (let cursor = 0; cursor < segments.length; cursor += 1) if (segments[cursor].startMs <= chapter.atMs) index = cursor;
+      const paragraph = paragraphs[index];
+      if (!paragraph) continue;
+      const field = { kind: "sticky", text: chapter.label, color: "blue",
+        anchor: { landmarks: [{ kind: "block", block: paragraph, headings: ["Transcript"] }] },
+        x: 336 + (magnets.length % 3) * 24, y: 0, w: 232, h: 96, folded: false };
+      const values = validateMagnetFields("sticky", field, false);
+      const magnetId = newMagnetId();
+      for (const [name, value] of Object.entries(values))
+        await this.appendRecord(file, { op: "set", magnetId, field: name, value, hlc: this.clock.next(), device: this.deviceName });
+      magnets.push(magnetId);
+    }
+    this.notify();
+    return { note: written.path, title: stem, bytes: written.bytes, segments: segments.length, chapters: magnets.length, magnets };
+  }
+
   status() {
     return { version: glassVersion, initialized: this.initialized === true, vaultId: this.vaultId ?? null, mode: this.mode ?? null, readOnly: this.readOnly === true,
       readOnlyReason: this.readOnly ? this.readOnlyReason ?? null : null, root: this.root,
@@ -1560,7 +1639,7 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "voice-memo", "voice-lecture", "layers", "layer",
       "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up",
       "srs-due", "srs-card", "srs-answer", "srs-review", "study-state", "study-set"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (input.action === "srs-due") return this.srsDue();
@@ -1572,6 +1651,8 @@ export class GlassService {
     if (input.action === "study-set") return this.studySet(input);
     if (["set", "delete", "restore", "asset", "asset-display", "card", "clip-save", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
     if (input.action === "clip-save") return this.clipSave(input);
+    if (input.action === "voice-memo") return this.voiceMemo(input);
+    if (input.action === "voice-lecture") return this.voiceLecture(input);
     if (input.action === "merge-preview") return this.mergePreview(input);
     if (input.action === "merge-accept") return this.mergeAccept(input);
     if (input.action === "merge-undo") return this.mergeUndo(input);
@@ -1748,6 +1829,60 @@ function inkFieldValues(fields) {
 
 const stickerFieldNames = new Set(["kind", "sticker", "image", "anchor", "x", "y", "w", "h", "rotate", "layer"]);
 
+const voiceFieldNames = new Set(["kind", "text", "audio", "mime", "duration", "lang", "segments", "anchor", "x", "y", "w", "h"]);
+const voiceExtensions = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/wav": "wav", "audio/mpeg": "mp3", "audio/mp4": "m4a" };
+
+// A voice memo is the audio plus its transcript; the audio is an immutable file in assets/.
+export function voiceFields(fields, partial = false) {
+  const values = {};
+  for (const [field, value] of Object.entries(fields)) {
+    if (!voiceFieldNames.has(field)) throw new Error(`Unknown voice field: ${field}.`);
+    if (field === "kind") {
+      if (value !== "voice") throw new Error("A voice memo keeps its kind.");
+      values.kind = "voice";
+    } else if (field === "text") {
+      if (typeof value !== "string" || value.length > voiceDefaults.textLimit || value.includes("\u0000")) throw new Error("A voice transcript must be text up to 20,000 characters.");
+      values.text = value;
+    } else if (field === "audio") {
+      if (typeof value !== "string" || !value || /[/\\]/.test(value) || value.length > 200) throw new Error("Voice audio must be a plain file name.");
+      values.audio = value;
+    } else if (field === "mime") {
+      if (!voiceMimes.includes(value)) throw new Error(`Voice audio must be one of: ${voiceMimes.join(", ")}.`);
+      values.mime = value;
+    } else if (field === "duration") {
+      if (!finite(value, 0, voiceDefaults.maxSeconds * 1000)) throw new Error("A voice duration must be milliseconds within the recording limit.");
+      values.duration = Math.round(value);
+    } else if (field === "lang") {
+      if (!validVoiceLanguage(value)) throw new Error("A voice language must be a BCP-47 tag or auto.");
+      values.lang = value;
+    } else if (field === "segments") {
+      if (value === null) { values.segments = null; continue; }
+      const segments = validSpeakerSegments(value);
+      if (!segments) throw new Error("Voice segments need ascending start/end milliseconds and text.");
+      values.segments = segments;
+    } else if (field === "anchor") {
+      if (!stickyAnchor(value)) throw new Error("A voice memo needs one block anchor with its heading path.");
+      values.anchor = value;
+    } else {
+      const limits = field === "w" ? [72, 4000] : field === "h" ? [48, 4000] : [-200_000, 200_000];
+      if (!finite(value, limits[0], limits[1])) throw new Error(`Voice ${field} must be a number between ${limits[0]} and ${limits[1]}.`);
+      values[field] = Math.round(value);
+    }
+  }
+  if (!partial) {
+    if (typeof values.text !== "string") throw new Error("A voice memo needs its transcript text.");
+    if (!values.audio || !values.mime) throw new Error("A voice memo needs the recorded audio.");
+    if (!values.anchor) throw new Error("A voice memo needs an anchor to its paragraph.");
+    values.lang ??= "auto";
+    values.duration ??= 0;
+    values.x ??= 0;
+    values.y ??= 0;
+    values.w ??= 320;
+    values.h ??= 64;
+  }
+  return values;
+}
+
 // A sticker is the built-in sheet id or one custom image, plus its box and its paragraph.
 export function stickerFields(fields, partial) {
   const values = {};
@@ -1860,6 +1995,7 @@ function validateMagnetFields(kind, fields, partial) {
     }
     return values;
   }
+  if (kind === "voice") return voiceFields(partial ? fields : { ...fields, kind: "voice" }, partial);
   if (kind === "sticker") return stickerFields(partial ? fields : { ...fields, kind: "sticker" }, partial);
   if (kind === "arrow") return arrowFields(partial ? fields : { ...fields, kind: "arrow" }, partial);
   if (kind === "label") return labelFields(partial ? fields : { ...fields, kind: "label" }, partial);
