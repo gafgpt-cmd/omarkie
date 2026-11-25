@@ -50,7 +50,16 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 - Drag the top grip to move. Drag a right or bottom edge to resize.
 - Pick a colour, fold to a dot, or delete. Open the pencil-case trash to undo.
 - On a focused note: `Enter` edits, `F` folds, `Delete` trashes, `Esc` exits editing.
-- G19 scale gap: a local 203-sticky test took 152 ms on its first open against the 100 ms target. Warm runs took 34–41 ms.
+
+## Scale, new editions, timelines and access
+
+- A 1,000-page note builds its block model once per text. Scrolling only refreshes which mounted paragraphs the cached blocks point at, and the glass mounts boxes in the viewport plus 600 px overscan (cap 300; the focused magnet is always mounted). Page height is cached too, so scrolling never forces the 20,000-paragraph layout.
+- Glass cost is measured on the magnet phase of the synchronous handler, not animation frames: the editor's own layout and GC are equal in both runs. On the 1,000-page fixture, 200 magnets added about 2 ms at cold open and about 2 ms per scroll p95 over plain reading (`scale.json` in the G19 evidence folder). Every measurement leaves `omarkie:glass-measure` and long tasks leave `omarkie:glass-longtask` performance entries for CI.
+- A new edition re-anchors every mark in one bulk pass. 80% confidence and up places it; 50–80% opens the "check placement" tray with the old and new quote and heading side by side; below 50% or a vanished paragraph opens "marks whose paragraph is gone". Place here, Keep, or Unanchor; nothing is deleted and the page is never rewritten.
+- Offline journals from two devices merge per field by hybrid logical clock (time, counter, device), including tombstones and restore. `.gitattributes` line-union keeps both sides' lines; `tests/glass-offline-merge.test.mjs` runs a laptop offline hour against phone edits.
+- Audio and video notes get a timeline magnet (`kind: timeline`, `src`, `title`, optional `duration`, `transcript`, `trims`). Transcript rows are `[00:12.5] text` lines in the note. A timestamp magnet stores `kind: timestamp`, `timeline`, `t` and optional `end`, `label`. Clicking a pin seeks the player; a transcript row seeks and highlights; the card lists every pin.
+- Every magnet has an `aria-label` and a keyboard stop. Culled magnets stay reachable through the single off-screen control, so a 2,000-magnet note does not put 2,000 tab stops in the page at once. Sticky colours also carry a shape mark; `prefers-contrast` and `forced-colors` keep borders and shape cues.
+- RTL notes mirror x from the inline start, and trays use logical start/end offsets. The timeline axis stays left-to-right while its text mirrors. Anchors fold accents and never depend on the UI language, so mixed Spanish and English paragraphs match the same way.
 
 ## Pictures
 

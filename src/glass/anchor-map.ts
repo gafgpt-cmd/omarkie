@@ -305,37 +305,69 @@ export function matchBlock(anchor: GlassAnchor, blocks: readonly GlassBlock[]): 
 }
 
 // One index per measure pass: 200 magnets on a long note must not rescan every block.
+// Sections are built only when an anchor needs one, so the cold open pays for quotes alone.
 export interface BlockIndex {
+  blocks: readonly GlassBlock[];
   texts: Map<string, GlassBlock[]>;
-  sections: Map<string, GlassBlock[]>;
+  sections?: Map<string, GlassBlock[]>;
 }
 
 export function indexBlocks(blocks: readonly GlassBlock[]): BlockIndex {
-  const texts = new Map<string, GlassBlock[]>(), sections = new Map<string, GlassBlock[]>();
-  const push = (map: Map<string, GlassBlock[]>, key: string, block: GlassBlock) => {
-    const list = map.get(key);
-    if (list) list.push(block); else map.set(key, [block]);
-  };
+  const texts = new Map<string, GlassBlock[]>();
   for (const block of blocks) {
     const text = normalizeText(block.block);
     if (!text) continue;
-    push(texts, text, block);
-    push(sections, sectionKey(block.headings), block);
+    const list = texts.get(text);
+    if (list) list.push(block); else texts.set(text, [block]);
   }
-  return { texts, sections };
+  return { blocks, texts };
 }
 
+function sectionsOf(index: BlockIndex) {
+  if (index.sections) return index.sections;
+  const sections = new Map<string, GlassBlock[]>();
+  for (const block of index.blocks) {
+    const key = sectionKey(block.headings), list = sections.get(key);
+    if (list) list.push(block); else sections.set(key, [block]);
+  }
+  return (index.sections = sections);
+}
+
+// Exact quote, then fingerprint, both narrowed by heading path; fuzzy scans only the section.
+// Legacy v1 stored a single block landmark; those keep the original path.
 export function matchIndexed(index: BlockIndex, anchor: GlassAnchor): number | null {
-  const landmark = anchor.landmarks.find(landmark => landmark.kind === "block");
-  if (!landmark) return null;
-  const text = normalizeText(landmark.block), section = sectionKey(landmark.headings);
-  const exact = (index.texts.get(text) ?? []).filter(block => sectionKey(block.headings) === section);
-  if (exact.length === 1) return exact[0].line;
-  if (exact.length > 1) return null;
-  const elsewhere = index.texts.get(text) ?? [];
-  if (elsewhere.length === 1) return elsewhere[0].line;
-  if (elsewhere.length > 1) return null;
-  return matchFuzzy(text, index.sections.get(section) ?? []);
+  const quote = anchor.landmarks.find(landmark => landmark.kind === "quote")?.value;
+  const fingerprint = anchor.landmarks.find(landmark => landmark.kind === "fingerprint")?.value;
+  const heading = anchor.landmarks.find(landmark => landmark.kind === "heading")?.value.path;
+  const block = anchor.landmarks.find(landmark => landmark.kind === "block");
+  const text = normalizeText(quote?.exact ?? block?.block ?? "");
+  const section = sectionKey(heading ?? block?.headings ?? []);
+  if (text) {
+    const all = index.texts.get(text) ?? [];
+    if (all.length === 1) return all[0].line;
+    if (all.length > 1) {
+      const inSection = all.filter(candidate => sectionKey(candidate.headings) === section);
+      return inSection.length === 1 ? inSection[0].line : null;
+    }
+    const starts = (candidate: GlassBlock) => { const other = normalizeText(candidate.block); return other.startsWith(text) || text.startsWith(other); };
+    const prefixed = (sectionsOf(index).get(section) ?? []).filter(starts);
+    if (prefixed.length === 1) return prefixed[0].line;
+    if (prefixed.length > 1) {
+      const inSection = prefixed.filter(candidate => sectionKey(candidate.headings) === section);
+      return inSection.length === 1 ? inSection[0].line : null;
+    }
+    return matchFuzzy(text, sectionsOf(index).get(section) ?? []);
+  }
+  if (fingerprint?.hash) {
+    // Hash only the section, and only for anchors that carry no usable quote.
+    const same = (sectionsOf(index).get(section) ?? []).filter(candidate => textHash(candidate.block) === fingerprint.hash);
+    if (same.length === 1) return same[0].line;
+    if (same.length > 1) {
+      const inSection = same.filter(candidate => sectionKey(candidate.headings) === section);
+      return inSection.length === 1 ? inSection[0].line : null;
+    }
+  }
+  return null;
 }
 
 function matchFuzzy(text: string, candidates: readonly GlassBlock[]) {
@@ -351,38 +383,56 @@ function matchFuzzy(text: string, candidates: readonly GlassBlock[]) {
   return line;
 }
 
-export function liveBlocks(context: ReadingContext | undefined, document: HTMLElement): GlassBlock[] {
+// A virtualized editor mounts only a window of paragraphs. Scrolling changes which ones are in the
+// document, never the note text, so the block model is built once per text and only its elements
+// are refreshed. Mutating the cached blocks avoids copying 10,000 rows on every scroll frame.
+export interface LiveBlocksCache {
+  text?: string;
+  blocks: GlassBlock[];
+  ids: (string | undefined)[];
+}
+
+export function liveBlocks(context: ReadingContext | undefined, document: HTMLElement, cache?: LiveBlocksCache): GlassBlock[] {
   if (!context) return [];
   const elements = new Map<string, HTMLElement>();
   for (const child of Array.from(document.children)) {
     const element = child instanceof HTMLElement ? child : undefined, id = element?.dataset.cid;
     if (element && id) elements.set(id, element);
   }
-  const byLine = new Map<number, { id: string; from: number; to: number; kind: string }>();
-  for (const node of context.nodes) if (node.source.trim()) byLine.set(node.line, { id: node.id, from: node.from, to: node.to, kind: node.kind });
-  const length = context.text.length;
-  let words = 0, cursor = 0;
-  return readingBlocks(context).map(block => {
-    const node = byLine.get(block.line);
-    if (node) words += (context.text.slice(cursor, node.from).match(/\S+/gu) ?? []).length;
-    if (node) cursor = node.to;
-    const from = node?.from;
-    return {
-      block: block.block,
-      headings: block.headings,
-      line: block.line,
-      kind: node?.kind,
-      element: node ? elements.get(node.id) : undefined,
-      ...(from === undefined ? {} : {
-        from,
-        to: node!.to,
-        words,
-        percent: length ? from / length : 0,
-        prefix: context.text.slice(Math.max(0, from - contextWidth), from),
-        suffix: context.text.slice(node!.to, node!.to + contextWidth),
-      }),
-    };
-  });
+  const target = cache && cache.text === context.text ? cache : { text: context.text, blocks: [] as GlassBlock[], ids: [] as (string | undefined)[] };
+  if (!target.blocks.length) {
+    const byLine = new Map<number, { id: string; from: number; to: number; kind: string }>();
+    for (const node of context.nodes) if (node.source.trim()) byLine.set(node.line, { id: node.id, from: node.from, to: node.to, kind: node.kind });
+    const length = context.text.length;
+    let words = 0, cursor = 0;
+    target.blocks = readingBlocks(context).map(block => {
+      const node = byLine.get(block.line);
+      if (node) words += (context.text.slice(cursor, node.from).match(/\S+/gu) ?? []).length;
+      if (node) cursor = node.to;
+      const from = node?.from;
+      target.ids.push(node?.id);
+      return {
+        block: block.block,
+        headings: block.headings,
+        line: block.line,
+        kind: node?.kind,
+        ...(from === undefined ? {} : {
+          from,
+          to: node!.to,
+          words,
+          percent: length ? from / length : 0,
+          prefix: context.text.slice(Math.max(0, from - contextWidth), from),
+          suffix: context.text.slice(node!.to, node!.to + contextWidth),
+        }),
+      };
+    });
+  }
+  for (let index = 0; index < target.blocks.length; index += 1) {
+    const id = target.ids[index];
+    target.blocks[index].element = id ? elements.get(id) : undefined;
+  }
+  if (cache && cache !== target) Object.assign(cache, target);
+  return target.blocks;
 }
 
 export function placeLandmarks(anchor: GlassAnchor, offset: GlassOffset, blocks: readonly GlassBlock[], glass: HTMLElement, options: { liveChar?: number } = {}): GlassPlacementResult {

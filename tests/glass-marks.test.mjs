@@ -146,7 +146,7 @@ test("a sticker keeps its sheet, box, rotation and notes layer through the journ
     try {
       const listed = await reopened.request({ action: "list", note: "map.md" });
       assert.deepEqual(listed.magnets.map(item => stickerFromMagnet(item)), [{ id: "m-star", sticker: "star",
-        anchor: anchor("Contour lines close together mean a steep slope."), x: 24, y: -8, w: 96, h: 96, rotate: -45 }]);
+        anchor: { ...anchor("Contour lines close together mean a steep slope."), version: 2 }, x: 24, y: -8, w: 96, h: 96, rotate: -45 }]);
     } finally { await reopened.close(); }
   } finally { await service.close().catch(() => {}); }
 });

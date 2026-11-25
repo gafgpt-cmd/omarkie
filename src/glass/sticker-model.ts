@@ -1,4 +1,5 @@
 import type { GlassBlock, GlassAnchor } from "./anchor-map";
+import { anchorFrom } from "./glass-state.ts";
 import type { GlassMagnet } from "./glass-model";
 import { stickerIds, stickerLayer } from "../../shared/glass-marks.mjs";
 
@@ -22,23 +23,9 @@ export interface StickerMark {
 const number = (value: unknown, fallback: number, min: number, max: number) =>
   typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
 
-function anchorValue(value: unknown): GlassAnchor | undefined {
-  if (!value || typeof value !== "object" || !("landmarks" in value)) return;
-  const landmarks = value.landmarks;
-  if (!Array.isArray(landmarks) || !landmarks.length) return;
-  const parsed = landmarks.flatMap(item => {
-    if (!item || typeof item !== "object") return [];
-    const { kind, block, headings, line } = item as Record<string, unknown>;
-    if (kind !== "block" || typeof block !== "string" || !block.trim()) return [];
-    if (!Array.isArray(headings) || headings.some(heading => typeof heading !== "string")) return [];
-    return [{ kind: "block" as const, block, headings: headings as string[], ...(Number.isInteger(line) ? { line: line as number } : {}) }];
-  });
-  return parsed.length === landmarks.length ? { landmarks: parsed } : undefined;
-}
-
 export function stickerFromMagnet(magnet: GlassMagnet): StickerMark | undefined {
   if (magnet.kind !== "sticker") return;
-  const { fields } = magnet, anchor = anchorValue(fields.anchor);
+  const { fields } = magnet, anchor = anchorFrom(fields.anchor);
   const image = typeof fields.image === "string" && fields.image.startsWith("data:image/") ? fields.image : undefined;
   const sticker = typeof fields.sticker === "string" ? fields.sticker : undefined;
   if (!anchor || (!image && !sticker)) return;

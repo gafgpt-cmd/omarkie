@@ -64,6 +64,7 @@ export interface EditorHandle {
   imageOffset(image: HTMLImageElement): number | undefined;
   selectionRange(): { from: number; to: number; context: string } | undefined;
   readingContext(): ReadingContext | undefined;
+  topOfLine(line: number): number | null;
   trackChanges(listener: (map: (offset: number) => number) => void): () => void;
   replaceRange(from: number, to: number, text: string, expected: string, allowReading?: boolean): boolean;
 }
@@ -529,6 +530,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           const from = Math.min(anchor, head), to = Math.max(anchor, head);
           return { nodes: doc.nodes, headings: (doc.environment.headings as Heading[] | undefined) || [], from, to, index: doc.nodeIndexNear(from), text: doc.text };
         },
+        topOfLine: line => activeMode.current ? rich.current?.topOfLine(line) ?? null : null,
         trackChanges: listener => {
           const doc = model.current;
           if (!doc) return () => {};

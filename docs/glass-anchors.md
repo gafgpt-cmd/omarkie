@@ -43,6 +43,7 @@ A badge sits below its paragraph without covering its text. Multiple magnets on 
 - Exact fingerprint or quote wins.
 - Quote fuzzy match is an in-repo 3-gram window score, Bitap-sized. No dependency, no telemetry; `tests/glass-anchor.test.mjs` pins the scores. 0.45 floor, 0.08 margin over the runner-up.
 - Position is ignored when its heading path vanished, so a deleted paragraph lands in the tray instead of the nearest survivor.
+- A new edition resolves all anchors in one bulk pass: 0.8 and up is placed, 0.5–0.8 opens the check-placement tray with the old and new context, and below 0.5 or a deleted paragraph shows in the orphan tray. Place, keep, or unanchor; the note is never rewritten.
 - In-app edits map every landmark char offset through `ChangeSet.mapPos`; the mapped block is exact (confidence 0.95). Landmarks are re-captured when the note saves.
 
 ## Code

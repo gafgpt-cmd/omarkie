@@ -1,6 +1,7 @@
 import type { GlassAnchor, GlassBlock } from "./anchor-map";
 import { stickyColors } from "../../shared/glass-core.mjs";
 import { validSource } from "../../shared/glass-images.mjs";
+import { anchorFrom } from "./glass-state.ts";
 
 // Same six colours the storage core accepts; tests/glass-sticky.test.mjs checks the journal round-trip.
 export { stickyColors };
@@ -32,24 +33,10 @@ export interface GlassMagnet {
 const number = (value: unknown, fallback: number, min: number, max: number) =>
   typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
 
-function anchorValue(value: unknown): GlassAnchor | undefined {
-  if (!value || typeof value !== "object" || !("landmarks" in value)) return;
-  const landmarks = value.landmarks;
-  if (!Array.isArray(landmarks) || !landmarks.length) return;
-  const parsed = landmarks.flatMap(item => {
-    if (!item || typeof item !== "object") return [];
-    const { kind, block, headings, line } = item as Record<string, unknown>;
-    if (kind !== "block" || typeof block !== "string" || !block.trim()) return [];
-    if (!Array.isArray(headings) || headings.some(heading => typeof heading !== "string")) return [];
-    return [{ kind: "block" as const, block, headings: headings as string[], ...(Number.isInteger(line) ? { line: line as number } : {}) }];
-  });
-  return parsed.length === landmarks.length ? { landmarks: parsed } : undefined;
-}
-
 export function stickyFromMagnet(magnet: GlassMagnet): StickyNote | undefined {
   const fields = magnet.fields ?? {};
   if ((fields.kind ?? magnet.kind) !== "sticky") return;
-  const anchor = anchorValue(fields.anchor);
+  const anchor = anchorFrom(fields.anchor);
   const color = stickyColors.find(item => item === fields.color) ?? stickyColors[0];
   const source = validSource(fields.source) ?? undefined;
   return {

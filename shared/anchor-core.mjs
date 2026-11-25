@@ -5,7 +5,10 @@ export const anchorVersion = 2;
 export const contextWidth = 32;
 
 export function normalizeText(text) {
-  return text.normalize("NFC").replace(/\s+/gu, " ").trim();
+  const trimmed = text.trim();
+  // Fast path: most paragraphs are plain single-spaced ASCII; skip two full scans.
+  if (!/[^\x00-\x7F]/u.test(trimmed) && !/\s{2}|[\t\n\r\f\v]/u.test(trimmed)) return trimmed;
+  return trimmed.normalize("NFC").replace(/\s+/gu, " ");
 }
 
 export function sectionKey(headings) {
