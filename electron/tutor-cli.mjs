@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { access, readFile, realpath } from "node:fs/promises";
+import { access, readFile, realpath, stat } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 import { encode } from "@toon-format/toon";
@@ -31,9 +31,9 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
-  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--near <quote> | --anchor <json>] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--magnet <id>] [--vault <dir>]", "Add a magnet. For a sticky note, use --kind sticky --near <quote>."],
-  "glass move": ["--note <note.md> --magnet <id> --x <px> --y <px> [--w <px>] [--h <px>] [--vault <dir>]", "Move or resize a magnet; x and y are offsets from its anchored paragraph."],
-  "glass edit": ["--note <note.md> --magnet <id> [--text <text>] [--color <colour>] [--folded] [--unfold] [--vault <dir>]", "Change a magnet's text, colour, or folded state."],
+  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--near <quote> | --anchor <json>] [--file <path>] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--lock] [--color <colour>] [--x <px>] [--y <px>] [--w <px>] [--h <px>] [--magnet <id>] [--vault <dir>]", "Add a magnet. A sticky note needs --kind sticky --near <quote>; an image needs --kind image --file <path>."],
+  "glass move": ["--note <note.md> --magnet <id> --x <px> --y <px> [--w <px>] [--h <px>] [--rot <deg>] [--vault <dir>]", "Move or resize a magnet; x and y are offsets from its anchored paragraph."],
+  "glass edit": ["--note <note.md> --magnet <id> [--text <text>] [--color <colour>] [--folded] [--unfold] [--wrap <left|right|behind|front>] [--rot <deg>] [--tape] [--no-tape] [--lock] [--unlock] [--vault <dir>]", "Change a magnet: text, colour, fold, text wrap, rotation, washi tape or lock."],
   "glass delete": ["--note <note.md> --magnet <id> [--vault <dir>]", "Move a magnet to the glass trash; the journal keeps it restorable."],
   "glass restore": ["--note <note.md> --magnet <id> [--vault <dir>]", "Bring one magnet back from the glass trash."],
   "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets and the trash of a note."],
@@ -52,6 +52,7 @@ const specs = {
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
+const wraps = ["left", "right", "behind", "front"];
 const positionalCounts = { "ask view": 1, reply: 1, status: 2, "doc view": 1, "element show": 1, find: 1 };
 const flags = spec => [...spec[0].matchAll(/--([a-z-]+)( <[^>]+>)?/g)].map(match => [match[1], { type: match[2] ? "string" : "boolean" }]);
 const usage = command => `omarkie-axi${command === "home" ? "" : ` ${command}`} ${specs[command][0]}`;
@@ -153,9 +154,15 @@ export async function main(argv = process.argv.slice(2)) {
     if (command.startsWith("element ")) requireArgument(Boolean(opts.note?.trim()), "--note is required.");
     if (command === "find") requireArgument(Boolean(args[0]?.trim()), "A search query is required.");
     if (["glass move", "glass edit", "glass delete", "glass restore"].includes(command)) requireArgument(Boolean(opts.magnet?.trim()), "--magnet is required.");
-    if (command === "glass add") requireArgument(opts.kind === "sticky" ? Boolean(opts.near?.trim()) : true, "--near <quote> is required for a sticky note.");
+    if (command === "glass add") {
+      if (opts.kind === "sticky") requireArgument(Boolean(opts.near?.trim()), "--near <quote> is required for a sticky note.");
+      if (opts.kind === "image") requireArgument(Boolean(opts.file?.trim()), "--file <path> is required for an image.");
+      requireArgument(["near", "anchor", "file"].some(name => opts[name] !== undefined) || Boolean(opts.text?.trim()), "Supply --near, --anchor, --file, or --text.");
+    }
     if (command === "glass move") requireArgument(["x", "y"].every(name => Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== ""), "--x and --y are required numbers.");
-    if (command === "glass edit") requireArgument([opts.text, opts.color, opts.folded, opts.unfold].some(value => value !== undefined), "Supply --text, --color, --folded, or --unfold.");
+    if (command === "glass edit") requireArgument([opts.text, opts.color, opts.folded, opts.unfold, opts.wrap, opts.rot, opts.tape, opts["no-tape"], opts.lock, opts.unlock].some(value => value !== undefined), "Supply a change: --text, --color, --folded, --unfold, --wrap, --rot, --tape, --no-tape, --lock or --unlock.");
+    if (["glass add", "glass edit"].includes(command) && opts.wrap !== undefined) requireArgument(wraps.includes(opts.wrap), `--wrap must be ${wraps.join(", ")}.`);
+    for (const name of ["rot"]) if (opts[name] !== undefined) requireArgument(Number.isFinite(Number(opts[name])) && String(opts[name]).trim() !== "", `--${name} must be a number.`);
     const root = await folder(opts.vault, process.cwd());
     if (command.startsWith("element ")) {
       const { openStudy, vaultRoot } = await import("./tutor-store.mjs");
@@ -227,15 +234,24 @@ export async function main(argv = process.argv.slice(2)) {
         if (opts.kind !== undefined) request.kind = opts.kind;
         const fields = {};
         if (opts.color !== undefined) fields.color = opts.color;
-        for (const name of ["x", "y", "w", "h"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
+        for (const name of ["x", "y", "w", "h", "rot"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
+        if (opts.wrap !== undefined) fields.wrap = opts.wrap;
+        if (opts.tape) fields.tape = true;
+        if (opts.lock) fields.locked = true;
         if (opts.folded !== undefined) fields.folded = true;
+        if (opts.file !== undefined) {
+          const imagePath = path.resolve(opts.file.trim());
+          const metadata = await stat(imagePath).catch(() => null);
+          if (!metadata?.isFile()) throw Object.assign(new Error("--file must be an existing image file."), { usage: true });
+          request.image = { path: imagePath, name: path.basename(imagePath) };
+        }
         if (opts.anchor !== undefined) {
           try { fields.anchor = JSON.parse(opts.anchor); } catch { throw new Error("--anchor must be a JSON anchor object."); }
         } else if (opts.near?.trim()) fields.anchor = await stickyAnchor(root, opts.note, opts.near.trim());
         if (Object.keys(fields).length) request.fields = fields;
       } else if (action === "move") {
         const fields = { x: Number(opts.x), y: Number(opts.y) };
-        for (const name of ["w", "h"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
+        for (const name of ["w", "h", "rot"]) if (opts[name] !== undefined) fields[name] = Number(opts[name]);
         request.fields = fields;
       } else if (action === "edit") {
         const fields = {};
@@ -243,6 +259,12 @@ export async function main(argv = process.argv.slice(2)) {
         if (opts.color !== undefined) fields.color = opts.color;
         if (opts.folded) fields.folded = true;
         if (opts.unfold) fields.folded = false;
+        if (opts.wrap !== undefined) fields.wrap = opts.wrap;
+        if (opts.rot !== undefined) fields.rot = Number(opts.rot);
+        if (opts.tape) fields.tape = true;
+        if (opts["no-tape"]) fields.tape = false;
+        if (opts.lock) fields.locked = true;
+        if (opts.unlock) fields.locked = false;
         request.fields = fields;
       }
       if (action === "find") {

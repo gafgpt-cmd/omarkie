@@ -214,6 +214,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       return;
     }
     const { local, url } = imageTransfer(data);
+    // With the glass on, pictures are glass magnets; Learning mode's own image scraps are legacy.
+    if (glass && local.length) return;
     if (!local.length && !url) return;
     event.preventDefault(); event.stopPropagation();
     if (local.length) addImages(local, anchor, side);

@@ -1,13 +1,19 @@
 import { constants } from "node:fs";
 import { createReadStream } from "node:fs";
-import { copyFile, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, truncate, unlink } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, open, readdir, readFile, realpath, rename, rmdir, stat, truncate, unlink, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { imageSize } from "image-size";
 import {
   anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
   replayJournalText, replayNotesText, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
+import {
+  assetFile, convertible, displayFile, extensionFor, imageDefaults, imageFields, imageTypeOf, mimeFor,
+  orientationSize, scrapImageMagnet,
+} from "../shared/glass-images.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -662,6 +668,10 @@ export class GlassService {
     const fields = { ...(request.fields && typeof request.fields === "object" && !Array.isArray(request.fields) ? request.fields : {}) };
     for (const key of ["text", "kind", "color", "anchor", "x", "y", "w", "h", "folded"])
       if (request[key] !== undefined) fields[key] = request[key];
+    if (request.image !== undefined) {
+      if (!request.image || typeof request.image !== "object" || Array.isArray(request.image)) throw new Error("Invalid image payload.");
+      Object.assign(fields, await this.imageAsset({ file, image: request.image, width: fields.w, wrap: fields.wrap }));
+    }
     if (fields.anchor !== undefined && fields.kind !== "sticky") {
       if (!validAnchor(fields.anchor)) throw new Error("Invalid Glass anchor.");
       fields.anchor = { ...fields.anchor, version: fields.anchor.version ?? anchorVersion };
@@ -681,16 +691,214 @@ export class GlassService {
     return { ...this.describe(note, file), magnet: magnet ? magnetViewFromMap(magnet) : null, pending: this.pending.length, saved: this.pending.length === 0 };
   }
 
-  async list(request) {
+  assetDir(journal) {
+    return path.join(this.storeDir, "assets", path.basename(journal, ".jsonl"));
+  }
+
+  async takenAssets(directory) {
+    return new Set((await readdir(directory).catch(() => [])).filter(name => !name.startsWith(".")));
+  }
+
+  // Original bytes stay untouched; a light display copy is written only when one was supplied or can be converted.
+  async imageAsset({ file, image, width, wrap }) {
+    if (this.readOnly) throw Object.assign(new Error("Glass is read-only."), { code: "GLASS_READ_ONLY" });
+    const directory = this.assetDir(file);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    let bytes, sourceName;
+    if (typeof image.path === "string" && image.path.trim()) {
+      const absolute = path.resolve(image.path);
+      const metadata = await info(absolute);
+      if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("Image file not found.");
+      if (metadata.size > imageDefaults.maxBytes) throw new Error(`Images must be ${Math.round(imageDefaults.maxBytes / 1024 / 1024)} MB or smaller.`);
+      bytes = await readFile(absolute);
+      sourceName = path.basename(absolute);
+    } else if (typeof image.base64 === "string") {
+      bytes = Buffer.from(image.base64, "base64");
+      sourceName = typeof image.name === "string" ? image.name : "image";
+    } else throw new Error("An image needs a file path or its bytes.");
+    if (!bytes.length || bytes.length > imageDefaults.maxBytes) throw new Error(`Images must be ${Math.round(imageDefaults.maxBytes / 1024 / 1024)} MB or smaller.`);
+    const type = imageTypeOf(bytes);
+    if (!type) throw new Error("That image format is not supported.");
+    const asset = assetFile(image.name || sourceName, extensionFor(type), await this.takenAssets(directory));
+    await writeFileAtomic(path.join(directory, asset), bytes);
+    const oriented = orientationSize(imageDimensions(bytes))
+      ?? orientationSize({ width: image.width, height: image.height })
+      ?? { width: 4, height: 3 };
+    const aspect = Math.round((oriented.width / oriented.height) * 10_000) / 10_000;
+    let display = null;
+    const preview = typeof image.displayBase64 === "string" ? Buffer.from(image.displayBase64, "base64") : null;
+    if (preview?.length && ["webp", "jpeg", "png"].includes(imageTypeOf(preview))) {
+      const name = displayFile(asset);
+      await writeFileAtomic(path.join(directory, name), preview);
+      display = name;
+    } else if (convertible(type)) {
+      const converted = await this.convertImage(bytes, type).catch(() => null);
+      if (converted?.length && imageTypeOf(converted) === "jpeg") {
+        const name = displayFile(asset);
+        await writeFileAtomic(path.join(directory, name), converted);
+        display = name;
+      }
+    }
+    const requested = Number(width);
+    const w = Math.round(Math.min(imageDefaults.maxW, Math.max(imageDefaults.minW, Number.isFinite(requested) && requested > 0 ? requested : imageDefaults.w)));
+    const fields = imageFields({ kind: "image", name: image.name || sourceName, asset, display, bytes: bytes.length, w,
+      h: Math.max(imageDefaults.minH, Math.round(w / aspect)), aspect, wrap: image.wrap ?? wrap ?? "left" });
+    return fields;
+  }
+
+  // HEIC/TIFF cannot be decoded by Chromium; an external converter may make the light copy.
+  async convertImage(bytes, type) {
+    const configured = process.env.OMARKIE_IMAGE_CONVERT?.trim()
+      || (await readFile(path.join(this.appData, "image-convert"), "utf8").catch(() => "")).trim();
+    if (!configured) return null;
+    let argv;
+    try { argv = JSON.parse(configured); } catch { argv = configured; }
+    if (!Array.isArray(argv)) argv = [argv];
+    if (!argv.length || argv.some(part => typeof part !== "string" || !part)) return null;
+    const scratch = await mkdtemp(path.join(os.tmpdir(), "omarkie-image-"));
+    const [input, output] = [path.join(scratch, `image.${extensionFor(type)}`), path.join(scratch, "display.jpg")];
+    try {
+      await writeFileAtomic(input, bytes);
+      const converted = await new Promise((resolve, reject) => {
+        const child = spawn(argv[0], [...argv.slice(1), input, output], { stdio: "ignore", timeout: 120_000, windowsHide: true });
+        child.once("error", reject);
+        child.once("exit", code => code === 0 ? resolve(true) : reject(new Error(`Image converter exited with ${code}.`)));
+      });
+      if (!converted) return null;
+      const result = await readFile(output).catch(() => null);
+      return result?.length && result.length <= imageDefaults.maxBytes ? result : null;
+    } finally {
+      await unlink(input).catch(() => {});
+      await unlink(output).catch(() => {});
+      await rmdir(scratch).catch(() => {});
+    }
+  }
+
+  async magnetAsset(request) {
     this.assertReady();
     const { note: name } = await this.validateNote(request.note);
     if (!this.initialized && await this.existingStore()) await this.initialize();
-    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], trash: [], initialized: false, pending: 0, status: this.status() };
+    if (!this.initialized) throw new Error("Glass is not initialized in this vault.");
     const note = this.notesByPath.get(name);
+    if (!note) throw new Error("Glass note not found.");
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet) throw new Error("Glass magnet not found.");
+    const fields = magnetViewFromMap(magnet).fields;
+    if (fields.kind !== "image") throw new Error("That magnet is not an image.");
+    const directory = this.assetDir(file);
+    const wanted = request.which === "original" ? fields.asset : fields.display ?? fields.asset;
+    if (!wanted) throw new Error("This image has no stored copy yet.");
+    const asset = path.join(directory, wanted);
+    const metadata = await info(asset);
+    if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("The image file is missing.");
+    const bytes = await readFile(asset);
+    const type = imageTypeOf(bytes) ?? (wanted.endsWith(".webp") ? "webp" : null);
+    return { note: name, magnet: magnet.id, name: wanted, which: request.which === "original" ? "original" : "display",
+      mime: mimeFor(type), bytes: bytes.length, base64: bytes.toString("base64") };
+  }
+
+  // The renderer makes the light copy where Chromium already decoded the picture; the service just stores it.
+  async assetDisplay(request) {
+    if (!this.initialized) await this.initialize();
+    this.assertWritable();
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file), magnet = replay.magnets.get(request.magnet);
+    if (!magnet) throw new Error("Glass magnet not found.");
+    const fields = magnetViewFromMap(magnet).fields;
+    if (fields.kind !== "image" || !fields.asset) throw new Error("That magnet is not an image.");
+    const bytes = Buffer.from(String(request.base64 ?? ""), "base64");
+    const type = imageTypeOf(bytes);
+    if (!["webp", "jpeg", "png"].includes(type)) throw new Error("A display copy must be a WebP, JPEG or PNG image.");
+    if (bytes.length > imageDefaults.maxBytes) throw new Error("Display copy is too large.");
+    const directory = this.assetDir(file);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const name = displayFile(fields.asset);
+    await writeFileAtomic(path.join(directory, name), bytes);
+    await this.appendRecord(file, { op: "set", magnetId: magnet.id, field: "display", value: name, hlc: this.clock.next(), device: this.deviceName });
+    const next = await this.readJournal(file);
+    return { ...this.describe(note, file), magnet: magnetViewFromMap(next.magnets.get(magnet.id)), display: name, bytes: bytes.length };
+  }
+
+  // A vault whose only picture store is Learning mode's scraps still opens the glass and migrates them.
+  async legacyScraps(name) {
+    const store = path.join(this.root, ".omarkie", "store.jsonl");
+    const metadata = await info(store).catch(() => null);
+    if (!metadata?.isFile() || metadata.isSymbolicLink()) return false;
+    const text = await readFile(store, "utf8").catch(() => "");
+    return text.split("\n").some(line => {
+      if (!line.trim()) return false;
+      try {
+        const entry = JSON.parse(line)?.entry;
+        return entry?.type === "scrap" && !entry.deleted && !!entry.image?.hash && entry.document === name;
+      } catch { return false; }
+    });
+  }
+
+  // Learning mode's image scraps become glass images in place; scraps and their blobs are left alone.
+  async importScraps(note) {
+    if (this.readOnly || !this.initialized) return 0;
+    const store = path.join(this.root, ".omarkie", "store.jsonl");
+    const metadata = await info(store);
+    if (!metadata?.isFile() || metadata.isSymbolicLink()) return 0;
+    const signature = `${metadata.size}:${metadata.mtimeMs}`;
+    this.scrapImports ??= new Map();
+    if (this.scrapImports.get(note.id) === signature) return 0;
+    const text = await readFile(store, "utf8");
+    if (!text) return 0;
+    const scraps = [];
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      const entry = row?.entry;
+      if (entry?.type !== "scrap" || entry.deleted || !entry.image?.hash || entry.document !== note.path) continue;
+      scraps.push(entry);
+    }
+    if (!scraps.length) { this.scrapImports.set(note.id, signature); return 0; }
+    const file = this.journalFor(note), directory = this.assetDir(file);
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    const taken = await this.takenAssets(directory);
+    const replay = await this.readJournal(file), source = path.join(this.root, ".omarkie", "scraps");
+    let imported = 0;
+    for (const scrap of scraps) {
+      const id = scrapImageMagnet({ scrap, asset: "image.png" }).id;
+      if (replay.magnets.has(id)) continue;
+      if (!/^[a-f0-9]{64}$/.test(scrap.image.hash)) continue;
+      const bytes = await readFile(path.join(source, scrap.image.hash)).catch(() => null);
+      if (!bytes?.length || bytes.length > imageDefaults.maxBytes) continue;
+      const type = imageTypeOf(bytes);
+      if (!type) continue;
+      const asset = assetFile(scrap.body || "image", extensionFor(type), taken);
+      taken.add(asset);
+      await writeFileAtomic(path.join(directory, asset), bytes);
+      const oriented = orientationSize(imageDimensions(bytes));
+      const blockText = String(scrap.anchor?.block ?? "").trim();
+      if (!blockText) continue;
+      const magnet = scrapImageMagnet({ scrap, asset, width: oriented?.width, height: oriented?.height, blockText,
+        headings: Array.isArray(scrap.anchor?.headings) ? scrap.anchor.headings : [] });
+      for (const [field, value] of Object.entries(magnet.fields))
+        await this.appendRecord(file, { op: "set", magnetId: magnet.id, field, value, hlc: this.clock.next(), device: this.deviceName });
+      imported += 1;
+    }
+    this.scrapImports.set(note.id, signature);
+    if (imported) this.notify();
+    return imported;
+  }
+
+  async list(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    if (!this.initialized && (await this.existingStore() || await this.legacyScraps(name))) await this.initialize();
+    if (!this.initialized) return { note: name, id: null, journal: null, magnets: [], trash: [], initialized: false, pending: 0, status: this.status() };
+    let note = this.notesByPath.get(name);
+    if (!note && this.initialized && !this.readOnly && await this.legacyScraps(name)) note = await this.identify(name);
     if (!note) return { note: name, id: null, journal: null, magnets: [], trash: [], pending: this.pending.length, status: this.status() };
     const file = this.journalFor(note);
+    const imported = await this.importScraps(note).catch(() => 0);
     const replay = await this.readJournal(file);
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay),
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), imported,
       unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
@@ -734,9 +942,11 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show"].includes(input.action)) throw new Error("Unknown Glass action.");
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
-    if (["set", "delete", "restore"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (["set", "delete", "restore", "asset", "asset-display"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
+    if (input.action === "asset") return this.magnetAsset(input);
+    if (input.action === "asset-display") return this.assetDisplay(input);
     return this[input.action](input);
   }
 
@@ -807,6 +1017,10 @@ async function copyPlainTree(source, target) {
   return copied;
 }
 
+function imageDimensions(bytes) {
+  try { return imageSize(bytes) ?? {}; } catch { return {}; }
+}
+
 function magnetViewFromMap(magnet) {
   const fields = {};
   for (const [field, entry] of magnet.fields) if (!entry.removed) fields[field] = entry.value;
@@ -857,8 +1071,18 @@ function stickyAnchor(value) {
   });
 }
 
-// Other magnet kinds stay open for later slices; a sticky note is validated field by field.
+// Other magnet kinds stay open for later slices; sticky and image magnets are validated field by field.
 function validateMagnetFields(kind, fields, partial) {
+  if (kind === "image") {
+    const values = imageFields(partial ? fields : { ...fields, kind: "image" }, { partial });
+    if (!partial) {
+      if (!values.name) throw new Error("An image magnet needs a name.");
+      if (!values.asset) throw new Error("An image magnet needs an asset.");
+      if (!values.anchor) throw new Error("An image magnet needs an anchor.");
+      values.display ??= null;
+    }
+    return values;
+  }
   if (kind !== "sticky") {
     if (partial && Object.hasOwn(fields, "kind")) throw new Error("A magnet keeps its kind.");
     return fields;
