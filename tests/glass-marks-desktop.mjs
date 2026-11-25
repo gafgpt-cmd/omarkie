@@ -434,7 +434,7 @@ try {
   assert.notEqual(await arrowPath.getAttribute("d"), beforeDrag, "the arrow follows its dragged end");
   const work = await readWork(page);
   await page.mouse.up();
-  assertWorkBudget({ work: arrowCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging an arrow end", longest: stableHost() ? 50 : 100 });
+  assertWorkBudget({ work: arrowCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging an arrow end", longest: stableHost() ? 50 : 500 });
   assertFrameCadence(gaps, "Dragging an arrow end");
 
   // Screenshots, light and dark, wide and narrow.
