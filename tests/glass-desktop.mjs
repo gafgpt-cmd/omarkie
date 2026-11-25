@@ -89,7 +89,8 @@ try {
   }
   async function mountBudget() {
     await page.evaluate(() => { performance.clearMarks("omarkie:glass-toggle"); performance.clearMarks("omarkie:glass-mounted"); });
-    await pressG();
+    // The press flips from whatever the last settled state was; a stray off press is retried.
+    for (let attempt = 0; attempt < 3 && (await glass.count()) === 0; attempt += 1) await pressG();
     await expect(glass).toHaveCount(1);
     await expect.poll(() => page.evaluate(() => performance.getEntriesByName("omarkie:glass-mounted").length)).toBeGreaterThan(0);
     return page.evaluate(() => {

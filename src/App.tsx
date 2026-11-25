@@ -158,7 +158,7 @@ export default function App() {
   const glassSupported = !!window.desktop?.glassState;
   const [glassOn, setGlassOn] = useState(false);
   // The last press owns the state: a slow write from an earlier toggle must not flip it back.
-  const glassOnRef = useRef(false), glassSeq = useRef(0);
+  const glassOnRef = useRef(false), glassSeq = useRef(0), glassPending = useRef(0);
   const settleGlass = (visible: boolean) => { glassOnRef.current = visible; setGlassOn(visible); };
   useEffect(() => {
     if (!glassSupported) return;
@@ -166,19 +166,25 @@ export default function App() {
     void window.desktop!.glassState({ action: "read" }).then((response: { ok: boolean; value?: { visible?: boolean } }) => {
       if (current && response?.ok) settleGlass(response.value?.visible === true);
     }).catch(() => {});
-    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => settleGlass(event?.visible === true));
+    // A broadcast from a write this window did not start wins; our own late echoes do not.
+    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => { if (!glassPending.current) settleGlass(event?.visible === true); });
     return () => { current = false; stop?.(); };
   }, [glassSupported, session.folder]);
   function toggleGlass() {
     if (!glassSupported) return;
     const visible = !glassOnRef.current, seq = ++glassSeq.current;
+    glassPending.current += 1;
     settleGlass(visible);
     if (visible) performance.mark("omarkie:glass-toggle");
     void window.desktop!.glassState({ action: "write", visible }).then((response: { ok: boolean; error?: string; value?: { visible?: boolean } }) => {
+      glassPending.current = Math.max(0, glassPending.current - 1);
       if (seq !== glassSeq.current) return;
       if (response?.ok) settleGlass(response.value?.visible === true);
       else { settleGlass(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
-    }).catch((error: Error) => { if (seq === glassSeq.current) { settleGlass(!visible); session.setMessage(error.message); } });
+    }).catch((error: Error) => {
+      glassPending.current = Math.max(0, glassPending.current - 1);
+      if (seq === glassSeq.current) { settleGlass(!visible); session.setMessage(error.message); }
+    });
   }
   const sharedSupported = !!window.desktop?.sharedGlassState;
   const [sharedOn, setSharedOn] = useState(false);
