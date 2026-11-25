@@ -48,7 +48,7 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   const button = (root, name) => root.getByRole("button", { name, exact: true });
   const toggle = button(page, "Learning mode"), openTutor = button(page, "Tutor");
-  const sheets = page.getByRole("complementary", { name: "Sheets", exact: true });
+  const sheets = page.getByRole("complementary", { name: "Layers", exact: true });
   const panel = page.getByRole("complementary", { name: "Tutor", exact: true });
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const entry = panel.getByRole("textbox", { name: "Ask one question about this text" });

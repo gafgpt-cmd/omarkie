@@ -11,7 +11,7 @@ import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { setTimeout as delay } from "node:timers/promises";
-import { assertFrameCadence } from "./frame-cadence.mjs";
+import { assertFrameCadence, assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 const home = await mkdtemp(path.join(os.tmpdir(), "omarkie-glass-marks-"));
@@ -409,6 +409,7 @@ try {
   await page.mouse.down();
   const arrowPath = page.locator(`[data-arrow-path="${thirdArrow}"]`);
   const beforeDrag = await arrowPath.getAttribute("d");
+  await watchWork(page);
   await page.evaluate(() => {
     window.__marksGaps = [];
     const sample = now => {
@@ -418,9 +419,11 @@ try {
     };
     window.__marksFrame = requestAnimationFrame(sample);
   });
-  const dragStart = performance.now();
+  const dragStart = performance.now(), arrowCosts = [];
   for (let step = 0; performance.now() - dragStart < 1300; step++) {
     await page.mouse.move(hand.x + 40 + (step % 10) * 4, hand.y + 40);
+    arrowCosts.push(Number(await page.evaluate(() => document.documentElement.dataset.glassArrowMs)));
+
     await delay(8);
   }
   const gaps = await page.evaluate(async () => {
@@ -429,7 +432,9 @@ try {
     return window.__marksGaps;
   });
   assert.notEqual(await arrowPath.getAttribute("d"), beforeDrag, "the arrow follows its dragged end");
+  const work = await readWork(page);
   await page.mouse.up();
+  assertWorkBudget({ work: arrowCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging an arrow end" });
   assertFrameCadence(gaps, "Dragging an arrow end");
 
   // Screenshots, light and dark, wide and narrow.

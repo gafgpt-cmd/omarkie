@@ -1,7 +1,7 @@
 export const localeOrder = ["en", "es", "ca", "ro", "zh"];
 export const learningLabels = {
   "Learning mode": ["Learning mode","Modo de aprendizaje","Mode d’aprenentatge","Mod de învățare","学习模式"],
-  "Sheets": ["Sheets","Hojas","Fulls","Foi","学习页"],
+  "Layers": ["Layers","Capas","Capes","Straturi","图层"],
   "Note": ["Note","Nota","Nota","Notiță","便笺"],
   "Tutor": ["Tutor","Tutor","Tutor","Tutore","导师"],
   "Doubt": ["Doubt","Duda","Dubte","Nelămurire","疑问"],

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { imageSize } from "image-size";
 import {
-  anchorVersion, createClock, glassFileName, glassVersion, newMagnetId, parseClock, parseJournalText,
+  anchorVersion, assertNoStoreSecrets, createClock, glassFileName, glassVersion, journalOpId, newMagnetId, parseClock, parseJournalText,
   replayJournalText, replayNotesText, sanitizeTitle, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 import {
@@ -28,6 +28,7 @@ import {
 } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
+import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
 
 const markdown = /\.(?:md|markdown|mdown)$/i;
 const noFollow = (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0);
@@ -93,11 +94,13 @@ export class GlassService {
 
   async findStore() {
     const insideSettings = await readJson(path.join(this.root, ".omarkie", "settings.json"));
+    if (insideSettings) assertNoStoreSecrets(insideSettings, "`.omarkie/settings.json`");
     if (goodVaultId(insideSettings?.vaultId)) return insideSettings;
     const remembered = await this.registryEntry();
     if (!goodVaultId(remembered?.vaultId)) return null;
     const outside = path.join(this.appData, "glass-vaults", remembered.vaultId);
     const settings = await readJson(path.join(outside, "settings.json"));
+    if (settings) assertNoStoreSecrets(settings, "Glass settings");
     return goodVaultId(settings?.vaultId) && await directory(outside) ? settings : null;
   }
 
@@ -131,12 +134,14 @@ export class GlassService {
   async resolveStore() {
     const inside = path.join(this.root, ".omarkie");
     const insideSettings = await readJson(path.join(inside, "settings.json"));
+    if (insideSettings) assertNoStoreSecrets(insideSettings, "`.omarkie/settings.json`");
     const remembered = await this.registryEntry();
     let vaultId = goodVaultId(insideSettings?.vaultId) ? insideSettings.vaultId : goodVaultId(remembered?.vaultId) ? remembered.vaultId : null;
     let requested = insideSettings?.mode === "outside" ? "outside" : "inside";
     if (!insideSettings && goodVaultId(remembered?.vaultId)) {
       const outside = path.join(this.appData, "glass-vaults", remembered.vaultId);
       const settings = await readJson(path.join(outside, "settings.json"));
+      if (settings) assertNoStoreSecrets(settings, "Glass settings");
       if (goodVaultId(settings?.vaultId) && await directory(outside)) requested = "outside";
     }
     if (requested === "inside") {
@@ -203,7 +208,11 @@ export class GlassService {
       await writeFileAtomic(attributes, `${current.replace(/\n?$/, "\n")}*.jsonl merge=union\n`);
     await writeIfMissing(path.join(this.storeDir, "notes.jsonl"), "");
     const settings = path.join(this.storeDir, "settings.json");
-    if (!await info(settings)) await atomicJson(settings, { version: glassVersion, vaultId: this.vaultId, mode: this.mode, createdAt: new Date().toISOString() });
+    if (!await info(settings)) {
+      const initial = { version: glassVersion, vaultId: this.vaultId, mode: this.mode, createdAt: new Date().toISOString() };
+      assertNoStoreSecrets(initial, "Glass settings");
+      await atomicJson(settings, initial);
+    }
     this.notesFile = path.join(this.storeDir, "notes.jsonl");
   }
 
@@ -251,6 +260,7 @@ export class GlassService {
       throw error;
     });
     const replay = replayNotesText(text);
+    this.logQuarantine(this.notesFile, replay.quarantined);
     this.notesById.clear();
     this.notesByPath.clear();
     for (const note of replay.notes.values()) {
@@ -475,7 +485,8 @@ export class GlassService {
 
   async appendRecord(file, record) {
     this.assertWritable();
-    const line = `${JSON.stringify(record)}\n`;
+    const identified = record.opId ? record : { ...record, opId: journalOpId(record) };
+    const line = `${JSON.stringify(identified)}\n`;
     this.remember(file, line);
     await this.enqueueWrite(file, line);
     return line;
@@ -572,6 +583,7 @@ export class GlassService {
     this.assertWritable();
     const existing = await info(file);
     if (existing && (!existing.isFile() || existing.isSymbolicLink())) throw new Error("Glass journal is not a plain file.");
+    const bytes = Buffer.from(line, "utf8");
     let handle, before = null, writing = false;
     try {
       await this.repairTail(file);
@@ -579,11 +591,16 @@ export class GlassService {
       if (this.faults.beforeAppend) await this.faults.beforeAppend(file, line);
       handle = await open(file, constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | noFollow, 0o600);
       writing = true;
-      if (this.faults.write) await this.faults.write(handle, line, file);
-      else await handle.writeFile(line);
+      const written = this.faults.write
+        ? await this.faults.write(handle, line, file)
+        : (await handle.write(bytes, 0, bytes.length, null)).bytesWritten;
+      // A full disk can return a short count with no exception. Treat anything but the whole
+      // line as failure and roll back, so a torn line is never left behind.
+      if (typeof written === "number" && written !== bytes.length)
+        throw Object.assign(new Error(`Glass wrote ${written} of ${bytes.length} bytes; the change was not saved.`), { code: "SHORT_WRITE", written, lineBytes: bytes.length });
       if (this.faults.sync) await this.faults.sync(handle, file);
       else await handle.sync();
-      this.sizes.set(file, before + Buffer.byteLength(line));
+      this.sizes.set(file, before + bytes.length);
       this.forget(file, line);
       this.lastSavedAt = Date.now();
       if (this.error) this.clearError();
@@ -665,12 +682,26 @@ export class GlassService {
       const text = metadata ? await readLimited(file, 128 * 1024 * 1024) : "";
       const replay = replayJournalText(text);
       for (const clock of replay.clocks) this.clock.observe(clock);
+      this.logQuarantine(file, replay.quarantined);
       cached = { signature, lines: replay.lines, replay };
       this.cache.set(file, cached);
     }
     const memory = this.memory.get(file);
     // Unflushed records already advanced this device's clock when written.
-    return memory?.length ? replayJournalText([...cached.lines, ...memory].join("\n")) : cached.replay;
+    if (!memory?.length) return cached.replay;
+    const combined = replayJournalText([...cached.lines, ...memory].join("\n"));
+    this.logQuarantine(file, combined.quarantined);
+    return combined;
+  }
+
+  logQuarantine(file, quarantined) {
+    if (!quarantined?.length) return;
+    this.quarantineLogged ??= new Map();
+    const key = `${file}:${quarantined.length}`;
+    if (this.quarantineLogged.get(file) === key) return;
+    this.quarantineLogged.set(file, key);
+    const reasons = [...new Set(quarantined.map(item => item.reason))].join(", ");
+    console.warn(`[glass] ${quarantined.length} journal line(s) quarantined in ${path.basename(file)}: ${reasons}`);
   }
 
   async add(request) {
@@ -929,8 +960,9 @@ export class GlassService {
     const file = this.journalFor(note);
     const imported = await this.importScraps(note).catch(() => 0);
     const replay = await this.readJournal(file);
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), imported,
-      unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), layers: layerStates(replay.layers), imported,
+      unknownOps: replay.unknown.length, invalidLines: replay.invalid, quarantinedLines: replay.quarantined.length,
+      duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
   async show(request) {
@@ -945,10 +977,11 @@ export class GlassService {
     if (request.magnet) {
       const magnet = replay.magnets.get(request.magnet);
       return { ...this.describe(note, file), magnet: magnet ? magnetViewFromMap(magnet) : null,
-        deleted: !!magnet?.deleted?.active, pending: this.pending.length };
+        deleted: !!magnet?.deleted?.active, quarantinedLines: replay.quarantined.length, pending: this.pending.length };
     }
-    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay),
-      unknownOps: replay.unknown.length, invalidLines: replay.invalid, duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
+    return { ...this.describe(note, file), magnets: visibleMagnets(replay.magnets), trash: this.trashOf(replay), layers: layerStates(replay.layers),
+      unknownOps: replay.unknown.length, invalidLines: replay.invalid, quarantinedLines: replay.quarantined.length,
+      duplicateLines: replay.duplicates, incompleteTail: replay.incomplete, pending: this.pending.length };
   }
 
   // Where the vault says attachments go and how its links look; read only, never written.
@@ -1215,6 +1248,36 @@ export class GlassService {
     return findInVault(settings.root, clean).catch(() => undefined);
   }
 
+  // Layers exist per note: the panel reads their state with the current magnet counts.
+  async layers(request) {
+    this.assertReady();
+    const { note: name } = await this.validateNote(request.note);
+    if (!this.initialized && await this.existingStore()) await this.initialize();
+    const empty = { note: name, id: null, journal: null, layers: layerStates(), counts: layerCounts([]), initialized: false, pending: this.pending.length };
+    if (!this.initialized) return empty;
+    const note = this.notesByPath.get(name);
+    if (!note) return empty;
+    const file = this.journalFor(note);
+    const replay = await this.readJournal(file);
+    return { ...this.describe(note, file), layers: layerStates(replay.layers),
+      counts: layerCounts(visibleMagnets(replay.magnets)), pending: this.pending.length };
+  }
+
+  // One journal line per changed field, so two devices merging journals keep the newest value alone.
+  async layer(request) {
+    this.assertWritable();
+    if (!validGlassLayer(request.layer)) throw new Error("Layer must be one of: ink, notes, media, cards, comments.");
+    const patch = layerPatch(request);
+    const note = await this.identify(request.note);
+    const file = this.journalFor(note);
+    for (const [field, value] of Object.entries(patch))
+      await this.appendRecord(file, { op: "layer", layer: request.layer, field, value, hlc: this.clock.next(), device: this.deviceName });
+    const replay = await this.readJournal(file);
+    this.notify();
+    return { ...this.describe(note, file), layer: request.layer, changed: Object.keys(patch), layers: layerStates(replay.layers),
+      counts: layerCounts(visibleMagnets(replay.magnets)), pending: this.pending.length, saved: this.pending.length === 0 };
+  }
+
   describe(note, file) {
     return { vaultId: this.vaultId, mode: this.mode, readOnly: this.readOnly, note: note.path, id: note.id,
       journal: relative(this.storeDir, file), location: this.mode === "inside" ? ".omarkie" : this.storeDir };
@@ -1363,7 +1426,7 @@ export class GlassService {
       if (!this.sync) throw new Error("The vault index is not running. Open the folder in Omarkie first.");
       return this.sync[input.action](input);
     }
-    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save",
+    if (!["add", "set", "delete", "restore", "list", "show", "asset", "asset-display", "card", "clip-save", "layers", "layer",
       "merge-preview", "merge-accept", "merge-undo", "merge-history", "lift-up"].includes(input.action)) throw new Error("Unknown Glass action.");
     if (typeof input.note !== "string" || !input.note.trim()) throw new Error("--note is required.");
     if (["set", "delete", "restore", "asset", "asset-display", "card", "clip-save", "merge-preview", "merge-accept"].includes(input.action) && (typeof input.magnet !== "string" || !input.magnet.trim())) throw new Error("--magnet is required.");
@@ -1750,11 +1813,12 @@ async function atomicJson(file, value) {
 
 const readme = `# Omarkie glass
 Your notes are untouched; glass lives in this folder.
-- \`glass/\` — one JSONL journal per note that has glass.
+- \`glass/\` — one JSONL journal per note that has glass. Each line carries a deterministic \`opId\`.
 - \`assets/\` — glass images, one folder per note.
 - \`notes.jsonl\` — note id, vault-relative path and fingerprint.
 - \`settings.json\` — vault id and storage mode.
 - \`writer.lock\` — present and owned while one Omarkie instance writes; a second instance opens read-only.
-- \`.gitattributes\` — \`*.jsonl merge=union\`, so git keeps every journal line.
+- \`.gitattributes\` — \`*.jsonl merge=union\`, so git keeps every journal line; Omarkie dedupes by \`opId\` on read.
 - \`README.md\` — this map.
+- Secrets never live here. A sync token belongs in the OS keychain; this folder syncs to every device and backup.
 `;

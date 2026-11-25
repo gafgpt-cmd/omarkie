@@ -11,7 +11,7 @@ import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { setTimeout as delay } from "node:timers/promises";
-import { assertFrameCadence } from "./frame-cadence.mjs";
+import { assertFrameCadence, assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import { GlassService } from "../electron/glass-service.mjs";
 
@@ -445,10 +445,13 @@ try {
     await page.mouse.move(start.x + 20 + step * 4, start.y + 30 + step * 3);
     await delay(16);
   }
-  const costs = [];
+  // The drag itself is the interaction: watch long tasks and per-move work from here.
+  await watchWork(page);
+  const costs = [], dragCosts = [];
   while (costs.length < 40) {
     await page.mouse.move(start.x + 20 + (costs.length % 14) * 6, start.y + 30 + (costs.length % 9) * 4);
     costs.push(Number(await guides(page).getAttribute("data-snap-ms")));
+    dragCosts.push(Number(await glassOf(page).getAttribute("data-drag-ms")));
     await delay(8);
   }
   const gaps = await page.evaluate(async () => {
@@ -456,6 +459,7 @@ try {
     cancelAnimationFrame(window.__snapFrame);
     return window.__snapGaps;
   });
+  const work = await readWork(page);
   await page.mouse.up();
   const sorted = costs.filter(value => Number.isFinite(value)).sort((a, b) => a - b);
   const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
@@ -463,6 +467,7 @@ try {
   // The strict 2 ms budget for the guide math is proven in glass-snap.test.mjs. This end-to-end
   // sample runs on shared hosts, so it only guards against a pathological slowdown.
   assert.ok(sorted.length >= 20 && p95 <= 50, `guides stay responsive on the app path (p95 ${p95}, max ${sorted.at(-1)})`);
+  assertWorkBudget({ work: dragCosts.filter(Number.isFinite), longTasks: work.longTasks, gesture: "Dragging with 200 magnets" });
   assertFrameCadence(gaps, "Dragging with 200 magnets");
   assert.deepEqual(errors, []);
 } finally {

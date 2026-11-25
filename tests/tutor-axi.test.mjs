@@ -88,3 +88,18 @@ test("skill drift check and opt-in project hooks preserve existing config on rep
   const { stdout } = await promisify(execFile)(electron, [entry, "context", "--agent", "claude"], { cwd: root, env, timeout: 5000 });
   assert.equal(stdout, "");
 });
+
+test("glass layers verbs parse like the other glass commands", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "omarkie-axi-layers-"));
+  await writeFile(path.join(root, "note.md"), "# Note\n\nBody.\n");
+  const help = await run(root, "glass", "layers", "list", "--help");
+  assert.match(help.usage, /^omarkie-axi glass layers list/);
+  assert.equal((await run(root, "glass", "layers", "hide", "--note", "note.md")).exit, 2);
+  assert.equal((await run(root, "glass", "layers", "opacity", "--note", "note.md", "notes", "40")).exit, 1);
+  const invalid = await run(root, "glass", "layers", "opacity", "--note", "note.md", "notes", "half");
+  assert.equal(invalid.exit, 2);
+  assert.match(invalid.error, /Opacity must be a number/);
+  const unknown = await run(root, "glass", "layers", "hide", "--note", "note.md", "per-element");
+  assert.equal(unknown.exit, 2);
+  assert.match(unknown.error, /Layer must be one of/);
+});

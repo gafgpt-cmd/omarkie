@@ -111,7 +111,7 @@ export function ClipView({ clip, place, selected, savedNote, note, inkColor, ink
   const [saving, setSaving] = useState(false);
   const [painting, setPainting] = useState(false);
   const title = clip.title.trim() || clip.text.split(/\r?\n/).find(line => line.trim())?.replace(/^#+\s*/, "").slice(0, 70) || "Clipped page";
-  if (clip.folded) return <div className="glass-clip" data-magnet={clip.id} data-clip data-folded data-selected={selected || undefined}
+  if (clip.folded) return <div className="glass-clip" data-magnet={clip.id} data-clip data-folded data-glass-layer="notes" data-selected={selected || undefined}
     style={{ left: `${place.x}px`, top: `${place.y}px` }} tabIndex={0} onPointerDown={onSelect}
     onDoubleClick={() => onFold(false)} onKeyDown={event => {
       if (event.target !== event.currentTarget) return;
@@ -128,7 +128,7 @@ export function ClipView({ clip, place, selected, savedNote, note, inkColor, ink
     setSaving(true);
     try { await onSave(); } finally { setSaving(false); }
   };
-  return <div className="glass-sheet glass-clip" data-magnet={clip.id} data-clip data-selected={selected || undefined}
+  return <div className="glass-sheet glass-clip" data-magnet={clip.id} data-clip data-glass-layer="notes" data-selected={selected || undefined}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px`, height: `${place.height}px` }}
     tabIndex={0} aria-label={`Clipped page: ${title}`} onPointerDown={onSelect} onKeyDown={event => {
       const target = event.target as HTMLElement;
@@ -163,7 +163,7 @@ export function ExtraPageView({ page, place, selected, inkColor, inkSize, onSele
 }) {
   const [painting, setPainting] = useState(false);
   const title = page.title.trim() || "Extra page";
-  return <div className="glass-sheet glass-extra-page" data-magnet={page.id} data-extra-page data-paper={page.paper} data-selected={selected || undefined}
+  return <div className="glass-sheet glass-extra-page" data-magnet={page.id} data-extra-page data-paper={page.paper} data-glass-layer="notes" data-selected={selected || undefined}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px`, height: `${place.height}px` }}
     tabIndex={0} aria-label={title} onPointerDown={onSelect} onKeyDown={event => {
       const target = event.target as HTMLElement;
@@ -212,7 +212,7 @@ export function CutoutView({ cutout, place, selected, note, sourceImage, onSelec
         left: `-${(cutout.region.x / Math.max(0.1, cutout.region.w)) * 100}%`,
         top: `-${(cutout.region.y / Math.max(0.1, cutout.region.h)) * 100}%`, maxWidth: "none" }
     : undefined;
-  return <div className="glass-cutout" data-magnet={cutout.id} data-cutout data-selected={selected || undefined}
+  return <div className="glass-cutout" data-magnet={cutout.id} data-cutout data-glass-layer="media" data-selected={selected || undefined}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px`, height: `${place.height}px` }}
     tabIndex={0} aria-label={`Cutout: ${cutout.name}`} title={`Jump to ${cutout.source.kind ?? "source"} on line ${cutout.source.line}`}
     onPointerDown={event => { onSelect(); down.current = { x: event.clientX, y: event.clientY }; }}

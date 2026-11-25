@@ -15,7 +15,7 @@ interface Props {
   style: ArrowStyle;
   color: ArrowColor;
   scroller: HTMLElement;
-  hitTest(x: number, y: number): Hit | undefined;
+  hitTest(x: number, y: number, known?: DOMRect): Hit | undefined;
   onCreate(from: ArrowEnd, to: ArrowEnd): void;
   onSelect(id?: string): void;
   onDelete(id: string): void;
@@ -27,7 +27,7 @@ const colorOf = (color: ArrowColor) => color === "red" ? "#cf3b32" : color === "
 
 const ArrowPaths = memo(function ArrowPaths({ routes, arrows, selected, onSelect }: Pick<Props, "routes" | "arrows" | "selected" | "onSelect">) {
   const byId = new Map(arrows.map(arrow => [arrow.id, arrow]));
-  return <svg className="glass-arrow-paths" aria-label="Glass arrows">
+  return <svg className="glass-arrow-paths" aria-label="Glass arrows" data-glass-layer="notes">
     {routes.map(route => {
       const arrow = byId.get(route.id);
       if (!arrow) return null;
@@ -61,7 +61,7 @@ function ArrowJumps({ routes, view, names, scroller }: Pick<Props, "routes" | "v
     const far = jump.far === "to" ? route.to : route.from;
     const ends = names[route.id];
     const name = (jump.far === "to" ? ends?.to : ends?.from) ?? "";
-    return <button type="button" key={route.id} className="glass-arrow-jump" data-arrow-jump={route.id} data-direction={jump.direction}
+    return <button type="button" key={route.id} className="glass-arrow-jump" data-arrow-jump={route.id} data-direction={jump.direction} data-glass-layer="notes"
       style={{ left: `${clamp(jump.point.x, 12, Math.max(12, view.width - 12))}px`,
         top: `${jump.direction === "up" ? view.top + 12 : view.top + view.height - 70}px` }}
       title={name ? `Jump to ${name}` : "Jump to the other end"} aria-label={name ? `Jump to ${name}` : "Jump to the other end"}
@@ -78,7 +78,7 @@ function ArrowTools({ arrow, route, view, onUpdate, onDelete, onSelect }: {
   const [label, setLabel] = useState(arrow.label);
   useEffect(() => setLabel(arrow.label), [arrow.label]);
   const commit = () => { if (label !== arrow.label) onUpdate(arrow.id, { label }); };
-  return <div className="glass-arrow-tools" role="group" aria-label="Arrow" data-arrow-tools={arrow.id}
+  return <div className="glass-arrow-tools" role="group" aria-label="Arrow" data-arrow-tools={arrow.id} data-glass-layer="notes"
     style={{ left: `${clamp(route.label.x, 132, Math.max(132, view.width - 132))}px`, top: `${clamp(route.label.y, view.top + 10, view.top + view.height - 96)}px` }}>
     <div className="glass-arrow-row">
       {arrowStyles.map(style => <button type="button" key={style} data-arrow-style={style} aria-pressed={arrow.style === style}
@@ -153,27 +153,36 @@ export default function ArrowOverlay(props: Props) {
   }, []);
 
   useEffect(() => {
-    let scrollTime: number | undefined;
+    let scrollTime: number | undefined, zoneRect: DOMRect | undefined, pageRect: DOMRect | undefined, rectFor: Drag | undefined;
     const step = (time: number) => {
       frame.current = undefined;
       const point = last.current, state = drag.current;
       last.current = undefined;
       if (!point || !state) return;
       const current = live.current;
-      const rect = current.scroller.getBoundingClientRect(), zone = 52;
+      // One layout read per frame: the zone and page rects only move when this drag scrolls.
+      if (rectFor !== state) { rectFor = state; pageRect = undefined; zoneRect = undefined; }
+      const rect = zoneRect ??= current.scroller.getBoundingClientRect();
+      const zone = 52;
       const direction = point.y < rect.top + zone ? -1 : point.y > rect.bottom - zone ? 1 : 0;
       if (direction) {
         const delta = Math.min(64, Math.max(0, time - (scrollTime ?? time - 16.7)));
         current.scroller.scrollBy(0, direction * delta * 1.1);
+        zoneRect = undefined;
+        pageRect = undefined;
         scrollTime = time;
         last.current = point;
         frame.current = requestAnimationFrame(step);
       } else scrollTime = undefined;
-      const at = local(point.x, point.y);
-      const hit = current.hitTest(point.x, point.y);
+      // The product's own work for this frame: hit test, geometry and the two path writes.
+      const own = performance.now();
+      const pageBox = pageRect ??= root.current?.getBoundingClientRect();
+      const at = pageBox ? { x: point.x - pageBox.left, y: point.y - pageBox.top } : { x: point.x, y: point.y };
+      const hit = current.hitTest(point.x, point.y, pageBox);
       if ("end" in state) redrawEnd(state, at);
       else drawPreview(at);
       showSnap(hit);
+      document.documentElement.dataset.glassArrowMs = (performance.now() - own).toFixed(2);
     };
     const move = (event: PointerEvent) => {
       if (!drag.current) return;

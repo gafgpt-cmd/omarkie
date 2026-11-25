@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
+import { assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
@@ -447,6 +448,7 @@ try {
   await page.mouse.down();
   await page.mouse.move(grip.x + 5, grip.y + 5);
   await expect(sample).toHaveClass(/is-lifting/);
+  await watchWork(page);
   const captureFrames = page.evaluate(async id => {
     const note = document.querySelector(`.glass-note[data-magnet="${id}"]`);
     const frames = [];
@@ -468,13 +470,19 @@ try {
       await new Promise(resolve => setTimeout(resolve, 8));
     }
   }, grip);
-  const [frames] = await Promise.all([captureFrames, gesture]);
+  const dragSamples = [];
+  const sampleDrag = (async () => {
+    while (dragSamples.length < 40) { dragSamples.push(Number(await glassOf(page).getAttribute("data-drag-ms"))); await page.waitForTimeout(8); }
+  })();
+  const [frames] = await Promise.all([captureFrames, gesture, sampleDrag]);
+  const stickyWork = await readWork(page);
   await page.mouse.up();
   const sorted = frames.sort((a, b) => a - b);
   const p50 = sorted[Math.floor(sorted.length / 2)];
   const p95 = sorted[Math.floor(sorted.length * 0.95)];
   console.log(`budget: plain ${plain.map(value => value.toFixed(1)).join("/")}ms; 203 magnets ${many.map(value => value.toFixed(1)).join("/")}ms; drag ${frames.length} moving frames in 1.2s, p50 ${p50?.toFixed(1)}ms, p95 ${p95?.toFixed(1)}ms`);
   if (fullEvidence) assert.ok(frames.length > 0, "Trusted drag must move the paper across multiple renderer frames.");
+  assertWorkBudget({ work: dragSamples.filter(Number.isFinite), longTasks: stickyWork.longTasks, gesture: "Dragging a sticky over 203 magnets" });
 
   // A deleted paragraph leaves its magnets in the orphan tray, not lost.
   await learning(page, false);

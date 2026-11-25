@@ -136,14 +136,14 @@ try {
   await expect(panel).toHaveCount(0);
   await expect(sidebar).toBeVisible();
   await drawer.click();
-  const preview = page.getByRole("group", { name: "Sheets", exact: true }).getByRole("button", { name: "Live Preview", exact: true });
+  const preview = page.getByRole("group", { name: "Layers", exact: true }).getByRole("button", { name: "Live Preview", exact: true });
   await expect(preview).toHaveAttribute("aria-pressed", "true");
   await preview.click();
   await expect(source).toBeVisible();
   await page.keyboard.press("ControlOrMeta+n");
   await expect(rich).toBeVisible();
   await drawer.click();
-  await sidebar.getByRole("complementary", { name: "Sheets" }).getByRole("button", { name: "Files", exact: true }).click();
+  await sidebar.getByRole("complementary", { name: "Layers" }).getByRole("button", { name: "Files", exact: true }).click();
   await sidebar.getByRole("button", { name: "synthetic.md", exact: true }).click();
   await expect(source).toContainText(selection);
   await page.getByRole("button", { name: "Learning mode", exact: true }).click();

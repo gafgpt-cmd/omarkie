@@ -36,12 +36,12 @@ try {
   const page = await app.firstWindow();
   const error = []; page.on("pageerror", err => error.push(err.message));
   const button = (where, name) => where.getByRole("button", { name, exact: true });
-  const sidebar = page.locator(".sidebar"), rail = sidebar.getByRole("complementary", { name: "Sheets" });
+  const sidebar = page.locator(".sidebar"), rail = sidebar.getByRole("complementary", { name: "Layers" });
   const panel = page.getByRole("complementary", { name: "Tutor" }), verbs = panel.getByRole("group", { name: "Tutor actions" });
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const reply = panel.getByRole("region", { name: "Tutor answer" });
   const selection = page.getByRole("group", { name: "Selection actions" });
-  const look = page.getByRole("group", { name: "Sheets", exact: true });
+  const look = page.getByRole("group", { name: "Layers", exact: true });
   const tutor = button(page, "Tutor"), toggle = button(page, "Learning mode"), toggleSidebar = button(page, "Toggle Sidebar");
   const qa = process.env.OMARKIE_QA_DIR;
   async function screenshot(name) { if (qa) await page.screenshot({ path: path.join(qa, `learning-workspace-${name}.png`) }); }

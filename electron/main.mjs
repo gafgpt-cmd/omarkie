@@ -131,7 +131,7 @@ let operationRunning = false;
 let bibliography;
 let glassRuntime = { folder: null, root: null, service: null, sync: null, close: null, error: null };
 function announceGlass(request) {
-  if (["add", "set", "delete", "restore", "bring", "clip-save", "merge-accept", "merge-undo", "lift-up"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
+  if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "merge-accept", "merge-undo", "lift-up"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
 
 let glassQueue = Promise.resolve();

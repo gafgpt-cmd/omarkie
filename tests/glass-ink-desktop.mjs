@@ -10,7 +10,7 @@ import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
-import { assertFrameCadence } from "./frame-cadence.mjs";
+import { assertFrameCadence, assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 // G7: the pencil. Pen, highlighter and eraser over a real page, split per element box,
@@ -497,6 +497,7 @@ try {
     new MutationObserver(() => window.__inkCommits.push(performance.now()))
       .observe(document.querySelector(".glass-ink"), { attributes: true, attributeFilter: ["data-glass-ink"] });
   });
+  await watchWork(page);
   const cadence = await page.evaluate(async grab => {
     const surface = document.querySelector("[data-ink-surface]");
     const gaps = [];
@@ -531,7 +532,10 @@ try {
   });
   console.log(`budget: ${timing.events} pointer moves, ink handler p50 ${timing.p50?.toFixed(1)}ms p95 ${timing.p95?.toFixed(1)}ms, ${timing.paints} live paints, commit ${timing.commit?.toFixed(0)}ms`);
   assert.ok(timing.events > 20, "the drag reaches the ink surface");
-  assert.ok(timing.p95 <= 16, `drawing a stroke on 2,000 keeps pointer->path inside one frame (p95 ${timing.p95?.toFixed(1)}ms)`);
+  await expect(page.locator(".glass-ink")).toHaveAttribute("data-glass-ink", /./);
+  const inkWork = await readWork(page);
+  const inkChains = await page.evaluate(() => [...window.__inkChains]);
+  assertWorkBudget({ work: inkChains, longTasks: inkWork.longTasks, gesture: "Drawing over 2,000 strokes" });
   assert.ok(timing.paints > 0, "the live stroke repaints while drawing");
   assert.ok(timing.commit <= 1500, `committing the 2,001st stroke does not lock the app (${timing.commit?.toFixed(0)}ms)`);
   assertFrameCadence(cadence, "Drawing over 2,000 strokes");

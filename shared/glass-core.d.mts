@@ -16,6 +16,7 @@ export function isNewer(hlc: string, device: string, current: { hlc: string; dev
 export function parseJournalText(text: string): { lines: string[]; incomplete: string[] };
 export function replayJournalText(text: string): {
   magnets: Map<string, unknown>;
+  layers: Map<string, Map<string, { value: unknown; hlc: string; device: string }>>;
   lines: string[];
   unknown: unknown[];
   invalid: number;

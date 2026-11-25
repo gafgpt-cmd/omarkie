@@ -40,6 +40,27 @@
   border-radius: 5px; padding: 5px 7px; text-align: start; font: inherit;
 }
 .study-sheet-row { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+/* G12: five shared layers in the left rail, made on first use. */
+.glass-layers { margin: 2px 0 12px; }
+.glass-layers h3, .study-sheet-heading { margin: 10px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.glass-layer-list { display: grid; gap: 3px; }
+.glass-layer-row, .glass-layer-chips > li {
+  display: flex; align-items: center; gap: 5px; min-width: 0; border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 6px; background: var(--paper);
+}
+.glass-layer-row[data-pulse], .glass-layer-chips > li[data-pulse] { border-color: var(--accent); }
+.glass-layer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glass-layer-row small, .glass-layer-chips small { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 1ch; text-align: end; }
+.glass-layer-eye, .glass-layer-lock { display: grid; place-items: center; padding: 3px; border-radius: 4px; color: var(--muted); }
+.glass-layer-eye[aria-pressed="false"] { color: var(--error, #bf566f); }
+.glass-layer-lock[aria-pressed="true"] { color: var(--warning, #c88730); }
+.glass-layer-opacity { display: flex; align-items: center; width: 58px; }
+.glass-layer-opacity input { width: 100%; accent-color: var(--accent); }
+.glass-layers-empty { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 6px 4px; }
+.glass-layer-chips { display: flex; gap: 7px; margin: 0; padding: 0; list-style: none; overflow-x: auto; }
+.glass-layer-chips > li { flex: 0 0 auto; border-radius: 999px; padding: 2px 8px 2px 3px; }
+.glass-layer-chips .glass-layer-name { flex: none; }
+.glass-layer-chips .glass-layer-opacity { width: 46px; }
 .study-sheet { flex: 1; width: 100%; color: var(--muted); }
 .study-sheet-pencil { color: var(--muted); }
 .study-sheet-pencil[aria-pressed="true"] { color: var(--accent); }
@@ -163,3 +184,12 @@
   .learning-mode.payload-open.sidebar-hidden > :is(.tutor-panel, .payload-panel) { grid-area: 2 / 2; justify-self: end; width: min(100%, 360px); }
 }
 @media print { .layers-rail, .layers-right, .layers-selection, .study-chips, .study-overlay, .study-floats { display: none !important; } }
+
+/* Rail rows: names get the full first line, opacity its own track below. Chips wrap instead of clipping. */
+.glass-layer-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 2px 5px; }
+.glass-layer-row .glass-layer-eye { grid-area: 1 / 1; }
+.glass-layer-row .glass-layer-lock { grid-area: 1 / 2; }
+.glass-layer-row .glass-layer-name { grid-area: 1 / 3; }
+.glass-layer-row small { grid-area: 1 / 4; }
+.glass-layer-row .glass-layer-opacity { grid-area: 2 / 1 / 3 / -1; width: auto; }
+.glass-layer-chips { flex-wrap: wrap; overflow-x: visible; }

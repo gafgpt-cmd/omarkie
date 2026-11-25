@@ -31,8 +31,8 @@ try {
   page.on("request", request => requests.push(request.url()));
   page.on("pageerror", error => errors.push(error.message));
   const toggle = page.getByRole("button", { name: "Learning mode", exact: true });
-  const sheets = page.getByRole("complementary", { name: "Sheets", exact: true });
-  const sheetChips = page.getByRole("group", { name: "Sheets", exact: true });
+  const sheets = page.getByRole("complementary", { name: "Layers", exact: true });
+  const sheetChips = page.getByRole("group", { name: "Layers", exact: true });
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const tray = page.getByRole("complementary", { name: "Loose scraps", exact: true });
   const journal = path.join(vault, ".omarkie", "store.jsonl");

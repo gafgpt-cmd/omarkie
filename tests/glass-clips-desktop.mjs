@@ -224,8 +224,8 @@ try {
   const agentClip = state.magnets.find(magnet => magnet.id === "m-agent-clip")?.id;
   const localPage = state.magnets.find(magnet => magnet.fields?.kind === "extra-page" && magnet.fields.paper === "grid")?.id;
   const cuts = state.magnets.filter(magnet => magnet.fields?.kind === "cutout").map(magnet => magnet.id);
-  for (const [magnet, x, y, w, h] of [[slopeClip, 0, 300], [agentClip, 380, 10], [localPage, 0, 360],
-    [cuts[0], 430, 300], [cuts[1], 430, 430]])
+  for (const [magnet, x, y, w, h] of [[slopeClip, 0, 330], [agentClip, 0, 10], [localPage, 0, 330, 420, 200],
+    [cuts[0], 360, 10], [cuts[1], 360, 110]])
     if (magnet) await axi("glass", "move", "--note", doc, "--magnet", magnet, "--x", String(x), "--y", String(y),
       ...(w ? ["--w", String(w), "--h", String(h)] : []));
   await expect.poll(() => page.locator(".glass-cutout").count()).toBe(2);
@@ -239,8 +239,11 @@ try {
   await glassOn(page);
   await resize(app.app, page, 1440);
   await expect(page.locator(".glass-cutout img")).toHaveCount(2);
+  await expect(page.locator(".glass-cutout-missing")).toHaveCount(0);
   await shot(page, "g13-light-1440");
   await resize(app.app, page, 720);
+  await expect(page.locator(".glass-clip[data-folded]")).toBeVisible();
+  await expect(page.locator(".glass-extra-page[data-paper=grid]")).toBeVisible();
   await shot(page, "g13-light-720");
   await page.evaluate(() => localStorage.setItem("omarkie-theme", "omarchy-dark"));
   await page.reload();
@@ -248,8 +251,12 @@ try {
   await learning(page, true);
   await glassOn(page);
   await resize(app.app, page, 1440);
+  await expect(page.locator(".glass-cutout img")).toHaveCount(2);
+  await expect(page.locator(".glass-cutout-missing")).toHaveCount(0);
   await shot(page, "g13-dark-1440");
   await resize(app.app, page, 720);
+  await expect(page.locator(".glass-clip[data-folded]")).toBeVisible();
+  await expect(page.locator(".glass-extra-page[data-paper=grid]")).toBeVisible();
   await shot(page, "g13-dark-720");
   assert.deepEqual(errors, []);
 
@@ -265,8 +272,29 @@ try {
   await expect(page.locator(".glass-cutout img")).toHaveCount(2);
   await expect(page.locator('.glass-extra-page[data-paper="grid"]')).toBeVisible();
   await expect(page.locator("[data-sheet-stroke]").first()).toBeVisible();
+
+  // Layers: the new paper joins the shared notes/media shelves.
+  const layerList = await axi("glass", "layers", "list", "--note", doc);
+  const layers = Object.fromEntries(layerList.layers.map(layer => [layer.id, layer]));
+  assert.ok(layers.notes.count >= 3, "clips and extra pages count on the notes layer");
+  assert.ok(layers.media.count >= 2, "cutouts count on the media layer");
+  await axi("glass", "layers", "hide", "--note", doc, "notes");
+  await expect(page.locator('[data-glass-layer="notes"]').first()).toHaveCSS("visibility", "hidden");
+  await axi("glass", "layers", "show", "--note", doc, "notes");
+  await expect(page.locator('[data-glass-layer="notes"]').first()).toHaveCSS("visibility", "visible");
+  await axi("glass", "layers", "lock", "--note", doc, "notes");
+  await expect(page.locator('[data-glass-layer="notes"]').first()).toHaveAttribute("inert", "");
+  await axi("glass", "layers", "unlock", "--note", doc, "notes");
+  await expect(page.locator('[data-glass-layer="notes"]').first()).not.toHaveAttribute("inert", "");
+  await axi("glass", "layers", "hide", "--note", doc, "media");
+  await expect(page.locator('[data-glass-layer="media"].glass-cutout').first()).toHaveCSS("visibility", "hidden");
+  await axi("glass", "layers", "show", "--note", doc, "media");
+  await expect(page.locator('[data-glass-layer="media"].glass-cutout').first()).toHaveCSS("visibility", "visible");
+  await axi("glass", "layers", "lock", "--note", doc, "media");
+  await expect(page.locator('[data-glass-layer="media"].glass-cutout').first()).toHaveAttribute("inert", "");
+  await axi("glass", "layers", "unlock", "--note", doc, "media");
   assert.deepEqual(errors, []);
-  console.log("PASS: clip create/fold/unfold/edit/save one note; rectangle + lasso cutout with jump; extra page ink; agent parity; restart persistence; 4 screenshots");
+  console.log("PASS: clip create/fold/unfold/edit/save one note; rectangle + lasso cutout with jump; extra page ink; agent parity; layers; restart persistence; 4 screenshots");
 } finally {
   await app.app.close().catch(() => {});
 }

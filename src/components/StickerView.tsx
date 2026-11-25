@@ -17,7 +17,7 @@ export default function StickerView({ sticker, place, selected, onSelect, onRota
     const center = turn.current?.center;
     return center ? Math.atan2(y - center.y, x - center.x) * 180 / Math.PI : 0;
   };
-  return <div className="glass-sticker" data-magnet={sticker.id} data-sticker={sticker.image ? "custom" : sticker.sticker}
+  return <div className="glass-sticker" data-magnet={sticker.id} data-sticker={sticker.image ? "custom" : sticker.sticker} data-glass-layer="notes"
     data-selected={selected || undefined} data-turning={turning || undefined} role="group" aria-label={name} tabIndex={0}
     style={{ left: `${place.x}px`, top: `${place.y}px`, width: `${place.width}px`, height: `${place.height}px` }}
     onPointerDown={onSelect}

@@ -268,7 +268,7 @@ export default function BubbleLayer({ root, editor, note, live, pin, magnets, re
     if (await pin(reply)) setPinned(values => new Set(values).add(reply.id));
   }
 
-  return createPortal(<div className="bubble-layer" data-bubble-layer="on" data-bubble-tick={tick}>
+  return createPortal(<div className="bubble-layer" data-bubble-layer="on" data-glass-layer="comments" data-bubble-tick={tick}>
     {shown.map(({ bubble, bundle, node, order }) => <div key={bubble.id}>
       <Anchored node={node} placement="right-start" gap={6} along={order * 26}>
         <button type="button" className="bubble-chip" data-bubble={bubble.id} data-bubble-state={bubble.thread.length ? "thread" : "empty"}
