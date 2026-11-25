@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { imageSize } from "image-size";
 import {
-  anchorVersion, assertNoStoreSecrets, createClock, glassFileName, glassVersion, journalOpId, newMagnetId, parseClock, parseJournalText,
+  anchorVersion, assertNoStoreSecrets, clockSkewLimit, conflictLine, createClock, glassFileName, glassVersion, journalOpId, newMagnetId, parseClock, parseJournalText,
   replayJournalText, replayNotesText, sanitizeTitle, stickyColors, validAnchor, visibleMagnets,
 } from "../shared/glass-core.mjs";
 import {
@@ -47,6 +47,15 @@ const directory = async file => { const item = await info(file); return !!item?.
 const relative = (root, file) => path.relative(root, file).split(path.sep).join("/");
 const titleOf = name => path.basename(name).replace(markdown, "");
 const journalPattern = / ~([a-z0-9]{4,32})\.jsonl$/;
+
+// Identity of one journal line, so a conflict copy never adds an op twice.
+function journalLineKey(line) {
+  let record;
+  try { record = JSON.parse(line); } catch { return null; }
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+  if (typeof record.opId === "string" && record.opId) return `op:${record.opId}`;
+  return parseClock(record.hlc) ? `op:${journalOpId(record)}` : null;
+}
 
 export class GlassService {
   constructor({ root, appData, device, host = os.hostname(), now = Date.now, faults = {} }) {
@@ -155,7 +164,13 @@ export class GlassService {
     if (requested === "inside") {
       if (!await directory(inside)) {
         try { await mkdir(inside, { recursive: true, mode: 0o700 }); }
-        catch (error) { if (!ownership.includes(error.code)) throw error; requested = "outside"; }
+        catch (error) {
+          // A read-only FUSE mount refuses the mkdir; Node's recursive mkdir reports that refusal as
+          // ENOENT while the vault folder itself still exists. Either way the fallback is outside mode.
+          const refused = ownership.includes(error.code) || (error.code === "ENOENT" && await directory(this.root));
+          if (!refused) throw error;
+          requested = "outside";
+        }
       }
       if (requested === "inside" && !await this.writable(inside)) requested = "outside";
     }
@@ -261,6 +276,21 @@ export class GlassService {
     try { process.kill(owner.pid, 0); return true; } catch (error) { return error.code === "EPERM"; }
   }
 
+  // A note's identity is its id, never the spelling of its path. HFS+ hands the same file back
+  // decomposed and Linux composed, so every path lookup normalizes to NFC and keeps both keys.
+  pathAliases(value) {
+    const nfc = String(value).normalize("NFC");
+    return nfc === value ? [value] : [value, nfc];
+  }
+
+  setPath(note, name) {
+    for (const key of this.pathAliases(name)) this.notesByPath.set(key, note);
+  }
+
+  dropPath(name) {
+    for (const key of this.pathAliases(name)) this.notesByPath.delete(key);
+  }
+
   async loadNotes() {
     this.notesFile = path.join(this.storeDir, "notes.jsonl");
     const text = await readLimited(this.notesFile, 64 * 1024 * 1024).catch(error => {
@@ -273,13 +303,14 @@ export class GlassService {
     this.notesByPath.clear();
     for (const note of replay.notes.values()) {
       this.notesById.set(note.id, note);
-      this.notesByPath.set(note.path, note);
+      this.setPath(note, note.path);
     }
     this.notesInvalid = replay.invalid;
     if (!this.readOnly) await this.repairTail(this.notesFile);
   }
 
   async scanJournals() {
+    await this.absorbConflictCopies();
     const names = await readdir(path.join(this.storeDir, "glass")).catch(() => []);
     for (const name of names) {
       const match = journalPattern.exec(name);
@@ -288,6 +319,64 @@ export class GlassService {
       this.journals.set(match[1], file);
       if (!this.readOnly) await this.repairTail(file);
     }
+  }
+
+  // Syncthing, Drive and Dropbox never edit a file: they drop a copy beside it
+  // (`x ~id.jsonl.sync-conflict-….jsonl`, `x ~id (1).jsonl`, `x ~id (conflicted copy …).jsonl`).
+  // Every op in a copy is real, so the lines are union-merged by op id into the one journal and the
+  // copy is moved to `merged/`, never deleted. Runs at open and on every sync batch.
+  async absorbConflictCopies() {
+    if (!this.loaded || this.readOnly || this.closed || !this.storeDir) return { lines: 0, copies: [] };
+    const glass = path.join(this.storeDir, "glass");
+    const names = await readdir(glass).catch(() => []);
+    const groups = new Map();
+    for (const name of names) {
+      if (!name.endsWith(".jsonl")) continue;
+      // Syncthing inserts its marker before the extension (`x ~id.sync-conflict-….jsonl`), Drive and
+      // Dropbox append after it; both point at the same journal id.
+      const match = / ~([a-z0-9]{4,32})(?:\.jsonl|\.sync-conflict|[ (])/.exec(name);
+      if (!match) continue;
+      const list = groups.get(match[1]) ?? [];
+      list.push(name);
+      groups.set(match[1], list);
+    }
+    const merged = [], moved = [];
+    for (const [id, list] of groups) {
+      if (list.length < 2) continue;
+      const note = this.notesById.get(id);
+      const expected = note ? glassFileName(note.title ?? titleOf(note.path), id) : null;
+      const canonical = (expected && list.includes(expected) ? expected : null)
+        ?? list.find(name => name.endsWith(` ~${id}.jsonl`))
+        ?? [...list].sort()[0];
+      const copies = list.filter(name => name !== canonical).sort();
+      const canonicalFile = path.join(glass, canonical);
+      const known = new Map();
+      for (const line of parseJournalText(await readFile(canonicalFile, "utf8").catch(() => "")).lines) {
+        const key = journalLineKey(line);
+        if (key) known.set(key, line);
+      }
+      const appended = [];
+      for (const copy of copies) {
+        const text = await readFile(path.join(glass, copy), "utf8").catch(() => "");
+        for (const line of parseJournalText(text).lines) {
+          const trimmed = line.trim();
+          if (!trimmed || conflictLine.test(trimmed)) continue;
+          const key = journalLineKey(trimmed) ?? `line:${trimmed}`;
+          if (known.has(key)) continue;
+          known.set(key, line);
+          appended.push(line);
+        }
+      }
+      if (appended.length) await this.appendText(canonicalFile, appended.join("\n"));
+      await mkdir(path.join(this.storeDir, "merged"), { recursive: true, mode: 0o700 });
+      for (const copy of copies) {
+        try { await rename(path.join(glass, copy), path.join(this.storeDir, "merged", copy)); moved.push(copy); }
+        catch { /* leave the copy in place; the next pass retries */ }
+      }
+      merged.push({ id, journal: canonical, lines: appended.length, copies: copies.length });
+    }
+    if (merged.length) this.notify();
+    return { lines: merged.reduce((sum, item) => sum + item.lines, 0), copies: moved, merged };
   }
 
   assertReady() {
@@ -308,10 +397,10 @@ export class GlassService {
       throw new Error("Use a vault-relative Markdown path, without hidden folders or symlinks.");
     const file = path.join(this.root, ...parts);
     const metadata = await info(file);
-    if (!metadata?.isFile() || metadata.isSymbolicLink()) throw new Error("Note not found in this vault.");
-    const actual = await realpath(file);
-    const inside = path.relative(this.root, actual);
-    if (!inside || inside.startsWith("..") || path.isAbsolute(inside)) throw new Error("Markdown symlinks are not allowed.");
+    if (metadata?.isSymbolicLink()) throw new Error("Markdown symlinks are not allowed.");
+    if (!metadata?.isFile()) throw new Error("Note not found in this vault.");
+    // The vault root is already resolved, so any symlinked folder along the way changes this path.
+    if (await realpath(file) !== file) throw new Error("Markdown symlinks are not allowed.");
     return { note: parts.join("/"), file };
   }
 
@@ -334,15 +423,23 @@ export class GlassService {
   }
 
   async identify(note) {
-    const { note: name, file } = await this.validateNote(note);
+    let name, file;
+    try { ({ note: name, file } = await this.validateNote(note)); }
+    catch (error) {
+      // The drive went away mid-session. A note this vault already knows keeps its glass path, so
+      // the write queues behind the offline banner instead of being refused outright.
+      const known = this.notesByPath.get(String(note).normalize("NFC"));
+      if (known && (["ENOENT", "EACCES", "EPERM", "EROFS", "ENOTDIR"].includes(error.code) || /not found in this vault/u.test(error.message))) return known;
+      throw error;
+    }
     const fingerprint = await this.noteFingerprint(file);
     const known = this.notesByPath.get(name);
     if (known) {
       if (known.fingerprint?.hash !== fingerprint.hash || known.fingerprint?.size !== fingerprint.size) {
-        const record = { op: "note", id: known.id, path: name, title: titleOf(name), fingerprint, hlc: this.clock.next(), device: this.deviceName };
+        const record = { op: "note", id: known.id, path: known.path, title: known.title ?? titleOf(known.path), fingerprint, hlc: this.clock.next(), device: this.deviceName };
         await this.appendRecord(this.notesFile, record);
         Object.assign(known, { fingerprint, hlc: record.hlc });
-        await this.rememberNote(known, name);
+        await this.rememberNote(known, known.path);
       }
       return known;
     }
@@ -350,7 +447,7 @@ export class GlassService {
     const record = { op: "note", id, path: name, title: titleOf(name), fingerprint, hlc: this.clock.next(), device: this.deviceName };
     const entry = { id, path: name, title: record.title, fingerprint, hlc: record.hlc, device: record.device };
     this.notesById.set(id, entry);
-    this.notesByPath.set(name, entry);
+    this.setPath(entry, name);
     await this.appendRecord(this.notesFile, record);
     await this.rememberNote(entry, name);
     return entry;
@@ -364,15 +461,17 @@ export class GlassService {
   }
 
   async refreshFingerprint(note, fingerprint, name = note.path) {
-    if (note.fingerprint?.hash === fingerprint.hash && note.fingerprint?.size === fingerprint.size) return note;
+    // The sync layer works from currentNotes() snapshots; the live object is the one the app reads.
+    const current = this.notesById.get(note.id) ?? note;
+    if (current.fingerprint?.hash === fingerprint.hash && current.fingerprint?.size === fingerprint.size) return current;
     this.assertWritable();
-    const record = { op: "note", id: note.id, path: name, title: note.title ?? titleOf(name), fingerprint,
+    const record = { op: "note", id: current.id, path: name, title: current.title ?? titleOf(name), fingerprint,
       hlc: this.clock.next(), device: this.deviceName };
     await this.appendRecord(this.notesFile, record);
-    note.fingerprint = fingerprint;
-    note.hlc = record.hlc;
-    await this.rememberNote(note, name);
-    return note;
+    current.fingerprint = fingerprint;
+    current.hlc = record.hlc;
+    await this.rememberNote(current, name);
+    return current;
   }
 
   currentNotes() {
@@ -381,16 +480,18 @@ export class GlassService {
   }
 
   async recordMove(note, to, { title, fingerprint } = {}) {
+    // Move whichever copy arrives, but always keep the live note object authoritative.
+    const current = this.notesById.get(note.id) ?? note;
     this.assertWritable();
-    const record = { op: "move", id: note.id, to, hlc: this.clock.next(), device: this.deviceName,
+    const record = { op: "move", id: current.id, to, hlc: this.clock.next(), device: this.deviceName,
       title: title ?? titleOf(to), ...(fingerprint ? { fingerprint } : {}) };
     await this.appendRecord(this.notesFile, record);
-    this.notesByPath.delete(note.path);
-    note.path = to;
-    note.title = record.title;
-    if (fingerprint) note.fingerprint = fingerprint;
-    this.notesByPath.set(to, note);
-    await this.rememberNote(note, to);
+    this.dropPath(current.path);
+    current.path = to;
+    current.title = record.title;
+    if (fingerprint) current.fingerprint = fingerprint;
+    this.setPath(current, to);
+    await this.rememberNote(current, to);
     return record;
   }
 
@@ -400,9 +501,9 @@ export class GlassService {
     await this.appendRecord(this.notesFile, record);
     for (const note of this.notesById.values()) {
       if (note.path !== from && !note.path.startsWith(`${from}/`)) continue;
-      this.notesByPath.delete(note.path);
+      this.dropPath(note.path);
       note.path = `${to}${note.path.slice(from.length)}`;
-      this.notesByPath.set(note.path, note);
+      this.setPath(note, note.path);
     }
     return record;
   }
@@ -453,7 +554,7 @@ export class GlassService {
       const record = { op: "note", id, path: name, title: titleOf(name), fingerprint, hlc: this.clock.next(), device: this.deviceName };
       note = { id, path: name, title: record.title, fingerprint, hlc: record.hlc, device: record.device };
       this.notesById.set(id, note);
-      this.notesByPath.set(name, note);
+      this.setPath(note, name);
       this.journals.set(id, path.join(this.storeDir, "glass", glassFileName(record.title, id)));
       await this.appendRecord(this.notesFile, record);
     }
@@ -722,7 +823,9 @@ export class GlassService {
     this.assertWritable();
     const note = await this.identify(request.note);
     const file = this.journalFor(note);
-    await mkdir(path.join(this.storeDir, "assets", path.basename(file, ".jsonl")), { recursive: true, mode: 0o700 });
+    // A full or vanished drive must queue the op, not refuse it before the journal write is tried.
+    await mkdir(path.join(this.storeDir, "assets", path.basename(file, ".jsonl")), { recursive: true, mode: 0o700 })
+      .catch(error => { if (!ownership.includes(error.code) && error.code !== "ENOENT") throw error; });
     await this.readJournal(file);
     const magnetId = request.magnet ?? newMagnetId();
     if (typeof magnetId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(magnetId)) throw new Error("Use a short magnet id of letters, digits, _ or -.");
@@ -1549,7 +1652,14 @@ export class GlassService {
       location: this.mode === "inside" ? ".omarkie" : this.storeDir, notes: this.notesById.size,
       pending: this.pending.length, error: this.error ? { ...this.error } : null, lastSavedAt: this.lastSavedAt ?? null,
       lock: this.lockOwner ? { host: this.lockOwner.host, pid: this.lockOwner.pid } : null, bridge: this.bridgeState ?? null,
-      index: this.indexStatus ?? null, bring: this.offer ?? null, lost: this.lost ?? [] };
+      index: this.indexStatus ?? null, bring: this.offer ?? null, lost: this.lost ?? [],
+      clock: this.clockReport() };
+  }
+
+  // What the newest clock this vault has seen says about this machine's wall time.
+  clockReport() {
+    const aheadMs = Math.max(0, (this.clock?.top?.t ?? 0) - this.now());
+    return { aheadMs, behindByOurClock: aheadMs > 0, unknown: aheadMs > clockSkewLimit };
   }
 
   async request(input) {

@@ -192,6 +192,16 @@ export function createClock(device, now = Date.now) {
   };
 }
 
+// A peer's clock far ahead of this machine is not a fact about when a change happened.
+export const clockSkewLimit = 5 * 60_000;
+
+export function clockSkew(hlc, now = Date.now(), limit = clockSkewLimit) {
+  const parsed = parseClock(hlc);
+  if (!parsed) return { aheadMs: 0, behindMs: 0, unknown: true };
+  const aheadMs = parsed.t - now;
+  return { aheadMs: Math.max(0, aheadMs), behindMs: Math.max(0, -aheadMs), unknown: aheadMs > limit };
+}
+
 export function isNewer(hlc, device, current) {
   if (!current) return true;
   const left = hlcKey(hlc, device), right = hlcKey(current.hlc, current.device);
@@ -200,7 +210,7 @@ export function isNewer(hlc, device, current) {
   return left > right;
 }
 
-const conflictLine = /^(?:<<<<<<<|=======|>>>>>>>)/;
+export const conflictLine = /^(?:<<<<<<<|=======|>>>>>>>)/;
 
 export function parseJournalText(text) {
   const lines = [], incomplete = [];
