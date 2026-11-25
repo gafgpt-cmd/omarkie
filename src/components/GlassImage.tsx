@@ -18,11 +18,14 @@ interface Props {
   onLiveSize(width: number, height: number): void;
   maxWidth?: number;
   onDelete(): void;
+  onSnap?(dx: number, dy: number, alt: boolean): { dx: number; dy: number };
+  onSnapEnd?(): void;
+  onSettle?(element: HTMLElement): void;
 }
 
 // A photo on the glass: drag to place, corner to stretch (Shift keeps the ratio), handle to tilt.
 // "Behind text" paints the picture in the layer under the page and keeps this frame as its handle.
-export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, maxWidth }: Props) {
+export default function GlassImageFrame({ image, place, selected, note, scroller, paintHost, onSelect, onPatch, onDrop, onLiveSize, onDelete, maxWidth, onSnap, onSnapEnd, onSettle }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const paint = useRef<HTMLImageElement>(null);
   const [source, setSource] = useState<string>();
@@ -87,10 +90,11 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
     const current = gesture.current;
     if (!current || current.pointer !== event.pointerId || !frame.current) return;
     const dx = event.clientX - current.x, dy = event.clientY - current.y;
-    current.dx = dx; current.dy = dy;
     if (current.mode === "move") {
-      frame.current.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
-      if (paint.current) paint.current.style.transform = `translate3d(${dx}px, ${dy}px, 0) rotate(var(--glass-image-rot, 0deg))`;
+      const placed = onSnap?.(dx, dy, event.altKey) ?? { dx, dy };
+      current.dx = placed.dx; current.dy = placed.dy;
+      frame.current.style.transform = `translate3d(${placed.dx}px, ${placed.dy}px, 0)`;
+      if (paint.current) paint.current.style.transform = `translate3d(${placed.dx}px, ${placed.dy}px, 0) rotate(var(--glass-image-rot, 0deg))`;
     } else if (current.mode === "resize") {
       const width = Math.min(maxWidth ?? Number.POSITIVE_INFINITY, Math.max(48, Math.round(current.w + dx)));
       const height = shift.current ? Math.max(40, Math.round(width / image.aspect)) : Math.max(40, Math.round(current.h + dy));
@@ -117,8 +121,11 @@ export default function GlassImageFrame({ image, place, selected, note, scroller
     if (!element) return;
     element.style.removeProperty("transform");
     if (paint.current) paint.current.style.removeProperty("transform");
-    if (current.mode === "move") onDrop({ dx: current.dx, dy: current.dy, clientX: event.clientX, clientY: event.clientY });
-    else if (current.mode === "resize") {
+    onSnapEnd?.();
+    if (current.mode === "move") {
+      onDrop({ dx: current.dx, dy: current.dy, clientX: event.clientX, clientY: event.clientY });
+      onSettle?.(element);
+    } else if (current.mode === "resize") {
       const width = Math.round(element.getBoundingClientRect().width), height = Math.round(element.getBoundingClientRect().height);
       element.style.removeProperty("width");
       element.style.removeProperty("height");
