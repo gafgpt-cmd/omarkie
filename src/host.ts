@@ -38,6 +38,10 @@ const browser: Host = {
   native: false,
   async vaultSnapshot() { throw new Error(t("请在桌面应用中打开文件夹以使用知识库工具")); },
   async exportBundle() { throw new Error(t("导出压缩包需要桌面应用")); },
+  async exportGlass() { throw new Error(t("导出玻璃需要桌面应用")); },
+  async importGlass() { throw new Error(t("导入玻璃导出包需要桌面应用")); },
+  async sharedGlass() { throw new Error(t("共享玻璃需要桌面应用")); },
+  async sharedGlassState() { return { shared: false }; },
   async spellcheckLanguages() { return []; },
   async cancelClose() {},
   async windowAction() { return false; },
@@ -176,6 +180,7 @@ export const host: Host = window.desktop
       get(target, name: keyof Host) {
         if (name === "native") return true;
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
+        if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
         if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
           return window.desktop![name];
