@@ -46,6 +46,14 @@ import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 const LearningMode = lazy(() => import("./components/LearningMode"));
+
+function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
+  if (!folder || !file) return;
+  const root = folder.replaceAll("\\", "/").replace(/\/+$/u, ""), path = file.replaceAll("\\", "/");
+  if (root && path.startsWith(`${root}/`)) return path.slice(root.length + 1);
+  return /^(?:[a-z]:)?\//iu.test(path) ? undefined : path;
+}
+
 export default function App() {
   const [painted, setPainted] = useState(false);
   const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
@@ -678,6 +686,7 @@ export default function App() {
             /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
+              note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
               preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}

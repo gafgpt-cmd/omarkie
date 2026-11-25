@@ -29,7 +29,7 @@ const specs = {
   propose: ["--doc <note.md> --block <hash> --after-file <file> [--reason <text>] [--vault <dir>]", "Draft a paragraph rewrite. Does not change the note."],
   proposals: ["[--doc <note.md>] [--vault <dir>] [--full]", "List open proposals for the vault or one document."],
   "setup hooks": ["[--vault <dir>] [--agent <claude|codex|opencode>]", "Opt in to project-only hooks; defaults to all three. Keeps existing hook entries."],
-  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--magnet <id>] [--vault <dir>]", "Add a magnet to a note's glass journal."],
+  "glass add": ["--note <note.md> [--text <text>] [--kind <kind>] [--magnet <id>] [--anchor <json>] [--vault <dir>]", "Add a magnet to a note's glass journal, optionally with a landmark anchor."],
   "glass list": ["--note <note.md> [--vault <dir>]", "List the magnets on a note."],
   "glass show": ["--note <note.md> [--magnet <id>] [--vault <dir>]", "Show one magnet, or the whole note glass."],
   "glass status": ["[--vault <dir>]", "Show glass storage mode, writer lock and pending writes."],
@@ -119,8 +119,12 @@ export async function main(argv = process.argv.slice(2)) {
     const root = await folder(opts.vault, process.cwd());
     if (command.startsWith("glass ")) {
       const { requestBridge } = await import("./tutor-transport.mjs");
+      let anchor;
+      if (opts.anchor !== undefined) {
+        try { anchor = JSON.parse(opts.anchor); } catch { throw new Error("--anchor must be a JSON anchor object."); }
+      }
       const state = await requestBridge(root, { op: "glass", action: command.slice(6), note: opts.note, text: opts.text,
-        kind: opts.kind, magnet: opts.magnet }, 30_000, "glass");
+        kind: opts.kind, magnet: opts.magnet, anchor }, 30_000, "glass");
       if (!state) throw new Error("Glass storage is not running in this vault. Open the folder in Omarkie first.");
       emit(state);
       return;
