@@ -50,6 +50,7 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 - Drag the top grip to move. Drag a right or bottom edge to resize.
 - Pick a colour, fold to a dot, or delete. Open the pencil-case trash to undo.
 - On a focused note: `Enter` edits, `F` folds, `Delete` trashes, `Esc` exits editing.
+- G19 scale gap: a local 203-sticky test took 152 ms on its first open against the 100 ms target. Warm runs took 34–41 ms.
 
 ## Renderer and agents
 
