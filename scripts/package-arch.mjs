@@ -1,4 +1,4 @@
-import { createPackage } from "@electron/asar";
+import { createPackageWithOptions } from "@electron/asar";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -14,7 +14,12 @@ await rm(work, { recursive: true, force: true });
 await mkdir(sources, { recursive: true });
 
 const application = await prepareElectronApplication("linux");
-await createPackage(application, path.join(sources, "app.asar"), { unpack: "**/*.node" });
+const archive = await createPackageWithOptions(path.relative(process.cwd(), application), path.join(sources, "app.asar"), { unpack: "**/*.node" });
+await new Promise((resolve, reject) => {
+  archive.on("finish", resolve);
+  archive.on("error", reject);
+});
+execFileSync("bsdtar", ["-cf", path.join(sources, "app.asar.unpacked.tar"), "-C", sources, "app.asar.unpacked"]);
 execFileSync("bsdtar", ["-cf", path.join(sources, "ThirdPartyLicenses.tar"), "-C", path.join(application, "ThirdPartyLicenses"), "."]);
 await copyFile("LICENSE", path.join(sources, "LICENSE"));
 await copyFile("build/icon.png", path.join(sources, "omarkie.png"));
