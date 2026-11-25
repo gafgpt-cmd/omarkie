@@ -5,7 +5,7 @@ import { ArrowUpRight, AudioLines, Columns2, Eraser, Eye, EyeOff, FileAudio, Fil
 import type { EditorHandle, ReadingContext } from "../editor/MarkdownEditor";
 import type { PageElement } from "../../shared/element-model.mjs";
 import { markdownElements } from "../../shared/element-model.mjs";
-import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, type BlockIndex, type GlassAnchor, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
+import { captureAnchor, indexBlocks, liveBlocks, matchIndexed, placeAnchor, resolveAnchor, type BlockIndex, type GlassAnchor, type GlassBlock, type GlassPlacement } from "../glass/anchor-map";
 import { bubbleBundle, bubblePayload, findIdentifiers, payloadText, type BubbleBundle, type BubblePayload, type IdentifierFlag } from "../../shared/bubble-context.mjs";
 import { centroid, classifyGesture } from "../../shared/glass-gestures.mjs";
 import { arrowEndKey, customStickerBytes, type ArrowColor, type ArrowHead, type ArrowStyle } from "../../shared/glass-marks.mjs";
@@ -41,6 +41,8 @@ import {
   extraPageFields, extraPageFromMagnet, extraPagePapers, newClipId, type ClipPage, type Cutout, type ExtraPage, type SheetStroke,
 } from "../glass/clip-model";
 import { lassoOf, regionOf, sheetInkColors } from "../../shared/glass-clips.mjs";
+import { bulkReanchor, reanchorThresholds, type ReanchorRow } from "../glass/reanchor";
+import { glassWindow } from "../glass/glass-window";
 import { timelineDefaults, timelineFromMagnet, timestampFromMagnet, transcriptLine, type TimelineMark, type TimestampMark } from "../glass/timeline-model";
 import GlassTimeline from "./GlassTimeline";
 import { stickerIds, stickerAt, stickerFields, stickerFromMagnet, stickerName, type StickerMark } from "../glass/sticker-model";
@@ -76,6 +78,10 @@ interface Layout {
   routes: ArrowRoute[];
   names: Record<string, { from: string; to: string }>;
   orphanArrows: string[];
+  checks: Record<string, NonNullable<ReanchorRow["candidate"]> extends never ? never : {
+    line: number | null; confidence: number; tier: string;
+    old: ReanchorRow["old"]; candidate?: ReanchorRow["candidate"];
+  }>;
   fixture?: GlassPlacement;
   loaded?: boolean;
 }
@@ -281,6 +287,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   live?: LiveTutor; reloadNote?(): void | Promise<unknown>; boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
 }) {
   const scroller = root.parentElement!;
+  // Stored x runs from the inline start; RTL notes mirror it at paint time, never in the journal.
+  const rtlNow = () => getComputedStyle(root).direction === "rtl";
   const layers = useGlassLayers(note);
   const layersRef = useRef(layers);
   layersRef.current = layers;
@@ -346,7 +354,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [compareOpen, setCompareOpen] = useState(false);
 
   const [trash, setTrash] = useState<GlassMagnet[]>([]);
-  const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [] });
+  const [layout, setLayout] = useState<Layout>({ places: {}, routes: [], names: {}, orphanArrows: [], checks: {} });
+  const [kept, setKept] = useState<Set<string>>(() => new Set());
+  const [focusedMagnet, setFocusedMagnet] = useState<string | undefined>(undefined);
+  const [offscreenOpen, setOffscreenOpen] = useState(false);
   const [tool, setTool] = useState<"select" | "sticky" | "label" | "ink" | "sticker" | "arrow" | "grid" | "clip" | "extra-page" | "cutout" | "trace" | "measure" | "voice" | "memo" | "lecture">("select");
   const [stickerChoice, setStickerChoice] = useState<string>(stickerIds[0]);
   const [customImage, setCustomImage] = useState<string>();
@@ -432,34 +443,84 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const measure = useCallback(() => {
     const surface = layer.current;
     if (!surface) return;
+    for (const name of ["measure:start", "context", "blocks", "indexed", "anchored", "placed", "page", "measure:end"]) performance.clearMarks(`omarkie:glass-${name}`);
+    performance.clearMeasures("omarkie:glass-measure");
+    performance.mark("omarkie:glass-measure:start");
+    if (!mounted.current) performance.mark("omarkie:glass-open-context");
+    performance.mark("omarkie:glass-context");
     blocks.current = liveBlocks(editor()?.readingContext(), root);
+    if (!mounted.current) performance.mark("omarkie:glass-open-extracted");
+    performance.mark("omarkie:glass-extracted");
     index.current = indexBlocks(blocks.current);
+    performance.mark("omarkie:glass-indexed");
+    const indexedAt = performance.now();
     const byLine = new Map(blocks.current.map(block => [block.line, block]));
     const frame = surface.getBoundingClientRect();
     const places: Record<string, GlassPlacement> = {};
     const needsArrows = latest.current.arrows.length > 0 || latest.current.tool === "arrow"
       || latest.current.labels.length > 0 || latest.current.tool === "label";
     const lines = new Map<string, number | null>();
+    // Exact block first, then the six-landmark resolver: an edited paragraph keeps its mark.
     const matchLine = (anchor: Parameters<typeof matchIndexed>[1] | undefined) => {
       if (!anchor) return null;
       const key = JSON.stringify(anchor.landmarks);
       let line = lines.get(key);
-      if (line === undefined) { line = matchIndexed(index.current, anchor); lines.set(key, line); }
+      if (line === undefined) {
+        line = matchIndexed(index.current, anchor);
+        if (line === null) {
+          const hit = resolveAnchor(anchor, blocks.current);
+          line = hit.confidence >= reanchorThresholds.check ? hit.line : null;
+        }
+        lines.set(key, line);
+      }
       return line;
     };
+    performance.mark("omarkie:glass-anchored");
+    const anchored = [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines, ...latest.current.images,
+      ...latest.current.cards, ...latest.current.voices, ...latest.current.labels, ...latest.current.clips, ...latest.current.cutouts,
+      ...latest.current.measures, ...latest.current.compares];
+    // One bulk pass answers every mark: the check tray lists what moved, nothing is deleted.
+    const checks: Layout["checks"] = {};
+    const rows = new Map<string, ReanchorRow>();
+    const anchoredEntries = anchored.flatMap(mark => "anchor" in mark && mark.anchor ? [{ id: mark.id, anchor: mark.anchor }] : []);
+    for (const row of bulkReanchor(anchoredEntries, blocks.current, index.current)) {
+      rows.set(row.id, row);
+      // Every unsure mark is listed; the tray puts the ones it could place first, so the reader
+      // confirms a spot before hunting for a paragraph that is gone.
+      if (row.state !== "placed") checks[row.id] = { line: row.line, confidence: row.confidence, tier: row.tier, old: row.old, ...(row.candidate ? { candidate: row.candidate } : {}) };
+    }
+    // Placement follows the tray: a mark the resolver could only guess at (state "tray") stays
+    // an orphan until the reader says where it belongs.
+    const lineOf = (mark: { id: string; anchor?: GlassAnchor }) => {
+      const row = rows.get(mark.id);
+      if (row) return row.state === "tray" ? null : row.line;
+      return lineOf(mark);
+    };
+    const rtl = rtlNow();
     const paragraphRects = new Map<HTMLElement, DOMRect>();
+    performance.mark("omarkie:glass-placed");
+    const placedAt = performance.now();
     for (const mark of [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines]) {
-      const line = matchLine(mark.anchor);
-      const element = line === null ? undefined : byLine.get(line)?.element;
-      if (!element) { places[mark.id] = { status: "orphan" }; continue; }
-      let rect = paragraphRects.get(element);
-      if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
-      places[mark.id] = { status: "resolved", x: rect.left - frame.left + mark.x, y: rect.top - frame.top + mark.y, width: mark.w, height: mark.h };
+      const line = lineOf(mark);
+      if (line === null) { places[mark.id] = { status: "orphan" }; continue; }
+      const element = byLine.get(line)?.element;
+      if (element) {
+        let rect = paragraphRects.get(element);
+        if (!rect) { rect = element.getBoundingClientRect(); paragraphRects.set(element, rect); }
+        const start = rtl ? rect.right - frame.left : rect.left - frame.left;
+        places[mark.id] = { status: "resolved", x: rtl ? start - mark.w - mark.x : start + mark.x, y: rect.top - frame.top + mark.y, width: mark.w, height: mark.h };
+        continue;
+      }
+      // Offscreen paragraphs keep their content-space top from the editor's height map.
+      const top = editor()?.topOfLine(line);
+      places[mark.id] = top === null || top === undefined
+        ? { status: "orphan" }
+        : { status: "resolved", x: rtl ? frame.width - mark.w - mark.x : mark.x, y: top + mark.y, width: mark.w, height: mark.h };
     }
     const flowing = new Set<string>();
     const mediaShown = layers.media.visible;
     for (const memo of latest.current.voices) {
-      const line = matchLine(memo.anchor);
+      const line = lineOf(memo);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[memo.id] = { status: "orphan" }; continue; }
       let rect = paragraphRects.get(element);
@@ -487,7 +548,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     // Pills keep to the margin column; a pill that would land on another slides down instead of stacking on it.
     const pillSpots: { x: number; y: number }[] = [];
     for (const card of latest.current.cards) {
-      const line = matchLine(card.anchor);
+      const line = lineOf(card);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[card.id] = { status: "orphan" }; continue; }
       let rect = paragraphRects.get(element);
@@ -500,7 +561,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     }
     // G13: clipped pages, cutouts and extra sheets are pinned to their paragraph like paper.
     for (const clip of latest.current.clips) {
-      const line = matchLine(clip.anchor);
+      const line = lineOf(clip);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[clip.id] = { status: "orphan" }; continue; }
       let rect = paragraphRects.get(element);
@@ -517,7 +578,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       places[page.id] = { status: "resolved", x: rect.left - frame.left + page.x, y: rect.top - frame.top + page.y, width: page.w, height: page.h };
     }
     for (const cutout of latest.current.cutouts) {
-      const line = matchLine(cutout.anchor);
+      const line = lineOf(cutout);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[cutout.id] = { status: "orphan" }; continue; }
       let rect = paragraphRects.get(element);
@@ -525,7 +586,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       places[cutout.id] = { status: "resolved", x: rect.left - frame.left + cutout.x, y: rect.top - frame.top + cutout.y, width: cutout.w, height: cutout.h };
     }
     for (const compare of latest.current.compares) {
-      const line = matchLine(compare.anchor);
+      const line = lineOf(compare);
       const element = line === null ? undefined : byLine.get(line)?.element;
       if (!element) { places[compare.id] = { status: "orphan" }; continue; }
       let rect = paragraphRects.get(element);
@@ -575,7 +636,14 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     // Size the paper grid after the measurements, so this write never forces a second layout.
     const page = `${Math.max(scroller.scrollHeight, frame.height)}px`;
     if (surface.style.getPropertyValue("--glass-page") !== page) surface.style.setProperty("--glass-page", page);
+    performance.mark("omarkie:glass-page");
     if (!mounted.current) { mounted.current = true; performance.mark("omarkie:glass-mounted"); }
+    performance.mark("omarkie:glass-measure:end");
+    const measured = performance.measure("omarkie:glass-measure", "omarkie:glass-measure:start", "omarkie:glass-measure:end");
+    surface.dataset.measureMs = measured.duration.toFixed(2);
+    surface.dataset.glassMeasures = String(Number(surface.dataset.glassMeasures ?? 0) + 1);
+    const durations = (window as unknown as { __glassDurations?: { total: number; magnet: number }[] }).__glassDurations;
+    if (durations) durations.push({ total: measured.duration, magnet: placedAt - indexedAt });
     const labelPins = latest.current.labels.map(label => {
       const box = labelBox(label, places, elementBoxes.current);
       return box ? [label.id, Math.round(labelPoint(box, label.nx, label.ny).x), Math.round(labelPoint(box, label.nx, label.ny).y)] : [label.id, null];
@@ -583,7 +651,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const serialized = JSON.stringify([places, routed.routes, names, routed.orphans, marker ?? null, loaded.current, labelPins]);
     if (serialized === fingerprint.current) return;
     fingerprint.current = serialized;
-    setLayout({ places, routes: routed.routes, names, orphanArrows: routed.orphans, fixture: marker, loaded: loaded.current });
+    setLayout({ places, routes: routed.routes, names, orphanArrows: routed.orphans, checks, fixture: marker, loaded: loaded.current });
   }, [dropSpacers, editor, fixture, flow, layers, root, scroller, seeds]);
 
   useEffect(() => () => { for (const spacer of spacers.current.values()) spacer.remove(); spacers.current.clear(); }, []);
@@ -780,9 +848,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const showingArrows = arrows.length > 0 || tool === "arrow" || labels.length > 0 || tool === "label";
   useLayoutEffect(() => { measure(); }, [magnets, images, stickers, arrows, cards, clips, extraPages, cutouts, labels, compares, traces, measures, timelines, timestamps, tool, showingArrows, measure]);
 
-  // The arrow jump chip needs the visible band in content coordinates; it changes with scroll, not with layout.
+  // The visible band in content coordinates: it changes with scroll, not with layout, and both the
+  // arrow jump chip and the mount window read it.
   useEffect(() => {
-    if (!showingArrows) return;
     let frame = 0;
     const update = () => {
       frame = 0;
@@ -790,6 +858,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       setViewport(previous => previous.top === next.top && previous.height === next.height && previous.width === next.width && previous.page === next.page ? previous : next);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
     update();
     scroller.addEventListener("scroll", schedule, { passive: true });
     const sizes = new ResizeObserver(schedule);
@@ -800,7 +869,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       scroller.removeEventListener("scroll", schedule);
       sizes.disconnect();
     };
-  }, [scroller, root, showingArrows]);
+  }, [scroller, root]);
 
   useEffect(() => {
     if (!notice) return;
@@ -1032,8 +1101,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           element.classList.add("is-lifting");
           // Guides are built after the press has painted: picking up 200 magnets must stall neither
           // the press nor the first move.
+          // The style a drag starts from is what the last measure wrote, to the pixel.
+          const box = element.getBoundingClientRect();
           drag = { element, id, x: mark.x, y: mark.y, pageX: event.pageX, pageY: event.pageY,
-            ...(placed?.status === "resolved" ? { place: { x: placed.x, y: placed.y, w: placed.width, h: placed.height } } : {}) };
+            place: { x: Number.parseFloat(element.style.left) || box.left, y: Number.parseFloat(element.style.top) || box.top, w: box.width, h: box.height } };
           const warming = drag;
           setTimeout(() => { if (drag === warming && !warming.context) warming.context = snapContext(id); }, 0);
         },
@@ -1060,12 +1131,17 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
           start.element.classList.remove("is-lifting");
           start.element.style.removeProperty("transform");
           const dx = event.pageX - start.pageX, dy = event.pageY - start.pageY;
-          let x = start.x + dx, y = start.y + dy;
+          const rtl = rtlNow();
+          let x = start.x + (rtl ? -dx : dx), y = start.y + dy;
           if (start.place) {
             const proposal = { x: start.place.x + dx, y: start.place.y + dy, w: start.place.w, h: start.place.h };
             const result = resolveSnap(proposal, start.context ?? snapContext(start.id), event.altKey);
-            x = start.x + result.x - start.place.x;
-            y = start.y + result.y - start.place.y;
+            // A guide a hair away from where the mark was dropped is noise, not an alignment.
+            const pullX = Math.abs(result.x - proposal.x) < 2 ? 0 : result.x - proposal.x;
+            const pullY = Math.abs(result.y - proposal.y) < 2 ? 0 : result.y - proposal.y;
+            const moved = dx + pullX, raised = dy + pullY;
+            x = start.x + (rtl ? -moved : moved);
+            y = start.y + raised;
           } else if (gridRef.current.on) {
             x = Math.round(x / gridRef.current.size) * gridRef.current.size;
             y = Math.round(y / gridRef.current.size) * gridRef.current.size;
@@ -1136,7 +1212,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
     const block = nearestBlock(blocks.current, point);
     if (!block) return;
-    const offset = offsetIn(block, point);
+    // A click drops the note exactly under the pointer; the eight-pixel grid is for drags.
+    const rtl = rtlNow(), at = block.element?.getBoundingClientRect();
+    const offset = at
+      ? { x: Math.round((rtl ? at.right - point.x : point.x - at.left) * 100) / 100, y: Math.round((point.y - at.top) * 100) / 100 }
+      : offsetIn(block, point, rtl);
     const stickie: StickyNote = {
       id: newStickyId(), text: "", color: stickyColors[0], anchor: anchorOf(block),
       x: offset.x, y: offset.y, w: stickyDefaults.w, h: stickyDefaults.h, folded: false,
@@ -1163,7 +1243,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (mode === "memo" && lockedLayer("image")) { setNotice("Media layer is locked."); return; }
     if (mode === "dictation" && lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
     const next: VoiceRun = { id: crypto.randomUUID(), mode, phase: "recording", startedAt: Date.now(), block,
-      offset: offsetIn(block, point), segments: [], marks: [], offsetMs: 0 };
+      offset: offsetIn(block, point, rtlNow()), segments: [], marks: [], offsetMs: 0 };
     const capture = new VoiceRecorder();
     try { await capture.start(); }
     catch (failure) { setNotice((failure as Error).message); return; }
@@ -2333,10 +2413,39 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     return () => window.removeEventListener("keydown", onKey);
   }, [chooseInk, createAtCenter, createSheet, editor, removeMark, scroller, selected, selectedArrow, stickers]);
 
+  const keepPlacement = useCallback((id: string) => { setKept(current => new Set(current).add(id)); }, []);
+  // Accepting writes the new landmark stack; the old one stays in the journal.
+  const placeHere = useCallback((id: string, line: number | null) => {
+    const block = line === null ? undefined : blocks.current.find(item => item.line === line);
+    if (!block) { setNotice("That paragraph is not on screen; scroll to it first."); return; }
+    const anchor = captureAnchor(block, blocks.current);
+    setMagnets(current => current.map(item => item.id === id ? { ...item, anchor } : item));
+    // The user decided; stop asking about this mark until the text changes under it again.
+    setKept(current => new Set(current).add(id));
+    void send({ action: "set", magnet: id, fields: { anchor } }).then(() => load());
+  }, [load, send]);
+
+  const checkRows = Object.entries(layout.checks).filter(([id]) => !kept.has(id))
+    .sort(([a], [b]) => Number(layout.places[b]?.status === "resolved") - Number(layout.places[a]?.status === "resolved"));
   const orphans = [...magnets, ...images, ...stickers, ...cards].filter(mark => layout.places[mark.id]?.status === "orphan");
-  const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved");
-  const shown = images.filter(image => layout.places[image.id]?.status === "resolved");
-  const shownCards = cards.filter(card => layout.places[card.id]?.status === "resolved");
+  // Only what the viewport can show is mounted; everything else stays one keyboard step away.
+  const glassMounts = useMemo(() => {
+    const items = [];
+    for (const mark of [...magnets, ...images, ...stickers, ...cards, ...timelines]) {
+      const place = layout.places[mark.id];
+      if (place?.status === "resolved") items.push({ id: mark.id, y: place.y, height: Math.max(24, place.height) });
+    }
+    const force = [selected, editing, focusedMagnet].filter((id): id is string => !!id);
+    return glassWindow(items, { top: viewport.top, height: viewport.height }, { force });
+  }, [magnets, images, stickers, cards, timelines, layout.places, selected, editing, focusedMagnet, viewport.top, viewport.height]);
+  const offscreen = useMemo(() => [...magnets, ...images, ...stickers, ...cards, ...timelines]
+    .filter(mark => layout.places[mark.id]?.status === "resolved" && !glassMounts.mounted.has(mark.id)), [magnets, images, stickers, cards, timelines, layout.places, glassMounts]);
+  const plainMarkName = (mark: StickyNote | GlassImage | StickerMark | GlassCard | TimelineMark) =>
+    "text" in mark ? (mark.text.trim() ? snippet(mark.text.trim()) : "Sticky note")
+      : "name" in mark ? mark.name : "title" in mark ? mark.title || "Card" : stickerName(mark);
+  const visible = magnets.filter(stickie => layout.places[stickie.id]?.status === "resolved" && glassMounts.mounted.has(stickie.id));
+  const shown = images.filter(image => layout.places[image.id]?.status === "resolved" && glassMounts.mounted.has(image.id));
+  const shownCards = cards.filter(card => layout.places[card.id]?.status === "resolved" && glassMounts.mounted.has(card.id));
   const under = shown.filter(image => image.wrap === "behind");
   const above = shown.filter(image => image.wrap !== "behind");
   const visibleStickers = stickers.filter(mark => layout.places[mark.id]?.status === "resolved");
@@ -2674,10 +2783,33 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       <span>{magnetLabel(magnet)}</span>
       <button type="button" data-glass-restore={magnet.id} onClick={() => void restore(magnet)}>Undo</button>
     </li>)}</ul> : <p>Nothing deleted.</p>}
+  </div>}{Object.keys(layout.checks).length > 0 && <div className="glass-check" role="group" aria-label="Check placement">
+    <strong>{checkRows.length > 0
+      ? `${checkRows.length} magnet${checkRows.length === 1 ? "" : "s"} need${checkRows.length === 1 ? "s" : ""} a look`
+      : "Every moved mark is placed"}</strong>
+    <ul>{checkRows.slice(0, 20).map(([id, check]) => {
+      const mark = [...magnets, ...images, ...stickers, ...cards, ...timelines].find(item => item.id === id);
+      return <li key={id} data-glass-check={id} data-glass-confidence={check.confidence.toFixed(2)}>
+        <span className="glass-check-name">{"text" in (mark ?? {}) ? ((mark as StickyNote).text.trim().slice(0, 40) || "Sticky note")
+          : mark && "name" in mark ? mark.name.slice(0, 40) : mark && "title" in mark ? mark.title.slice(0, 40) : "Glass mark"}</span>
+        <div className="glass-check-context">
+          <div className="glass-check-side glass-check-old"><small>Old</small><q dir="auto">{check.old.quote.slice(0, 160)}</q><small>{check.old.heading}</small></div>
+          <div className="glass-check-side glass-check-new"><small>New</small><q dir="auto">{check.candidate?.quote.slice(0, 160) ?? "No matching paragraph"}</q><small>{check.candidate?.heading ?? ""}</small></div>
+        </div>
+        <span className="glass-check-score">{Math.round(check.confidence * 100)}%</span>
+        <span className="glass-check-actions">
+          <button type="button" data-glass-place={id} disabled={!check.candidate} onClick={() => placeHere(id, check.line)}>Place here</button>
+          <button type="button" data-glass-keep={id} onClick={() => keepPlacement(id)}>Keep old spot</button>
+        </span>
+      </li>;
+    })}</ul>
+    {checkRows.length > 20 && <p>{checkRows.length - 20} more below.</p>}
   </div>}{(orphans.length > 0 || orphanArrows.length > 0) && <div className="glass-orphans" role="group" aria-label="Marks whose paragraph is gone">
     <strong>Anchor lost</strong>
-    {orphans.map(mark => <span key={mark.id} data-glass-orphan={mark.id}>
+    {orphans.filter(mark => !kept.has(mark.id)).map(mark => <span key={mark.id} data-glass-orphan={mark.id}>
       <span>{"text" in mark ? mark.text.trim().slice(0, 32) || "Empty note" : "name" in mark ? mark.name.slice(0, 32) : "card" in mark ? mark.title.slice(0, 32) || "Card" : stickerName(mark)}</span>
+      {layout.checks[mark.id]?.candidate && <button type="button" data-glass-place={mark.id} onClick={() => placeHere(mark.id, layout.checks[mark.id].line)}>Place here</button>}
+      <button type="button" data-glass-keep={mark.id} onClick={() => keepPlacement(mark.id)}>Keep</button>
       <button type="button" aria-label="Move orphan to trash" onClick={() => removeMark(mark.id)}>×</button>
     </span>)}
     {orphanArrows.map(arrow => <span key={arrow.id} data-glass-orphan-arrow={arrow.id}>
@@ -2785,7 +2917,20 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
             <polyline points={cutDrag.points.map(([x, y]) => `${x},${y}`).join(" ")} />
           </svg> : null}
     </div>}
+    {note && offscreen.length > 0 && <nav className="glass-sr-marks" aria-label="Glass magnets off screen" data-glass-offscreen-list>
+      <button type="button" data-glass-offscreen-toggle aria-expanded={offscreenOpen}
+        aria-label={`${offscreen.length} magnets off screen${offscreenOpen ? "" : "; open the list"}`}
+        onClick={() => setOffscreenOpen(open => !open)}>{offscreenOpen ? "Hide" : `${offscreen.length} off screen`}</button>
+      {offscreenOpen && offscreen.map(mark => <button key={mark.id} type="button" data-glass-offscreen={mark.id}
+        onClick={() => { setSelected(mark.id); setFocusedMagnet(mark.id); }}>{plainMarkName(mark)}</button>)}
+    </nav>}
     <div className="glass-layer" ref={layer} data-glass="on" data-grid={grid.on ? grid.size : "off"}
+      data-mounted={glassMounts.mounted.size} data-glass-total={glassMounts.total} data-glass-culled={glassMounts.culled}
+      onFocusCapture={event => {
+        const id = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-magnet]")?.dataset.magnet : undefined;
+        setFocusedMagnet(id);
+      }}
+      onBlurCapture={() => setFocusedMagnet(undefined)}
       data-glass-scrub={scrub ? "on" : undefined} data-glass-lens={lensOn && lens ? "on" : undefined}>
       {grid.on && <div className="glass-grid" aria-hidden="true" data-glass-grid={grid.size} />}
       <div className="glass-guides" ref={guidesEl} aria-hidden="true" data-snap="off">
