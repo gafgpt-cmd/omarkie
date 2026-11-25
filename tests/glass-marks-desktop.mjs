@@ -11,7 +11,7 @@ import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { setTimeout as delay } from "node:timers/promises";
-import { assertFrameCadence, assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
+import { assertFrameCadence, assertWorkBudget, readWork, stableHost, watchWork } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 const home = await mkdtemp(path.join(os.tmpdir(), "omarkie-glass-marks-"));

@@ -10,7 +10,7 @@ import electron from "electron";
 import { _electron as launch, expect } from "playwright/test";
 import { decode } from "@toon-format/toon";
 import sharp from "sharp";
-import { assertFrameCadence, assertWorkBudget, readWork, watchWork } from "./frame-cadence.mjs";
+import { assertFrameCadence, assertWorkBudget, readWork, stableHost, watchWork } from "./frame-cadence.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
 // G7: the pencil. Pen, highlighter and eraser over a real page, split per element box,
