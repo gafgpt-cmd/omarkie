@@ -166,7 +166,7 @@ try {
   const plainBest = Math.min(...plain);
 
   // Pencil case: every tool answers; later-slice tools say so and never pretend to work.
-  const coming = { ink: "Ink", highlighter: "Highlighter", sticker: "Sticker", arrow: "Arrow", card: "Card", scissors: "Scissors" };
+  const coming = { sticker: "Sticker", arrow: "Arrow", card: "Card", scissors: "Scissors" };
   for (const [id, label] of Object.entries(coming)) {
     const tool = caseTray.locator(`[data-glass-coming="${id}"]`);
     await expect(tool).toHaveAttribute("aria-disabled", "true");
@@ -336,10 +336,10 @@ try {
         await page.locator(`[data-glass-restore="${secondId}"]`).click();
         await expect(foldedPin).toHaveAttribute("data-folded", "true");
         await expect(page.getByRole("dialog", { name: "Glass trash" })).toBeHidden();
-        await caseTray.locator('[data-glass-coming="ink"]').click({ force: true });
-        await expect(page.getByRole("status").filter({ hasText: "Ink is coming soon." })).toBeVisible();
+        await caseTray.locator('[data-glass-coming="sticker"]').click({ force: true });
+        await expect(page.getByRole("status").filter({ hasText: "Sticker is coming soon." })).toBeVisible();
         await shot(page, `unavailable-${suffix}`);
-        await expect(page.getByRole("status").filter({ hasText: "Ink is coming soon." })).toBeHidden();
+        await expect(page.getByRole("status").filter({ hasText: "Sticker is coming soon." })).toBeHidden();
       }
     }
     await resize(app, page, 1440);

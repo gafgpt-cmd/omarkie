@@ -502,3 +502,84 @@
 /* Text flows round a photo the way a word processor wraps a float. */
 .glass-flow { display: block; float: left; }
 [data-appearance="dark"] .glass-image-body img { filter: drop-shadow(0 1px 2px #00000073) drop-shadow(0 12px 20px #00000059); }
+
+/* G7 ink: strokes ride the page inside the glass layer; the hand draws on a viewport surface. */
+.glass-ink {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.glass-ink path { pointer-events: none; }
+/* The paper flips, the ink follows: notebook black turns to soft chalk on a dark page. */
+:root[data-appearance="dark"] .glass-ink path[data-ink-colour="#24292f"] { fill: #e9e7e2; }
+:root[data-appearance="dark"] .glass-ink-live path[data-ink-colour="#24292f"] { fill: #e9e7e2; }
+:root[data-appearance="dark"] .glass-ink path[data-ink-colour="#1d4ed8"] { fill: #8fb2ff; }
+:root[data-appearance="dark"] .glass-ink-live path[data-ink-colour="#1d4ed8"] { fill: #8fb2ff; }
+:root[data-appearance="dark"] .glass-ink path[data-ink-colour="#b42318"] { fill: #ff9a8a; }
+:root[data-appearance="dark"] .glass-ink-live path[data-ink-colour="#b42318"] { fill: #ff9a8a; }
+/* A dark page needs a fainter wash so the text keeps its contrast. */
+:root[data-appearance="dark"] .glass-ink path[data-ink-tool="highlighter"],
+:root[data-appearance="dark"] .glass-ink-live path[data-ink-tool="highlighter"] { fill-opacity: 0.22; mix-blend-mode: screen; }
+.glass-ink-live {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+  pointer-events: none;
+}
+.glass-ink-surface { position: fixed; inset: 0; z-index: 4; cursor: crosshair; touch-action: none; }
+.glass-ink-surface[data-ink-tool="eraser"] { cursor: none; }
+.glass-ink-eraser {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border: 1px solid color-mix(in srgb, var(--ink, #333) 55%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #ffffff66 inset;
+  pointer-events: none;
+}
+/* Ink palette: colours and pen tips, a row above the pencil case. */
+.glass-palette {
+  position: fixed;
+  left: 50%;
+  bottom: 58px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border, #ccc);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+  box-shadow: 0 2px 6px #00000014;
+  transform: translateX(-50%);
+}
+.glass-palette button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink, #333);
+  font: 11px/1 var(--interface-font, inherit);
+  cursor: pointer;
+}
+.glass-palette button:hover, .glass-palette button:focus-visible { background: color-mix(in srgb, var(--ink, #333) 10%, transparent); }
+.glass-palette button[aria-pressed="true"] { border-color: var(--accent, #326eaa); background: color-mix(in srgb, var(--accent, #326eaa) 14%, transparent); }
+.glass-palette-colour { width: 18px; height: 18px; min-width: 18px; padding: 0; border-radius: 50%; border: 1px solid #0000002e; }
+.glass-palette-colour[aria-pressed="true"] { outline: 2px solid var(--ink, #333); outline-offset: 1px; }
+.glass-palette-tip { display: block; width: 16px; border-radius: 999px; background: currentColor; }
+[data-appearance="dark"] .glass-palette { background: color-mix(in srgb, var(--paper, #222) 92%, #6b6250); }

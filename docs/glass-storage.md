@@ -68,6 +68,24 @@ A glass image is a photo magnet: it anchors to one paragraph like a sticky note 
 - The renderer asks for bytes lazily near the viewport and caches one copy per magnet per session. No network.
 - Limits: 64 MB per file, 48–4000 px per side, rotation ±360°.
 
+## Pen, highlighter and eraser
+
+- In Learning mode, press `G`, then Pen (`P`), Highlighter (`H`) or Eraser (`E`).
+- Pen: three widths, three colours. Highlighter: chisel nib, translucent, multiplies under the text. Eraser: bite (partial) or whole stroke. Undo/redo per stroke in the pencil case; one bite is one undo step.
+- A stroke splits per element box (paragraph, list item, table cell, formula, code block) and each part stays glued to its box through edits, reflow and scrolling. Margin doodles anchor to the nearest element.
+- Pressure widens the nib. With a stylus present, fingers and palms leave no marks; a mouse works too.
+- The page is never written; strokes live in the glass journal.
+
+Agents read ink as SVG paths in percent of the anchored element box:
+
+```sh
+omarkie-axi glass ink list --note notes/map.md
+omarkie-axi glass ink list --note notes/map.md --full
+omarkie-axi glass ink delete --note notes/map.md --magnet m-6f2a1c
+```
+
+Each listed part names its `box`, the element it follows (`element.id`, `element.kind`, `element.line`), and the path in the box's own coordinates.
+
 ## Renderer and agents
 
 The Electron main process owns one `GlassService` per open vault. The renderer calls `window.desktop.glass({action})` and subscribes to `window.desktop.onGlassStorage(status)` for read-only, disk-full and recovery notices.
