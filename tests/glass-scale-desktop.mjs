@@ -26,6 +26,8 @@ async function open() {
   const app = await launch.launch({ args: [process.cwd(), ...headlessArguments], env });
   const page = await app.firstWindow(), errors = [];
   page.on("pageerror", error => errors.push(error.message));
+  // A shown headless window opens at its 660x500 minimum; the budgets, RTL click and screenshots assume 1440.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
   await page.addInitScript(() => {
     localStorage.setItem("omarkie-glass-test", "1");
     localStorage.setItem("omarkie-theme", "light");

@@ -245,6 +245,7 @@ try {
   await page.screenshot({ path: path.join(shots, "g22-proposals-light-1440.png") });
   await panel.locator("[data-swap-proposals] [data-swap-proposal]").first().getByRole("button", { name: "Dismiss" }).click();
   await expect(panel.locator("[data-swap-proposals] [data-swap-proposal]")).toHaveCount(0, { timeout: 20_000 });
+  await close();
 
   // 6b. Applying a proposal writes the proposal's own text into the proposal's own element:
   // the panel shows a picture, the proposal targets a paragraph, and the picture must survive.
