@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { access, constants, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -45,7 +46,9 @@ function commandLine(argv, image) {
 function run(command, args, timeout) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-    let stdout = "", stderr = "", overflow = false, settled = false;
+    // A chunk can end mid-character; a decoder carries the partial bytes into the next one.
+    const outDecoder = new StringDecoder("utf8"), errDecoder = new StringDecoder("utf8");
+    let stdout = "", stderr = "", outBytes = 0, errBytes = 0, overflow = false, settled = false;
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
@@ -55,14 +58,22 @@ function run(command, args, timeout) {
     const timer = setTimeout(() => { child.kill("SIGKILL"); finish(new Error("The OCR command took too long.")); }, timeout);
     timer.unref?.();
     child.stdout.on("data", chunk => {
-      if (stdout.length + chunk.length > ocrLimits.stdout) { overflow = true; child.kill("SIGKILL"); return; }
-      stdout += chunk;
+      if (overflow) return;
+      outBytes += chunk.length;
+      if (outBytes > ocrLimits.stdout) { overflow = true; child.kill("SIGKILL"); return; }
+      stdout += outDecoder.write(chunk);
     });
-    child.stderr.on("data", chunk => { if (stderr.length < ocrLimits.stderr) stderr += chunk; });
+    child.stderr.on("data", chunk => {
+      if (errBytes >= ocrLimits.stderr) return;
+      errBytes += chunk.length;
+      stderr += errDecoder.write(chunk);
+    });
     child.on("error", error => finish(error.code === "ENOENT"
       ? new Error("The OCR command was not found. Check OMARKIE_OCR.")
       : new Error(`The OCR command could not start: ${error.message}`)));
     child.once("close", code => {
+      stdout += outDecoder.end();
+      stderr += errDecoder.end();
       if (overflow) return finish(new Error("The OCR command printed too much text."));
       if (code !== 0) {
         const detail = stderr.trim().split("\n").filter(Boolean).at(-1) ?? `exit ${code}`;

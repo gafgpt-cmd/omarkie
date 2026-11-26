@@ -195,15 +195,24 @@ export function replaySwaps(text) {
   return { applied: [...applied.values()], proposals: [...proposals.values()], dismissed };
 }
 
+// Journal records carry an ISO time; previews and tests may pass epoch milliseconds.
+function swapTime(entry) {
+  const value = entry?.at;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Date.parse(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 // The newest swap still applied on each element; that is what one click restores.
+// Newest first, so the panel's "last change" is the one the person just made.
 export function latestSwaps(applied) {
   const latest = new Map();
   for (const entry of applied ?? []) {
     const key = entry.element?.id ?? entry.swapId;
     const known = latest.get(key);
-    if (!known || Number(entry.at ?? 0) >= Number(known.at ?? 0)) latest.set(key, entry);
+    if (!known || swapTime(entry) >= swapTime(known)) latest.set(key, entry);
   }
-  return [...latest.values()];
+  return [...latest.values()].sort((left, right) => swapTime(right) - swapTime(left));
 }
 
 // Replace just the element's bytes; the preview rows are the same text the write uses.

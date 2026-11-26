@@ -120,6 +120,8 @@ export function markdownElements(markdown, options = {}) {
       case "html_block": push({ kind: "html", ...span(map) }); break;
       case "hr": push({ kind: "divider", ...span(map) }); break;
       case "footnote_definition": push({ kind: "paragraph", ...span(map) }); break;
+      // Frontmatter is metadata, not page text: a swap or a lift must never rewrite it as prose.
+      case "frontmatter": break;
       default:
         if (map && !token.nesting && !token.type.endsWith("_close")) push({ kind: "paragraph", ...span(map) });
     }
