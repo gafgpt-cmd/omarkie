@@ -48,9 +48,9 @@ function connectionsLines(connections, footnotes) {
   return lines;
 }
 
-function footnotes(prefix = "") {
+function footnotes(prefix = "", start = 1) {
   const entries = [];
-  let counter = 0;
+  let counter = start - 1;
   return {
     add(text) {
       counter += 1;
@@ -103,7 +103,8 @@ function magnetMarkdown(magnet, { noteName, noteText, assets, target = "github" 
       const quote = extracted.markdown ? bodyLines(extracted.markdown).filter(line => line.trim()).slice(0, 6) : [];
       const target = String(fields.link ?? noteName).split("#")[0] || noteName;
       const lines = calloutLines("IMPORTANT", quote, String(fields.title ?? "").trim() || section);
-      lines.push("", `[Read the section](${encodeURI(target)}#${headingAnchor(section)})`);
+      // A note name can hold spaces or parentheses; only an angle-bracket destination survives both.
+      lines.push("", `[Read the section](<${encodeURI(target).replaceAll(">", "%3E")}#${headingAnchor(section)}>)`);
       return { lines, files };
     }
     const title = String(fields.title ?? "").trim();
@@ -176,13 +177,19 @@ export function buildMarkdownExport({ noteName, noteText, magnets, mode = "flat"
     const files = [...ordered].flatMap(magnet => magnetMarkdown(magnet, { noteName, noteText, assets, target }).files);
     return { markdown: noteText, files, mode, target };
   }
-  const foot = footnotes();
-  const connections = arrowConnections(visible);
+  // Flat output shares the page's footnote namespace, so start after any label the note already defines.
+  const labels = new Set([...String(noteText ?? "").matchAll(/\[\^([^\]\s]+)\]/g)].map(match => match[1]));
+  const numbered = mode === "flat" ? [...labels].filter(label => /^\d+$/.test(label)).map(Number) : [];
+  const foot = footnotes("", numbered.length ? Math.max(...numbered) + 1 : 1);
+  // An arrow never names a magnet the export left out (cheatsheet selection, caller order).
+  const included = new Set(ordered.map(magnet => magnet.id));
+  const connections = arrowConnections(visible).filter(edge => included.has(edge.magnet.id)
+    && [edge.magnet.fields?.from, edge.magnet.fields?.to].every(end => end?.kind !== "magnet" || included.has(end.magnet)));
   const parts = ordered.map(magnet => ({ magnet, ...magnetMarkdown(magnet, { noteName, noteText, assets, target }) }));
   const files = parts.flatMap(part => part.files);
   if (mode === "handout") {
     const lines = [`# ${String(noteName).replace(/\.(?:md|markdown|mdown)$/i, "")} — Glass handout`, "",
-      `> Page text is left out. [Open the note](${encodeURI(noteName)}).`, ""];
+      `> Page text is left out. [Open the note](<${encodeURI(noteName).replaceAll(">", "%3E")}>).`, ""];
     let index = 0;
     for (const part of parts) {
       if (!part.lines.length) continue;
@@ -214,15 +221,17 @@ export function buildMarkdownExport({ noteName, noteText, magnets, mode = "flat"
   const elements = markdownElements(noteText);
   const placed = [];
   const unplaced = [];
-  for (const part of parts) {
+  for (const [index, part] of parts.entries()) {
     if (!part.lines.length) continue;
     const anchor = mergeAnchorOf(part.magnet.fields ?? {});
     const resolved = anchor ? resolveMergeElement(elements, anchor) : null;
-    if (resolved) placed.push({ ...part, at: resolved.element.to });
+    if (resolved) placed.push({ ...part, at: resolved.element.to, index });
     else unplaced.push(part);
   }
   let text = noteText;
-  for (const part of placed.sort((left, right) => right.at - left.at)) {
+  // Bottom-up keeps offsets valid; at one paragraph later inserts land above earlier ones, so the
+  // reading order goes in reverse for a shared anchor.
+  for (const part of placed.sort((left, right) => right.at - left.at || right.index - left.index)) {
     text = insertBlock(text, part.at, part.lines, eol);
   }
   if (unplaced.length) {

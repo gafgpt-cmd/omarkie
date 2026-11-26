@@ -459,7 +459,8 @@ const handlers = {
     await syncGlassWatch();
     if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
     if (request.action === "write" && typeof request.visible !== "boolean") throw new Error("Invalid Glass request.");
-    return { visible: request.action === "read" ? await readGlass(glassWatch.root) : await writeGlass(glassWatch.root, request.visible) };
+    const options = { appData: app.getPath("userData") };
+    return { visible: request.action === "read" ? await readGlass(glassWatch.root, options) : await writeGlass(glassWatch.root, request.visible, options) };
   },
   sharedGlassState: async (_, request) => {
     if (!request || !["read", "write"].includes(request.action)) throw new Error("Invalid Glass request.");
@@ -467,7 +468,8 @@ const handlers = {
     await syncGlassWatch();
     if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
     if (request.action === "write" && typeof request.shared !== "boolean") throw new Error("Invalid Glass request.");
-    return { shared: request.action === "read" ? await readShared(glassWatch.root) : await writeShared(glassWatch.root, request.shared) };
+    const options = { appData: app.getPath("userData") };
+    return { shared: request.action === "read" ? await readShared(glassWatch.root, options) : await writeShared(glassWatch.root, request.shared, options) };
   },
   sharedGlass: async (_, note) => {
     if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
@@ -492,7 +494,7 @@ const handlers = {
     if (mode === "bundle") {
       const result = await dialog.showOpenDialog(window, { title: t("导出玻璃导出包"), properties: ["openDirectory", "createDirectory"] });
       if (result.canceled) return null;
-      const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePaths[0], target, order });
+      const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePaths[0], target, order, appData: app.getPath("userData") });
       return { ...exported, note, display: exported.out };
     }
     const result = await dialog.showSaveDialog(window, {
@@ -501,14 +503,18 @@ const handlers = {
       filters: [{ name: "Markdown", extensions: ["md"] }],
     });
     if (result.canceled) return null;
-    const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePath, target, order });
+    const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePath, target, order, appData: app.getPath("userData") });
     return { ...exported, note, display: exported.out };
   },
   glassImport: async () => {
     if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
     const result = await dialog.showOpenDialog(window, { title: t("导入玻璃导出包"), properties: ["openDirectory"] });
     if (result.canceled) return null;
-    const imported = await importGlassBundle({ root: glassWatch.root, bundle: result.filePaths[0] });
+    const imported = await importGlassBundle({ root: glassWatch.root, bundle: result.filePaths[0], appData: app.getPath("userData") });
+    // The bundle wrote journals behind the running service's back; reload before the next reader asks.
+    await glassRuntime.service?.reloadStore().catch(() => {});
+    void glassRuntime.sync?.scan("sync").catch(() => {});
+    window?.webContents.send("glass:changed", { note: imported.note, action: "import" });
     return { ...imported, display: imported.note };
   },
   readingStore: async (_, id, request) => {
