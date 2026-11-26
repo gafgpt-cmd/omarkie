@@ -512,7 +512,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     };
     for (const mark of [...latest.current.magnets, ...latest.current.stickers, ...latest.current.timelines]) {
       if (!mark.anchor?.landmarks.length) { freeAt(mark.id, mark.x, mark.y, mark.w, mark.h); continue; }
-      const line = lineOf(mark);
+      // A timeline rides the media block it was made from; like pictures, it keeps its spot.
+      const line = "src" in mark ? spatialOf(mark) : lineOf(mark);
       if (line === null) { places[mark.id] = { status: "orphan" }; continue; }
       const element = byLine.get(line)?.element;
       if (element) {
