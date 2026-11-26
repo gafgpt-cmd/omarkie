@@ -41,7 +41,6 @@ import {
   replaySwaps, replacementLines, swapActionsFor, swapActionList, swapDefaults, swapDestinations, swapDiff, swapFootnoteRef,
 } from "../shared/element-swap.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
-import { pollingRequired } from "./glass-watcher.mjs";
 import { readGlassSettings, writeGlassSettings } from "./glass-state.mjs";
 import { searchOnline } from "./image-search.mjs";
 import { cleanHookResult, hookState, runImageHook, transcribe } from "./image-hooks.mjs";
@@ -319,7 +318,7 @@ export class GlassService {
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
         const owner = await readJson(this.lockFile);
-        if (owner && await this.liveWriter(owner)) {
+        if (owner && this.alive(owner)) {
           this.lockOwner = owner;
           this.readOnly = true;
           this.readOnlyReason = owner.host && owner.host !== this.host ? "another computer owns this vault" : "another Omarkie window owns this vault";
@@ -329,16 +328,6 @@ export class GlassService {
       }
     }
     throw new Error("Could not claim the Glass writer lock.");
-  }
-
-  // A foreign lock is a live writer only on a mount two computers can open at once. A folder-sync
-  // app copies the other machine's lock into this vault, where that machine writes nothing, so it
-  // is reclaimed instead of making this device read-only for a day.
-  async liveWriter(owner) {
-    if (!owner?.host || owner.host === this.host) return this.alive(owner);
-    const started = Number(owner.started) || 0;
-    if (Date.now() - started >= 86_400_000) return false;
-    return await pollingRequired(this.storeDir).catch(() => true);
   }
 
   alive(owner) {
