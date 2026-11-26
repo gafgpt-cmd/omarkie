@@ -48,7 +48,8 @@ try {
       const vertical = Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top);
       if (horizontal > 0.5 && vertical > 0.5) overlaps.push(`${all[a].name}/${all[b].name}`);
     }
-    return { menus, right, title, overlaps, width: innerWidth,
+    const names = [...document.querySelectorAll(".toolbar button")].map(node => ({ text: node.textContent.trim(), label: node.getAttribute("aria-label") ?? "", title: node.getAttribute("title") ?? "", shown: node.getBoundingClientRect().width > 0 }));
+    return { menus, right, title, overlaps, width: innerWidth, names,
       labels: [...document.querySelectorAll(".toolbar-label")].map(node => getComputedStyle(node).display),
       titleShown: getComputedStyle(document.querySelector(".document-title")).display !== "none" };
   });
@@ -65,6 +66,12 @@ try {
     if (width < 760) assert.equal(state.titleShown, false, `${width}px: the title is hidden, never clipped to one letter`);
     else assert.ok(state.titleShown && state.title.width >= 50, `${width}px: the title shows at least a word (${state.title.width.toFixed(0)} px)`);
     if (width <= 900) assert.ok(state.labels.every(display => display === "none"), `${width}px: button words are dropped, not squeezed`);
+    // Icon-only must still be named: a hidden label never takes the accessible name with it.
+    for (const button of state.names.filter(item => item.shown)) {
+      const name = button.label || button.text;
+      assert.ok(name.length > 1, `${width}px: every title-bar button keeps an accessible name (got ${JSON.stringify(button)})`);
+      if (!button.text) assert.ok(button.title.length > 1, `${width}px: an icon-only button keeps a tooltip (${JSON.stringify(button)})`);
+    }
     if (evidence) {
       await mkdir(evidence, { recursive: true });
       for (const theme of ["light", "dark"]) {

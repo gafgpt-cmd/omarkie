@@ -77,8 +77,9 @@ export function Toolbar(props: Props) {
         </span>
         {props.learning !== undefined && <div className="study-toolbar">
           {props.tutor && <button type="button" className="reading-layers-toggle tutor-toggle"
-            aria-expanded={props.tutor.open} onClick={props.tutor.show}><Sparkles size={14} /><span className="toolbar-label">{t("Tutor")}</span></button>}
+            aria-label={t("Tutor")} title={t("Tutor")} aria-expanded={props.tutor.open} onClick={props.tutor.show}><Sparkles size={14} /><span className="toolbar-label">{t("Tutor")}</span></button>}
           <button type="button" className="reading-layers-toggle" data-testid="learning-mode-toggle"
+            aria-label={t("Learning mode")}
             title={`${t("Learning mode")} (${shortcutLabel(commandKey(commandsByAction.get("reading-layers")!))})`}
             aria-pressed={props.learning} onClick={() => props.command("reading-layers")}>
             <Layers size={15} /><span className="toolbar-label">{t("Learning mode")}</span>
