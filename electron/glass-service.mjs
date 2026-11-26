@@ -1860,10 +1860,10 @@ export class GlassService {
       const folder = this.attachmentDir(settings.root, settings.attachmentFolder);
       const taken = new Set(await readdir(folder).catch(() => []));
       const assetName = assetFile(candidate.title || candidate.name || "swap", extensionFor(type), taken);
-      const assetPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
+      const storedPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
       const width = Math.round(Math.min(imageDefaults.maxW, Math.max(imageDefaults.minW, Number(candidate.width) || imageDefaults.w)));
-      mapping = mergeLines("image", { name: candidate.title || assetName, w: width }, { settings, assetPath, assetName });
-      attachment = { name: assetName, rel: assetPath, abs: path.join(folder, assetName), bytes };
+      mapping = mergeLines("image", { name: candidate.title || assetName, w: width }, { settings, assetPath: linkFor(settings, storedPath), assetName });
+      attachment = { name: assetName, rel: storedPath, abs: path.join(folder, assetName), bytes };
     }
     let lines = isPicture
       ? replacementLines(candidate, { swapId, accessed: at, operations, imageMarkdown: mapping.lines[0] })

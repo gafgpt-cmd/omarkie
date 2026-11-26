@@ -3,7 +3,7 @@
 // never carry the request somewhere else.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -137,4 +137,19 @@ test("online search runs only with a one-shot consent token from this window", a
     if (previous === undefined) delete process.env.OMARKIE_SWAP_SEARCH; else process.env.OMARKIE_SWAP_SEARCH = previous;
     await service.close();
   }
+});
+
+test("an accepted swap picture links relative to a nested note in a plain folder", async () => {
+  const { folder, service } = await vault();
+  await mkdir(path.join(folder, "notes"), { recursive: true });
+  await writeFile(path.join(folder, "notes", "map.md"), source);
+  const element = markdownElements(source).find(row => row.text.startsWith("Second"));
+  service.swapCandidateBytes = async () => ({ bytes: png, type: "image/png" });
+  try {
+    await service.request({ action: "swap-apply", note: "notes/map.md", mode: "replace", element: element.id, candidate: candidate(undefined) });
+    const note = await readFile(path.join(folder, "notes", "map.md"), "utf8");
+    assert.match(note, /!\[[^\]]*\]\(dot\.png/, "link resolves from the note's own folder");
+    assert.doesNotMatch(note, /notes\/dot\.png/);
+    await readFile(path.join(folder, "notes", "dot.png"));
+  } finally { await service.close(); }
 });
