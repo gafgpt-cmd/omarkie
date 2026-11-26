@@ -5,10 +5,10 @@ Sync moves the vault's `.omarkie` journals between computers through a git repos
 ## What one sync does
 
 1. Flush pending journal lines.
-2. Commit the vault's local changes.
+2. Commit the vault's local changes, deletions included. Machine-local files (`.omarkie/writer.lock`, `.omarkie/journal.lock`) are neither committed nor pulled: they name one process, so syncing one would make the other computer read-only.
 3. Fetch the checked-out branch.
 4. Fast-forward when the remote is ahead.
-5. Merge `.omarkie/**/*.jsonl` as a line union; the reader's `opId`, HLC and tombstone rules decide the result. Non-journal changes on both sides report a conflict and are not applied.
+5. Merge `.omarkie/**/*.jsonl` as a line union; the reader's `opId`, HLC and tombstone rules decide the result. `.omarkie/settings.json` merges by field, so two computers that opened the vault before their first pull keep one vault id; stamps (`createdAt`) name the vault's origin. Other non-journal changes on both sides report a conflict and are not applied.
 6. Push the merge commit, retry once after a fetch if the push was refused.
 
 One job runs per vault. It refuses when another window holds the writer lock, when the vault root is not the repository root, or when git ignores `.omarkie`.

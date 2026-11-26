@@ -12,7 +12,42 @@ import { detectFolderSync } from "./folder-sync.mjs";
 import { tokenError } from "./sync-token.mjs";
 
 const journalPath = /(^|\/)\.omarkie\/.+\.jsonl$/;
+// Locks name one machine and one process; committing them makes the other device read-only and
+// turns every concurrent sync into a conflict on a file no person can resolve.
+const machineLocal = /(^|\/)\.omarkie\/(?:writer|journal)\.lock$/;
+const settingsPath = ".omarkie/settings.json";
 const running = new Map();
+
+// [path, head, work, stage] rows worth committing: a lock from this machine never is.
+function changedRows(rows) {
+  return rows.filter(([filepath, head, work, stage]) => (head !== work || work !== stage) && !machineLocal.test(filepath));
+}
+
+// Vault identity is one id shared by every device and the sync block is per machine. Two devices
+// that opened the vault before their first pull minted different ids, so a whole-file conflict
+// here blocks sync forever. Merge by field instead; a different remote or branch still needs a person.
+export function settingsUnion(localText, remoteText) {
+  let local, remote;
+  try { local = JSON.parse(localText); remote = JSON.parse(remoteText); } catch { return null; }
+  const object = value => !!value && typeof value === "object" && !Array.isArray(value);
+  if (!object(local) || !object(remote)) return null;
+  if (local.sync?.remote && remote.sync?.remote && local.sync.remote !== remote.sync.remote) return null;
+  if (local.sync?.branch && remote.sync?.branch && local.sync.branch !== remote.sync.branch) return null;
+  // The vault was born on the device with the earliest createdAt; a tie breaks on the id, so
+  // every device computes the same identity from the same pair of files.
+  const elder = (left, right) => {
+    const a = Date.parse(left?.createdAt ?? ""), b = Date.parse(right?.createdAt ?? "");
+    if (Number.isFinite(a) && Number.isFinite(b) && a !== b) return a < b ? left : right;
+    return String(left?.vaultId ?? "") <= String(right?.vaultId ?? "") ? left : right;
+  };
+  const identity = elder(local, remote), sync = local.sync ?? remote.sync;
+  const merged = { ...remote, ...local };
+  if (identity.vaultId) merged.vaultId = identity.vaultId;
+  if (identity.createdAt) merged.createdAt = identity.createdAt;
+  if (identity.mode) merged.mode = identity.mode;
+  if (sync !== undefined) merged.sync = sync;
+  return `${JSON.stringify(merged, null, 2)}\n`;
+}
 
 export function journalUnion(local, remote) {
   const seen = new Set();
@@ -198,7 +233,7 @@ export class GitSync {
 
   async #changedCount() {
     const rows = await git.statusMatrix({ fs: this.fs ?? nodeFs, dir: this.root });
-    return rows.filter(([, head, work, stage]) => head !== work || work !== stage).length;
+    return changedRows(rows).length;
   }
 
   async #head() {
@@ -227,12 +262,17 @@ export class GitSync {
 
   async #commitLocal() {
     const rows = await git.statusMatrix({ fs: this.fs ?? nodeFs, dir: this.root });
-    const changed = rows.filter(([, head, work, stage]) => head !== work || work !== stage).length;
-    if (!changed) return { committed: false, changed: 0 };
-    await git.add({ fs: this.fs ?? nodeFs, dir: this.root, filepath: "." });
+    const changed = changedRows(rows);
+    if (!changed.length) return { committed: false, changed: 0 };
+    // `add .` stages files that exist; a note deleted in the vault is staged by `remove`, or the
+    // deletion never leaves this machine and every sync commits nothing again.
+    for (const [filepath, , work] of changed) {
+      if (work === 0) await git.remove({ fs: this.fs ?? nodeFs, dir: this.root, filepath });
+      else await git.add({ fs: this.fs ?? nodeFs, dir: this.root, filepath });
+    }
     const author = await this.#author();
     const oid = await git.commit({ fs: this.fs ?? nodeFs, dir: this.root, message: "omarkie: sync local glass ops", author });
-    return { committed: true, changed, oid };
+    return { committed: true, changed: changed.length, oid };
   }
 
   async #fetch(branch, { shallow = false, single = true } = {}) {
@@ -309,6 +349,7 @@ export class GitSync {
     const journals = [];
     const paths = new Set([...base.keys(), ...local.keys(), ...remote.keys()]);
     for (const filepath of paths) {
+      if (machineLocal.test(filepath)) continue;
       const b = base.get(filepath);
       const l = local.get(filepath);
       const r = remote.get(filepath);
@@ -327,6 +368,15 @@ export class GitSync {
       }
       if (same(b, l)) { writes.set(filepath, await this.#readBlob(r.oid)); continue; }
       if (same(b, r)) continue;
+      if (filepath === settingsPath) {
+        let localText = null;
+        try { localText = await readFile(path.join(this.root, ...filepath.split("/")), "utf8"); } catch { localText = null; }
+        if (localText === null) localText = (await this.#readBlob(l.oid)).toString("utf8");
+        const settings = settingsUnion(localText, (await this.#readBlob(r.oid)).toString("utf8"));
+        if (settings === null) { conflicts.push({ path: filepath, reason: "changed on both sides" }); continue; }
+        writes.set(filepath, Buffer.from(settings, "utf8"));
+        continue;
+      }
       if (journalPath.test(filepath)) {
         let localText = null;
         try { localText = await readFile(path.join(this.root, ...filepath.split("/")), "utf8"); } catch { localText = null; }
@@ -347,8 +397,8 @@ export class GitSync {
       const target = path.join(this.root, ...filepath.split("/"));
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, content);
+      await git.add({ fs: this.fs ?? nodeFs, dir: this.root, filepath });
     }
-    if (writes.size) await git.add({ fs: this.fs ?? nodeFs, dir: this.root, filepath: "." });
     return { conflicts: [], writes, deletes, journals, merged: true };
   }
 

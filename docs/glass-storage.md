@@ -38,7 +38,7 @@ The vault id in `settings.json` identifies the vault if its path changes. Outsid
 
 ## One writer
 
-`writer.lock` holds the host, process id and a random token. A second Omarkie window on the same vault opens read-only and says so; it reads journals but never writes. Closing the owner removes its own lock. A lock from a dead process on the same host is reclaimed.
+`writer.lock` holds the host, process id and a random token. A second Omarkie window on the same vault opens read-only and says so; it reads journals but never writes. Closing the owner removes its own lock. A lock from a dead process on the same host is reclaimed. A lock naming *another* computer counts only on a mount two computers can open at once (network or FUSE, where polling watches for changes): a lock a folder-sync app copied into a local vault names a machine that writes nothing here, so it is reclaimed instead of making this device read-only.
 
 ## Failure behavior
 

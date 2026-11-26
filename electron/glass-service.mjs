@@ -38,9 +38,10 @@ import { markdownElements } from "../shared/element-model.mjs";
 import { journalTimeline, magnetsAt, parseScrubTime } from "../shared/glass-scrub.mjs";
 import {
   attributionText, candidateAllowed, capProposals, compareSet, isSwapId, latestSwaps, normalLicence, onlineAllowed,
-  replaySwaps, replacementLines, swapActionsFor, swapActionList, swapDefaults, swapDestinations, swapDiff,
+  replaySwaps, replacementLines, swapActionsFor, swapActionList, swapDefaults, swapDestinations, swapDiff, swapFootnoteRef,
 } from "../shared/element-swap.mjs";
 import { findInVault, vaultRoot } from "./vault.mjs";
+import { pollingRequired } from "./glass-watcher.mjs";
 import { readGlassSettings, writeGlassSettings } from "./glass-state.mjs";
 import { searchOnline } from "./image-search.mjs";
 import { cleanHookResult, hookState, runImageHook, transcribe } from "./image-hooks.mjs";
@@ -101,6 +102,18 @@ function journalLineKey(line) {
   if (!record || typeof record !== "object" || Array.isArray(record)) return null;
   if (typeof record.opId === "string" && record.opId) return `op:${record.opId}`;
   return parseClock(record.hlc) ? `op:${journalOpId(record)}` : null;
+}
+
+// The only hosts a candidate may be downloaded from: the app's two picture sources and whatever
+// an installation points its own search at. A loopback, private or metadata address is never here.
+function swapDownloadHosts() {
+  const hosts = new Set(["upload.wikimedia.org", "commons.wikimedia.org", "api.openverse.org"]);
+  for (const name of ["OMARKIE_SWAP_COMMONS", "OMARKIE_SWAP_OPENVERSE"]) {
+    const configured = process.env[name]?.trim();
+    if (!configured) continue;
+    try { hosts.add(new URL(configured).hostname.toLowerCase()); } catch { /* a bad override adds nothing */ }
+  }
+  return hosts;
 }
 
 export class GlassService {
@@ -306,7 +319,7 @@ export class GlassService {
       } catch (error) {
         if (error.code !== "EEXIST") throw error;
         const owner = await readJson(this.lockFile);
-        if (owner && this.alive(owner)) {
+        if (owner && await this.liveWriter(owner)) {
           this.lockOwner = owner;
           this.readOnly = true;
           this.readOnlyReason = owner.host && owner.host !== this.host ? "another computer owns this vault" : "another Omarkie window owns this vault";
@@ -316,6 +329,16 @@ export class GlassService {
       }
     }
     throw new Error("Could not claim the Glass writer lock.");
+  }
+
+  // A foreign lock is a live writer only on a mount two computers can open at once. A folder-sync
+  // app copies the other machine's lock into this vault, where that machine writes nothing, so it
+  // is reclaimed instead of making this device read-only for a day.
+  async liveWriter(owner) {
+    if (!owner?.host || owner.host === this.host) return this.alive(owner);
+    const started = Number(owner.started) || 0;
+    if (Date.now() - started >= 86_400_000) return false;
+    return await pollingRequired(this.storeDir).catch(() => true);
   }
 
   alive(owner) {
@@ -753,7 +776,12 @@ export class GlassService {
     let handle, before = null, writing = false;
     try {
       await this.repairTail(file);
-      before = this.sizes.get(file) ?? 0;
+      const known = this.sizes.get(file);
+      // The journal changed size while it was being probed: appending now would land after a tail
+      // that was never repaired, and rolling back on a guessed offset could drop good lines.
+      if (known === undefined)
+        throw Object.assign(new Error("The glass journal changed while it was being read; the change was not saved."), { code: "GLASS_CHANGED" });
+      before = known;
       if (this.faults.beforeAppend) await this.faults.beforeAppend(file, line);
       handle = await open(file, constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY | noFollow, 0o600);
       writing = true;
@@ -793,6 +821,9 @@ export class GlassService {
     try {
       const size = metadata.size;
       const complete = await lastCompleteOffset(handle, size);
+      // The file changed size under the probe (a sync merge rewrote it); nothing can be decided
+      // here, and truncating on a guess would delete good lines.
+      if (complete === null) { this.sizes.delete(file); return null; }
       if (complete !== size && !this.readOnly) await handle.truncate(complete);
       this.sizes.set(file, complete);
       return complete;
@@ -1619,9 +1650,9 @@ export class GlassService {
     this.assertReady();
     const { note: name, file } = await this.validateNote(request.note);
     const root = await vaultRoot(path.dirname(file), this.root);
-    if (request.neverOnline === undefined) return { note: name, ...(await readGlassSettings(root)) };
+    if (request.neverOnline === undefined) return { note: name, ...(await readGlassSettings(root, { appData: this.appData })) };
     this.assertWritable();
-    const settings = await writeGlassSettings(root, { neverOnline: request.neverOnline === true });
+    const settings = await writeGlassSettings(root, { neverOnline: request.neverOnline === true }, { appData: this.appData });
     return { note: name, ...settings };
   }
 
@@ -1714,7 +1745,7 @@ export class GlassService {
     if (!actions.length) throw Object.assign(new Error("This element cannot be swapped."), { code: "UNSUPPORTED_KIND" });
     const complaint = String(request.complaint ?? "").trim().slice(0, swapDefaults.complaintLimit);
     const root = await vaultRoot(path.dirname(file), this.root);
-    const settings = await readGlassSettings(root);
+    const settings = await readGlassSettings(root, { appData: this.appData });
     const hooks = await hookState(this.appData);
     // A hook action exists only when the hook does, so the chips match what this machine can do.
     const usable = actions.filter(action => action !== "enhance" || hooks.enhance).filter(action => action !== "generate" || hooks.generate);
@@ -1750,7 +1781,10 @@ export class GlassService {
         else warnings.push({ code: checked.code, message: `${view.title}: ${checked.hint}` });
       }
     }
-    const candidates = compareSet(current, found.slice(0, swapDefaults.candidates - (current ? 1 : 0)));
+    // An answer from the search the reader asked for outranks vault files the scan happened to find;
+    // otherwise a handful of pictures beside the note crowds the result out of the cap.
+    const ranked = [...found.filter(candidate => candidate.online === true), ...found.filter(candidate => candidate.online !== true)];
+    const candidates = compareSet(current, ranked.slice(0, swapDefaults.candidates - (current ? 1 : 0)));
     return { ...this.describe(note, file), element: this.swapEcho(element, elements), actions, kind, complaint, hooks,
       online: { ...online, searched }, neverOnline: settings.neverOnline, candidates, warnings };
   }
@@ -1761,7 +1795,7 @@ export class GlassService {
       licence: licence ?? null, online: candidate.online === true, preview: candidate.preview ?? null };
   }
 
-  async swapCandidateBytes(candidate) {
+  async swapCandidateBytes(candidate, { neverOnline = false } = {}) {
     const inline = typeof candidate.base64 === "string" && candidate.base64 ? candidate.base64
       : typeof candidate.bytesBase64 === "string" && candidate.bytesBase64 ? candidate.bytesBase64 : null;
     if (inline) {
@@ -1775,7 +1809,15 @@ export class GlassService {
       return bytes ? { bytes, type: imageTypeOf(bytes) } : null;
     }
     if (typeof candidate.downloadUrl === "string" && /^https?:\/\//i.test(candidate.downloadUrl)) {
-      const response = await fetch(candidate.downloadUrl, { signal: AbortSignal.timeout(20_000), headers: { accept: "image/*", "user-agent": "omarkie-swap/1 (+local note app)" } });
+      // A candidate can arrive from an agent, so the download is the one place this app still
+      // reaches the network on its own: it needs the vault's consent and a known picture host
+      // (never loopback or link-local metadata addresses), and a redirect must not move it.
+      if (neverOnline) throw Object.assign(new Error("This vault never goes online."), { code: "SOURCE_OFFLINE" });
+      let address;
+      try { address = new URL(candidate.downloadUrl); } catch { address = null; }
+      if (!address || address.username || address.password || !swapDownloadHosts().has(address.hostname.toLowerCase()))
+        throw Object.assign(new Error(`Omarkie only downloads pictures from its own picture sources, not from ${address?.hostname ?? "that address"}.`), { code: "SOURCE_NOT_ALLOWED" });
+      const response = await fetch(address, { signal: AbortSignal.timeout(20_000), redirect: "error", headers: { accept: "image/*", "user-agent": "omarkie-swap/1 (+local note app)" } });
       if (!response.ok) throw Object.assign(new Error(`The picture download failed (${response.status}).`), { code: "SOURCE_OFFLINE" });
       const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.length > imageDefaults.maxBytes) throw Object.assign(new Error("The picture is too large."), { code: "OUTPUT_TOO_LARGE" });
@@ -1807,15 +1849,16 @@ export class GlassService {
     const swapId = isSwapId(request.swapId) ? request.swapId : `sw-${randomBytes(6).toString("hex")}`;
     const at = this.now();
     const isPicture = candidate.kind !== "rewrite" && candidate.kind !== "redraw";
+    const settings = await this.mergeSettingsFor(file, name);
     let bytes = null, type = null;
     if (isPicture) {
-      const loaded = await this.swapCandidateBytes(candidate);
+      const { neverOnline } = await readGlassSettings(settings.root, { appData: this.appData });
+      const loaded = await this.swapCandidateBytes(candidate, { neverOnline });
       if (!loaded?.bytes?.length || !loaded.type) throw Object.assign(new Error("The candidate picture could not be read."), { code: "SOURCE_OFFLINE" });
       ({ bytes, type } = loaded);
     }
     const operations = Array.isArray(candidate.operations) ? candidate.operations : [];
     const citation = attributionText({ ...candidate, licence: normalLicence(candidate.licence) }, { accessed: at, operations });
-    const settings = await this.mergeSettingsFor(file, name);
     const eol = noteLineEnding(text);
     // A picture always lands in the vault's attachment folder first; the page only points at it.
     let attachment = null, mapping = null;
@@ -1828,13 +1871,30 @@ export class GlassService {
       mapping = mergeLines("image", { name: candidate.title || assetName, w: width }, { settings, assetPath, assetName });
       attachment = { name: assetName, rel: assetPath, abs: path.join(folder, assetName), bytes };
     }
-    const lines = isPicture
+    let lines = isPicture
       ? replacementLines(candidate, { swapId, accessed: at, operations, imageMarkdown: mapping.lines[0] })
       : replacementLines(candidate, { swapId, accessed: at, operations });
-    const diff = swapDiff(text, element, lines, eol);
-    const before = await readFile(file);
+    // A table cell is part of a row, not a block: write it as one inline cell and move the
+    // footnote definition after the whole table, or the next cell and the table itself break.
+    let target = element;
+    if (element.kind === "table-cell") {
+      const table = elements.find(item => item.kind === "table" && item.from <= element.from && element.to <= item.to);
+      if (!table) throw Object.assign(new Error("That table cell is not inside a table."), { code: "UNSUPPORTED_KIND" });
+      const inline = isPicture ? lines[0] : `${tableCellText(candidate.text)}${swapFootnoteRef(swapId)}`;
+      const row = `${text.slice(table.from, element.from)}${inline}${text.slice(element.to, table.to)}`;
+      lines = [...row.split(eol), "", lines.at(-1)];
+      target = table;
+    }
+    const before = await readFile(file), beforeNote = decodeNote(before);
+    // The candidate may have been fetched over the network since this element was read;
+    // writing the diff built from that older text would revert whatever the editor saved.
+    if (mode === "replace" && beforeNote.text !== text) {
+      return { ...this.describe(note, file), stale: true, swapId, mode, footnote: citation,
+        message: "The note changed while the change was being prepared; nothing was written." };
+    }
+    const diff = swapDiff(text, target, lines, eol);
     const baseHash = hashBytes(before);
-    const buffer = encodeNote({ bom: decodeNote(before).bom, text: diff.next });
+    const buffer = encodeNote({ bom: beforeNote.bom, text: diff.next });
     if (request.dryRun === true) {
       return { ...this.describe(note, file), needsUser: true, swapId, mode, expectedHash: baseHash,
         candidate: this.swapCandidateView(candidate, settings.root, name),
@@ -1911,7 +1971,7 @@ export class GlassService {
     const latest = latestSwaps(records.applied);
     const record = request.swap
       ? records.applied.find(entry => entry.swapId === request.swap)
-      : request.element ? latest.find(entry => entry.element?.id === request.element) : latest.sort((left, right) => String(right.at).localeCompare(String(left.at)))[0];
+      : request.element ? latest.find(entry => entry.element?.id === request.element) : latest[0];
     if (!record) throw Object.assign(new Error("Nothing to restore on this note."), { code: "ELEMENT_NOT_FOUND" });
     if (record.mode === "replace") {
       if (!record.undo) throw new Error("The undo copy for that swap is missing.");
@@ -1989,7 +2049,7 @@ export class GlassService {
     const { name, file, note, journal } = await this.swapContext(request);
     const records = await this.swapRecords(journal);
     const root = await vaultRoot(path.dirname(file), this.root);
-    const settings = await readGlassSettings(root);
+    const settings = await readGlassSettings(root, { appData: this.appData });
     const proposals = capProposals(records.proposals.map(entry => ({ ...entry, candidateId: entry.candidate?.id, title: entry.candidate?.title,
       dismissed: records.dismissed.has(entry.swapId), at: Date.parse(entry.at ?? 0) || 0 })), { now: this.now() });
     return { ...this.describe(note, file), swaps: latestSwaps(records.applied), proposals, hooks: await hookState(this.appData),
@@ -2152,7 +2212,10 @@ export class GlassService {
     const fields = magnetViewFromMap(magnet).fields;
     if (fields.kind !== "clip") throw new Error("That magnet is not a clip.");
     const previous = typeof fields.notePath === "string" ? fields.notePath : "";
-    if (previous) {
+    // The field is a stored vault path; a crafted `../x.md` must not resolve outside the vault.
+    const inside = previous && !path.isAbsolute(previous)
+      && previous.split("/").every(part => part && part !== "." && part !== ".." && !part.startsWith("."));
+    if (inside) {
       const existing = path.join(this.root, ...previous.split("/"));
       const metadata = await info(existing).catch(() => null);
       if (metadata?.isFile() && !metadata.isSymbolicLink()) return { ...this.describe(note, file), magnet: magnet.id,
@@ -2396,7 +2459,9 @@ export class GlassService {
   }
 }
 
-async function lastCompleteOffset(handle, size) {
+// The last newline-terminated offset, or null when a read came back empty because the file shrank
+// under the probe. A zero-length read must never make the walk stand still or conclude "0".
+export async function lastCompleteOffset(handle, size) {
   if (!size) return 0;
   const chunk = Buffer.alloc(Math.min(64 * 1024, size));
   const read = await handle.read(chunk, 0, chunk.length, size - chunk.length);
@@ -2408,6 +2473,7 @@ async function lastCompleteOffset(handle, size) {
     const length = Math.min(64 * 1024, offset);
     const buffer = Buffer.alloc(length);
     const probe = await handle.read(buffer, 0, length, offset - length);
+    if (!probe.bytesRead) return null;
     const part = buffer.subarray(0, probe.bytesRead);
     const found = part.lastIndexOf(10);
     if (found >= 0) return offset - part.length + found + 1;
@@ -2850,6 +2916,12 @@ function imageReferenceOf(markdown) {
 
 async function atomicJson(file, value) {
   await writeFileAtomic(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+// One table cell holds inline content only: escape its pipe separators and keep line breaks inline.
+function tableCellText(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean)
+    .join("<br>").replace(/\|/g, "\\|");
 }
 
 const readme = `# Omarkie glass

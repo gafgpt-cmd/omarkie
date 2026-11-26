@@ -480,9 +480,17 @@ export class GlassSync {
   }
 
   async focus() {
-    // Native watches cover local drives; a poll or a dead watcher needs a catch-up pass when the window returns.
-    if (this.closed || (this.mode !== "polling" && !this.watcherError)) return this.status();
-    const job = () => this.scan("focus");
+    if (this.closed) return this.status();
+    // Native watches cover local drives; a poll or a dead watcher needs a catch-up pass when the
+    // window returns. Either way a sync client writes journals under `.omarkie`, which no note
+    // watcher can see, so the glass index catches up on focus too.
+    const job = async () => {
+      const absorbed = await this.service.absorbConflictCopies().catch(error => { this.error = error.message; return null; });
+      await this.publishMagnets().catch(error => { this.error = error.message; });
+      if (absorbed?.lines) await this.publishNotes();
+      if (this.mode === "polling" || this.watcherError) return this.scan("focus");
+      return this.status();
+    };
     this.queue = this.queue.then(job, job);
     return this.queue;
   }

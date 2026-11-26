@@ -297,27 +297,51 @@ export function visibleMagnets(magnets) {
   return [...magnets.values()].filter(magnet => !magnet.deleted?.active).map(magnetView);
 }
 
+// notes.jsonl is union-merged by git and by the sync clients, so line order says nothing about
+// age: a note snapshot from the other device can land after a newer move. A note's path is
+// therefore decided by its newest clocked event, exactly as a magnet field is.
 export function replayNotesText(text) {
   const { lines, incomplete } = parseJournalText(text);
   const { records, quarantined, duplicates, invalid: badLines } = collectRecords(lines);
-  const byId = new Map();
+  const byId = new Map(), clockOf = new Map(), pathEvents = [];
   let invalid = badLines, unknown = 0;
+  const deviceOf = record => typeof record.device === "string" ? record.device : "";
+  const claim = (id, hlc, device) => {
+    if (!parseClock(hlc)) return true;
+    const current = clockOf.get(id);
+    if (current && !isNewer(hlc, device, current)) return false;
+    clockOf.set(id, { hlc, device });
+    return true;
+  };
   for (const { record } of records) {
     if (record.op === "note" && typeof record.id === "string" && typeof record.path === "string") {
+      if (!claim(record.id, record.hlc, deviceOf(record))) continue;
       byId.set(record.id, { id: record.id, path: record.path, title: record.title, fingerprint: record.fingerprint,
         hlc: record.hlc, device: record.device });
     } else if (record.op === "folder" && typeof record.from === "string" && typeof record.to === "string") {
-      for (const note of byId.values())
-        if (note.path === record.from || note.path.startsWith(`${record.from}/`))
-          note.path = `${record.to}${note.path.slice(record.from.length)}`;
+      pathEvents.push(record);
     } else if (record.op === "move" && typeof record.id === "string" && typeof record.to === "string") {
+      pathEvents.push(record);
+    } else unknown += 1;
+  }
+  // A move of one note and a rename of a folder both claim paths. They apply in clock order once
+  // every snapshot is known, so a merge that put the event before its note cannot lose it and a
+  // rename still covers a note whose own line merged in after it.
+  const keyOf = record => hlcKey(record.hlc, deviceOf(record)) ?? "";
+  pathEvents.sort((left, right) => { const a = keyOf(left), b = keyOf(right); return a < b ? -1 : a > b ? 1 : 0; });
+  for (const record of pathEvents) {
+    if (record.op === "move") {
       const note = byId.get(record.id);
-      if (note) {
+      if (note && claim(note.id, record.hlc, deviceOf(record))) {
         note.path = record.to;
         if (typeof record.title === "string" && record.title) note.title = record.title;
         if (record.fingerprint && typeof record.fingerprint === "object") note.fingerprint = record.fingerprint;
       }
-    } else unknown += 1;
+      continue;
+    }
+    for (const note of byId.values())
+      if ((note.path === record.from || note.path.startsWith(`${record.from}/`)) && claim(note.id, record.hlc, deviceOf(record)))
+        note.path = `${record.to}${note.path.slice(record.from.length)}`;
   }
   return { notes: byId, invalid, unknown, incomplete: incomplete.length, duplicates, quarantined };
 }
