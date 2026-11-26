@@ -54,9 +54,13 @@ try {
       titleShown: getComputedStyle(document.querySelector(".document-title")).display !== "none" };
   });
 
+  // Shrinking from a wider window: the old width already passes a lower bound, so wait for both bounds.
+  const settle = width => expect.poll(() => page.evaluate(() => innerWidth))
+    .toBeGreaterThanOrEqual(Math.min(width, minimum) - 2)
+    .then(() => expect.poll(() => page.evaluate(() => innerWidth)).toBeLessThanOrEqual(Math.max(width, minimum) + 2));
   for (const width of [760, 720, minimum]) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size, 900), width);
-    await expect.poll(() => page.evaluate(() => innerWidth)).toBeGreaterThanOrEqual(Math.min(width, minimum) - 2);
+    await settle(width);
     const state = await measure();
     assert.deepEqual(state.overlaps, [], `${width}px: title-bar controls overlap (${state.overlaps.join(", ")})`);
     assert.ok(state.menus.length >= 5, `${width}px: the menus are still there (${state.menus.length})`);
@@ -79,7 +83,7 @@ try {
         await page.reload();
         await expect(page.locator(".document-editor:not([hidden]) .rich-document")).toBeVisible({ timeout: 20_000 });
         await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size, 900), width);
-        await expect.poll(() => page.evaluate(() => innerWidth)).toBeGreaterThanOrEqual(Math.min(width, minimum) - 2);
+        await settle(width);
         const themed = await measure();
         assert.deepEqual(themed.overlaps, [], `${width}px ${theme}: title-bar controls overlap`);
         await page.screenshot({ path: path.join(evidence, `toolbar-${width}-${theme}.png`) });
