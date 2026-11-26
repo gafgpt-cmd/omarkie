@@ -223,9 +223,11 @@ export default function App() {
   const learningSaved = readingVisible && !!active.path && !!session.folder &&
     active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"));
   const tutorKey = learningSaved && payloadSupported && activeEditorReady ? `${active.id}:${active.path}:${session.folder}` : null;
-  const payloadAvailable = payloadEnabled && !tutorKey;
-  const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
   const tutorOpen = !!tutorKey && tutor === tutorKey;
+  // Payload and the Tutor curtain share the side slot; the editor being ready is not a Tutor.
+  // Keying this on tutorKey hid Payload in every Learning session whose editor stayed mounted.
+  const payloadAvailable = payloadEnabled && !tutorOpen;
+  const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
   const sidebarVisible = readingVisible && halfTile ? drawer && !activePayload && !tutorOpen : sidebar;
   const filesVisible = sidebarVisible && (!readingVisible || showFiles);
   useEffect(() => { if (readingVisible && !halfTile) setSidebar(true); }, [readingVisible, halfTile]);

@@ -13,6 +13,7 @@ export type SwapCandidate = {
   base64?: string | null; bytesBase64?: string | null; preview?: Preview; previewOf?: string; current?: boolean;
 };
 type DiffRow = { kind: "context" | "add" | "remove"; text: string };
+type ReviewedSwap = { swapId: string; hash: string; rows: DiffRow[]; footnote: string; candidate: SwapCandidate; element: string };
 type Options = {
   element: { id: string; kind: string; line: number; headings: string[]; quote: string; markdown: string; heading_path: string };
   kind: string; actions: string[]; hooks: { enhance: boolean; generate: boolean; stt: boolean };
@@ -20,7 +21,7 @@ type Options = {
   neverOnline: boolean; candidates: SwapCandidate[]; warnings: { code: string; message: string }[]; complaint: string;
 };
 type SwapRecord = { swapId: string; mode: string; kind: string; element?: { id: string } | null; title?: string | null; at?: string | number; attachment?: string | null };
-type Proposal = { swapId: string; candidate: SwapCandidate; at: string | number };
+type Proposal = { swapId: string; candidate: SwapCandidate; element?: { id: string } | null; at: string | number };
 type State = { swaps: SwapRecord[]; proposals: Proposal[]; neverOnline: boolean; hooks: { enhance: boolean; generate: boolean; stt: boolean } };
 
 const actionLabels: Record<string, string> = {
@@ -73,7 +74,8 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
   const [online, setOnline] = useState(false);
   const [selected, setSelected] = useState<string>();
   const [compare, setCompare] = useState(50);
-  const [preview, setPreview] = useState<{ swapId: string; hash: string; rows: DiffRow[]; footnote: string }>();
+  const [preview, setPreview] = useState<ReviewedSwap>();
+  const [staleSwap, setStaleSwap] = useState<string>();
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -86,8 +88,12 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
     return value;
   }, [note]);
 
+  // A switch the reader just flipped must be on disk before a search reads it, or the search runs
+  // against the old setting: the toggle's write is the barrier every dependent call awaits.
+  const settingsWrite = useRef<Promise<unknown>>(Promise.resolve());
   const loadOptions = useCallback(async (nextKind?: string, nextComplaint = complaint, nextOnline = online) => {
     setBusy(true); setPreview(undefined); setNotice("");
+    await settingsWrite.current.catch(() => undefined);
     try {
       const value = await glassCall({ note, action: "swap-options", element: element.id,
         ...(nextKind ? { kind: nextKind } : {}), ...(nextComplaint.trim() ? { complaint: nextComplaint } : {}),
@@ -96,6 +102,8 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
       const first = value.candidates.find(candidate => !candidate.current);
       setSelected(first?.id);
       if (!nextComplaint.trim() && value.element.quote) setComplaint("");
+      // Proposals an agent left while the panel was opening are part of the same picture.
+      void loadState().catch(() => undefined);
     } catch (error) { setNotice(message(error)); }
     finally { setBusy(false); }
   }, [complaint, element.id, note, online]);
@@ -103,7 +111,19 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
   useEffect(() => {
     void loadOptions();
     void loadState().catch(error => setNotice(message(error)));
+    // A proposal written just before the panel opened may still be landing in the journal; one
+    // follow-up read catches it without polling.
+    const settle = window.setTimeout(() => { void loadState().catch(() => undefined); }, 300);
+    return () => window.clearTimeout(settle);
   }, [element.id, note]);
+
+  // An agent's proposal, dismiss or undo arrives as a journal write; the open panel follows it.
+  useEffect(() => {
+    const stop = window.desktop?.onGlassChanged?.((event: { note?: string; action?: string }) => {
+      if (/^swap-/u.test(String(event?.action ?? ""))) void loadState().catch(() => undefined);
+    });
+    return () => stop?.();
+  }, [loadState]);
 
   const candidate = options?.candidates.find(row => row.id === selected);
   const current = options?.candidates.find(row => row.current);
@@ -163,20 +183,37 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
     } catch (error) { setNotice(message(error)); }
   }
 
-  async function apply(mode: "cover" | "replace", chosen = candidate) {
+  // A proposal names its own element; applying it must not write into the element this panel happens to show.
+  async function apply(mode: "cover" | "replace", chosen = candidate, target = element.id, proposal?: string) {
     if (!chosen) { setNotice(t("Choose a candidate first.")); return; }
     setBusy(true); setNotice("");
     try {
-      if (mode === "replace" && !preview) {
-        const value = await glassCall({ note, action: "swap-apply", element: element.id, candidate: chosen, mode, approved: false });
-        setPreview({ swapId: value.swapId, hash: value.expectedHash, rows: value.diff ?? [], footnote: value.footnote ?? "" });
+      if (mode === "replace") {
+        // Every Replace press reviews the candidate it was pressed for, never an older preview.
+        const value = await glassCall({ note, action: "swap-apply", element: target, candidate: chosen, mode: "replace", approved: false,
+          ...(proposal ? { swapId: proposal } : {}) });
+        setPreview({ swapId: value.swapId, hash: value.expectedHash, rows: value.diff ?? [], footnote: value.footnote ?? "", candidate: chosen, element: target });
         return;
       }
-      const value = await glassCall({ note, action: "swap-apply", element: element.id, candidate: chosen, mode, approved: true,
-        ...(preview ? { expectedHash: preview.hash, swapId: preview.swapId } : {}) });
+      // A proposal's id retires its card; the note write stays the same cover path.
+      const value = await glassCall({ note, action: "swap-apply", element: target, candidate: chosen, mode: "cover", approved: true,
+        ...(proposal ? { swapId: proposal } : {}) });
+      setNotice(t("Covered on your glass. The note is untouched."));
+      await loadState().catch(() => undefined);
+      await onApplied();
+    } catch (error) { setNotice(message(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function accept(reviewed: ReviewedSwap) {
+    setBusy(true); setNotice("");
+    try {
+      // The preview owns the candidate, the hash and the swap id: the write is what was reviewed.
+      const value = await glassCall({ note, action: "swap-apply", element: reviewed.element, candidate: reviewed.candidate, mode: "replace", approved: true,
+        expectedHash: reviewed.hash, swapId: reviewed.swapId });
       if (value?.stale) { setNotice(value.message ?? t("The note changed; preview again.")); setPreview(undefined); return; }
       setPreview(undefined);
-      setNotice(mode === "cover" ? t("Covered on your glass. The note is untouched.") : t("Replaced in the page."));
+      setNotice(t("Replaced in the page."));
       await loadState().catch(() => undefined);
       await onApplied();
     } catch (error) { setNotice(message(error)); }
@@ -186,8 +223,9 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
   async function restore(swap: string) {
     setBusy(true); setNotice("");
     try {
-      const value = await glassCall({ note, action: "swap-restore", swap });
-      if (value?.undoStale) { setNotice(value.message ?? t("Undo again to restore it anyway.")); return; }
+      const value = await glassCall({ note, action: "swap-restore", swap, ...(staleSwap === swap ? { force: true } : {}) });
+      if (value?.undoStale) { setStaleSwap(swap); setNotice(value.message ?? t("Undo again to restore it anyway.")); return; }
+      setStaleSwap(undefined);
       setNotice(t("Restored the original."));
       await loadState().catch(() => undefined);
       await onApplied();
@@ -200,8 +238,10 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
     setOptions(value => value ? { ...value, neverOnline: on } : value);
     setState(value => value ? { ...value, neverOnline: on } : value);
     if (on) setOnline(false);
-    try { await glassCall({ note, action: "swap-settings", neverOnline: on }); }
-    catch (error) { setNotice(message(error)); }
+    const write = glassCall({ note, action: "swap-settings", neverOnline: on })
+      .catch((error: Error) => { setNotice(message(error)); });
+    settingsWrite.current = write;
+    await write;
   }
 
   async function dismiss(swap: string) {
@@ -284,7 +324,7 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
         <span key={index} data-kind={row.kind}>{row.kind === "add" ? "+" : row.kind === "remove" ? "−" : " "} {row.text || "\u00a0"}</span>)}</div>
       <p className="glass-swap-footnote">{preview.footnote}</p>
       <div className="glass-swap-actions">
-        <button type="button" data-swap-accept disabled={busy} onClick={() => void apply("replace")}><Check size={13} /> {t("Accept replace")}</button>
+        <button type="button" data-swap-accept disabled={busy} onClick={() => void accept(preview)}><Check size={13} /> {t("Accept replace")}</button>
         <button type="button" data-swap-cancel-preview onClick={() => setPreview(undefined)}>{t("Cancel")}</button>
       </div>
     </div>}
@@ -307,8 +347,8 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
         <span>{proposal.candidate.title ?? proposal.candidate.kind}</span>
         <span className="glass-swap-meta">{proposal.candidate.sourceLabel ?? proposal.candidate.source ?? ""}</span>
         <div className="glass-swap-actions">
-          <button type="button" disabled={busy} onClick={() => void apply("cover", proposal.candidate)}>{t("Cover")}</button>
-          <button type="button" disabled={busy} onClick={() => void apply("replace", proposal.candidate)}>{t("Replace")}</button>
+          <button type="button" disabled={busy} onClick={() => void apply("cover", proposal.candidate, proposal.element?.id ?? element.id, proposal.swapId)}>{t("Cover")}</button>
+          <button type="button" disabled={busy} onClick={() => void apply("replace", proposal.candidate, proposal.element?.id ?? element.id, proposal.swapId)}>{t("Replace")}</button>
           <button type="button" disabled={busy} onClick={() => void dismiss(proposal.swapId)}>{t("Dismiss")}</button>
         </div>
       </article>)}
