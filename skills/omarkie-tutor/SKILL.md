@@ -29,7 +29,7 @@ Read Omarkie Tutor asks and write study scraps or proposals. Only Omarkie can Ac
 - Use `omarkie-axi glass scrub --note <note.md> --at <ISO time|epoch ms>` to replay the glass as it stood, and `glass timeline` to list stops.
 - Use `omarkie-axi glass ask --note <note.md> --near <quote> --text <question>` to ask about a paragraph, and `glass ocr --region <ink-id>` when OMARKIE_OCR is set.
 - Use `omarkie-axi voice transcribe --wav <file>` for the local OMARKIE_STT hook, and `memo list --note <note.md>` to read voice memos with their transcripts.
-- Use `omarkie-axi element swap --note <note.md> --element <id> --complaint "<what is wrong>"` to list picture or text candidates; add `--online` only when the person asked for a web picture, then `--candidate <json> --mode cover --accept` keeps the page untouched, while `--mode replace` previews the diff and a second `--accept` writes it.
+- Use `omarkie-axi element swap --note <note.md> --element <id> --complaint "<what is wrong>"` to list picture or text candidates; for a web picture, ask the person to press online search in the Omarkie window (that click is the consent), never pass `--online` on your own, and on `CONSENT_REQUIRED` say the same plainly instead of retrying; then `--candidate <json> --mode cover --accept` keeps the page untouched, while `--mode replace` previews the diff and a second `--accept` writes it.
 - Use `omarkie-axi element restore --note <note.md> [--element <id>] --accept` to bring back the page bytes or drop the cover a swap added; undo tokens are the swap id.
 
 - Use the ask's vault, document, and paragraph hash. Check the quote before replying.
