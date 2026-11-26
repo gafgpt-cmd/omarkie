@@ -58,6 +58,7 @@ export async function prepareElectronApplication(platform, application = path.re
   await cp("build/icon.png", path.join(application, "icon.png"));
   await licenseNotices(path.join(application, "ThirdPartyLicenses"));
   await cp("third-party/typora-plugins", path.join(application, "ThirdPartyLicenses/typora-plugins"), { recursive: true });
+  await cp("third-party/textfold", path.join(application, "ThirdPartyLicenses/textfold"), { recursive: true });
   await spellcheckDictionaries(path.join(application, "dictionaries"), path.join(application, "ThirdPartyLicenses/hunspell-dictionaries"));
   await writeFile(path.join(application, "package.json"), JSON.stringify({
     name: pkg.name, version: pkg.version, description: pkg.description,

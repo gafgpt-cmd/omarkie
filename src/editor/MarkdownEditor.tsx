@@ -559,11 +559,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
             codeMirror!.openSearchPanel(source.current!);
             return;
           }
-          setSearchOpen(true);
-          requestAnimationFrame(() => {
-            searchField.current?.focus();
-            searchField.current?.select();
-          });
+          if (searchField.current) { searchField.current.focus(); searchField.current.select(); }
+          else setSearchOpen(true);
         },
         jump: setJumpLine,
         wrap: (before, after = "") => {
@@ -718,6 +715,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       if (readyMode && (readyMode === "rich") === visibleMode && (visibleMode ? rich.current : source.current)) callbacks.current.onReady?.(readyMode);
     }, [readyMode, visibleMode]);
     useLayoutEffect(() => {
+      if (searchOpen && visibleMode) { searchField.current?.focus(); searchField.current?.select(); }
+    }, [searchOpen, visibleMode]);
+    useLayoutEffect(() => {
       // Focus once after the mode's DOM is visible, before keyboard input.
       // A delayed frame can restore an older caret after a navigation key.
       if (!root.current?.closest(".document-editor")?.hasAttribute("hidden"))
@@ -799,6 +799,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                 placeholder={t("查找")}
                 value={query}
                 onChange={(event) => {
+                  searchTerms.current.query = event.target.value;
                   setQuery(event.target.value);
                   setSearchStatus("");
                 }}
@@ -832,7 +833,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                 aria-label={t("替换内容")}
                 placeholder={t("替换为")}
                 value={replacement}
-                onChange={(event) => setReplacement(event.target.value)}
+                onChange={(event) => { searchTerms.current.replacement = event.target.value; setReplacement(event.target.value); }}
               />
               <button disabled={readOnly} onClick={() => replaceMatch()}>{t("替换")}</button>
               <button disabled={readOnly} onClick={() => replaceMatch(true)}>{t("全部替换")}</button>
