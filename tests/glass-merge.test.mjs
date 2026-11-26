@@ -39,12 +39,13 @@ async function sticky(service, id = "m-sticky", text = "Remember this.") {
 
 test("each mapping and the vault's own link style", () => {
   const obsidian = noteMergeSettings({ appJson: { attachmentFolderPath: "assets" }, notePath: "notes/Note.md" });
-  assert.deepEqual(obsidian, { attachmentFolder: "assets", linkStyle: "wikilink" });
+  assert.deepEqual(obsidian, { attachmentFolder: "assets", noteDir: "notes", linkStyle: "wikilink" });
   const markdown = noteMergeSettings({ appJson: { attachmentFolderPath: "./pics", useMarkdownLinks: true }, notePath: "notes/Note.md" });
-  assert.deepEqual(markdown, { attachmentFolder: "notes/pics", linkStyle: "markdown" });
+  assert.deepEqual(markdown, { attachmentFolder: "notes/pics", noteDir: "notes", linkStyle: "markdown" });
   assert.deepEqual(noteMergeSettings({ appJson: { attachmentFolderPath: "." }, notePath: "notes/Note.md" }),
-    { attachmentFolder: "notes", linkStyle: "wikilink" });
-  assert.deepEqual(noteMergeSettings({ appJson: null, notePath: "notes/Note.md" }), { attachmentFolder: "", linkStyle: "markdown" });
+    { attachmentFolder: "notes", noteDir: "notes", linkStyle: "wikilink" });
+  // Not an Obsidian vault: the picture goes beside the note, because a bare Markdown link resolves there.
+  assert.deepEqual(noteMergeSettings({ appJson: null, notePath: "notes/Note.md" }), { attachmentFolder: "notes", noteDir: "notes", linkStyle: "markdown" });
 
   assert.deepEqual(mergeLines("sticky", { text: "One\n\nTwo" }).lines, ["> [!note]", "> One", ">", "> Two"]);
   assert.throws(() => mergeLines("sticky", { text: "  " }), /Write something/);

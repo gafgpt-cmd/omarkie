@@ -42,7 +42,22 @@ export function noteMergeSettings({ appJson = null, notePath = "" } = {}) {
     else attachmentFolder = normalizeFolder(raw);
   }
   const obsidian = appJson !== null && appJson !== undefined;
-  return { attachmentFolder, linkStyle: obsidian && appJson.useMarkdownLinks !== true ? "wikilink" : "markdown" };
+  // A plain folder is not an Obsidian vault: pictures go beside the note, as the merge comment says.
+  if (!obsidian) attachmentFolder = noteDir;
+  return { attachmentFolder, noteDir, linkStyle: obsidian && appJson.useMarkdownLinks !== true ? "wikilink" : "markdown" };
+}
+
+// Markdown resolves a relative link from the note's own folder; Obsidian resolves `![[…]]` from the
+// vault root. Write the link the reader's Markdown engine will resolve back to the stored file.
+export function linkFor(settings, vaultPath) {
+  if (settings.linkStyle === "wikilink") return vaultPath;
+  const from = normalizeFolder(settings.noteDir), to = normalizeFolder(vaultPath);
+  const fromParts = from ? from.split("/") : [], toParts = to ? to.split("/") : [];
+  let shared = 0;
+  while (shared < fromParts.length && shared < toParts.length && fromParts[shared] === toParts[shared]) shared += 1;
+  const up = fromParts.slice(shared).map(() => "..");
+  const down = toParts.slice(shared);
+  return [...up, ...down].join("/") || toParts.at(-1) || "";
 }
 
 function safeTitle(value) {
