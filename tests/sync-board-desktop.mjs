@@ -23,6 +23,8 @@ await mkdir(vault, { recursive: true });
 await writeFile(path.join(vault, "practice.md"), source);
 git(home, "init", "--bare", remoteRoot);
 git(remoteRoot, "config", "http.receivepack", "true");
+// A bare repo's HEAD follows the host's init.defaultBranch; point it at the branch the vault pushes.
+git(remoteRoot, "symbolic-ref", "HEAD", "refs/heads/main");
 git(vault, "init", "-b", "main");
 git(vault, "config", "user.name", "Test");
 git(vault, "config", "user.email", "test@example.com");

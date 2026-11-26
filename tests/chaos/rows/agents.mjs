@@ -109,12 +109,16 @@ export const rows = [
       assert.equal(blocksRequest("https://example.org/image.png", "http://127.0.0.1:5186", false), true);
       assert.equal(blocksRequest("http://127.0.0.1:5186/app.js", "http://127.0.0.1:5186", false), false);
       assert.equal(blocksRequest("https://example.org/image.png", "http://127.0.0.1:5186", true), false);
+      // A hosted runner may refuse the network namespace. The gate's refusal is asserted above
+      // either way; the namespace proves the stronger claim where the kernel allows it.
       const child = spawn("unshare", ["-rn", process.execPath, offlineChild, environment.folder, environment.data],
         { stdio: ["ignore", "pipe", "pipe"] });
       let output = "";
       child.stdout.on("data", chunk => { output += chunk; });
       child.stderr.on("data", chunk => { output += chunk; });
       const [code] = await once(child, "exit");
+      const refused = /unshare: (?:write failed|Operation not permitted|Invalid argument)/u.test(output);
+      if (refused) throw Object.assign(new Error(`no network namespace here: ${output.trim().split("\n")[0]}`), { skip: true });
       assert.equal(code, 0, output);
       assert.match(output, /offline-ok/);
       const service = await openService(environment);

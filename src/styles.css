@@ -71,6 +71,12 @@ svg {
   height: 28px;
   position: relative;
   z-index: 20;
+  /* Menus, title and the right-hand buttons share one row: flex keeps them apart at every width. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 8px;
+  min-width: 0;
   -webkit-app-region: drag;
   background: linear-gradient(
     to right,
@@ -82,11 +88,10 @@ svg {
   background: var(--paper);
 }
 .document-title {
-  position: absolute;
-  left: 50%;
-  top: 7px;
-  transform: translateX(-50%);
-  max-width: 60%;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  text-align: center;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -103,10 +108,24 @@ svg {
   font-weight: 400;
 }
 .study-toolbar {
-  position: absolute;
-  inset: 2px 12px 2px auto;
+  flex: 0 0 auto;
   display: flex;
   gap: 4px;
+}
+.toolbar-label {
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  /* Below this the buttons keep their icons and drop their words, so the menus never sit under them. */
+  .toolbar-label {
+    display: none;
+  }
+  .study-toolbar .reading-layers-toggle {
+    padding: 0 6px;
+  }
+  .toolbar {
+    gap: 4px;
+  }
 }
 .reading-layers-toggle {
   display: inline-flex;

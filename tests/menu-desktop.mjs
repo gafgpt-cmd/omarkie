@@ -989,7 +989,9 @@ async function auditFull() {
   await closed; application = null;
   pass("Native Quit menu", "Application actually exits");
   if (process.argv.length === 2) {
-    const visible = groups.flatMap(group => group.items).filter(item => !["newWindow", "newTab"].includes(item.action));
+    // Export opens a person-facing dialog and shared glass needs a second device; both have their
+    // own suites (glass-export, shared-glass), so the in-app inventory audit leaves them out.
+    const visible = groups.flatMap(group => group.items).filter(item => !["newWindow", "newTab", "glass-export", "shared-glass"].includes(item.action));
     assert.deepEqual(visible.filter(item => !invokedActions.has(item.action)).map(item => item.action), []);
     pass("Menu inventory coverage", "Every supported shared command was invoked in the built app", `${visible.length} supported commands; unsupported window/tab entries hidden`);
   }
