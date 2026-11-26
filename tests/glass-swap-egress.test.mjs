@@ -144,9 +144,9 @@ test("an accepted swap picture links relative to a nested note in a plain folder
   await mkdir(path.join(folder, "notes"), { recursive: true });
   await writeFile(path.join(folder, "notes", "map.md"), source);
   const element = markdownElements(source).find(row => row.text.startsWith("Second"));
-  service.swapCandidateBytes = async () => ({ bytes: png, type: "image/png" });
   try {
-    await service.request({ action: "swap-apply", note: "notes/map.md", mode: "replace", element: element.id, candidate: candidate(undefined) });
+    await service.request({ action: "swap-apply", note: "notes/map.md", mode: "replace", approved: true, element: element.id,
+      candidate: { ...candidate(undefined), bytesBase64: png.toString("base64") } });
     const note = await readFile(path.join(folder, "notes", "map.md"), "utf8");
     assert.match(note, /!\[[^\]]*\]\(dot\.png/, "link resolves from the note's own folder");
     assert.doesNotMatch(note, /notes\/dot\.png/);
