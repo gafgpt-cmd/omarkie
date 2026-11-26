@@ -9,6 +9,8 @@ import { archPkgver, describeBuild } from "./arch-electron.mjs";
 export const applicationFolders = ["dist", "electron", "shared", "docs/showcase", "third-party/csl", "skills/omarkie-tutor"];
 export const nodeBridgeModules = ["iconv-lite", "safer-buffer", "i18next", "image-size", "yaml", "koffi", "@toon-format/toon", "@parcel/watcher", "detect-libc", "is-glob", "is-extglob", "picomatch",
   "markdown-it", "markdown-it-task-lists", "markdown-it-mark", "markdown-it-sub", "markdown-it-sup", "markdown-it-emoji",
+  // shared/ink-core.mjs smooths strokes for the main process too, so the module ships beside the app.
+  "perfect-freehand",
   "entities", "linkify-it", "mdurl", "punycode.js", "uc.micro"];
 export const nativeBridgeModule = (platform = process.platform, arch = process.arch) => `@koromix/koffi-${platform === "windows" ? "win32" : platform}-${arch}`;
 export const watcherBridgeModule = (platform = process.platform, arch = process.arch) => {
