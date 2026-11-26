@@ -115,6 +115,12 @@ svg {
 .toolbar-label {
   white-space: nowrap;
 }
+@media (max-width: 759px) {
+  /* Under 760 px the free space fits two letters at most: a lone glyph is noise, so the title goes. */
+  .document-title {
+    display: none;
+  }
+}
 @media (max-width: 900px) {
   /* Below this the buttons keep their icons and drop their words, so the menus never sit under them. */
   .toolbar-label {
@@ -125,6 +131,7 @@ svg {
   }
   .toolbar {
     gap: 4px;
+    padding-right: 6px;
   }
 }
 .reading-layers-toggle {

@@ -20,6 +20,12 @@
 .menu-bar-item > button[aria-expanded="true"] {
   background: var(--selected);
 }
+@media (max-width: 900px) {
+  /* A hundred pixels of padding buys the title a word at 720. */
+  .menu-bar-item > button {
+    padding: 3px 5px;
+  }
+}
 .more-menu.menu-bar-panel {
   top: 26px;
   bottom: auto;

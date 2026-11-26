@@ -48,10 +48,12 @@ try {
       const vertical = Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top);
       if (horizontal > 0.5 && vertical > 0.5) overlaps.push(`${all[a].name}/${all[b].name}`);
     }
-    return { menus, right, title, overlaps, width: innerWidth, labels: [...document.querySelectorAll(".toolbar-label")].map(node => getComputedStyle(node).display) };
+    return { menus, right, title, overlaps, width: innerWidth,
+      labels: [...document.querySelectorAll(".toolbar-label")].map(node => getComputedStyle(node).display),
+      titleShown: getComputedStyle(document.querySelector(".document-title")).display !== "none" };
   });
 
-  for (const width of [720, minimum]) {
+  for (const width of [760, 720, minimum]) {
     await app.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size, 900), width);
     await expect.poll(() => page.evaluate(() => innerWidth)).toBeGreaterThanOrEqual(Math.min(width, minimum) - 2);
     const state = await measure();
@@ -59,6 +61,9 @@ try {
     assert.ok(state.menus.length >= 5, `${width}px: the menus are still there (${state.menus.length})`);
     assert.ok(state.right.length >= 1, `${width}px: the right-hand buttons are still there (${state.right.length})`);
     assert.ok(state.right.every(rect => rect.width >= 20 && rect.right <= state.width + 1), `${width}px: buttons stay inside the window`);
+    // A lone glyph is worse than nothing: under 760 px the title is hidden, at 760 it shows a word.
+    if (width < 760) assert.equal(state.titleShown, false, `${width}px: the title is hidden, never clipped to one letter`);
+    else assert.ok(state.titleShown && state.title.width >= 50, `${width}px: the title shows at least a word (${state.title.width.toFixed(0)} px)`);
     if (width <= 900) assert.ok(state.labels.every(display => display === "none"), `${width}px: button words are dropped, not squeezed`);
     if (evidence) {
       await mkdir(evidence, { recursive: true });
@@ -85,5 +90,5 @@ try {
   }));
   assert.ok(mutations < 40, `the shell settles when idle; ${mutations} DOM mutations in a quiet second`);
   assert.deepEqual(errors, []);
-  console.log(`PASS: menus, title and buttons never overlap at 720 px and the ${minimum} px minimum, light and dark; idle shell settles (${mutations} mutations/s)`);
+  console.log(`PASS: menus, title and buttons never overlap at 760, 720 and the ${minimum} px minimum, light and dark; idle shell settles (${mutations} mutations/s)`);
 } finally { await app.close(); }
