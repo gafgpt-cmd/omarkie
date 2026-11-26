@@ -446,6 +446,13 @@ const handlers = {
     if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request);
     return result;
   },
+  // Minted only for the app window; the CLI and the Tutor bridge have no channel to this.
+  glassConsent: async (_, request) => {
+    await syncGlass(store?.folder ?? null);
+    if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
+    if (typeof request?.note !== "string" || typeof request?.element !== "string") throw new Error("Consent needs a note and an element.");
+    return glassRuntime.service.grantSwapConsent({ note: request.note, element: request.element });
+  },
   captureRegion: async (_, rect) => {
     if (!window) throw new Error(t("No window to capture."));
     if (!rect || typeof rect !== "object") throw new Error("Invalid capture region.");
