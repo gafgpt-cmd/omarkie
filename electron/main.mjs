@@ -192,6 +192,12 @@ function scheduleGlassRetry(folder) {
     glassRetry = null;
     if (glassRuntime.service && glassRuntime.close) return;
     if (glassRuntime.folder && glassRuntime.folder !== folder) return;
+    // Open storage is serving writes: rebind only the bridge, never close the service under them.
+    if (glassRuntime.service) {
+      const run = glassQueue.then(() => glassRuntime.folder === folder && glassRuntime.service && !glassRuntime.close ? bindGlassBridge(folder) : null);
+      glassQueue = run.catch(() => {});
+      return;
+    }
     glassRuntime.folder = null;
     glassRuntime.error = null;
     void syncGlass(folder).catch(() => {});
@@ -234,54 +240,58 @@ async function syncGlassNow(folder) {
       glassRuntime.sync = null;
       console.warn("Glass index:", error.message);
     }
-    try {
-      glassRuntime.close = await listenBridge(root, {
-        client(request, send) {
-          if (request?.op === "sync") {
-            if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
-            let engine;
-            try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
-            const job = request.action === "status" ? engine.status() : engine.syncNow();
-            Promise.resolve(job).then(async result => {
-              if (request.action === "now" && (result.pulled || result.journals?.length)) {
-                await glassRuntime.service?.reloadStore().catch(() => {});
-                void glassRuntime.sync?.scan("sync").catch(() => {});
-              }
-              send(result);
-            }, error => send({ error: error.message, code: error.code }));
-            return;
-          }
-          if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
-            if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
-            if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
-            send({ opened: true, note: request.note, magnet: request.magnet });
-            window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
-            return;
-          }
-          if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
-          const { op: _, token: __, ...payload } = request;
-          if (payload.action === "ocr") {
-            glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
-            return;
-          }
-          if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
-          Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
-        },
-        stopWait() {}, bind() { return {}; }, unbind() { return 0; },
-      }, "glass");
-      service.bridgeState = "listening";
-    } catch (error) {
-      service.bridgeState = "unavailable";
-      console.warn("Glass bridge:", error.message);
-      scheduleGlassRetry(folder);
-      return;
-    }
-    glassRetries = 0;
+    await bindGlassBridge(folder);
   } catch (error) {
     glassRuntime.error = error;
     scheduleGlassRetry(folder);
     throw error;
   }
+}
+async function bindGlassBridge(folder) {
+  const { root, service } = glassRuntime;
+  try {
+    glassRuntime.close = await listenBridge(root, {
+      client(request, send) {
+        if (request?.op === "sync") {
+          if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
+          let engine;
+          try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
+          const job = request.action === "status" ? engine.status() : engine.syncNow();
+          Promise.resolve(job).then(async result => {
+            if (request.action === "now" && (result.pulled || result.journals?.length)) {
+              await glassRuntime.service?.reloadStore().catch(() => {});
+              void glassRuntime.sync?.scan("sync").catch(() => {});
+            }
+            send(result);
+          }, error => send({ error: error.message, code: error.code }));
+          return;
+        }
+        if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
+          if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
+          if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
+          send({ opened: true, note: request.note, magnet: request.magnet });
+          window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
+          return;
+        }
+        if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
+        const { op: _, token: __, ...payload } = request;
+        if (payload.action === "ocr") {
+          glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
+          return;
+        }
+        if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
+        Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
+      },
+      stopWait() {}, bind() { return {}; }, unbind() { return 0; },
+    }, "glass");
+    service.bridgeState = "listening";
+  } catch (error) {
+    service.bridgeState = "unavailable";
+    console.warn("Glass bridge:", error.message);
+    scheduleGlassRetry(folder);
+    return;
+  }
+  glassRetries = 0;
 }
 let glassWatch = { folder: null, root: null, close: null };
 let voiceRuntime, voiceRuns = new Map();
