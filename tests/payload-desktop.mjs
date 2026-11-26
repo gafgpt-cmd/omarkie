@@ -107,6 +107,7 @@ try {
   await expect(button).toBeVisible();
   await expect(page.getByRole("button", { name: "Tutor", exact: true })).toHaveCount(0);
   await expect(rich).toHaveAttribute("contenteditable", "false");
+  await expect(page.locator("html")).toHaveAttribute("data-study-selection", "ready");
   await paragraph.selectText();
   await page.keyboard.press("Alt+Enter");
   await page.getByRole("group", { name: "Selection actions" }).getByRole("button", { name: "Payload", exact: true }).click();

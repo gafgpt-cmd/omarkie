@@ -131,7 +131,19 @@ async function openPdf(file) {
 const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
-let operationRunning = false;
+let operationQueue = Promise.resolve();
+async function fileOperationNow(operation) {
+  try {
+    if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
+    if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
+    const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
+    const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
+    const change = ["rename", "move", "undo", "trash"].includes(operation.action)
+      ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
+    workspace.apply(change, store);
+    await prepareOperation("commit", change); return change;
+  } finally { await prepareOperation("release", {}); }
+}
 let bibliography;
 
 // G17 agent parity: an ink magnet id is the region. The renderer rasterises the stroke it is
@@ -602,18 +614,12 @@ const handlers = {
     return { ...result, skipped: result.skipped + inventory.skipped };
   },
   reveal: async (_, file) => shell.showItemInFolder(await workspace.authorize(file, store)),
-  fileOperation: async (_, operation) => {
-    if (operationRunning) throw new Error(t("另一个文件操作正在进行。")); operationRunning = true;
-    try {
-      if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
-      if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
-      const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
-      const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
-      const change = ["rename", "move", "undo", "trash"].includes(operation.action)
-        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
-      workspace.apply(change, store);
-      await prepareOperation("commit", change); return change;
-    } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
+  // A second file operation waits for the first to release the renderer handshake; refusing it made
+  // a quick rename-then-trash lose the trash while the journal was still committing.
+  fileOperation: (_, operation) => {
+    const run = operationQueue.then(() => fileOperationNow(operation));
+    operationQueue = run.catch(() => {});
+    return run;
   },
   restore: async () => {
     // Launch-file problems are reported in the window's message bar, never a modal box.

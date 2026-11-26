@@ -111,6 +111,15 @@ function assertOnlyAdded(before, after, added) {
   for (const [name, hash] of before) assert.equal(after.get(name), hash, `${name} unchanged`);
 }
 const card = page => page.locator(`.glass-card`);
+// Cards remember their fold state in the journal, and a fold write in flight when the app quits may
+// not land. Drive the card to the state the assertion needs instead of assuming what restart restored.
+async function foldState(page, kind, open) {
+  const card = page.locator(`.glass-card[data-card-kind="${kind}"]`);
+  const folded = await card.getAttribute("data-folded");
+  if (open ? folded === "true" : folded !== "true") await card.locator("[data-card-pill]").click();
+  if (open) await expect(card.locator("[data-card-panel]")).toBeVisible();
+  else await expect(card.locator("[data-card-panel]")).toHaveCount(0);
+}
 
 // A. Create, resolve, fold, cache, reveal, open as page, persist.
 {
@@ -251,12 +260,12 @@ const card = page => page.locator(`.glass-card`);
   try {
     await openGlass(page);
     await expect(card(page)).toHaveCount(3, { timeout: 30_000 });
-    await page.locator('.glass-card[data-card-kind="static"] [data-card-pill]').click();
+    await foldState(page, "static", true);
     await expect(page.locator('.glass-card[data-card-kind="static"] [data-card-content]')).toContainText("Energy released per unit mass");
-    await page.locator('.glass-card[data-card-kind="ai"] [data-card-pill]').click();
+    await foldState(page, "ai", true);
     // No Tutor stub is running in this launch; the cached answer still renders.
     await expect(page.locator('.glass-card[data-card-kind="ai"] [data-card-answer]')).toContainText("Cue again");
-    await page.locator('.glass-card[data-card-kind="menu"] [data-card-pill]').click();
+    await foldState(page, "menu", true);
     await expect(page.locator('.glass-card[data-card-kind="menu"] [data-card-choice]')).toHaveCount(2);
     assert.equal(errors.length, 0, errors.join("\n"));
   } finally { await app.close(); }
@@ -273,23 +282,21 @@ const card = page => page.locator(`.glass-card`);
       await page.reload();
       const rich = await openGlass(page);
       await resize(app, page, width);
-      const pill = kind => page.locator(`.glass-card[data-card-kind="${kind}"] [data-card-pill]`);
-      if ((await page.locator('.glass-card[data-card-kind="menu"]').getAttribute("data-folded")) === "true") await pill("menu").click();
+      await foldState(page, "menu", true);
       await page.locator('.glass-card[data-card-kind="menu"] [data-card-choice="0"] > button').click();
       await rich.locator("p[data-cid]", { hasText: sourceText }).scrollIntoViewIfNeeded();
       await expect(page.locator(".glass-card")).toHaveCount(3);
       await page.waitForTimeout(180);
       await page.screenshot({ path: path.join(evidence, `g9-cards-${theme}-${width}.png`) });
-      await pill("ai").click();
-      await expect(page.locator('.glass-card[data-card-kind="ai"] [data-card-panel]')).toBeVisible();
+      await foldState(page, "ai", true);
       await page.waitForTimeout(180);
       await page.screenshot({ path: path.join(evidence, `g9-ai-${theme}-${width}.png`) });
-      await pill("ai").click();
-      await pill("static").click();
+      await foldState(page, "ai", false);
+      await foldState(page, "static", true);
       await expect(page.locator('.glass-card[data-card-kind="static"] [data-card-content]')).toContainText("Energy released per unit mass");
       await page.waitForTimeout(180);
       await page.screenshot({ path: path.join(evidence, `g9-static-${theme}-${width}.png`) });
-      await pill("static").click();
+      await foldState(page, "static", false);
     }
   } finally { await app.close(); }
 }
