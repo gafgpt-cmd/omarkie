@@ -9,7 +9,7 @@ const uid = process.getuid?.(), win = uid === undefined;
 const missing = error => { if (error.code !== "ENOENT") throw error; return null; };
 const info = file => lstat(file).catch(missing);
 const ownerOnly = (stat, mask) => win || stat.uid === uid && (stat.mode & 0o777) === mask;
-const frameLimit = 384 * 1024, pollTimeout = 90_000;
+const frameLimit = 2 * 1024 * 1024, pollTimeout = 90_000;
 const unavailable = () => new Error("Local Tutor bridge is unavailable in this vault.");
 let flock;
 
@@ -99,7 +99,14 @@ export async function listenBridge(root, broker, kind = "bridge") {
     socket.on("error", () => socket.destroy());
     socket.once("close", () => { sockets.delete(socket); broker.stopWait(waitId, false); });
     socket.setTimeout(3_000, () => socket.destroy());
-    const result = packet => { if (!socket.destroyed) socket.end(`${JSON.stringify(packet)}\n`); };
+    // A frame past the limit would read as "bridge unavailable" on the client; name the real cause.
+    const result = packet => {
+      if (socket.destroyed) return;
+      const frame = `${JSON.stringify(packet)}\n`;
+      socket.end(Buffer.byteLength(frame) > frameLimit
+        ? `${JSON.stringify({ error: `That Glass answer is larger than ${Math.round(frameLimit / 1024)} KB and cannot cross the local bridge.` })}\n`
+        : frame);
+    };
     frame(socket, request => {
       if (!request || typeof request.token !== "string" || !/^[a-f0-9]{64}$/.test(request.token) || !timingSafeEqual(code, Buffer.from(request.token, "hex"))) {
         result({ error: "Unauthorized Tutor bridge request." }); return;

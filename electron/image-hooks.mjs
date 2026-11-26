@@ -47,13 +47,15 @@ function run(argv, { timeout = hookLimit } = {}) {
 }
 
 // The hook reads one file and writes one file; the caller keeps the only copy in the vault.
-export async function runImageHook(name, { input, appData, extension = "png" } = {}) {
+export async function runImageHook(name, { input, prompt, appData, extension = "png" } = {}) {
   const argv = await commandFor(name, appData);
   if (!argv) return { ok: false, code: "HOOK_MISSING", hint: `${hookNames[name]} is not configured.` };
+  // Generate has no input picture: the prompt is its first argument. Enhance takes the source picture.
+  const source = name === "generate" ? String(prompt ?? "").slice(0, 1_000) : String(input ?? "");
   const scratch = await mkdtemp(path.join(os.tmpdir(), `omarkie-${name}-`));
   const output = path.join(scratch, `output.${extension}`);
   try {
-    await run([...argv, input, output]);
+    await run([...argv, source, output]);
     const bytes = await readFile(output).catch(() => null);
     if (!bytes?.length) {
       await rmdir(scratch).catch(() => {});

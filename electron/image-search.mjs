@@ -38,10 +38,34 @@ function base64(bytes) {
 }
 
 async function getJson(url, fetchImpl, signal) {
-  const response = await fetchImpl(url, { signal, headers: { accept: "application/json", "user-agent": "omarkie-swap/1 (+local note app)" } });
+  // The query is the person's words: a 302 must never carry them to another host.
+  const response = await fetchImpl(url, { signal, redirect: "error", headers: { accept: "application/json", "user-agent": "omarkie-swap/1 (+local note app)" } });
   if (response.status === 429) throw Object.assign(new Error("Openverse is rate-limited; try again in a minute."), { code: "QUOTA_EXCEEDED" });
   if (!response.ok) throw Object.assign(new Error(`Picture search failed (${response.status}).`), { code: "SOURCE_OFFLINE" });
   return await response.json();
+}
+
+// The thumbnail cap must bound memory, not only the bytes kept: never buffer past it.
+async function boundedBody(response, limit) {
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > limit) { await response.body?.cancel?.().catch(() => {}); return null; }
+  const reader = response.body?.getReader?.();
+  if (!reader) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return bytes.length > limit ? null : bytes;
+  }
+  const chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) return null;
+      chunks.push(Buffer.from(value));
+    }
+  } finally { await reader.cancel().catch(() => {}); }
+  return Buffer.concat(chunks, size);
 }
 
 async function preview(url, fetchImpl, signal) {
@@ -51,8 +75,8 @@ async function preview(url, fetchImpl, signal) {
     if (!response.ok) return null;
     const type = String(response.headers?.get?.("content-type") ?? "image/jpeg").split(";")[0];
     if (!/^image\//.test(type)) return null;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (!bytes.length || bytes.length > thumbnailLimit) return null;
+    const bytes = await boundedBody(response, thumbnailLimit);
+    if (!bytes?.length) return null;
     return { base64: base64(bytes), mime: type };
   } catch { return null; }
 }

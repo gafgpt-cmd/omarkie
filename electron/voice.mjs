@@ -41,7 +41,8 @@ export class Voice {
         environment: this.environment, signal,
       });
       if (result.ok) return { ...result, text: cleanTranscript(result.text) };
-      const kept = await keepAudio(audio, path.join(this.dataDir, "voice-failed")).catch(() => null);
+      // A cancel is the person discarding the utterance; only real failures stay recoverable.
+      const kept = result.code === "cancelled" ? null : await keepAudio(audio, path.join(this.dataDir, "voice-failed")).catch(() => null);
       return { ...result, kept };
     } finally {
       await rm(scratch, { recursive: true, force: true }).catch(() => {});

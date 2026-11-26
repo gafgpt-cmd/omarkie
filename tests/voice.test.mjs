@@ -130,6 +130,20 @@ test("Voice.transcribe keeps the audio when the hook fails", async () => {
   assert.equal((await readdir(path.dirname(result.kept))).length, 1);
 });
 
+test("a cancelled transcription keeps no audio at all", async () => {
+  const root = await area();
+  const file = await hook(root, `sleep 5`);
+  const voice = new Voice({ dataDir: root, environment: { OMARKIE_STT: file, PATH: process.env.PATH } });
+  const controller = new AbortController();
+  const running = voice.transcribe({ wavBase64: wav().toString("base64"), signal: controller.signal });
+  setTimeout(() => controller.abort(), 100);
+  const result = await running;
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "cancelled");
+  assert.equal(result.kept, null, "the person discarded this utterance");
+  assert.equal(await readdir(path.join(root, "voice-failed")).catch(() => null), null, "no voice-failed directory is created");
+});
+
 test("missing hook is a config answer, never a crash", async () => {
   const root = await area();
   const voice = new Voice({ dataDir: root, environment: {} });
