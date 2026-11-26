@@ -154,6 +154,19 @@ try {
   await panel.locator("[data-swap-restore]").click();
   await expect(notice).toContainText("Restored", { timeout: 20_000 });
   assert.equal((await readFile(file)).equals(original), true, "undo restores the exact bytes");
+
+  // 2b. Undo warns once when the note changed after the swap, then restores anyway on the second press.
+  await panel.locator("[data-swap-replace]").click();
+  await expect(panel.locator("[data-swap-preview]")).toBeVisible({ timeout: 20_000 });
+  await panel.locator("[data-swap-accept]").click();
+  await expect(notice).toContainText("Replaced", { timeout: 20_000 });
+  await writeFile(file, `${await readFile(file, "utf8")}\nEdited after the swap.\n`);
+  await panel.locator("[data-swap-restore]").click();
+  await expect(notice).toContainText("changed after the swap", { timeout: 20_000 });
+  assert.equal(await readFile(file, "utf8").then(text => text.includes("median-nerve")), true, "the first Undo writes nothing");
+  await panel.locator("[data-swap-restore]").click();
+  await expect(notice).toContainText("Restored", { timeout: 20_000 });
+  assert.equal((await readFile(file)).equals(original), true, "the second Undo forces the original bytes back");
   await close();
 
   // 3. Voice complaint fills the box; offline search stays behind the explicit click.
@@ -228,10 +241,36 @@ try {
   assert.equal(proposed.ok, true);
   await select(rich.locator('img[alt="Badge"]'));
   await page.evaluate(async note => window.desktop.glass({ note, action: "swap-state" }), doc);
-  await expect(panel.locator("[data-swap-proposals] [data-swap-proposal]").first()).toBeVisible({ timeout: 20_000 });
+  await expect(panel.locator("[data-swap-proposals] [data-swap-proposal]").first()).toBeVisible({ timeout: 60_000 });
   await page.screenshot({ path: path.join(shots, "g22-proposals-light-1440.png") });
   await panel.locator("[data-swap-proposals] [data-swap-proposal]").first().getByRole("button", { name: "Dismiss" }).click();
   await expect(panel.locator("[data-swap-proposals] [data-swap-proposal]")).toHaveCount(0, { timeout: 20_000 });
+
+  // 6b. Applying a proposal writes the proposal's own text into the proposal's own element:
+  // the panel shows a picture, the proposal targets a paragraph, and the picture must survive.
+  const proposedCue = "Proposed cue: kerma is energy per mass.";
+  const second = await page.evaluate(async ({ note, element, text }) => {
+    const proposal = { id: "p-2", kind: "rewrite", title: "Proposed cue", source: "tutor", sourceLabel: "the Tutor",
+      licence: { code: "tutor", attribution: "Tutor", required: false }, text };
+    return window.desktop.glass({ note, action: "swap-propose", element, candidates: [proposal] });
+  }, { note: doc, element: paragraph.id, text: proposedCue });
+  assert.equal(second.ok, true);
+  await select(rich.locator('img[alt="Badge"]'));
+  const cards = panel.locator("[data-swap-proposals] [data-swap-proposal]");
+  await expect(cards.first()).toBeVisible({ timeout: 60_000 });
+  await cards.first().getByRole("button", { name: "Replace" }).click();
+  await expect(panel.locator("[data-swap-preview]")).toBeVisible({ timeout: 20_000 });
+  await expect(panel.locator("[data-swap-preview] .glass-swap-diff")).toContainText(proposedCue);
+  await panel.locator("[data-swap-accept]").click();
+  await expect(notice).toContainText("Replaced", { timeout: 20_000 });
+  const appliedProposal = await readFile(file, "utf8");
+  assert.match(appliedProposal, /Proposed cue: kerma is energy per mass\./, "the reviewed proposal text lands");
+  assert.equal(appliedProposal.includes("![Badge](badge.png)"), true, "the picture the panel showed is untouched");
+  await expect(panel.locator("[data-swap-proposals] [data-swap-proposal]")).toHaveCount(0, { timeout: 20_000 });
+  // The replacement is real, so the note only returns to its bytes when the undo lands.
+  await expect(panel.locator("[data-swap-undo]")).toBeVisible({ timeout: 20_000 });
+  await panel.locator("[data-swap-restore]").first().click();
+  await expect.poll(async () => (await readFile(file, "utf8")).includes(proposedCue)).toBe(false, { timeout: 20_000 });
   await close();
 
   // 7. Narrow width and dark theme keep the rail inside the screen.

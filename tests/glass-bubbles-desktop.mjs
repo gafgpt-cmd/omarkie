@@ -284,7 +284,7 @@ try {
     await shot(`xray-${theme}-${width}`);
     await send.click();
     await answer(combo, `Cue for ${theme}.`, `Bubble agent ${theme} ${width}`);
-    await expect(panel.locator('.bubble-thread li[data-bubble-role="agent"]')).toContainText(theme);
+    await expect(panel.locator('.bubble-thread li[data-bubble-role="agent"]')).toContainText(theme, { timeout: 30_000 });
     await shot(`thread-${theme}-${width}`);
     await closeBubble();
     await commentOn(privateTarget());

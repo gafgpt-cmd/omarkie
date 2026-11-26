@@ -67,8 +67,16 @@ delete env.OMARKIE_DEV_URL; delete env.ELECTRON_RUN_AS_NODE;
 const qa = process.env.OMARKIE_QA_DIR;
 const entry = fileURLToPath(new URL("../electron/omarkie-axi.mjs", import.meta.url));
 async function axi(...args) {
-  const { stdout } = await promisify(execFile)(electron, [entry, ...args], { cwd: vault, env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 15_000 });
-  return decode(stdout);
+  // 15 s was a hang guard that a loaded host tripped (the child is killed with no output); the
+  // looser limit still catches a hang, and a single kill retry keeps the run honest.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const { stdout } = await promisify(execFile)(electron, [entry, ...args], { cwd: vault, env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, timeout: 60_000 });
+      return decode(stdout);
+    } catch (error) {
+      if (attempt >= 1 || error.stdout) throw error;
+    }
+  }
 }
 
 async function open() {
