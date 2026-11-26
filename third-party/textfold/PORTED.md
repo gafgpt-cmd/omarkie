@@ -11,3 +11,4 @@
 | Omarkie file | Upstream | Changed |
 |---|---|---|
 | `shared/fold-format.mjs`, `shared/fold-format.d.mts` | `textfold/ladder.py`, `docs/format.md` | six stops with Estudio, slider order, clinical roles, per-line evidence with element ids and offsets, check results, slot and route per record |
+| `shared/fold-text.mjs`, `shared/fold-text.d.mts`, `tests/fold-text.test.mjs` | `plugins/pi-textfold/extension/fold.ts`, `plugins/pi-textfold/tests/fold.test.ts` | Omarkie local stop ids, ES/EN sentence cutting (abbreviations, `¿¡`, decimals, units), Unicode word accounting, frontmatter skipping, dropped-block ellipsis accounting, `node:test` port |

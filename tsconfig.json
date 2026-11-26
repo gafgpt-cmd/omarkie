@@ -13,5 +13,5 @@
     "esModuleInterop": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "shared/fold-format.d.mts"]
+  "include": ["src", "shared/fold-format.d.mts", "shared/fold-text.d.mts"]
 }
