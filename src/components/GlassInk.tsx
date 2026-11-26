@@ -503,7 +503,13 @@ export default function GlassInk({ editor, root, note, tool, color, size, eraser
         onPointerMove={event => { trackCursor(event); moveGesture(event.nativeEvent); }}
         onPointerUp={event => endGesture(event.nativeEvent)}
         onPointerCancel={event => endGesture(event.nativeEvent)}
-        onWheel={event => root.scrollBy({ top: event.deltaY, left: event.deltaX })} onPointerLeave={() => { if (cursor.current) cursor.current.style.transform = "translate3d(-999px,-999px,0)"; }} />
+        onWheel={event => {
+          // The page scrolls in .rich-scroller, not in the .rich-document the ink rides;
+          // scrolling the wrong element left the wheel dead while a pen was in hand.
+          const scroller = root.closest<HTMLElement>(".rich-scroller") ?? root.parentElement ?? root;
+          const step = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroller.clientHeight : 1;
+          scroller.scrollBy({ top: event.deltaY * step, left: event.deltaX * step });
+        }} onPointerLeave={() => { if (cursor.current) cursor.current.style.transform = "translate3d(-999px,-999px,0)"; }} />
       <svg className="glass-ink-live" aria-hidden="true"><path ref={live} data-ink-live={tool} data-ink-colour={tool === "eraser" ? undefined : color}
         fill={tool === "eraser" ? "none" : color} fillOpacity={tool === "highlighter" ? 0.42 : 1}
         style={{ mixBlendMode: tool === "highlighter" ? "multiply" : "normal" }} /></svg>

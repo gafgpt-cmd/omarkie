@@ -397,6 +397,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [notice, setNotice] = useState("");
   const [swapTarget, setSwapTarget] = useState<{ id: string; kind: string; line: number }>();
+  // Each open gets its own panel instance, so re-opening the same element reads the journal again.
+  const [swapOpen, setSwapOpen] = useState(0);
   const [mergeOpen, setMergeOpen] = useState<MergePreview>();
   const [mergeStale, setMergeStale] = useState<MergePreview>();
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -2361,6 +2363,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       if (detail?.action === "change") {
         if (!documentSaved) { setNotice("Save the note before changing an element."); return; }
         setSwapTarget({ id: detail.id, kind: detail.kind, line: detail.line });
+        setSwapOpen(value => value + 1);
       }
     };
     window.addEventListener("omarkie:element-action", onAction);
@@ -2397,6 +2400,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const target = event.target instanceof Element ? event.target : null;
+      // An open dialog or a focused select owns the keyboard: no mark may appear behind an overlay,
+      // and a select must keep its type-ahead. Escape still releases the selection.
+      if (target?.closest("select")) return;
+      if (event.key !== "Escape" && document.querySelector('[role="dialog"], dialog[open]')) return;
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === "k" || event.key === "K")
         && !target?.closest("input, textarea, [contenteditable='true'], .cm-content")) {
         event.preventDefault();
@@ -2637,7 +2644,25 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     setBoardOpen({ id, name: board.name });
   }, [send]);
 
-  const tray = <div className="glass-tray" role="toolbar" aria-label="Pencil case" data-glass-tray>
+  // The bottom panels sit above the pencil case. The case wraps to a second row on narrow windows,
+  // so its height is published for CSS instead of guessing the one-row 38 px.
+  const trayObserver = useRef<ResizeObserver | null>(null);
+  const measureTray = useCallback((element: HTMLDivElement | null) => {
+    trayObserver.current?.disconnect();
+    trayObserver.current = null;
+    if (!element) { document.documentElement.style.removeProperty("--glass-tray-height"); return; }
+    const publish = () => document.documentElement.style.setProperty("--glass-tray-height", `${Math.round(element.getBoundingClientRect().height)}px`);
+    publish();
+    trayObserver.current = new ResizeObserver(publish);
+    trayObserver.current.observe(element);
+  }, []);
+  useEffect(() => () => {
+    trayObserver.current?.disconnect();
+    trayObserver.current = null;
+    document.documentElement.style.removeProperty("--glass-tray-height");
+  }, []);
+
+  const tray = <div className="glass-tray" ref={measureTray} role="toolbar" aria-label="Pencil case" data-glass-tray>
     <button type="button" data-glass-tool="select" aria-pressed={tool === "select"} aria-label="Select" title="Select, move, resize" onClick={() => setTool("select")}><MousePointer2 size={15} /></button>
     <button type="button" data-glass-tool="timeline" aria-label="Timeline" title="Timeline: pin audio or video, link the transcript"
       onClick={() => void createTimeline()}><AudioLines size={15} /></button>
@@ -3078,7 +3103,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
       onIndex={setExamIndex} onReveal={revealItem} onMarkedOnly={setExamMarkedOnly} onGrade={previewGrade}
       onClose={() => { setStudyMode({ exam: false }); setExamOpen(false); setRevealed(new Set()); }} />}
     {!scrub && createPortal(panel, document.body)}
-    {swapTarget && note && <GlassSwapPanel note={note} element={swapTarget} live={live}
+    {swapTarget && note && <GlassSwapPanel key={`${swapTarget.id}:${swapOpen}`} note={note} element={swapTarget} live={live}
       onClose={() => setSwapTarget(undefined)}
       onApplied={async () => { await reloadNote?.(); await load(); }} />}
     {chip && createPortal(<div className="glass-chip" role="status" data-glass-gesture={chip.kind} data-glass-low={chip.low || undefined}
