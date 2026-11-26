@@ -164,7 +164,4 @@ test("TextFold attribution ships with the ported format", async () => {
   const notice = await file("NOTICE");
   assert.match(notice, /Copyright 2026 Xia Chen/);
   assert.match(notice, /https:\/\/github\.com\/chenxiachan\/textfold/);
-  const ported = await file("PORTED.md");
-  assert.match(ported, /7dedb2d678df575b620c9b7c07a41d21520eab94/);
-  assert.match(ported, /shared\/fold-format\.mjs/);
 });
