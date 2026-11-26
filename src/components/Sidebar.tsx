@@ -37,6 +37,7 @@ interface Props {
   search(): void;
   recent(): void;
   notify(message: string): void;
+  sheets?: { selected: boolean; show(): void; mount(element: HTMLDivElement | null): void };
 }
 export function Sidebar(props: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; file: FileEntry | null } | null>(null);
@@ -79,7 +80,7 @@ export function Sidebar(props: Props) {
           aria-haspopup="menu"
           onClick={() => setSwitcher(!switcher)}
         >
-          {props.tab === "files" ? t("文件", { context: "sidebar" }) : props.tab === "tree" ? t("文件树") : t("大纲")}
+          {props.sheets?.selected ? t("Layers") : props.tab === "files" ? t("文件", { context: "sidebar" }) : props.tab === "tree" ? t("文件树") : t("大纲")}
           <ChevronDown size={12} />
         </button>
         {switcher && (
@@ -87,7 +88,7 @@ export function Sidebar(props: Props) {
             {(["files", "tree", "outline"] as const).map((tab) => (
               <button
                 role="menuitemradio"
-                aria-checked={tab === props.tab}
+                aria-checked={!props.sheets?.selected && tab === props.tab}
                 key={tab}
                 onClick={() => {
                   props.setTab(tab);
@@ -97,11 +98,12 @@ export function Sidebar(props: Props) {
                 {tab === "files" ? t("文件", { context: "sidebar" }) : tab === "tree" ? t("文件树") : t("大纲")}
               </button>
             ))}
+            {props.sheets && <button role="menuitemradio" aria-checked={props.sheets.selected} onClick={() => { props.sheets?.show(); setSwitcher(false); }}>{t("Layers")}</button>}
           </div>
         )}
       </div>
       <div className="sidebar-body sidebar-menu">
-        {props.tab !== "outline" ? (
+        {props.sheets?.selected ? <div ref={props.sheets.mount} /> : props.tab !== "outline" ? (
           <>
             <div className="sidebar-section-label">
               <span>

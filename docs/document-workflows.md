@@ -32,7 +32,7 @@
 
 ## Clean converted text
 
-- File → Clean converted text, or Reading Layers → Clean, opens a read-only preview. Back to source or Esc hides it without applying. See [preview media](#preview-media).
+- **File → Clean converted text** opens a read-only preview. In Learning mode, use the same action in the Sheets rail or compact controls. **Back to source** or `Esc` closes it without applying. See [preview media](#preview-media).
 - Show changes compares the changed Markdown range. Bake into source applies one undoable edit. Save/Autosave writes it normally; Undo restores the original Markdown.
 - A change to the note or its disk revision requires a fresh preview.
 - Built in: conservative dehyphenation, page furniture at explicit page breaks, headings, lists, pipe tables, adjacent captions and missing frontmatter. Existing frontmatter is preserved.
@@ -40,14 +40,23 @@
 - The hook runs the installed Stage 2 p01–p07 CLI on a private UTF-8 scratch copy: `source.md --passes 1,2,3,4,5,6,7 --report report.json`. No pipeline code is bundled or copied.
 - The hook receives no original path. Asset-dependent repairs cannot inspect the source folder. Failed hooks leave the document untouched; unset the hook to use the built-in cleanup alone.
 
-## Reading Layers
+## Learning mode
 
-- Open a vault folder and a saved Markdown file in either desktop app. Open **Reading Layers** in the status bar.
-- Eyes show or hide layers per document. The pencil marks the active layer. L0 is locked; close the rail to edit the source.
-- Select text in the reader to pin a margin note, open a Payload follow-up, or draft a card. `Alt+Enter` focuses the selection actions. Payload only sends when you confirm in its panel.
-- Click a note's quote to jump to its block. Minor edits reattach at 0.8 similarity; missing or ambiguous blocks go to **Orphaned notes**. Nothing is auto-deleted.
-- **Export notes and cards** in the margin notes panel saves a Markdown copy for the open vault. It never overwrites a file.
-- Include the hidden `.omarkie` folder when backing up the vault. The reading index is built in memory.
+- Toggle **Learning mode** in the title bar, **Display**, or **Plugin Manager**. Shortcut: `Ctrl+Shift+Y` (`⌘⇧Y` on macOS). Saving study items and using Tutor require a saved note inside an open vault.
+- Open **Sheets** in the left sidebar. At 820 px or less, sheet controls appear above the page as chips. Click a sheet to show or hide it, Alt-click to solo it, or click the pencil to make it active.
+- **Live Preview** in Sheets switches the current note between rendered view and source without changing the global preference. The base stays locked in Learning mode.
+- Tutor uses the right Payload slot. When Tutor is unavailable, including on a standalone note, enabled [Payload](#payload) still offers confirm-before-send questions. In a half tile, opening either right panel closes the Files drawer and vice versa.
+- `Alt+Enter` focuses the selection actions. `N` note, `D` doubt, `W` correction, `A` ask, `E` explain back, `Q` quiz, `C` card, `P` propose.
+- **Understanding** cycles each paragraph through not rated, lost, shaky and solid. Quiz feedback can set the same rating. Ratings are stored with the anchor, not in Markdown.
+- **Search scraps** searches the whole vault. Electron and macOS match word prefixes across scrap text, questions, and anchor quotes in the current journal. Neither writes a separate index to disk.
+- Click a paper tab to fold or unfold a note. Drag its tab or header to another paragraph, onto a note to stack, or into **Loose scraps**. **Move** also lets you click a paragraph.
+- Drop a PNG, JPEG, GIF, or WebP onto the page, or paste a copied image. Drop to the left or right of the paragraph; text wraps around the picture.
+- Drag the picture or its grip to move it. Drag the resize handle on the inner edge. **Peel off** removes the scrap; **Undo** restores it.
+- **Write into note… → Accept** imports the image as a note asset and inserts `![label](path){width=240 float=right}`. Save the note as usual. Other Markdown apps can still render the image.
+- Hold **Peek** to see the base page. Turn off Learning mode to edit Markdown.
+- Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
+- **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.
+- Back up `.omarkie` with the vault. Image bytes live in `.omarkie/scraps/`; image placements and other study items live in `.omarkie/store.jsonl`.
 - Opening a vault does not create a journal. Reading writes, rename, move, Undo and Trash share a lock across Omarkie processes, even before the first journal entry.
 - File operations in writable subfolders can proceed if permissions prevent creating the lock and neither a journal nor a lock exists.
 - Trash and macOS Undo Trash update the journal before moving the file. A crash between those steps can leave the file and history out of sync.
@@ -56,21 +65,48 @@
 - A rename or move reports an error if it contains an unreadable tracked note. Missing notes retain their history at the old path.
 - Anchoring model: [Hypothesis](https://web.hypothes.is/blog/fuzzy-anchoring/), BSD-2-Clause. No code copied.
 
+### Tutor
+
+- Open **Tutor** from the title bar, or select text and choose **Ask Tutor**.
+- On Electron for Unix, **Local agent** is the default. Send the question, then run `omarkie-axi poll --wait` in the vault (or pass `--vault <dir>`). Only the paragraph, question, and local anchor go through the socket. No HTTP listener.
+- Switch to **Payload** to use its existing opt-in, approved origin and privacy notice. No automatic fallback.
+- One question at a time. **Stick on paragraph** saves the answer on the Tutor answers sheet.
+- **Still lost** asks for a simpler answer and stacks it on the original when pinned. **Explain back** pins your explanation with Tutor feedback. **Exam points** and **Glossary** have dedicated sheets.
+- **Check correction** opens Tutor with your proposed layer-only correction. A suggested base edit still requires **Accept into Markdown**.
+- **Quiz me** asks one retrieval question. **Answer quiz** checks your answer. **Make it a card** opens the existing card editor with the Tutor reply.
+- **Propose edit** saves a before/after draft on the Proposals sheet. **Reject** discards it. Only **Accept into Markdown** updates the note. Save as usual.
+- Accept checks the exact paragraph, its position, and disk changes. A stale draft cannot write. Use normal **Undo** to revert an accepted edit in one step.
+
+### Tutor CLI
+
+- Arch: `omarkie-axi` on PATH. Other Linux builds: `omarkie-axi` beside the installed binary. From source: `npm run --silent omarkie-axi -- --help`.
+- App closed: `doc view <note.md> --blocks` gives paragraph hashes. Use `scrap add`, `propose`, `scraps list`, or `proposals` against the same vault journal. No base Markdown writes.
+- App running: `poll --wait`, `ask view <id> --full`, `status <id> working`, `reply <id> --text <answer>`. `poll --takeover` replaces the active listener.
+- The socket starts on the first local ask and closes when leaving the document or turning off Learning mode. Open asks are session-only; saved scraps and proposals persist.
+- `omarkie-axi setup hooks --vault <dir>` opts that project into Claude Code, Codex, and OpenCode 2 notices. Optional: `--agent <name>`. Put `omarkie-axi` on PATH and review the Codex hook with `/hooks`.
+- Hooks announce pending ask count, not note text. Read the `omarkie-tutor` skill with `omarkie-axi skill`.
+- Glass overlay state is per vault: `omarkie-axi glass [--on | --off] [--vault <dir>]` reads or sets `.omarkie/glass/vault.json` (the overlay toggle, beside the per-note magnet journals), and an open window follows the file live. `G` or the Display menu toggles the same state.
+- With Glass on, hover for the element type or click to select. In the document, Tab and Shift+Tab walk elements; Enter focuses the actions, and Escape returns to the document.
+- `omarkie-axi element list --note <note.md>` lists elements and their IDs. `omarkie-axi element show <id> --note <note.md>` shows one element's Markdown and heading path.
+- Hover an element or select text, then **Comment** to open a bubble anchored to it. Type one question, open **X-ray preview** to see the exact text, heading path and neighbours that will leave the machine. Names, medical record numbers and birth dates are flagged wherever they appear in what would be sent (element text, quote, question, headings, neighbours), and **Send** stays blocked until each is removed or confirmed. **Send** asks the connected local agent; the reply threads in the bubble, and **Pin as cue card** saves a compact cue on the Tutor answers sheet. Without an agent the bubble stays a plain local comment.
+- With Omarkie open, `omarkie-axi glass bubble add --note <note.md> --element <id> --text "<question>"` opens a bubble; `glass bubble list --pending` shows what waits for an agent; `glass bubble reply --note <note.md> --element <id> --text "<answer>"` answers the newest pending bubble on that element. Bubbles and threads persist in the magnet journal and survive restart.
+
 ### Preview media
 
-- Reading Layers and Clean block remote media even if editing allows it.
+- Learning mode and Clean block remote media even if editing allows it.
 - Vault media and supported inline `data:` and page-created `blob:` media still render. In mixed image or audio/video sources, previews drop remote candidates and keep supported local fallbacks.
+- Dropping an HTTPS image URL asks before sending a direct request to its origin. No note data, credentials, or redirects. Limit: 20 MB per image.
 
-## Study cards (L5)
+## Study cards
 
-- Open a folder and a saved note. Select **Reading Layers → Cards**.
+- Open a folder and a saved note. Select **Learning mode → Study cards**.
 - **Make cards from highlights and notes** drafts up to 10 per note. Aim for 5–10; fewer distinct sources produce fewer cards.
 - Edit the questions and answers. Save only the selected cards.
-- For a single card, select text in Reading Layers and choose **Make it a card**. Opening the composer saves nothing.
+- For a single card, select text in Learning mode and choose **Make it a card**. Opening the composer saves nothing.
 - **Test me** queues new and due cards across the open folder. Recall before revealing; then rate from 0 to 5.
 - Ratings below 4 repeat in the session. Ratings below 3 restart the [SM-2](https://www.supermemo.com/en/blog/application-of-a-computer-to-improve-the-results-obtained-in-working-with-the-supermemo-method) schedule.
 - Cards and ratings stay in `.omarkie/store.jsonl`. The schedule is replayed from ratings. Source Markdown stays untouched.
-- To save a Markdown copy, see [Reading Layers](#reading-layers).
+- To save a Markdown copy, see [Learning mode](#learning-mode).
 - [Obsidian Spaced Repetition](https://stephenmwangi.com/obsidian-spaced-repetition/flashcards/reviewing/) (MIT): review UI ideas only; no code copied.
 
 ## Reading images

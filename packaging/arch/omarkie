@@ -4,6 +4,8 @@ set -euo pipefail
 
 minimum_electron=43
 app=/usr/lib/omarkie/app.asar
+axi=false
+if [[ ${0##*/} == omarkie-axi ]]; then axi=true; fi
 
 obsidian_electron() {
   local info=$1 line dependency
@@ -44,6 +46,7 @@ fi
 if [[ -z $electron ]]; then
   message="Omarkie cannot start: Electron $minimum_electron or newer is required. pacman has no supported Electron series for Obsidian."
   printf '%s\n' "$message" >&2
+  if $axi; then exit 1; fi
   if [[ ! -t 0 || ! -t 2 ]] && command -v notify-send >/dev/null 2>&1; then
     notify-send --urgency=critical --app-name=Omarkie "Omarkie cannot start" "$message" || true
   fi
@@ -53,6 +56,7 @@ fi
 if ! command -v "$electron" >/dev/null 2>&1; then
   message="Omarkie cannot start: the $electron executable is missing."
   printf '\n\033[1;31m%s\033[0m\nInstall it with: sudo pacman -S %s\n\n' "$message" "$electron" >&2
+  if $axi; then exit 1; fi
   if [[ -t 0 && -t 2 ]]; then
     sudo pacman -S "$electron"
   else
@@ -74,4 +78,8 @@ if ! command -v "$electron" >/dev/null 2>&1; then
   fi
 fi
 
+if $axi; then
+  export ELECTRON_RUN_AS_NODE=1 OMARKIE_AXI_BIN="$0"
+  exec "$electron" "$app/electron/omarkie-axi.mjs" "$@"
+fi
 exec "$electron" "$app" "$@"

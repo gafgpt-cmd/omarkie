@@ -15,8 +15,9 @@ if (process.platform !== "linux") {
 }
 
 // Native Trash may reject system-temporary mounts.
-await mkdir("test-results", { recursive: true });
-const data = await mkdtemp(path.resolve("test-results", "omarkie-menu-"));
+const fixtureRoot = process.env.OMARKIE_QA_DIR ? path.dirname(path.resolve(process.env.OMARKIE_QA_DIR)) : "test-results";
+await mkdir(fixtureRoot, { recursive: true });
+const data = await mkdtemp(path.resolve(fixtureRoot, "omarkie-menu-"));
 const qa = process.env.OMARKIE_QA_DIR || path.join(data, "evidence");
 const env = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: data, OMARKIE_TEST_HIDDEN: process.env.OMARKIE_TEST_HIDDEN ?? "1", OMARKIE_LANGUAGE: "en", XDG_STATE_HOME: path.join(data, "state"), XDG_CONFIG_HOME: path.join(data, "config"), XDG_DATA_HOME: path.join(data, "share") });
 delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
@@ -38,6 +39,10 @@ async function launch() {
   });
 }
 const rich = () => page.locator(".document-editor:not([hidden]) .rich-document");
+const preferenceState = async () => JSON.parse(await readFile(path.join(data, "preferences.json"), "utf8").catch(error => {
+  if (error.code !== "ENOENT") throw error;
+  return "{}";
+}));
 async function typeDocument(before, text) {
   let landed = await rich().textContent();
   assert.equal(landed, before);
@@ -141,8 +146,21 @@ async function sourceText() {
   await command("source");
   return text;
 }
-try {
-  await launch();
+async function auditFontRestart() {
+  await preferences().getByLabel("Text font", { exact: true }).selectOption("literata");
+  await preferences().getByLabel("Heading font", { exact: true }).selectOption("inter");
+  await preferences().getByLabel("Code font", { exact: true }).selectOption("jetbrains-mono");
+  await preferences().getByLabel("Interface font", { exact: true }).selectOption("lato");
+  await preferences().getByLabel("Body font size", { exact: true }).fill("19");
+  await application.close(); await launch();
+  await expect(rich()).toHaveCSS("font-size", "19px");
+  await expect(rich()).toHaveCSS("font-family", /Literata/);
+  await expect(rich().locator("h1")).toHaveCSS("font-family", /Inter/);
+  await expect(rich().locator(".fence-body:visible").first()).toHaveCSS("font-family", /JetBrains/);
+  await expect(page.locator(".menu-bar-item > button").first()).toHaveCSS("font-family", /Lato/);
+  pass("Font and size restart persistence", "19 px Literata survives a full app restart");
+}
+async function auditFull() {
   await expect.poll(() => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("bold").enabled)).toBe(true);
   await command("source");
   await expect.poll(() => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("bold").enabled)).toBe(false);
@@ -175,7 +193,7 @@ try {
   await menu("Omarkie", "Preferences…");
   const hasHelvetica = await page.evaluate(async () => { try { await new FontFace("audit-local", 'local("Helvetica Neue")').load(); return true; } catch { return false; } });
   if (!hasHelvetica) {
-    await page.evaluate(() => { const value = JSON.parse(localStorage.getItem("omarkie-preferences")); localStorage.setItem("omarkie-preferences", JSON.stringify({ ...value, documentFont: "helvetica" })); });
+    await page.evaluate(() => localStorage.setItem("omarkie-preferences", JSON.stringify({ documentFont: "helvetica" })));
     await page.reload(); await expect(rich()).toBeVisible();
     await page.getByRole("button", { name: "space-explainer.md", exact: true }).click({ force: true });
     await expect(rich().getByRole("heading", { name: /How Far Is a Light-Year/ })).toBeVisible();
@@ -183,7 +201,7 @@ try {
     // The saved choice is kept and still shown; only unchosen fields stop offering the missing font.
     await expect(preferences().getByLabel("Text font", { exact: true })).toHaveValue("helvetica");
     await expect(preferences().getByLabel("Heading font", { exact: true }).locator('option[value="helvetica"]')).toHaveCount(0);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")).documentFont), "helvetica");
+    await expect.poll(async () => (await preferenceState()).documentFont).toBe("helvetica");
     await preferences().getByLabel("Text font", { exact: true }).selectOption("theme");
     pass("Unavailable saved local font", "A saved font missing on this system stays saved and selected; it is not offered elsewhere");
   }
@@ -198,6 +216,12 @@ try {
       await select.selectOption(id);
       const target = page.locator(".document-editor:not([hidden]) " + selector).first();
       const element = label === "Interface font" ? page.locator(selector).first() : target;
+      const expected = families[id];
+      if (expected && !["helvetica", "toypora-mono"].includes(id)) {
+        // The CSS that registers a bundled face is loaded on demand.
+        await expect.poll(() => page.evaluate(async family =>
+          (await document.fonts.load(`16px "${family}"`, "Omarkie")).some(face => face.status === "loaded"), expected)).toBe(true);
+      }
       await element.evaluate(element => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node;
@@ -216,14 +240,10 @@ try {
       assert.ok(fonts.some(font => font.glyphCount > 0), `${label} ${name}: actual glyphs are rendered`);
       await page.locator('[data-font-audit="true"]').evaluate(element => { delete element.dataset.fontAudit; });
       if (families[id]) {
-        const expected = families[id];
         assert.ok(computed.includes(expected), `${label} ${name}: computed ${computed}`);
         assert.equal(name, expected, `${label}: label names the actual font`);
-        if (["helvetica", "toypora-mono"].includes(id)) {
+        if (["helvetica", "toypora-mono"].includes(id))
           assert.ok(await page.evaluate(async family => { try { await new FontFace("audit-local", `local("${family}")`).load(); return true; } catch { return false; } }, expected), `${name}: chosen local face exists, no silent fallback`);
-        } else {
-          assert.ok(await page.evaluate(async family => (await document.fonts.load(`16px "${family}"`, "Omarkie")).some(face => face.status === "loaded"), expected), `${name}: bundled face loads`);
-        }
         const renderedFamilies = [expected, ...({ "jetbrains-mono": ["JetBrainsMono Nerd Font"], "liberation-sans": ["Liberation Sans"], "liberation-serif": ["Liberation Serif"] }[id] || [])];
         assert.ok(fonts.some(font => font.glyphCount > 0 && renderedFamilies.some(family => font.familyName.replaceAll(" ", "").toLowerCase().includes(family.replaceAll(" ", "").toLowerCase()))), `${label} ${name}: selected face renders actual glyphs (${fonts.map(font => font.familyName)})`);
       } else assert.ok(computed, `${name}: computed font`);
@@ -232,22 +252,11 @@ try {
     await select.selectOption("theme");
   }
   const size = preferences().getByLabel("Body font size", { exact: true });
-  for (const n of [20, 14, 28, 12, 19]) {
+  for (const n of [20, 14, 28, 12, 18]) {
     await size.fill(String(n)); await expect(rich()).toHaveCSS("font-size", `${n}px`);
   }
   pass("Body font size increase/decrease/bounds", "Computed font size follows the control from 12 to 28 px");
-  await preferences().getByLabel("Text font", { exact: true }).selectOption("literata");
-  await preferences().getByLabel("Heading font", { exact: true }).selectOption("inter");
-  await preferences().getByLabel("Code font", { exact: true }).selectOption("jetbrains-mono");
-  await preferences().getByLabel("Interface font", { exact: true }).selectOption("lato");
-  await preferences().getByRole("button", { name: "Done", exact: true }).click({ force: true });
-  await application.close(); await launch();
-  await expect(rich()).toHaveCSS("font-size", "19px");
-  await expect(rich()).toHaveCSS("font-family", /Literata/);
-  await expect(rich().locator("h1")).toHaveCSS("font-family", /Inter/);
-  await expect(rich().locator(".fence-body:visible").first()).toHaveCSS("font-family", /JetBrains/);
-  await expect(page.locator(".menu-bar-item > button").first()).toHaveCSS("font-family", /Lato/);
-  pass("Font and size restart persistence", "19 px Literata survives a full app restart");
+  await auditFontRestart();
   await menu("Omarkie", "Preferences…");
   await preferences().getByRole("button", { name: "Restore Toypora classic reading", exact: true }).click({ force: true });
   await expect(rich()).toHaveCSS("font-size", "16px");
@@ -305,7 +314,6 @@ try {
     pass(`Theme preview button: ${id}`, "Clicking the preview applies the advertised colors");
   }
   await themeSelect.selectOption("toypora");
-  const preferenceState = () => page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")));
   for (const [key, label, value] of [["readingSpeed", "阅读速度（词/分钟）", 300], ["tabSize", "缩进宽度", 4], ["imageFolder", "复制图片到", "audit images"], ["imageUploader", "PicGo Server 地址", "http://127.0.0.1:36677/upload"], ["pdfPaper", "PDF 纸张", "letter"], ["pdfMargin", "PDF 页边距", 45], ["pdfHeader", "PDF 页眉", "Audit header"], ["pdfFooter", "PDF 页脚", "Audit footer"]]) {
     const field = preferences().getByLabel(t(label), { exact: true });
     if (await field.evaluate(element => element.tagName === "SELECT")) await field.selectOption(String(value));
@@ -420,7 +428,7 @@ try {
     for (const route of ["menu", "toolbar", "native"]) await audit(`Export ${kind}: ${route}`, async () => {
     await fixture("# Audit\n\nAudit text\n");
     const output = path.join(data, `export-${route}.` + kind);
-    const savedPreferences = await page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")));
+    const savedPreferences = await preferenceState();
     if (kind === "pdf") await application.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0].webContents, print = contents.printToPDF.bind(contents);
       contents.printToPDF = options => { globalThis.auditPrintOptions = options; return print(options); };
@@ -657,6 +665,14 @@ try {
   await command("folder"); await command("files");
   await expect(page.getByRole("button", { name: "context.md", exact: true })).toBeVisible();
   pass("Open Folder", "Chosen directory populates file list");
+  for (const route of ["menu", "native"]) {
+    const glassChecked = () => application.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("glass").checked);
+    const before = await glassChecked();
+    await command("glass", route);
+    await expect.poll(glassChecked).toBe(!before);
+    pass(`Glass overlay: ${route}`, "Display checkbox and native menu agree on the per-vault toggle");
+  }
+  assert.equal(JSON.parse(await readFile(path.join(workspace, ".omarkie", "glass", "vault.json"), "utf8")).visible, false);
   for (const [action, name] of [["new-file", "menu-created.md"], ["new-folder", "menu-created-folder"]]) {
     await command(action);
     await page.getByRole("dialog").getByLabel(t("文件名称"), { exact: true }).fill(name);
@@ -808,7 +824,9 @@ try {
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
     const toggle = card.getByRole("checkbox"); await toggle.check();
-    await expect(card.getByRole("button", { name: t("插件命令…"), exact: true })).toBeEnabled();
+    const commands = card.getByRole("button", { name: t("插件命令…"), exact: true });
+    if (name === t("Learning mode")) await expect(commands).toHaveCount(0);
+    else await expect(commands).toBeEnabled();
     await expect(card.locator(".plugin-toggle")).toContainText(t("已启用"));
     await expect(card.getByRole("alert")).toHaveCount(0);
     if (name === t("只读模式")) await expect(rich()).toHaveAttribute("contenteditable", "false");
@@ -825,13 +843,13 @@ try {
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async (_window, options) => { globalThis.auditPluginDialogOptions = options; return { canceled: false, filePaths: [file] }; }; }, plugin);
   await install.click({ force: true });
   assert.deepEqual(await application.evaluate(() => globalThis.auditPluginDialogOptions.properties), ["openFile"]);
-  await expect(page.locator(".plugin-card")).toHaveCount(16);
+  await expect(page.locator(".plugin-card")).toHaveCount(17);
   const installed = page.locator(".plugin-card").last();
   await installed.getByRole("checkbox").check();
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
   await installed.getByRole("checkbox").uncheck();
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
-  await expect(page.locator(".plugin-card")).toHaveCount(15);
+  await expect(page.locator(".plugin-card")).toHaveCount(16);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toHaveCount(0);
   pass("Install and remove local plugin", "Trust gate, installed stylesheet and removal work");
@@ -845,7 +863,7 @@ try {
     await expect(rich().locator("img")).toHaveCount(1);
     await rich().locator("img").evaluate(image => { image.loading = "eager"; });
     await expect.poll(() => rich().locator("img").evaluate(image => image.complete && image.naturalWidth)).toBe(16);
-    const settings = await page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")));
+    const settings = await preferenceState();
     const folder = settings.imageEscape ? settings.imageFolder.split("/").map(encodeURIComponent).join("/") : settings.imageFolder;
     assert.ok((await sourceText()).includes(`](${settings.imagePrefix ? "./" : ""}${folder}/`));
     pass(`Insert Image: ${route}`, "Selected file is copied and decoded in editor");
@@ -908,6 +926,16 @@ try {
     await page.keyboard.press('Escape'); await expect(dialog).toBeHidden();
     pass(`${action}: ${route}`, 'Actual document workflow surface opens without source edits');
   }
+  const learningToggle = page.getByTestId('learning-mode-toggle');
+  for (const route of ['menu', 'native', 'toolbar', 'shortcut']) {
+    await command('reading-layers', route);
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.study-rail')).toBeVisible();
+    await learningToggle.click();
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('.study-rail')).toBeHidden();
+    pass(`reading-layers: ${route}`, 'Learning opens and the toolbar toggle closes it');
+  }
   for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
     await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     await command(action, route);
@@ -961,10 +989,21 @@ try {
   await closed; application = null;
   pass("Native Quit menu", "Application actually exits");
   if (process.argv.length === 2) {
-    const visible = groups.flatMap(group => group.items).filter(item => !["newWindow", "newTab"].includes(item.action));
+    // Export opens a person-facing dialog and shared glass needs a second device; both have their
+    // own suites (glass-export, shared-glass), so the in-app inventory audit leaves them out.
+    const visible = groups.flatMap(group => group.items).filter(item => !["newWindow", "newTab", "glass-export", "shared-glass"].includes(item.action));
     assert.deepEqual(visible.filter(item => !invokedActions.has(item.action)).map(item => item.action), []);
     pass("Menu inventory coverage", "Every supported shared command was invoked in the built app", `${visible.length} supported commands; unsupported window/tab entries hidden`);
   }
+}
+try {
+  await launch();
+  if (process.argv.includes("--font-restart-only")) {
+    await page.getByRole("button", { name: "space-explainer.md", exact: true }).click({ force: true });
+    await expect(rich().getByRole("heading", { name: /How Far Is a Light-Year/ })).toBeVisible();
+    await menu("Omarkie", "Preferences…");
+    await auditFontRestart();
+  } else await auditFull();
   assert.deepEqual(errors, []);
   assert.deepEqual(checks.filter(check => check.result === "FAIL"), []);
   completed = true;

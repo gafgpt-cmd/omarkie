@@ -9,6 +9,7 @@ import {
   shell,
   session,
   clipboard,
+  safeStorage,
 } from "electron";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -19,7 +20,7 @@ import { Workspace } from "./workspace.mjs";
 import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
-import { readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
 import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
@@ -32,6 +33,12 @@ import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } f
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
+import { listenBridge } from "./tutor-transport.mjs";
+import { GlassService } from "./glass-service.mjs";
+import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
+import { GlassSync } from "./glass-sync.mjs";
+import { GitSync } from "./git-sync.mjs";
+import { SyncTokenStore } from "./sync-token.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
 function startupMark(name) {
   if (!traceStartup) return;
@@ -40,6 +47,8 @@ function startupMark(name) {
 }
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
+let tutorSessions, tutorLoading;
+function detachTutor(contents) { if (tutorLoading) void tutorLoading.then(() => tutorSessions?.detach(contents)).catch(() => {}); }
 if (process.env.OMARKIE_DATA_DIR)
   app.setPath("userData", process.env.OMARKIE_DATA_DIR);
 app.setName("Omarkie");
@@ -53,6 +62,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 let languageChoice = "auto", language = "zh", buildMenu = () => {}, remoteImages = false;
 let viewChecked = {};
+const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers", "glass", "shared-glass"];
 let menuDefinitions = [], viewDisabled = true, viewContext = "";
 const commandEnabled = item => !item.context || !viewDisabled && (!["rich", "table"].includes(item.context) || !viewChecked.source) && (item.context !== "table" || viewContext === "table_open");
 function applyLanguage(choice) {
@@ -121,8 +131,184 @@ async function openPdf(file) {
 const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
-let operationRunning = false;
+let operationQueue = Promise.resolve();
+async function fileOperationNow(operation) {
+  try {
+    if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
+    if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
+    const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
+    const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
+    const change = ["rename", "move", "undo", "trash"].includes(operation.action)
+      ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
+    workspace.apply(change, store);
+    await prepareOperation("commit", change); return change;
+  } finally { await prepareOperation("release", {}); }
+}
 let bibliography;
+
+// G17 agent parity: an ink magnet id is the region. The renderer rasterises the stroke it is
+// already painting, then the local OCR hook reads it. Read-only; no journal write.
+async function glassOcrRegion(payload) {
+  const { dataUrlBytes, ocrAvailable, runOcr } = await import("./ocr.mjs");
+  if (!(await ocrAvailable())) throw new Error("Set OMARKIE_OCR to a local OCR command to read ink.");
+  const id = typeof payload?.magnet === "string" ? payload.magnet : "";
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error("--region must be an ink magnet id.");
+  if (!window) throw new Error("Open Omarkie to read an ink region.");
+  const dataUrl = await window.webContents.executeJavaScript(`window.__omarkieInkPng?.(${JSON.stringify(id)}) ?? null`, true);
+  const bytes = dataUrlBytes(dataUrl);
+  if (!bytes) throw new Error("That ink stroke is not on screen.");
+  return runOcr(bytes);
+}
+
+let glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
+let syncTokens;
+function tokenStore() {
+  syncTokens ??= new SyncTokenStore({ file: path.join(app.getPath("userData"), "sync-tokens.json"), safeStorage });
+  return syncTokens;
+}
+function syncEngine() {
+  if (!glassRuntime.root) throw new Error("Open a note folder before syncing.");
+  glassRuntime.syncEngine ??= new GitSync({ root: glassRuntime.root, appData: app.getPath("userData"), service: glassRuntime.service, tokenStore: tokenStore() });
+  return glassRuntime.syncEngine;
+}
+function announceGlass(request) {
+  if (["add", "set", "delete", "restore", "bring", "clip-save", "layer", "board", "merge-accept", "merge-undo", "lift-up",
+    "swap-apply", "swap-restore", "swap-propose", "swap-dismiss",
+    "srs-card", "srs-answer", "srs-review", "study-set"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
+}
+
+let glassQueue = Promise.resolve();
+function syncGlass(folder = store?.folder ?? null) {
+  const run = glassQueue.then(() => syncGlassNow(folder));
+  glassQueue = run.catch(() => {});
+  return run;
+}
+let glassRetry = null, glassRetries = 0;
+// A bridge that failed to bind must heal itself: agents call the CLI as soon as the folder is open.
+function scheduleGlassRetry(folder) {
+  if (glassRetry || glassRetries >= 3 || !folder) return;
+  glassRetries += 1;
+  glassRetry = setTimeout(() => {
+    glassRetry = null;
+    if (glassRuntime.service && glassRuntime.close) return;
+    if (glassRuntime.folder && glassRuntime.folder !== folder) return;
+    // Open storage is serving writes: rebind only the bridge, never close the service under them.
+    if (glassRuntime.service) {
+      const run = glassQueue.then(() => glassRuntime.folder === folder && glassRuntime.service && !glassRuntime.close ? bindGlassBridge(folder) : null);
+      glassQueue = run.catch(() => {});
+      return;
+    }
+    glassRuntime.folder = null;
+    glassRuntime.error = null;
+    void syncGlass(folder).catch(() => {});
+  }, 1_000);
+  glassRetry.unref?.();
+}
+async function closeGlassRuntime() {
+  if (glassRetry) { clearTimeout(glassRetry); glassRetry = null; }
+  glassRetries = 0;
+  const current = glassRuntime;
+  glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
+  await current.close?.().catch(() => {});
+  await current.sync?.close().catch(() => {});
+  await current.service?.close().catch(() => {});
+}
+async function syncGlassNow(folder) {
+  if (glassRuntime.folder === folder) {
+    if (glassRuntime.error) throw glassRuntime.error;
+    return;
+  }
+  await closeGlassRuntime();
+  if (!folder) return;
+  glassRuntime.folder = folder;
+  try {
+    const root = await realpath(folder);
+    const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
+    if (glassRuntime.folder !== folder) { await service.close(); return; }
+    glassRuntime.root = root;
+    glassRuntime.service = service;
+    service.subscribe(status => window?.webContents.send("glass:storage", status));
+    let sync = null;
+    try {
+      sync = new GlassSync({ service, cacheDir: path.join(app.getPath("cache"), "omarkie"), appData: app.getPath("userData") });
+      service.sync = sync;
+      glassRuntime.sync = sync;
+      await sync.start();
+    } catch (error) {
+      await sync?.close().catch(() => {});
+      service.sync = null;
+      glassRuntime.sync = null;
+      console.warn("Glass index:", error.message);
+    }
+    await bindGlassBridge(folder);
+  } catch (error) {
+    glassRuntime.error = error;
+    scheduleGlassRetry(folder);
+    throw error;
+  }
+}
+async function bindGlassBridge(folder) {
+  const { root, service } = glassRuntime;
+  try {
+    glassRuntime.close = await listenBridge(root, {
+      client(request, send) {
+        if (request?.op === "sync") {
+          if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
+          let engine;
+          try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
+          const job = request.action === "status" ? engine.status() : engine.syncNow();
+          Promise.resolve(job).then(async result => {
+            if (request.action === "now" && (result.pulled || result.journals?.length)) {
+              await glassRuntime.service?.reloadStore().catch(() => {});
+              void glassRuntime.sync?.scan("sync").catch(() => {});
+            }
+            send(result);
+          }, error => send({ error: error.message, code: error.code }));
+          return;
+        }
+        if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
+          if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
+          if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
+          send({ opened: true, note: request.note, magnet: request.magnet });
+          window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
+          return;
+        }
+        if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
+        const { op: _, token: __, ...payload } = request;
+        if (payload.action === "ocr") {
+          glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
+          return;
+        }
+        if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
+        Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
+      },
+      stopWait() {}, bind() { return {}; }, unbind() { return 0; },
+    }, "glass");
+    service.bridgeState = "listening";
+  } catch (error) {
+    service.bridgeState = "unavailable";
+    console.warn("Glass bridge:", error.message);
+    scheduleGlassRetry(folder);
+    return;
+  }
+  glassRetries = 0;
+}
+let glassWatch = { folder: null, root: null, close: null };
+let voiceRuntime, voiceRuns = new Map();
+async function syncGlassWatch() {
+  const folder = store.folder;
+  if (glassWatch.folder === folder) return;
+  const close = glassWatch.close;
+  glassWatch = { folder, root: null, close: null };
+  await close?.();
+  if (!folder) return;
+  const root = await realpath(folder).catch(() => null);
+  if (!root) return;
+  const { watchGlass } = await import("./glass-state.mjs");
+  if (glassWatch.folder !== folder) return;
+  glassWatch.root = root;
+  glassWatch.close = await watchGlass(root, visible => { if (glassWatch.folder === folder) window?.webContents.send("glass:event", { visible }); });
+}
 function releaseBibliography() { bibliography?.close(); bibliography = undefined; }
 async function vaultBibliography(folder) {
   if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -132,14 +318,26 @@ async function vaultBibliography(folder) {
   if (bibliography && bibliography.root !== folder) releaseBibliography();
   return bibliography ??= new VaultBibliography(store.dataDir, folder, () => send("bibliography-changed"));
 }
+function prioritizeGlass(file) {
+  const sync = glassRuntime.sync;
+  if (!file || !sync) return;
+  void sync.prioritize(file).catch(() => {});
+}
 const handlers = {
   payloadRequest: async (_, request) => (await import("./payload.mjs")).requestPayload(request),
+  ocrAvailable: async () => ({ available: await (await import("./ocr.mjs")).ocrAvailable() }),
+  glassOcr: async (_, request) => {
+    const { dataUrlBytes, runOcr } = await import("./ocr.mjs");
+    const bytes = dataUrlBytes(request?.png);
+    if (!bytes) throw new Error("The ink image is invalid.");
+    return runOcr(bytes);
+  },
   payloadKey: async (_, baseUrl, value) => (await import("./payload.mjs")).setPayloadKey(baseUrl, value),
   viewState: (_, _focus, _typewriter, _sidebar, checked, disabled, context) => {
     viewChecked = checked || {};
     viewDisabled = disabled === true;
     viewContext = context;
-    for (const action of ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"]) {
+    for (const action of checkedActions) {
       const item = Menu.getApplicationMenu()?.getMenuItemById(action);
       if (item) item.checked = checked?.[action] === true;
     }
@@ -205,16 +403,153 @@ const handlers = {
   readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
   imageSizes: (_, id, sources) => imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
+  voice: async (_, request = {}) => {
+    const { Voice } = await import("./voice.mjs");
+    voiceRuntime ??= new Voice({ dataDir: app.getPath("userData") });
+    if (request.action === "info") return voiceRuntime.info();
+    if (request.action === "cancel") { voiceRuns.get(request.id)?.abort(); return true; }
+    if (request.action === "transcribe") {
+      const id = typeof request.id === "string" ? request.id.slice(0, 64) : randomUUID();
+      const controller = new AbortController();
+      voiceRuns.set(id, controller);
+      try { return await voiceRuntime.transcribe({ wavBase64: request.wav, mode: request.mode, language: request.language, signal: controller.signal }); }
+      finally { voiceRuns.delete(id); }
+    }
+    throw new Error("Unknown voice action.");
+  },
+  sync: async (_, request = {}) => {
+    const engine = syncEngine();
+    const action = request?.action ?? "status";
+    if (action === "status") return engine.status();
+    if (action === "configure") return engine.setRemote(request.remote, request.branch || null);
+    if (action === "token") {
+      await engine.saveToken(request.token, { remember: request.remember !== false });
+      return engine.status();
+    }
+    if (action === "clear-token") { await engine.clearToken(); return engine.status(); }
+    if (action === "now") {
+      const result = await engine.syncNow();
+      if (result.pulled || result.journals?.length) {
+        await glassRuntime.service?.reloadStore().catch(() => {});
+        void glassRuntime.sync?.scan("sync").catch(() => {});
+      }
+      return result;
+    }
+    throw new Error("Sync action must be status, configure, token, clear-token or now.");
+  },
+  glass: async (_, request) => {
+    if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
+    if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
+    await syncGlass(store?.folder ?? null);
+    if (!glassRuntime.service) throw glassRuntime.error ?? new Error(t("请先打开文件夹并保存文档。"));
+    const result = await glassRuntime.service.request(request);
+    if (request.action === "bring" || request.action === "add" && request.anchor !== undefined && request.fields?.kind !== "comment") announceGlass(request);
+    return result;
+  },
+  captureRegion: async (_, rect) => {
+    if (!window) throw new Error(t("No window to capture."));
+    if (!rect || typeof rect !== "object") throw new Error("Invalid capture region.");
+    const box = ["x", "y", "width", "height"].map(key => Math.round(Number(rect[key])));
+    if (box.some(value => !Number.isFinite(value)) || box[2] < 1 || box[3] < 1 || box[2] > 4096 || box[3] > 4096)
+      throw new Error("Invalid capture region.");
+    const image = await window.webContents.capturePage({ x: box[0], y: box[1], width: box[2], height: box[3] });
+    const bytes = image.toPNG();
+    if (!bytes.length) throw new Error(t("The capture came back empty."));
+    return { base64: bytes.toString("base64"), mime: "image/png", width: image.getSize().width, height: image.getSize().height };
+  },
+  tutorBridge: async ({ sender }, id, request) => {
+    // Offline QA and demo machines: a fixed reply keeps the Tutor bridge testable with no agent.
+    const stub = process.env.OMARKIE_TUTOR_STUB?.trim();
+    if (stub && request?.action === "submit") {
+      let text = stub;
+      try {
+        const shaped = JSON.parse(stub);
+        text = shaped?.redraw && /mermaid/i.test(String(request.question ?? "")) ? shaped.redraw : shaped?.rewrite ?? stub;
+      } catch { /* plain text stays the reply */ }
+      const reply = { type: "reply", lease: request.lease, id: "local-stub", text };
+      setTimeout(() => { if (!sender.isDestroyed()) sender.send("tutor:event", reply); }, 0);
+      return { id: "local-stub" };
+    }
+    if (request?.action === "detach" && !tutorLoading) return;
+    tutorLoading ??= import("./tutor-session.mjs").then(module => { tutorSessions = module.tutorSessions(store); });
+    await tutorLoading;
+    return tutorSessions.request(sender, id, request);
+  },
+  glassState: async (_, request) => {
+    if (!request || !["read", "write"].includes(request.action)) throw new Error("Invalid Glass request.");
+    const { readGlass, writeGlass } = await import("./glass-state.mjs");
+    await syncGlassWatch();
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    if (request.action === "write" && typeof request.visible !== "boolean") throw new Error("Invalid Glass request.");
+    const options = { appData: app.getPath("userData") };
+    return { visible: request.action === "read" ? await readGlass(glassWatch.root, options) : await writeGlass(glassWatch.root, request.visible, options) };
+  },
+  sharedGlassState: async (_, request) => {
+    if (!request || !["read", "write"].includes(request.action)) throw new Error("Invalid Glass request.");
+    const { readShared, writeShared } = await import("./glass-state.mjs");
+    await syncGlassWatch();
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    if (request.action === "write" && typeof request.shared !== "boolean") throw new Error("Invalid Glass request.");
+    const options = { appData: app.getPath("userData") };
+    return { shared: request.action === "read" ? await readShared(glassWatch.root, options) : await writeShared(glassWatch.root, request.shared, options) };
+  },
+  sharedGlass: async (_, note) => {
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    const requested = path.isAbsolute(String(note ?? "")) ? String(note) : path.join(glassWatch.root, String(note ?? ""));
+    const relative = path.relative(await realpath(glassWatch.root), await realpath(requested));
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("The note is outside the vault.");
+    const layer = await sharedGlassForNote(glassWatch.root, relative.split(path.sep).join("/"));
+    return { note: relative.split(path.sep).join("/"), id: layer.record?.id ?? null, magnets: layer.magnets, readOnly: true };
+  },
+  glassExport: async (_, request = {}) => {
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    const mode = String(request.mode ?? "");
+    if (!["page", "flat", "handout", "cheatsheet", "bundle"].includes(mode)) throw new Error(t("导出选项无效。"));
+    const target = request.target === "obsidian" ? "obsidian" : "github";
+    const order = Array.isArray(request.order) ? request.order.filter(id => typeof id === "string").slice(0, 5000) : [];
+    const requested = path.isAbsolute(String(request.note ?? "")) ? String(request.note) : path.join(glassWatch.root, String(request.note ?? ""));
+    const relative = path.relative(await realpath(glassWatch.root), await realpath(requested));
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("The note is outside the vault.");
+    const note = relative.split(path.sep).join("/");
+    const title = path.basename(note).replace(/\.(?:md|markdown|mdown)$/i, "");
+    const suffix = { page: "", flat: " (glass)", handout: " (handout)", cheatsheet: " (cheatsheet)", bundle: "" }[mode];
+    if (mode === "bundle") {
+      const result = await dialog.showOpenDialog(window, { title: t("导出玻璃导出包"), properties: ["openDirectory", "createDirectory"] });
+      if (result.canceled) return null;
+      const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePaths[0], target, order, appData: app.getPath("userData") });
+      return { ...exported, note, display: exported.out };
+    }
+    const result = await dialog.showSaveDialog(window, {
+      title: t("导出玻璃"),
+      defaultPath: `${title}${suffix}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (result.canceled) return null;
+    const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePath, target, order, appData: app.getPath("userData") });
+    return { ...exported, note, display: exported.out };
+  },
+  glassImport: async () => {
+    if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
+    const result = await dialog.showOpenDialog(window, { title: t("导入玻璃导出包"), properties: ["openDirectory"] });
+    if (result.canceled) return null;
+    const imported = await importGlassBundle({ root: glassWatch.root, bundle: result.filePaths[0], appData: app.getPath("userData") });
+    // The bundle wrote journals behind the running service's back; reload before the next reader asks.
+    await glassRuntime.service?.reloadStore().catch(() => {});
+    void glassRuntime.sync?.scan("sync").catch(() => {});
+    window?.webContents.send("glass:changed", { note: imported.note, action: "import" });
+    return { ...imported, display: imported.note };
+  },
   readingStore: async (_, id, request) => {
     const { readingStore, readingMarkdown } = await import("./reading-store.mjs");
     if (request?.action !== "export") return readingStore(store, id, request);
-    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card"] });
+    const entries = await readingStore(store, id, { action: "list", scope: "vault", types: ["note", "card", "scrap"], studyNotes: true });
     const result = await dialog.showSaveDialog(window, { defaultPath: t("阅读笔记.md"), filters: [{ name: "Markdown", extensions: ["md"] }] });
     if (result.canceled) return false;
     try { await writeFile(result.filePath, readingMarkdown(entries), { encoding: "utf8", flag: "wx", mode: 0o600 }); }
     catch { throw new Error(t("无法导出。请选择新的文件名。")); }
     return true;
   },
+  learningSearch: async (_, id, query) => (await import("./learning-index.mjs")).searchLearning(store, id, query),
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
@@ -289,18 +624,12 @@ const handlers = {
     return { ...result, skipped: result.skipped + inventory.skipped };
   },
   reveal: async (_, file) => shell.showItemInFolder(await workspace.authorize(file, store)),
-  fileOperation: async (_, operation) => {
-    if (operationRunning) throw new Error(t("另一个文件操作正在进行。")); operationRunning = true;
-    try {
-      if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
-      if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
-      const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
-      const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
-      const change = ["rename", "move", "undo", "trash"].includes(operation.action)
-        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
-      workspace.apply(change, store);
-      await prepareOperation("commit", change); return change;
-    } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
+  // A second file operation waits for the first to release the renderer handshake; refusing it made
+  // a quick rename-then-trash lose the trash while the journal was still committing.
+  fileOperation: (_, operation) => {
+    const run = operationQueue.then(() => fileOperationNow(operation));
+    operationQueue = run.catch(() => {});
+    return run;
   },
   restore: async () => {
     // Launch-file problems are reported in the window's message bar, never a modal box.
@@ -324,6 +653,7 @@ const handlers = {
       const { documents, folder } = await openShowcase(store, showcaseSource(root), path.join(app.getPath("userData"), showcaseFolderName));
       result = { documents, activeId: documents[0].id, folder: folder.folder, readingRecoveryWarning: folder.readingRecoveryWarning };
     }
+    prioritizeGlass(result?.documents?.find(document => document.id === result.activeId)?.path);
     return notices.length ? { ...result, restoreError: [result.restoreError, ...notices].filter(Boolean).join(" ") } : result;
   },
   showcase: async () => {
@@ -341,6 +671,7 @@ const handlers = {
     const file = result.filePaths[0], record = isPdf(file) ? await openPdf(file) : await store.open(file);
     if (!record) return null;
     await workspace.remember(record.path);
+    prioritizeGlass(record.path);
     return record;
   },
   folder: async () => {
@@ -354,7 +685,7 @@ const handlers = {
     return scanned;
   },
   scan: () => store.scan(),
-  token: async (_, token) => { const record = await store.openToken(token); await workspace.remember(record.path); return record; },
+  token: async (_, token) => { const record = await store.openToken(token); await workspace.remember(record.path); prioritizeGlass(record.path); return record; },
   reopen: (_, id) => store.reload(id),
   writeClipboard: (_, text) => clipboard.writeText(String(text)),
   readClipboard: () => clipboard.readText(),
@@ -473,13 +804,70 @@ app
     startupMark("main-process-ready");
     if (process.platform !== "darwin" && !app.hasSingleInstanceLock()) return;
     store = new DocumentStore(app.getPath("userData"));
+    await rm(path.join(store.dataDir, "learning-index"), { recursive: true, force: true }).catch(showError);
     workspace = new Workspace(app.getPath("userData"));
     if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
     applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());
     ipcMain.on("app:language", event => { event.returnValue = event.sender === window?.webContents ? { language, choice: languageChoice } : null; });
+    const preferenceWrites = new Set();
+    await Promise.all([["app:preferences", "preferences.json"], ["app:plugin-preferences", "plugin-preferences.json"]].map(async ([channel, name]) => {
+      const file = path.join(store.dataDir, name);
+      let saved = await readFile(file, "utf8").catch(error => {
+        if (error.code !== "ENOENT") console.error(error);
+        return null;
+      });
+      let pending = saved, writing;
+      ipcMain.on(channel, (event, update) => {
+        if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) {
+          event.returnValue = null;
+          return;
+        }
+        if (update === undefined) { event.returnValue = pending; return; }
+        event.returnValue = null;
+        if (typeof update !== "string" || update.length > 128 * 1024) return;
+        try {
+          const value = JSON.parse(update);
+          if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        } catch { return; }
+        pending = update;
+        if (pending === saved || writing) return;
+        writing = (async () => {
+          while (pending !== saved) {
+            const snapshot = pending;
+            await atomicWrite(file, snapshot);
+            saved = snapshot;
+          }
+        })().catch(showError).finally(() => { preferenceWrites.delete(writing); writing = undefined; });
+        preferenceWrites.add(writing);
+      });
+    }));
+    let quitAfterPreferences = false;
+    app.on("before-quit", event => {
+      if (!preferenceWrites.size) return;
+      event.preventDefault();
+      if (quitAfterPreferences) return;
+      quitAfterPreferences = true;
+      void Promise.all(preferenceWrites).then(() => { quitAfterPreferences = false; app.quit(); });
+    });
+    // Glass records append asynchronously; a quit right after a click must not drop the last ones.
+    let quitAfterGlass = false;
+    app.on("before-quit", event => {
+      if (!glassRuntime.service) return;
+      event.preventDefault();
+      if (quitAfterGlass) return;
+      quitAfterGlass = true;
+      void closeGlassRuntime().catch(() => {}).then(() => { quitAfterGlass = false; app.quit(); });
+    });
     protocol.handle("omarkie", async request => {
       try {
-        if (new URL(request.url).searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
+        const url = new URL(request.url);
+        if (url.host === "app" && url.pathname.startsWith("/excalidraw-assets/")) {
+          const dist = path.resolve(root, "dist"), file = path.resolve(dist, decodeURIComponent(url.pathname.slice(1)));
+          if (!file.startsWith(dist + path.sep)) throw new Error("Resource path invalid.");
+          const mime = { ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".css": "text/css" }[path.extname(file).toLowerCase()] ?? "application/octet-stream";
+          return new Response(await readFile(file), { headers: { "Content-Type": mime, "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" } });
+        }
+        if (url.searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
         const { bytes, mime } = await pluginResource(request.url, store.dataDir);
         const headers = { "Content-Type": mime, "X-Content-Type-Options": "nosniff" };
         const origin = request.headers.get("origin");
@@ -566,9 +954,12 @@ app
         try {
           return { ok: true, value: await handler(event, ...args) };
         } catch (error) {
-          return { ok: false, error: error.message, code: error.code };
+          return { ok: false, error: error.message, code: error.code, ...(Array.isArray(error.conflicts) ? { conflicts: error.conflicts } : {}) };
         }
-        finally { if (bibliography && bibliography.root !== store.folder) releaseBibliography(); }
+        finally {
+          if (bibliography && bibliography.root !== store.folder) releaseBibliography();
+          void syncGlass(store?.folder ?? null).catch(() => { /* the glass handler reports its own error */ });
+        }
       });
     function createWindow() {
       window = new BrowserWindow({
@@ -604,11 +995,24 @@ app
         });
       };
       created.once("ready-to-show", () => { paintReady = true; revealWindow(); });
-      session.defaultSession.setPermissionRequestHandler((_, __, callback) =>
-        callback(false),
+      // G21: voice needs the microphone and nothing else. Audio-only, main frame, local app origin.
+      const audioPermission = (contents, details) => {
+        if (!contents || contents !== created.webContents) return false;
+        const url = contents.getURL();
+        if (!url.startsWith("file:") && !(development && url.startsWith(development))) return false;
+        if (details?.mediaType !== undefined) return details.mediaType === "audio";
+        return Array.isArray(details?.mediaTypes) && details.mediaTypes.length === 1 && details.mediaTypes[0] === "audio";
+      };
+      session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+        callback(permission === "media" && audioPermission(contents, details)),
+      );
+      session.defaultSession.setPermissionCheckHandler((contents, permission, _origin, details) =>
+        permission === "media" && audioPermission(contents, details),
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-      created.webContents.on("render-process-gone", stopSpeech);
+      const contents = created.webContents;
+      contents.on("render-process-gone", () => { stopSpeech(); detachTutor(contents); });
+      contents.on("did-start-navigation", details => { if (details.isMainFrame && !details.isSameDocument) detachTutor(contents); });
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
       if (development) window.loadURL(development);
@@ -619,8 +1023,10 @@ app
           send("quit");
         }
       });
+      window.on("focus", () => { void glassRuntime.sync?.focus().catch(() => {}); });
       window.on("closed", () => {
         stopSpeech();
+        detachTutor(contents);
         window = null;
         rendererReady = false;
         releaseBibliography();
@@ -633,6 +1039,8 @@ app
         app.quit();
       }
     });
+    // The Glass bridge exists before the document is usable; an agent's first CLI call never races a cold start.
+    void syncGlass(store?.folder ?? null).catch(() => { /* scheduleGlassRetry retries it */ });
     createWindow();
     const command = (action) => item => {
       if (item?.type === "checkbox") item.checked = viewChecked[action] === true;
@@ -641,10 +1049,12 @@ app
     const groups = JSON.parse(await readFile(path.join(root, "shared/commands.json"), "utf8"));
     menuDefinitions = groups.flatMap(group => group.items);
     const roles = { "cut:": "cut", "copy:": "copy", "paste:": "paste", "selectAll:": "selectAll" };
-    const accelerator = key => key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
+    // A bare letter would become an application accelerator and swallow typing; the renderer
+    // binds those itself so text fields keep priority.
+    const accelerator = key => /^[A-Za-z]$/.test(key ?? "") ? undefined : key?.replaceAll("Mod-", "CommandOrControl+").replaceAll("Ctrl-", "Control+").replaceAll("Alt-", "Alt+").replaceAll("Shift-", "Shift+");
     buildMenu = () => Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: "Omarkie", submenu: [{ label: t("关于 Omarkie"), click: command("about") }, { label: t("偏好设置…"), accelerator: "CommandOrControl+,", click: command("preferences") }, ...(process.platform === "darwin" ? [{ type: "separator" }, { role: "hide", label: t("隐藏 Omarkie") }, { role: "hideOthers", label: t("隐藏其他应用") }] : []), { type: "separator" }, { label: t("退出 Omarkie"), accelerator: "CommandOrControl+Q", click: command("quit") }] },
-      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree"].includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
+      ...groups.map(group => ({ label: t(group.title), submenu: group.items.filter(item => !["preferences", "newWindow", "newTab"].includes(item.action)).map(item => ({ id: item.action, label: t(item.label), enabled: commandEnabled(item), ...(checkedActions.includes(item.action) ? { type: "checkbox", checked: viewChecked[item.action] === true } : {}), accelerator: accelerator(process.platform === "darwin" ? item.key : item.pcKey ?? item.key), ...(item.selector ? { role: roles[item.selector] } : { click: command(item.action) }) })) })),
       { role: "windowMenu", label: t("窗口") }
     ]));
     buildMenu();
@@ -658,6 +1068,7 @@ app
     app.on("window-all-closed", () => {
       if (process.platform !== "darwin") app.quit();
     });
+    app.on("will-quit", () => { void closeGlassRuntime(); });
   })
   .catch((error) => {
     console.error(error);

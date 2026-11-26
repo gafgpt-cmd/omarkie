@@ -201,6 +201,9 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let reading = NativeReadingStore(script)
     let scope = NativeReadingStore.Scope(root: root, file: source, document: "a.md")
     _ = try await reading.perform(scope, ["action": "put", "item": ["type": "card", "id": "original-card", "front": "Q", "back": "A"]])
+    let anchor: [String: Any] = ["block": "Original", "quote": "Original", "line": 1, "headings": [] as [String]]
+    _ = try await reading.perform(scope, ["action": "put", "item": ["type": "note", "id": "legacy", "body": "A margin note", "anchor": anchor] as [String: Any]])
+    _ = try await reading.perform(scope, ["action": "put", "item": ["type": "sheet", "id": "notes", "name": "Notes", "colour": "blue", "order": 0, "visible": true] as [String: Any]])
     let journal = root.appendingPathComponent(".omarkie/store.jsonl")
     let handle = try FileHandle(forWritingTo: journal)
     try handle.seekToEnd()
@@ -216,6 +219,14 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let replacement = try await reading.perform(scope, ["action": "list"]) as? [[String: Any]]
     guard original?.first?["id"] as? String == "original-card", replacement?.isEmpty == true else {
       throw NativeFailure("Interrupted move assigned the card to the replacement.")
+    }
+    let study = try await reading.perform(moved, ["action": "study", "blocks": [] as [[String: Any]]]) as? [String: Any]
+    let studyEntries = study?["entries"] as? [[String: Any]]
+    let locations = study?["locations"] as? [[String: Any]]
+    guard studyEntries?.first?["type"] as? String == "sheet", studyEntries?.last?["type"] as? String == "scrap",
+          studyEntries?.last?["document"] as? String == "b.md", studyEntries?.last?["body"] as? String == "A margin note",
+          locations?.first?["line"] is NSNull else {
+      throw NativeFailure("Moved legacy note did not survive in the loose scraps tray.")
     }
     let chapter = root.appendingPathComponent("chapter"), renamed = root.appendingPathComponent("renamed")
     try FileManager.default.createDirectory(at: chapter, withIntermediateDirectories: false)
@@ -287,10 +298,12 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let scope = try NativeReadingStore.scope(host.store, "webkit-fixture")
     let reopened = NativeReadingStore(Bundle.main.resourceURL!.appendingPathComponent("reading-core.cjs"))
     let items = try await reopened.perform(scope, ["action": "list", "scope": "vault"]) as? [[String: Any]]
-    guard items?.map({ $0["type"] as? String ?? "" }) == ["note", "card", "answer"],
-          items?.last?["rating"] as? Int == 5,
+    guard items?.map({ $0["type"] as? String ?? "" }) == ["note", "card", "answer", "scrap"],
+          items?.first(where: { $0["id"] as? String == "native-answer" })?["rating"] as? Int == 5,
+          items?.last?["id"] as? String == "native-image",
           let markdown = try await reopened.perform(scope, ["action": "export"]) as? String,
-          markdown.contains("Native margin note."), markdown.contains("Synthetic question\n\nSynthetic answer") else {
+          markdown.contains("Native margin note."), markdown.contains("Synthetic question\n\nSynthetic answer"),
+          !markdown.contains("Fixture.png") else {
       throw NativeFailure("Native reading journal did not replay notes, cards and ratings into Markdown.")
     }
     let export = owner.directory.appendingPathComponent("native-reading.md")
@@ -300,7 +313,7 @@ final class WebKitTests: NSObject, NSApplicationDelegate, WKNavigationDelegate {
       throw NativeFailure("Native reading export overwrote an existing file.")
     } catch let error as NativeFailure where error.message == "无法导出。请选择新的文件名。" {}
     guard try String(contentsOf: export, encoding: .utf8) == markdown else { throw NativeFailure("Native reading export bytes differ.") }
-    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "parallel-a", "parallel-b"])
+    try await checkReadingContention(scope, expected: ["native-note", "native-card", "native-answer", "native-image", "parallel-a", "parallel-b"])
     let root = canonicalFileURL(owner.directory).appendingPathComponent("first-journal-vault")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     let file = root.appendingPathComponent("first.md"), source = root.appendingPathComponent("source.md")

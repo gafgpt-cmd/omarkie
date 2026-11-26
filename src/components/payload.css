@@ -22,6 +22,8 @@
 .payload-body p { line-height: 1.45; }
 .payload-notice { border-inline-start: 2px solid var(--accent); padding-inline-start: 10px; margin-bottom: 14px; }
 .payload-notice p { margin: 0 0 6px; }
+.tutor-routes { margin-bottom: 14px; }
+.tutor-routes [aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
 .payload-body section, .payload-body form { margin-top: 16px; }
 .payload-result { border-block: 1px solid var(--border); padding-block: 8px; }
 .payload-result > :first-child { margin-top: 0; }

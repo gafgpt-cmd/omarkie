@@ -42,7 +42,11 @@ try {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "omarchy");
   const documentFont = () => rich.evaluate(element => getComputedStyle(element).fontFamily);
   await expect.poll(documentFont).toMatch(/JetBrains|monospace/);
-  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("omarkie-preferences"))).documentFont, "theme");
+  await page.keyboard.press("ControlOrMeta+,");
+  const preferences = page.getByRole("dialog", { name: "偏好设置", exact: true });
+  await expect(preferences.getByLabel("正文字体", { exact: true })).toHaveValue("theme");
+  await page.keyboard.press("Escape");
+  await expect(preferences).toBeHidden();
   passed.push("first run on Omarchy uses the live Omarchy theme and its font, leaving font preferences on theme default");
   await page.evaluate(() => { localStorage.removeItem("omarkie-theme-chosen"); localStorage.setItem("omarkie-theme", "light"); });
   await page.reload(); await expect(page.locator("html")).toHaveAttribute("data-theme", "omarchy");
@@ -129,7 +133,6 @@ try {
   await page.keyboard.press("F9");
   passed.push("F8 dims inactive blocks and F9 toggles typewriter scrolling");
   await page.keyboard.press("ControlOrMeta+,");
-  const preferences = page.getByRole("dialog", { name: "偏好设置", exact: true });
   await preferences.getByLabel("高亮：==文字==").uncheck();
   await expect(rich.locator("mark")).toHaveCount(0);
   await preferences.getByLabel("高亮：==文字==").check();

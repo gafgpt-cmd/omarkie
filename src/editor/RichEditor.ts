@@ -652,6 +652,26 @@ export class RichEditor {
   windowRangesRendered() {
     return this.ranges.map(([start, end]) => [start, end] as [number, number]);
   }
+  // Content-space top of the block holding a 1-based line, mounted or not. Glass needs it to
+  // decide what is near the viewport without measuring every offscreen paragraph.
+  topOfLine(line: number): number | null {
+    const nodes = this.model.nodes;
+    if (!nodes.length) return null;
+    let low = 0, high = nodes.length - 1, index = 0;
+    while (low <= high) {
+      const middle = (low + high) >> 1;
+      if (nodes[middle].line <= line) { index = middle; low = middle + 1; }
+      else high = middle - 1;
+    }
+    const node = nodes[index];
+    if (!this.windowed) {
+      const element = this.elements.get(node.id) ?? this.root.querySelector<HTMLElement>(`[data-cid="${CSS.escape(node.id)}"]`);
+      return element ? element.offsetTop + this.root.offsetTop : null;
+    }
+    if (this.prefix.length !== nodes.length + 1) return null;
+    const padding = parseFloat(getComputedStyle(this.root).paddingTop) || 0;
+    return this.root.offsetTop + padding + this.prefix[index];
+  }
   private publish(restore = true) {
     this.render(restore);
     if (!this.fence && !this.composing && this.model.selection.anchor === this.model.selection.head) {

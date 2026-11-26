@@ -34,11 +34,12 @@ function runtime() {
 const root = () => document.getElementById("write");
 const pluginStyle = id => document.querySelector(`style[data-plugin="${id}"]`)?.textContent || "";
 
-test("every bundled catalog entry loads through the runtime with its shipped configuration", async () => {
+test("every bundled compatibility plugin loads through its runtime with its shipped configuration", async () => {
+  const compatible = bundledPlugins.filter(plugin => !plugin.renderer);
   const run = runtime();
   try {
-    for (const plugin of bundledPlugins) { await run.value.setEnabled(plugin, true); assert.equal(run.states[plugin.id].status, "ready", `${plugin.id}: ${run.states[plugin.id].error}`); }
-    for (const plugin of bundledPlugins) await run.value.setEnabled(plugin, false);
+    for (const plugin of compatible) { await run.value.setEnabled(plugin, true); assert.equal(run.states[plugin.id].status, "ready", `${plugin.id}: ${run.states[plugin.id].error}`); }
+    for (const plugin of compatible) await run.value.setEnabled(plugin, false);
   } finally { await run.value.destroy(); }
   assert.equal(document.querySelector("style[data-plugin]"), null);
 });

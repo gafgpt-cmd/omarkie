@@ -27,6 +27,10 @@ export function PreferencesDialog({ value, change, theme, changeTheme, themes, i
     <FontSettings value={value} change={change} changeTheme={changeTheme} />
     <BackgroundSettings asset={background} value={value} change={change} choose={chooseBackground} clear={clearBackground} />
     <fieldset><legend>{t("插件")}</legend><p className="dialog-note">{t("无图阅读、只读模式、段落聚焦与常显语法标记等社区插件。")}</p><button onClick={plugins}>{t("管理插件…")}</button></fieldset>
+    <fieldset data-board-setting><legend>{t("Board add-on")}</legend>
+      <label className="checkbox-option"><input type="checkbox" checked={value.boardEnabled === true} onChange={e => change({ ...value, boardEnabled: e.target.checked })} />{t("Enable boards (Excalidraw)")}</label>
+      <p className="dialog-note">{t("Off by default. The drawing engine loads only when you open a board, and boards stay offline in .omarkie/assets.")}</p>
+    </fieldset>
     {window.desktop?.payloadRequest && <PayloadSettings value={value} change={change} />}
     <fieldset><legend>{t("编辑器")}</legend><div className="form-grid">
       <label>{t("正文字号")}<input type="number" min={12} max={28} value={value.fontSize} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 28) change({ ...value, fontSize: n }); }} /></label>

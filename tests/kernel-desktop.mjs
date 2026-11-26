@@ -101,8 +101,11 @@ try {
     .getByRole("textbox", { name: "替换内容", exact: true })
     .fill("updated");
   await page.getByRole("button", { name: "全部替换", exact: true }).click();
+  await expect(page.getByRole("search").getByRole("status")).toHaveText("已替换 1 处");
+
   await page.getByRole("button", { name: "关闭查找", exact: true }).click();
-  assert.ok((await text()).includes("let updated = 2;"));
+  await mode(false);
+  await expect(source.locator(".cm-line").filter({ hasText: "let updated = 2;" })).toHaveText("let updated = 2;");
   await mode(true);
   await rich.press("ControlOrMeta+z");
   assert.ok((await text()).includes("let changed = 2;"));

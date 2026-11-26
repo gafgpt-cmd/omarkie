@@ -49,7 +49,10 @@ try {
   await preview.getByRole("button", { name: "Back to source" }).click();
   await expect(rich.getByText("publisher artifact", { exact: true })).toBeVisible();
 
-  await open();
+  await page.getByRole("button", { name: "Learning mode", exact: true }).click();
+  await expect(rich).toHaveAttribute("contenteditable", "false");
+  await page.getByRole("button", { name: "Clean converted text…", exact: true }).click();
+  await expect(preview.getByRole("heading", { name: "Methods", exact: true })).toBeVisible();
   await bake.click();
   await expect(preview).toBeHidden();
   await expect(rich.getByRole("heading", { name: "Methods", exact: true })).toBeVisible();

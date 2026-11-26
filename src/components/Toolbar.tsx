@@ -13,9 +13,11 @@ import {
   Italic,
   Code2,
   Sparkles,
+  Layers,
+  Cloud,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { commandGroups, commandKey, shortcutLabel } from "../commands";
+import { commandGroups, commandKey, commandsByAction, shortcutLabel } from "../commands";
 import { MenuBar } from "./MenuBar";
 import { version } from "../../package.json";
 import { t } from "../i18n";
@@ -30,7 +32,10 @@ interface Props {
   disabled: boolean;
   context: string;
   checked?: Record<string, boolean>;
+  learning?: boolean;
+  tutor?: { open: boolean; show(): void };
   payload?: { open: boolean; show(): void };
+  sync?: { open: boolean; show(): void };
 }
 export function Toolbar(props: Props) {
   const [open, setOpen] = useState(false),
@@ -70,6 +75,16 @@ export function Toolbar(props: Props) {
           {props.name || "Omarkie"}
           {props.edited && <span className="title-edited"> — {t("已编辑")}</span>}
         </span>
+        {props.learning !== undefined && <div className="study-toolbar">
+          {props.tutor && <button type="button" className="reading-layers-toggle tutor-toggle"
+            aria-label={t("Tutor")} title={t("Tutor")} aria-expanded={props.tutor.open} onClick={props.tutor.show}><Sparkles size={14} /><span className="toolbar-label">{t("Tutor")}</span></button>}
+          <button type="button" className="reading-layers-toggle" data-testid="learning-mode-toggle"
+            aria-label={t("Learning mode")}
+            title={`${t("Learning mode")} (${shortcutLabel(commandKey(commandsByAction.get("reading-layers")!))})`}
+            aria-pressed={props.learning} onClick={() => props.command("reading-layers")}>
+            <Layers size={15} /><span className="toolbar-label">{t("Learning mode")}</span>
+          </button>
+        </div>}
       </header>
       <div className="quick-actions" aria-label={t("编辑操作")}>
         <button
@@ -91,6 +106,7 @@ export function Toolbar(props: Props) {
           <Code2 size={16} />
         </button>
         {props.payload && <button type="button" className="icon-button" disabled={props.disabled} aria-label={t("Payload")} aria-expanded={props.payload.open} title={t("Payload")} onClick={props.payload.show}><Sparkles size={16} /></button>}
+        {props.sync && <button type="button" className="icon-button" data-testid="sync-button" aria-label={t("Sync")} aria-expanded={props.sync.open} title={t("Sync with your git remote")} onClick={props.sync.show}><Cloud size={16} /></button>}
         <div className="menu-container" ref={root}>
           <button
             onMouseDown={event => { if (window.desktop?.readAloud) event.preventDefault(); }}
@@ -141,7 +157,7 @@ export function Toolbar(props: Props) {
                 </button>)}
               </section>}
               {commandGroups.filter(group => ["段落", "表格", "格式", "显示", "编辑", "文件"].includes(group.title)).map(group => {
-                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction));
+                const extra = group.items.filter(item => !item.selector && !items.some(quick => quick.action === item.action) && !["theme", "folder", "sidebar", "source", "close-window"].includes(item.action) && (!["newWindow", "newTab"].includes(item.action) || window.desktop?.windowAction) && (item.action !== "reading-layers" || props.learning !== undefined));
                 return <section className="command-group" key={group.title}><div className="menu-divider" /><p>{t(group.title)}</p>{extra.map(item => <button key={item.action} role={item.action in (props.checked || {}) ? "menuitemcheckbox" : "menuitem"} aria-checked={props.checked?.[item.action]} aria-label={t(item.label)} disabled={
                   !!item.context && (props.disabled || (["rich", "table"].includes(item.context) && !props.rendered) || (item.context === "table" && props.context !== "table_open"))
                 } onClick={() => { setOpen(false); props.command(item.action); }}><span className="menu-check">{props.checked?.[item.action] && <Check size={16} />}</span><span>{t(item.label)}</span><kbd>{shortcutLabel(commandKey(item))}</kbd></button>)}</section>;

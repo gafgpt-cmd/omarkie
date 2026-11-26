@@ -5,10 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { t } from "./i18n.mjs";
 import readingCore from "../shared/reading-core.cjs";
-import { digest } from "./store.mjs";
+import { atomicWrite, digest } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 
-const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, hasTrash, query, readingMarkdown } = readingCore(digest, t);
+const { validate, putDocument, checkMove, checkPending, tracked, validPath, readJournal, applyRow, pending, badRows, hasTrash, query, readingMarkdown, imageType, imageItem, maxImageBytes } = readingCore(digest, t);
 export { readingMarkdown };
 
 const queues = new Map(), cache = new Map();
@@ -25,12 +25,25 @@ const within = (root, file) => {
   return !!relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 };
 
-async function scope(store, id) {
+export async function readingScope(store, id) {
   const file = store.require(id).path, folder = store.folder;
   if (!file || !folder) throw new Error(t("请先打开文件夹并保存文档。"));
   const root = await realpath(folder), document = await realpath(file);
   if (!within(root, document) || document !== file || !(await lstat(document)).isFile()) throw unsafe();
   return { root, document: path.relative(root, document).split(path.sep).join("/"), current: () => store.folder === folder && store.require(id).path === file };
+}
+
+export async function vaultProposals(root) {
+  const result = await locked(root, false, exists => exists
+    ? transaction(root, false, entries => entries ? query(entries, "", { scope: "vault", types: ["scrap"], studyNotes: true }) : [])
+    : []);
+  return result.filter(item => item.kind === "proposal");
+}
+
+export async function studySearchSnapshot(root) {
+  return queued(root, () => locked(root, false, exists => exists
+    ? transaction(root, false, entries => query(entries ?? [], "", { scope: "vault", types: ["scrap", "note"], studyNotes: true }))
+    : []));
 }
 
 async function directoryAt(root, directory, create = false) {
@@ -215,7 +228,7 @@ async function transaction(root, writing, run) {
         await unlink(path.join(path.dirname(log), name));
       } catch { notice = true; }
     }
-    return await run(index.entries, append, notice);
+    return await run(index.entries, append, notice, index.signature);
   } finally { await handle.close(); }
 }
 
@@ -274,18 +287,61 @@ export async function moveReadingEntries(folder, execute, trashPath) {
   })));
 }
 
-async function operate({ root, document, current }, request) {
+async function imagePath(root, hash, create) {
+  const dir = path.join(root, ".omarkie", "scraps");
+  if (create) await mkdir(dir, { mode: 0o700 }).catch(error => { if (error.code !== "EEXIST") throw error; });
+  if (await realpath(dir) !== dir || !(await lstat(dir)).isDirectory()) throw unsafe();
+  const file = path.join(dir, hash);
+  regular(await info(file));
+  return file;
+}
+
+async function readImage(file, hash) {
+  const handle = await open(file, constants.O_RDONLY | noFollow);
+  try {
+    const { size } = regular(await handle.stat());
+    if (size < 12 || size > maxImageBytes) throw invalid();
+    const bytes = Buffer.allocUnsafe(size), { bytesRead } = await handle.read(bytes);
+    if (bytesRead !== size || digest(bytes) !== hash) throw invalid();
+    return bytes;
+  } finally { await handle.close(); }
+}
+
+async function operate({ root, document, current }, request, remoteBytes) {
   let validated;
-  try { validated = validate(request); } catch { throw invalid(); }
-  const { item } = validated, writing = !!item;
+  let bytes, item;
+  try {
+    validated = validate(request);
+    item = validated.item;
+    if (remoteBytes || validated.imageBytes) {
+      bytes = remoteBytes ?? Buffer.from(validated.imageBytes, "base64");
+      if (bytes.length < 12 || bytes.length > maxImageBytes) throw invalid();
+      imageType(bytes.toString("hex", 0, 12));
+      item = imageItem(request, digest(bytes));
+    }
+  } catch { throw invalid(); }
+  const writing = !!item;
+  const empty = validated.study ? { entries: [], locations: [] } : [];
   return locked(root, writing, exists => {
-    if (!exists) return [];
+    if (!exists) {
+      if (validated.imageHash) throw invalid();
+      return empty;
+    }
     return transaction(root, writing, async (entries, append) => {
       const source = path.join(root, document);
       if (!current() || await realpath(source) !== source || !(await lstat(source)).isFile() || !current()) throw unsafe();
-      if (!entries) return [];
+      if (validated.imageHash) {
+        const bytes = await readImage(await imagePath(root, validated.imageHash, false), validated.imageHash);
+        return `data:image/${imageType(bytes.toString("hex", 0, 12))};base64,${bytes.toString("base64")}`;
+      }
+      if (!entries) return empty;
       if (!item) return query(entries, document, validated);
       const entry = { ...item, document: putDocument(entries, document, item, validated.owner), at: new Date().toISOString() };
+      if (bytes) {
+        const hash = item.image.hash, file = await imagePath(root, hash, true);
+        if (await info(file)) await readImage(file, hash);
+        else await atomicWrite(file, bytes, () => imagePath(root, hash, false));
+      }
       await append({ entry });
       return entry;
     });
@@ -303,6 +359,14 @@ async function queued(root, run) {
 
 export async function readingStore(store, id, request) {
   if (!request || typeof request !== "object") throw invalid();
-  const authorized = await scope(store, id);
-  return queued(authorized.root, () => operate(authorized, request));
+  const authorized = await readingScope(store, id);
+  let remoteBytes;
+  if (request.action === "putImage" && request.address !== undefined) {
+    let address;
+    try { address = typeof request.address === "string" && request.address.length <= 8192 && new URL(request.address); } catch { throw invalid(); }
+    if (!address || address.protocol !== "https:" || address.username || address.password || request.bytes !== undefined) throw invalid();
+    const { downloadImage } = await import("./image-actions.mjs");
+    ({ bytes: remoteBytes } = await downloadImage(address, { redirect: "error", credentials: "omit", referrerPolicy: "no-referrer" }));
+  }
+  return queued(authorized.root, () => operate(authorized, request, remoteBytes));
 }

@@ -3,6 +3,11 @@ const call = (name, ...args) => ipcRenderer.invoke(`document:${name}`, ...args);
 contextBridge.exposeInMainWorld("desktop", {
   viewState: (focus, typewriter, sidebar, checked, disabled, context) => call("viewState", focus, typewriter, sidebar, checked, disabled, context),
   language: () => ipcRenderer.sendSync("app:language"), setLanguage: choice => call("setLanguage", choice),
+  loadPreferences: () => ipcRenderer.sendSync("app:preferences"),
+  // Hand off before the renderer can close. Main writes to disk asynchronously.
+  savePreferences: value => ipcRenderer.sendSync("app:preferences", value),
+  loadPluginPreferences: () => ipcRenderer.sendSync("app:plugin-preferences"),
+  savePluginPreferences: value => ipcRenderer.sendSync("app:plugin-preferences", value),
   payloadRequest: request => call("payloadRequest", request),
   payloadKey: (baseUrl, value) => call("payloadKey", baseUrl, value),
   readResource: (address, project) => call("readResource", address, project),
@@ -12,6 +17,7 @@ contextBridge.exposeInMainWorld("desktop", {
   themes: () => call("themes"), omarchyTheme: () => call("omarchyTheme"), editRole: role => call("editRole", role), setRemoteImages: value => call("setRemoteImages", value), installTheme: () => call("installTheme"), conversionSettings: choose => call("conversionSettings", choose), importDocument: () => call("importDocument"), exportConverted: (id, format, source, html, options) => call("exportConverted", id, format, source, html, options), imageAction: (id, sources, action, options) => call("imageAction", id, sources, action, options),
   spellcheckLanguages: languages => call("spellcheckLanguages", languages),
   readAloud: text => call("readAloud", text),
+  voice: request => call("voice", request),
   checkGrammar: (url, approvedOrigin, text) => call("checkGrammar", url, approvedOrigin, text),
   ready: () => call("ready"),
   cancelClose: () => call("cancelClose"),
@@ -28,6 +34,38 @@ contextBridge.exposeInMainWorld("desktop", {
   showcase: () => call("showcase"),
   scan: () => call("scan"),
   readingStore: (id, request) => call("readingStore", id, request),
+  glassState: request => call("glassState", request),
+  onGlass: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("glass:event", listener);
+    return () => ipcRenderer.removeListener("glass:event", listener);
+  },
+  tutorBridge: (id, request) => call("tutorBridge", id, request),
+  onTutor: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("tutor:event", listener);
+    return () => ipcRenderer.removeListener("tutor:event", listener);
+  },
+  learningSearch: (id, query) => call("learningSearch", id, query),
+  glass: request => call("glass", request),
+  sync: request => call("sync", request),
+  captureRegion: rect => call("captureRegion", rect),
+  ocrAvailable: () => call("ocrAvailable"),
+  glassOcr: request => call("glassOcr", request),
+  exportGlass: request => call("glassExport", request),
+  importGlass: () => call("glassImport"),
+  sharedGlass: note => call("sharedGlass", note),
+  sharedGlassState: request => call("sharedGlassState", request),
+  onGlassChanged: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("glass:changed", listener);
+    return () => ipcRenderer.removeListener("glass:changed", listener);
+  },
+  onGlassStorage: callback => {
+    const listener = (_, status) => callback(status);
+    ipcRenderer.on("glass:storage", listener);
+    return () => ipcRenderer.removeListener("glass:storage", listener);
+  },
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),

@@ -1,4 +1,4 @@
-export { EditorState, Compartment } from "@codemirror/state";
+export { EditorState, Compartment, ChangeSet } from "@codemirror/state";
 export { EditorView, keymap, drawSelection, highlightActiveLine, highlightSpecialChars, lineNumbers } from "@codemirror/view";
 export { defaultKeymap, indentWithTab, indentMore, indentLess, selectParentSyntax } from "@codemirror/commands";
 export { markdown, markdownLanguage } from "@codemirror/lang-markdown";

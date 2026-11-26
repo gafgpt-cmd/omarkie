@@ -20,6 +20,7 @@ import { findInVault, vaultRoot } from "./vault.mjs";
 export const digest = (value) =>
   createHash("sha256").update(value).digest("hex");
 const markdown = /\.(md|markdown|mdown)$/i;
+const fileNameOrder = new Intl.Collator("zh-CN", { numeric: true });
 const within = (base, file) => {
   const relative = path.relative(base, file);
   return (
@@ -226,9 +227,7 @@ export class DocumentStore {
         skipped++;
         return;
       }
-      entries.sort((a, b) =>
-        a.name.localeCompare(b.name, "zh-CN", { numeric: true }),
-      );
+      entries.sort((a, b) => fileNameOrder.compare(a.name, b.name));
       for (const entry of entries) {
         if (
           entry.name.startsWith(".") ||
@@ -340,7 +339,11 @@ export class DocumentStore {
       const documents = [];
       let readingRecoveryWarning = false;
       if (session.folder) {
-        try { ({ readingRecoveryWarning } = await this.scan(session.folder)); } catch {}
+        try {
+          const root = await realpath(session.folder);
+          // On renderer reload, the active vault is already authorized. The renderer refreshes its file list separately.
+          if (root !== this.folder) ({ readingRecoveryWarning } = await this.scan(root));
+        } catch {}
       }
       for (const record of session.documents) {
         if (typeof record.id !== "string" || typeof record.content !== "string")

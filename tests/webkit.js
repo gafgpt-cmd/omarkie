@@ -98,11 +98,21 @@ try {
   const undone = await window.desktop.fileOperation({ action: "undo" });
   const restoredEntries = await store({ action: "list" });
   check(undone.ok && restoredEntries.ok && restoredEntries.value.length === 3 && restoredEntries.value.every(item => item.document === "WebKit-fixture.md"), "native rename undo restores the reading paths");
+  const imageFixture = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVrcAAAAASUVORK5CYII=";
+  const imageScrap = await store({ action: "putImage", id: "native-image", name: "Fixture.png", bytes: imageFixture, anchor: { ...block, quote: "anchored sentence" }, side: "right", width: 240 });
+  const blob = imageScrap.ok && await store({ action: "readImage", hash: imageScrap.value.image.hash });
+  const placed = await store({ action: "study", blocks: [block] });
+  check(imageScrap.ok && imageScrap.value.image.hash === "a26e305a89e03b50f1d7b93f50b3cada4771395e3fe106a9b68c878b12e62dc6" &&
+    blob.ok && blob.value === `data:image/png;base64,${imageFixture}` &&
+    placed.ok && placed.value.locations.some(({ id, line }) => id === "native-image" && line === block.line),
+    "native image scrap keeps the blob separate and resolves its paragraph");
   const payload = { baseUrl: payloadBaseURL, confirmedOrigin: new URL(payloadBaseURL).origin, model: "native-fixture", source: "Synthetic source paragraph." };
   const rejected = await window.desktop.payloadRequest({ ...payload, confirmedOrigin: "https://example.invalid" });
   check(!rejected.ok, "native Payload rejects an unconfirmed origin");
   const summary = await window.desktop.payloadRequest(payload);
   const followUp = await window.desktop.payloadRequest({ ...payload, question: "What is this?", modernLimit: true });
+  const nativeProposal = await window.desktop.payloadRequest({ ...payload, question: "Rewrite this?", proposal: true });
+  check(nativeProposal.ok && nativeProposal.value === "Rewritten fixture paragraph.", "native Tutor proposal uses the existing allowed endpoint");
   const under = await window.desktop.payloadRequest({ ...payload, model: "fixture-under" });
   const over = await window.desktop.payloadRequest({ ...payload, model: "fixture-over" });
   const failed = await window.desktop.payloadRequest({ ...payload, model: "fixture-status" });
@@ -191,14 +201,13 @@ try {
   await remotePreference(true);
   const readingRecord = await openMedia("reading");
   const readingAsset = assetFor(readingRecord);
-  const readingToggle = await wait(() => document.querySelector('[data-testid="reading-layers-toggle"]:enabled'), "Reading Layers toggle did not become enabled");
+  const readingToggle = await wait(() => document.querySelector('[data-testid="learning-mode-toggle"]:enabled'), "Learning mode toggle did not become enabled");
   readingToggle.click();
-  await wait(() => document.querySelector(".layers-rail"), "Reading Layers rail did not open");
+  await wait(() => document.querySelector(".study-rail"), "Sheets panel did not open");
   await assertOffline("reading", root, readingAsset);
   await closeMedia("reading", readingAsset);
-  const readingClose = await wait(() => document.querySelector('[data-testid="reading-layers-close"]'), "Reading Layers close button did not mount");
-  readingClose.click();
-  await wait(() => !document.querySelector(".layers-rail") && document.querySelector('[data-testid="reading-layers-toggle"][aria-pressed=false]'), "Reading Layers did not close before Clean");
+  readingToggle.click();
+  await wait(() => !document.querySelector(".study-rail") && document.querySelector('[data-testid="learning-mode-toggle"][aria-pressed=false]'), "Learning mode did not close before Clean");
   const reopenedFromTree = await openMediaToken("reading");
   check(reopenedFromTree.id !== readingRecord.id, "file tree open issues a fresh grant after close");
   window.__omarkie.command({ action: "opened", document: reopenedFromTree });

@@ -12,7 +12,9 @@ const numberingLayouts = [
   { name: "Layout::ChineseThesis", selected: false, layout: numberingLayout(["{$1:cjk}、", "（{$2:cjk}）", "{$3}. ", "（{$4}）", "{$5}）", "{$6:ua}. "], ["表 {t}", "图 {i}", "代码 {f}"]) },
   { name: "Layout::None", selected: false, layout: numberingLayout(["", "", "", "", "", ""], ["", "", ""]) },
 ];
+export const learningPluginId = "learning_mode";
 export const bundledPlugins: PluginDefinition[] = [
+  { id: learningPluginId, name: "Learning mode", description: t("Study with sheets and scraps without changing Markdown."), config: {}, renderer: true },
   { id: "callouts", name: "Callouts", description: t("Custom callout titles and folding without changing Markdown."), load: () => import("./reading/callouts.ts").then(module => module.default), config: {} },
   { id: "image_viewer", name: "Image viewer", description: t("Click an image to zoom and pan its original. Escape closes."), load: () => import("./reading/imageViewer.ts").then(module => module.default), config: {} },
   { id: "resize_image", name: "Resize images", description: t("Drag the image corner to save an undoable size change."), load: () => import("./reading/resizeImage.ts").then(module => module.default), config: {} },
@@ -31,5 +33,8 @@ export const bundledPlugins: PluginDefinition[] = [
 ].map(plugin => ({ ...plugin, builtin: true }));
 export const pluginPreferenceKey = "omarkie-plugins-v1";
 export function loadPluginPreferences(): PluginPreferences {
-  try { const parsed = JSON.parse(localStorage.getItem(pluginPreferenceKey) || "{}"); return parsed && !Array.isArray(parsed) && typeof parsed === "object" ? parsed : {}; } catch { return {}; }
+  try {
+    const parsed = JSON.parse(window.desktop?.loadPluginPreferences?.() ?? localStorage.getItem(pluginPreferenceKey) ?? "{}");
+    return parsed && !Array.isArray(parsed) && typeof parsed === "object" ? parsed : {};
+  } catch { return {}; }
 }

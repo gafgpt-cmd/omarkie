@@ -8,6 +8,8 @@ import test from "node:test";
 import readingCore from "../shared/reading-core.cjs";
 import { moveReadingEntries, readingMarkdown, readingStore, recoverReadingVault } from "../electron/reading-store.mjs";
 import { digest, DocumentStore } from "../electron/store.mjs";
+import { learningSearchTerms, matchLearningScraps } from "../shared/learning-search.mjs";
+import { searchLearning } from "../electron/learning-index.mjs";
 import { Workspace } from "../electron/workspace.mjs";
 import { t as translate } from "../electron/i18n.mjs";
 import { dueCards } from "../src/flashcards.ts";
@@ -30,6 +32,54 @@ async function fixture(t) {
   const sidecar = path.join(vault, ".omarkie");
   return { store, source, other, external, sidecar, log: path.join(sidecar, "store.jsonl"), index: path.join(sidecar, "index.json"), outside };
 }
+
+test("vault search sees current journal text without leaving a profile index", async t => {
+  const { store, source, other } = await fixture(t);
+  assert.deepEqual(await searchLearning(store, source.id, "meander"), []);
+  const scrap = { id: "river", type: "scrap", kind: "answer", sheet: "tutor-answers", body: "Méander near a triangle", question: "Geometry?", anchor: { ...block(), quote: "distinct words" }, folded: false, stackOf: null };
+  await readingStore(store, other.id, { action: "put", item: scrap });
+  const entries = await readingStore(store, source.id, { action: "list", scope: "vault", types: ["note", "scrap"], studyNotes: true });
+  for (const [phrase, expected] of [["meander geom distinct", ["other.md"]], ["angle", []]]) {
+    assert.deepEqual((await searchLearning(store, source.id, phrase)).map(hit => hit.document), expected);
+    assert.deepEqual(matchLearningScraps(entries, learningSearchTerms(phrase)).map(hit => hit.document), expected);
+  }
+  await assert.rejects(stat(path.join(store.dataDir, "learning-index")), { code: "ENOENT" });
+  await readingStore(store, other.id, { action: "put", item: { ...scrap, body: "River bend" } });
+  assert.deepEqual(await searchLearning(store, source.id, "meander"), []);
+});
+
+test("image scraps keep binary data outside the journal and reject unsafe blob reads", async t => {
+  const { source, external, store, sidecar, log } = await fixture(t);
+  const image = { action: "putImage", id: "clip", name: "Clip", anchor: { ...block(), quote: "distinct words" }, side: "left", width: 180,
+    bytes: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aVrcAAAAASUVORK5CYII=" };
+  const send = request => readingStore(store, source.id, request);
+  await assert.rejects(() => send({ ...image, bytes: Buffer.from("<svg>not a raster image</svg>").toString("base64") }));
+  await assert.rejects(() => stat(sidecar), { code: "ENOENT" });
+  const row = await send(image), hash = digest(Buffer.from(image.bytes, "base64"));
+  const request = { action: "readImage", hash };
+  assert.equal(row.image.hash, hash);
+  assert.equal(await send(request), `data:image/png;base64,${image.bytes}`);
+  assert.ok(!(await readFile(log, "utf8")).includes(image.bytes));
+  await assert.rejects(() => send({ ...request, hash: "../store.jsonl" }));
+  await assert.rejects(() => readingStore(store, external.id, request));
+  await writeFile(path.join(sidecar, "scraps", hash), Buffer.from(image.bytes, "base64").fill(1, 14, 20));
+  await assert.rejects(() => send(request));
+});
+
+test("proposal scraps preserve the exact before text on journal replay and refuse retargeting", async t => {
+  const { store, source } = await fixture(t);
+  const before = "This text stays  exactly as written.\nAnd this line stays with it.";
+  const proposal = { type: "scrap", id: "proposal", kind: "proposal", sheet: "proposals", before, body: "A tighter paragraph.",
+    anchor: { ...block(before), quote: "exactly as written" }, stackOf: null, folded: true };
+  const send = request => readingStore(store, source.id, request);
+  await assert.rejects(() => send({ action: "put", item: { ...proposal, anchor: note("other").anchor } }));
+  await assert.rejects(() => send({ action: "put", item: { ...proposal, stackOf: "other" } }));
+  await send({ action: "put", item: proposal });
+  const study = await send({ action: "study", blocks: [block(before)] });
+  assert.equal(study.entries[0].before, before);
+  assert.equal(study.entries[0].body, proposal.body);
+  assert.deepEqual(study.locations, [{ id: "proposal", line: 4 }]);
+});
 
 test("rename, folder move and undo transfer reading history without sharing it with replacements", async t => {
   const { source, store } = await fixture(t);
@@ -62,6 +112,48 @@ test("rename, folder move and undo transfer reading history without sharing it w
   assert.deepEqual((await list(replacement.id, "vault")).map(item => item.document), ["parts/chapter/source.md", "parts/chapter/source.md"]);
   await change({ action: "undo" });
   assert.deepEqual((await list(source.id)).map(item => item.document), ["chapter/source.md", "chapter/source.md"]);
+});
+
+test("study sheets stay vault-wide while scraps follow moved notes and unresolved anchors survive in the tray", async t => {
+  const { source, other, store, log, sidecar } = await fixture(t);
+  const study = (id, blocks) => readingStore(store, id, { action: "study", blocks });
+  const put = item => readingStore(store, source.id, { action: "put", item });
+  assert.deepEqual(await study(source.id, [block()]), { entries: [], locations: [] });
+  await assert.rejects(stat(sidecar), { code: "ENOENT" });
+  const legacy = note("legacy");
+  await put(legacy);
+  const before = await readFile(log, "utf8");
+  const migrated = (await study(source.id, [block()])).entries[0];
+  assert.equal(migrated.kind, "note");
+  assert.equal(migrated.body, legacy.body);
+  assert.equal(await readFile(log, "utf8"), before);
+  const scrap = { type: "scrap", id: "scrap", sheet: "notes", kind: "note", body: "A separate scrap", anchor: legacy.anchor, stackOf: null, folded: true };
+  await put(scrap);
+  await put({ type: "sheet", id: "notes", name: "Notes", colour: "blue", order: 0, visible: false });
+  await put({ type: "mark", id: "mark", sheet: "highlights", colour: "amber", anchor: legacy.anchor, start: 31, end: 45 });
+  await put({ type: "ink", id: "ink", sheet: "notes", anchor: legacy.anchor, from: "words", to: "terms" });
+  const workspace = new Workspace(store.folder);
+  const apply = async operation => {
+    const change = await moveReadingEntries(store.folder, move => workspace.execute(operation, store, undefined, move));
+    workspace.apply(change, store);
+  };
+  await apply({ action: "rename", path: source.path, name: "renamed.md" });
+  const subfolder = path.join(store.folder, "chapter");
+  await mkdir(subfolder);
+  const edited = body.replace("distinct", "distnct");
+  await writeFile(path.join(store.folder, "renamed.md"), edited, "utf8");
+  await apply({ action: "move", path: path.join(store.folder, "renamed.md"), target: subfolder });
+  const reanchored = await study(source.id, [block("new paragraph", 4), block(edited, 7)]);
+  assert.deepEqual(reanchored.locations.map(location => location.line), [7, 7, 7, 7]);
+  assert.ok(reanchored.entries.filter(entry => entry.type !== "sheet").every(entry => entry.document === "chapter/renamed.md"));
+  assert.deepEqual((await study(other.id, [])).entries.map(({ type, visible }) => [type, visible]), [["sheet", false]]);
+  const orphaned = await study(source.id, [block("No similar paragraph.")]);
+  assert.deepEqual(orphaned.locations.map(location => location.line), [null, null, null, null]);
+  assert.equal(orphaned.entries.find(entry => entry.id === "scrap").body, scrap.body);
+  await put({ ...migrated, deleted: true });
+  const notes = await readingStore(store, source.id, { action: "list", types: ["note"], studyNotes: true });
+  assert.deepEqual(notes.map(note => note.body), [scrap.body]);
+  assert.equal(await readFile(path.join(subfolder, "renamed.md"), "utf8"), edited);
 });
 
 function startWorker(t, root, file, code) {

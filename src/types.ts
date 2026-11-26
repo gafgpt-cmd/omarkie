@@ -1,4 +1,5 @@
-import type { ReadingStore } from "../shared/reading-store.ts";
+import type { ReadingStore, ReadingTarget } from "../shared/reading-store.ts";
+import type { TutorVerb } from "./components/tutor-verbs";
 
 export interface DocumentRecord {
   readingRecoveryWarning?: boolean;
@@ -59,6 +60,8 @@ export interface Command {
   document?: DocumentRecord;
   anchor?: string;
   line?: number;
+  note?: string;
+  magnet?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }
@@ -71,6 +74,8 @@ export interface PayloadRequest {
   model: string;
   source: string;
   question?: string;
+  proposal?: true;
+  tutorVerb?: Exclude<TutorVerb, "answer" | "propose">;
   modernLimit: boolean;
 }
 export interface CitationMatch { id: string; title: string; authors: string }
@@ -84,8 +89,21 @@ interface BibliographyOperations {
   suggest: CitationMatch[];
   open: void;
 }
+export type TutorBridgeRequest = { lease: string } & ({ action: "attach" | "detach" } | {
+  action: "submit"; target: ReadingTarget; question: string; verb: TutorVerb;
+});
+export type TutorReceipt = "queued" | "seen" | "working" | "done";
+export type TutorEvent = { lease: string } & (
+  { type: "receipt"; id: string; owner: string | null; status: TutorReceipt } |
+  { type: "reply"; id: string; owner: string | null; text: string } |
+  { type: "agent"; owner: string | null } | { type: "expired"; id: string } | { type: "refresh" }
+);
+export interface StudySearchMatch { document: string; line: number | null; kind: string; text: string }
 export interface Host {
   readingStore?: ReadingStore;
+  tutorBridge?(id: string, request: TutorBridgeRequest): Promise<{ id?: string } | undefined>;
+  onTutor?(callback: (event: TutorEvent) => void): () => void;
+  learningSearch?(id: string, query: string): Promise<StudySearchMatch[]>;
   vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
   bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
@@ -153,6 +171,15 @@ export interface Host {
   confirmClose(name: string): Promise<"save" | "discard" | "cancel">;
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
+  glass?(request: Record<string, unknown>): Promise<any>;
+  ocrAvailable?(): Promise<{ ok?: boolean; value?: { available: boolean } } | { available: boolean } | null>;
+  glassOcr?(request: { png: string }): Promise<{ ok?: boolean; value?: { text: string }; error?: string } | null>;
+  exportGlass?(request: { note: string; mode: string; target?: string; order?: string[] }): Promise<{ out: string; files: string[]; note: string } | null>;
+  importGlass?(): Promise<{ note: string; file: string } | null>;
+  sharedGlass?(note: string): Promise<{ note: string; magnets: { id: string; fields: Record<string, unknown>; kind?: string | null }[]; readOnly: boolean }>;
+  sharedGlassState?(request: { action: "read" | "write"; shared?: boolean }): Promise<{ shared: boolean }>;
+  sync?(request?: Record<string, unknown>): Promise<any>;
+  onGlassStorage?(callback: (status: { bring?: { count: number; notes?: { path: string; title?: string }[] } | null } | null) => void): () => void;
   onCommand(callback: (command: Command) => void): () => void;
   payloadRequest?(request: PayloadRequest): Promise<string>;
   payloadKey?(baseUrl: string, value: string): Promise<void>;

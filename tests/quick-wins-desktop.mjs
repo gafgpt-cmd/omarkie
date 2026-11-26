@@ -1,6 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
@@ -22,13 +22,22 @@ try {
   await preferences.getByLabel("拼写检查语言").selectOption(chosen);
   await expect(preferences.getByLabel("拼写检查语言")).toHaveValues(chosen);
   await expect.poll(() => application.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages())).toEqual(chosen);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")).spellcheckLanguages)).toEqual(chosen);
+  await expect.poll(async () => {
+    const saved = await readFile(path.join(directory, "preferences.json"), "utf8").catch(error => {
+      if (error.code !== "ENOENT") throw error;
+      return "{}";
+    });
+    return JSON.parse(saved).spellcheckLanguages;
+  }).toEqual(chosen);
   await preferences.getByRole("button", { name: "完成", exact: true }).click();
   await expect(preferences).toBeHidden();
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
   await expect(page.locator(".document-editor:not([hidden]) .rich-document")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("omarkie-preferences")).spellcheckLanguages)).toEqual(chosen);
+  await page.keyboard.press("ControlOrMeta+,");
+  await expect(preferences.getByLabel("拼写检查语言")).toHaveValues(chosen);
+  await page.keyboard.press("Escape");
+  await expect(preferences).toBeHidden();
   await expect.poll(() => application.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages())).toEqual(chosen);
   const response = await page.evaluate(() => window.desktop.spellcheckLanguages(["invalid-language", "en-US"])); assert.equal(response.ok, true);
   assert.deepEqual(await application.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages()), ["en-US"]);

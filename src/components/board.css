@@ -1,0 +1,30 @@
+/* Board add-on: fills the reading surface without ever leaking into the page. */
+.board-backdrop{position:fixed;inset:0;z-index:65;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--ink) 28%,transparent);padding:24px}
+.board-shell{display:flex;flex-direction:column;width:min(1180px,96vw);height:min(820px,92vh);background:var(--paper);color:var(--ink);border:1px solid var(--border);border-radius:8px;box-shadow:0 24px 70px #0004;overflow:hidden}
+.board-heading{display:flex;align-items:center;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.board-heading>div:first-child{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.board-heading strong{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board-hint{font-size:12px;color:var(--muted)}
+.board-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.board-close{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:4px}
+.board-close:hover{background:var(--hover,#0001);color:var(--ink)}
+.board-warning{margin:0;padding:8px 16px;background:var(--warning-bg,#fff6e0);color:var(--ink);font-size:13px;border-bottom:1px solid var(--border)}
+.board-canvas{position:relative;flex:1;min-height:0;background:var(--paper)}
+.board-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:14px}
+.board-spin{animation:board-spin 1s linear infinite}
+@keyframes board-spin{to{transform:rotate(360deg)}}
+/* No library, embed, or collaboration chrome: a board is local and peerless. */
+.board-shell .sidebar-triggers,.board-shell .sidebar-trigger__label{display:none!important}
+.board-shell .excalidraw .App-menu_top .dropdown-menu-button[data-testid="main-menu-trigger"]{display:none}
+html.board-open{overflow:hidden}
+@media (max-width:720px){.board-backdrop{padding:0}.board-shell{width:100vw;height:100dvh;border-radius:0}.board-hint{display:none}}
+.board-picker-backdrop{position:fixed;inset:0;z-index:66;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--ink) 24%,transparent);padding:24px}
+.board-picker{width:min(360px,92vw);max-height:70vh;overflow:auto;background:var(--paper);color:var(--ink);border:1px solid var(--border);border-radius:8px;box-shadow:0 18px 50px #0003;padding:16px}
+.board-picker header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.board-picker h2{font-size:16px;margin:0}
+.board-picker header button{border:0;background:none;color:var(--muted);font-size:22px;cursor:pointer}
+.board-picker ul{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:6px}
+.board-picker li button{width:100%;text-align:left;font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:5px;background:var(--paper);color:var(--ink);cursor:pointer}
+.board-picker li button:hover{border-color:var(--accent)}
+.board-picker-new{width:100%;font:inherit;padding:9px 10px;border:1px solid var(--accent);border-radius:5px;background:var(--accent);color:#fff;cursor:pointer}
+.board-loading-fixed{position:fixed;inset:0;z-index:65;background:var(--paper)}

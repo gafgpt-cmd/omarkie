@@ -38,6 +38,10 @@ const browser: Host = {
   native: false,
   async vaultSnapshot() { throw new Error(t("请在桌面应用中打开文件夹以使用知识库工具")); },
   async exportBundle() { throw new Error(t("导出压缩包需要桌面应用")); },
+  async exportGlass() { throw new Error(t("导出玻璃需要桌面应用")); },
+  async importGlass() { throw new Error(t("导入玻璃导出包需要桌面应用")); },
+  async sharedGlass() { throw new Error(t("共享玻璃需要桌面应用")); },
+  async sharedGlassState() { return { shared: false }; },
   async spellcheckLanguages() { return []; },
   async cancelClose() {},
   async windowAction() { return false; },
@@ -48,6 +52,7 @@ const browser: Host = {
   clearBackground: () => browserBackground(null),
   async plugins() { return []; }, async installPlugin() { throw new Error(t("安装本地插件请使用桌面应用。")); },
   async removePlugin() { throw new Error(t("移除本地插件请使用桌面应用。")); },
+  async sync() { throw new Error(t("同步需要桌面应用。")); },
   async conversionSettings() { return { pandoc: "", word: false }; },
   async importDocument() { throw new Error(t("导入文档请使用桌面应用。")); }, async exportConverted() { throw new Error(t("此格式导出请使用桌面应用。")); },
   async restore() {
@@ -175,9 +180,11 @@ export const host: Host = window.desktop
   ? new Proxy({ native: true } as Host, {
       get(target, name: keyof Host) {
         if (name === "native") return true;
-        if (name === "checkGrammar" && !window.desktop![name]) return undefined;
-        if (name === "bibliography" && !window.desktop?.bibliography) return undefined;
-        if (name === "onCommand" || name === "onFileOperation" || name === "closeWindow")
+        if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
+        if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
+        if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage" || name === "sync") && !window.desktop![name]) return undefined;
+        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
+        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];

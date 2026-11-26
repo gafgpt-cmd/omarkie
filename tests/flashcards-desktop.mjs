@@ -22,28 +22,29 @@ try {
   page.on("request", request => requests.push(request.url()));
   page.on("pageerror", error => errors.push(error.message));
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
-  const rail = page.getByRole("complementary", { name: "Reading Layers", exact: true });
-  const cards = page.getByRole("dialog", { name: "Study cards", exact: true });
-  const study = page.getByRole("dialog", { name: "Test me", exact: true });
+  const rail = page.getByRole("complementary", { name: "Layers", exact: true })
+    .or(page.getByRole("group", { name: "Layers", exact: true }));
+  const cards = page.getByRole("complementary", { name: "Study cards", exact: true });
+  const study = page.getByRole("complementary", { name: "Test me", exact: true });
   const reveal = study.getByRole("button", { name: "Show answer", exact: true });
   const closeCards = cards.getByRole("button", { name: "Close Study cards", exact: true });
   const journal = () => readFile(path.join(sidecar, "store.jsonl"), "utf8").then(text => text.trim().split("\n").map(row => JSON.parse(row).entry));
   async function openRail() {
-    await page.getByRole("button", { name: "Reading Layers", exact: true }).click();
+    await page.getByRole("button", { name: "Learning mode", exact: true }).click();
     await expect(rail).toBeVisible();
   }
   async function openCards() {
-    await rail.getByRole("button", { name: "Show Cards", exact: true }).click();
+    await rail.getByRole("button", { name: "Study cards", exact: true }).click();
     await expect(cards.getByText(/Cards in this note:/)).toBeVisible();
   }
   await page.reload();
   await expect(rich.getByRole("heading", { name: "Facts" })).toBeVisible();
   await openRail();
-  assert.ok(!requests.some(url => /\/Flashcards-/.test(url)), "opening Reading Layers must not load the flashcard implementation");
+  assert.ok(!requests.some(url => /\/Flashcards-/.test(url)), "Learning mode must not load the flashcard implementation until requested");
   const excerpt = "Select this passage to make one more card.";
   await rich.getByText(excerpt, { exact: true }).selectText();
   await page.keyboard.press("Alt+Enter");
-  await page.getByRole("dialog", { name: "Selection actions" }).getByRole("button", { name: "Make it a card", exact: true }).click();
+  await page.getByRole("group", { name: "Selection actions", exact: true }).getByRole("button", { name: "Make it a card", exact: true }).click();
   await expect(cards.getByRole("textbox", { name: "Answer", exact: true })).toHaveValue(excerpt);
   assert.ok(requests.some(url => /\/Flashcards-/.test(url)));
   await assert.rejects(stat(sidecar), { code: "ENOENT" });
@@ -79,7 +80,7 @@ try {
   await closeCards.click();
   await page.reload();
   await expect(rich.getByRole("heading", { name: "Facts" })).toBeVisible();
-  await openRail();
+  await expect(rail).toBeVisible();
   await openCards();
   await cards.getByRole("button", { name: "Test me", exact: true }).click();
   await expect(study).toContainText("No new or due cards in this vault.");

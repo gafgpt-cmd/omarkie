@@ -17,19 +17,20 @@ export interface Preferences extends FontPreferences {
   backgroundPosition: "center" | "top" | "bottom" | "left" | "right";
   backgroundSize: "cover" | "contain" | "repeat";
   highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean;
+  boardEnabled: boolean;
 }
-export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true,
+export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true, boardEnabled: false,
   standaloneImageScale: 2,
   payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false };
 export function loadPreferences(): Preferences {
   try {
-    const saved = JSON.parse(localStorage.getItem("omarkie-preferences") || "{}");
+    const saved = JSON.parse(globalThis.window?.desktop?.loadPreferences?.() ?? localStorage.getItem("omarkie-preferences") ?? "{}");
     const next = { ...defaultPreferences };
     if (Number.isFinite(saved.backgroundOpacity)) next.backgroundOpacity = Math.max(0,Math.min(100,saved.backgroundOpacity));
     if (Number.isFinite(saved.backgroundBlur)) next.backgroundBlur = Math.max(0,Math.min(30,saved.backgroundBlur));
     if (["center","top","bottom","left","right"].includes(saved.backgroundPosition)) next.backgroundPosition = saved.backgroundPosition;
     if (["cover","contain","repeat"].includes(saved.backgroundSize)) next.backgroundSize = saved.backgroundSize;
-    for (const key of ["imageAutoUpload", "remoteImages", "imagePrefix", "imageEscape", "sourceLineNumbers", "codeLineNumbers", "spellcheck", "autoPair", "highlight", "subscript", "superscript", "emoji", "inlineMath"] as const) if (typeof saved[key] === "boolean") next[key] = saved[key];
+    for (const key of ["imageAutoUpload", "remoteImages", "imagePrefix", "imageEscape", "sourceLineNumbers", "codeLineNumbers", "spellcheck", "autoPair", "highlight", "subscript", "superscript", "emoji", "inlineMath", "boardEnabled"] as const) if (typeof saved[key] === "boolean") next[key] = saved[key];
     for (const key of ["imageUploader", "imageFolder", "pdfHeader", "pdfFooter"] as const) if (typeof saved[key] === "string" && saved[key].length <= 500) next[key] = saved[key];
     if (typeof saved.payloadEnabled === "boolean") next.payloadEnabled = saved.payloadEnabled;
     if (typeof saved.payloadModernLimit === "boolean") next.payloadModernLimit = saved.payloadModernLimit;

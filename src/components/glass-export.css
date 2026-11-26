@@ -1,0 +1,16 @@
+.glass-export-modes { border: 0; padding: 0; margin: 0 0 10px; display: grid; gap: 4px; }
+.utility-dialog fieldset.glass-export-modes > label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; }
+.utility-dialog .glass-export-modes input[type=radio] { width: auto; margin: 0; }
+.glass-export-format { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.glass-export-format label { display: flex; align-items: center; gap: 8px; }
+.glass-export-order { margin: 8px 0; }
+.glass-export-order ol { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+.glass-export-order li { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-bottom: 1px solid var(--border); background: var(--paper); }
+.glass-export-order li:last-child { border-bottom: 0; }
+.glass-export-order li.is-dragging { opacity: .55; }
+.glass-export-order li > span:not(.glass-export-grip) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glass-export-grip { cursor: grab; color: var(--muted); }
+.glass-export-order button { padding: 1px 7px; }
+.glass-export-note { color: var(--muted); font-size: 12px; margin: 10px 0; }
+.glass-export-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.glass-export-actions button { font: inherit; border: 1px solid var(--border); border-radius: 4px; padding: 7px 18px; background: var(--paper); color: var(--ink); cursor: pointer; }

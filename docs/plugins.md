@@ -6,6 +6,8 @@ Omarkie works with Typora-style CSS themes and runs a subset of the community pl
 
 Open **Display → Plugin Manager**, or use **Preferences → Manage plugins**. Plugins are off initially. Their enabled state and configuration persist locally. Enable a plugin to apply its default effect, use **Toggle effect** or its shortcut to change it, and disable it to unload it. Effect toggles are session state unless the upstream plugin explicitly saves its configuration.
 
+Electron commits plugin settings before quitting. Existing browser-stored settings carry over.
+
 | Plugin | Upstream file | Adapted behavior | Default shortcut |
 | --- | --- | --- | --- |
 | Auto numbering | `auto_number.js` | Numbers headings in the text, the sidebar outline and `[TOC]` with CSS counters; exported HTML/PDF keeps the numbers; **Plugin commands** toggles each scope and picks a layout (decimal from H1 or H2, Roman, CJK thesis style, none) | — |
@@ -33,6 +35,8 @@ The seven reading ports live in `src/plugins/reading`; provenance and MIT notice
 The eight upstream files are included unchanged under `third-party/typora-plugins`, pinned to commit `4a856129a9dbefaa963bfba4aacd3e5484bde60a`, with their MIT license and provenance. They are compiled as ordinary modules; the host does not use `eval` or enable `unsafe-eval`. Runtime adapters normalize a small set of DOM selectors and upstream CSS transition units.
 
 Disabled bundled plugins are never imported or evaluated. Enabling dynamically imports only that plugin; saved enabled plugins start after the first document paint, without blocking document startup. Heavy optional features must keep this boundary.
+
+**Learning mode** is a bundled renderer feature, not a Typora compatibility plugin. The Plugin Manager and title bar share the same switch. Study data stays in the vault. The optional local Tutor socket opens on the first local ask, never at startup.
 
 ## Installing another plugin
 

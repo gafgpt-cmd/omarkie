@@ -13,10 +13,11 @@ test("bundled catalog never evaluates disabled modules, and enable imports only 
   });
   globalThis.__pluginEvaluated = evaluated;
   try {
-    const { bundledPlugins } = await import('../src/plugins/catalog.ts');
-    assert.equal(bundledPlugins.length, 15);
+    const { bundledPlugins, learningPluginId } = await import('../src/plugins/catalog.ts');
     assert.deepEqual(evaluated, []);
-    assert.ok(bundledPlugins.every(plugin => !plugin.factory && typeof plugin.load === 'function'));
+    const learning = bundledPlugins.find(plugin => plugin.id === learningPluginId);
+    assert.ok(learning?.renderer && !learning.load && !learning.factory);
+    assert.ok(bundledPlugins.filter(plugin => !plugin.renderer).every(plugin => !plugin.factory && typeof plugin.load === 'function'));
     await bundledPlugins.find(plugin => plugin.id === 'auto_number').load();
     assert.equal(evaluated.length, 1);
     assert.match(evaluated[0], /auto_number/);

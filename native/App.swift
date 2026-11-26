@@ -112,6 +112,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var focusMode = false
   var typewriterMode = false
   var sidebarVisible = true
+  var readingLayersVisible = false
   var tabGroupID: String?
   var rendererReady = false
   var pendingCommands = [[String: Any]]()
@@ -497,10 +498,19 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
     case "payloadRequest":
       return try await owner.payload.request(arg(args, 0, [String: Any].self))
     case "readingStore":
-      let id = try arg(args, 0, String.self), request = try arg(args, 1, [String: Any].self)
+      let id = try arg(args, 0, String.self)
+      let request = try arg(args, 1, [String: Any].self)
       let scope = try NativeReadingStore.scope(store, id)
       let folder = store.folder
-      let result = try await owner.readingStore.perform(scope, request) { [weak self] in
+      var remoteImage: Data?
+      if request["action"] as? String == "putImage", let address = request["address"] {
+        guard request["bytes"] == nil, let raw = address as? String, raw.utf8.count <= 8192,
+              let parts = URLComponents(string: raw), parts.scheme?.lowercased() == "https",
+              parts.user == nil, parts.password == nil, let host = parts.host, !host.isEmpty,
+              let url = parts.url else { throw NativeFailure("图片路径不可用。") }
+        remoteImage = try await NativeEndpoint.response(URLRequest(url: url), timeout: 20, limit: DocumentStore.maxBytes)
+      }
+      let result = try await owner.readingStore.perform(scope, request, remoteImage: remoteImage) { [weak self] in
         DispatchQueue.main.sync {
           guard let self, self.store.folder == folder else { return false }
           return (try? self.store.require(id).path) == scope.file.path
@@ -885,6 +895,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       return nil
     case "viewState":
       focusMode = try arg(args, 0, Bool.self); typewriterMode = try arg(args, 1, Bool.self); sidebarVisible = try arg(args, 2, Bool.self)
+      readingLayersVisible = (args.dropFirst(3).first as? [String: Bool])?["reading-layers"] == true
       return nil
     case "setDirty":
       window.isDocumentEdited = try arg(args, 0, Bool.self)
@@ -951,7 +962,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if key.hasPrefix("F"), let number = Int(key.dropFirst()), (1...20).contains(number) { key = String(UnicodeScalar(0xF703 + number)!) }
         if key == "Backspace" { key = "\u{8}" }
         let item = NSMenuItem(
-          title: ["clean-converted", "collect-reading"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
+          title: ["clean-converted", "collect-reading", "reading-layers"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
           action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
         if command.selector == nil { item.target = owner }
         item.representedObject = command.action
@@ -1182,6 +1193,7 @@ final class NativeApplication: NSObject, NSApplicationDelegate, NSMenuItemValida
     if action == "focus" { item.state = current?.focusMode == true ? .on : .off }
     if action == "typewriter" { item.state = current?.typewriterMode == true ? .on : .off }
     if action == "sidebar" { item.state = current?.sidebarVisible == true ? .on : .off }
+    if action == "reading-layers" { item.state = current?.readingLayersVisible == true ? .on : .off }
     if let definition = commandGroups.flatMap({ $0.items }).first(where: { $0.action == action }), let context = definition.context {
       if current?.store.records.isEmpty != false { return false }
       if context == "rich" { return current?.richMode == true }

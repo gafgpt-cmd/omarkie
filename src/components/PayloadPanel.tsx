@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
-import MarkdownIt from "markdown-it";
-import mark from "markdown-it-mark";
-import { payloadEndpoint, payloadInputBytes, payloadQuestionLength } from "../../shared/payload-endpoint.mjs";
+import { payloadQuestionLength } from "../../shared/payload-endpoint.mjs";
 import { host } from "../host";
 import { t } from "../i18n";
 import type { Preferences } from "../preferences";
+import { PayloadNotice, payloadConnection, renderPayload, validPayloadSource } from "./payload-controls";
 import "./payload.css";
-
-const preview = new MarkdownIt({ html: false, breaks: true }).use(mark).disable(["image", "link", "autolink", "reference"]);
 
 export default function PayloadPanel({ mode, source, selection, preferences, editable, append, configure, close }: {
   mode: "summary" | "question"; source: string; selection: boolean; preferences: Preferences;
@@ -23,24 +20,21 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
   const pending = useRef(false);
   const panel = useRef<HTMLElement>(null);
   useEffect(() => { panel.current?.focus(); }, []);
-  const endpoint = payloadEndpoint(preferences.payloadBaseUrl);
-  const allowed = endpoint && (endpoint.local || preferences.payloadAllowedOrigins.includes(endpoint.origin));
-  const configured = allowed && !!preferences.payloadModel.trim();
-  const validSource = useMemo(() => source.length <= payloadInputBytes && !!source.trim() && new TextEncoder().encode(source).length <= payloadInputBytes, [source]);
-  const summaryHtml = useMemo(() => summary ? preview.render(summary) : "", [summary]);
+  const connection = payloadConnection(preferences);
+  const validSource = useMemo(() => validPayloadSource(source), [source]);
+  const summaryHtml = useMemo(() => summary ? renderPayload(summary) : "", [summary]);
 
   async function send(ask: boolean) {
-    if (pending.current || !configured || !endpoint || !validSource || (ask && !question.trim())) return;
+    if (pending.current || !connection || !validSource || (ask && !question.trim())) return;
     pending.current = true;
     setBusy(true);
     setError("");
     if (ask) setAnswer("");
     try {
       const result = await host.payloadRequest!({
-        baseUrl: preferences.payloadBaseUrl, confirmedOrigin: endpoint.origin, ...(endpoint.local ? {} : { allowedOrigin: endpoint.origin }),
-        model: preferences.payloadModel, modernLimit: preferences.payloadModernLimit, source, ...(ask ? { question: question.trim() } : {}),
+        ...connection, source, ...(ask ? { question: question.trim() } : {}),
       });
-      if (ask) { setAnswer(preview.render(result)); setQuestion(""); }
+      if (ask) { setAnswer(renderPayload(result)); setQuestion(""); }
       else {
         // Model output may try to load remote resources when inserted into the note.
         setSummary(result.replace(/!\[/g, "&#33;[").replace(/<(?=[A-Za-z!/?])/g, "&lt;"));
@@ -53,12 +47,9 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
   return <aside className="payload-panel" ref={panel} tabIndex={-1} aria-label={t("Payload")} onKeyDown={event => { if (event.key === "Escape") { event.stopPropagation(); close(); } }}>
     <header><h2>{t("Payload")}</h2><button type="button" className="icon-button" aria-label={t("Close Payload")} onClick={close}><X size={16} /></button></header>
     <div className="payload-body">
-      {configured && endpoint ? <div className="payload-notice" id="payload-send-notice">
-        <p>{selection ? t("Sends the selected text to {{origin}}.", { origin: endpoint.origin }) : t("Sends this note’s text to {{origin}}.", { origin: endpoint.origin })}</p>
-        <p>{t("Do not send identifiable medical data. Even a local server can forward requests.")}</p>
-      </div> : <p>{t("Configure and allow the Payload endpoint in Preferences.")} <button type="button" onClick={configure}>{t("偏好设置")}</button></p>}
+      <PayloadNotice origin={connection?.confirmedOrigin} enabled={preferences.payloadEnabled} selection={selection} configure={configure} />
       {!validSource && <p className="form-error">{t("Select non-empty text up to 24 KB to use Payload.")}</p>}
-      {mode === "summary" && !summary && <button type="button" className="primary-button" aria-describedby="payload-send-notice" disabled={!configured || !validSource || busy} onClick={() => void send(false)}>{t("Send text for summary")}</button>}
+      {mode === "summary" && !summary && <button type="button" className="primary-button" aria-describedby="payload-send-notice" disabled={!connection || !validSource || busy} onClick={() => void send(false)}>{t("Send text for summary")}</button>}
       {summary && <section aria-label={t("Payload summary")}>
         <div className="payload-result" dangerouslySetInnerHTML={{ __html: summaryHtml }} />
         <button type="button" disabled={!editable || inserted} onClick={() => {
@@ -68,7 +59,7 @@ export default function PayloadPanel({ mode, source, selection, preferences, edi
       </section>}
       {(mode === "question" || summary) && <form aria-describedby="payload-send-notice" onSubmit={event => { event.preventDefault(); void send(true); }}>
         <label className="workspace-field">{t("Ask one question about this text")}<input type="text" autoComplete="off" maxLength={payloadQuestionLength} value={question} onChange={event => setQuestion(event.target.value)} disabled={busy} /></label>
-        <button className="primary-button" disabled={!configured || !validSource || busy || !question.trim()}>{t("Send question")}</button>
+        <button className="primary-button" disabled={!connection || !validSource || busy || !question.trim()}>{t("Send question")}</button>
       </form>}
       {busy && <p role="status">{t("Waiting for Payload…")}</p>}
       {error && <p role="alert" className="form-error">{error}</p>}

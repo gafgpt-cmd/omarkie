@@ -88,6 +88,7 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - Required compatibility checks and contribution rules: [CONTRIBUTING.md](../CONTRIBUTING.md#make-a-change).
 - `npm run test:desktop`, `test:parity`, `test:background-desktop`: Electron editing, saving, images, export and recovery.
 - `npm run test:kernel-desktop`, `test:features`, `test:alignment`, `test:encoding`: desktop interaction suites (scope per suite: CONTRIBUTING.md).
+- `node tests/menu-desktop.mjs --font-restart-only`: repeat just the strict quit/relaunch font and size regression.
 - `npm run test:native`, `npm run test:webkit`: Swift file layer and WebKit integration on macOS.
 
 **Speed checks.** After `npm run build`, use the [timing command and release policy](../README.md#performance-targets).
@@ -95,7 +96,9 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - Results: `test-results/perf/perf-results.json`; `OMARKIE_QA_DIR` overrides the output directory.
 - Reports include medians. Photo samples report `naturalSize` (density-corrected browser dimensions, not decoded pixel counts) and `loadedAfter3s` (loaded-image count).
 - Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
+- Glass: the 50,000-note unit test checks searchable results and heartbeat progress. Only `test:perf` enforces the 400 ms main-thread gap budget.
+- On a 60 Hz display, drawing ink and dragging arrows must miss no refreshes: no gap above 25 ms, and p95 at most 17.5 ms. The hover check measures handler CPU time, not display intervals.
 - `OMARKIE_PERF_RUNS` sets repetitions (default 3).
-- `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar.
+- `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar for the UI timings. Glass indexing measures the checked-out code.
 
 Automated composition checks do not replace manual input-method testing.

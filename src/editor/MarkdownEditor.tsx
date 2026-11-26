@@ -64,6 +64,8 @@ export interface EditorHandle {
   imageOffset(image: HTMLImageElement): number | undefined;
   selectionRange(): { from: number; to: number; context: string } | undefined;
   readingContext(): ReadingContext | undefined;
+  topOfLine(line: number): number | null;
+  trackChanges(listener: (map: (offset: number) => number) => void): () => void;
   replaceRange(from: number, to: number, text: string, expected: string, allowReading?: boolean): boolean;
 }
 interface Props {
@@ -204,8 +206,8 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       if (model.current && window.desktop?.historyState)
         void window.desktop
           .historyState(
-            !viewOptions.current.readOnly && model.current.canUndo,
-            !viewOptions.current.readOnly && model.current.canRedo,
+            !viewOptions.current.locked && (viewOptions.current.readOnly ? model.current.readingHistory() : model.current.canUndo),
+            !viewOptions.current.locked && (viewOptions.current.readOnly ? model.current.readingHistory(true) : model.current.canRedo),
             activeMode.current,
             model.current.nodeAt(model.current.selection.head)?.kind || "",
           )
@@ -271,19 +273,17 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       syncing.current = false;
     }
     function history(redo = false) {
-      if (editingBlocked()) return;
       const doc = model.current;
-      if (!doc) return;
+      if (!doc || editingBlocked(doc.readingHistory(redo))) return;
       if (!activeMode.current && source.current) {
         const s = source.current.state.selection.main;
         doc.selection = { anchor: s.anchor, head: s.head };
       }
-      if (activeMode.current) {
+      if (activeMode.current && !viewOptions.current.readOnly) {
         redo ? rich.current?.redo() : rich.current?.undo();
       } else if (redo ? doc.redo() : doc.undo()) {
-        syncSource();
-        publish();
-        source.current?.focus();
+        if (activeMode.current) rich.current?.render(); else syncSource();
+        publish(); focusEditor();
       }
     }
     function insertImage(file: File) { imageQueue.current = imageQueue.current.then(() => insertImageNow(file)); return imageQueue.current; }
@@ -530,6 +530,16 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
           const from = Math.min(anchor, head), to = Math.max(anchor, head);
           return { nodes: doc.nodes, headings: (doc.environment.headings as Heading[] | undefined) || [], from, to, index: doc.nodeIndexNear(from), text: doc.text };
         },
+        topOfLine: line => activeMode.current ? rich.current?.topOfLine(line) ?? null : null,
+        trackChanges: listener => {
+          const doc = model.current;
+          if (!doc) return () => {};
+          return doc.onChange((from, to, insert, length) => {
+            const changes = codeMirror?.ChangeSet.of({ from, to, insert }, length);
+            if (changes) listener(offset => changes.mapPos(offset, 1));
+            else listener(offset => offset <= from ? offset : offset >= to ? offset + insert.length - (to - from) : from + insert.length);
+          });
+        },
         replaceRange: (from, to, text, expected, allowReading) => {
           const doc = model.current;
           if (!doc || editingBlocked(allowReading)) return false;
@@ -588,8 +598,15 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         insert: (text) => insert(text),
         selectionText: (markdown = false) => {
           if (activeMode.current) { const value = rich.current?.clipboard(); return (markdown ? value?.markdown : value?.plain) || ""; }
-          const selected = source.current?.state.selection.main;
-          return selected ? source.current!.state.sliceDoc(selected.from, selected.to) : "";
+          const view = source.current, native = window.getSelection();
+          if (view && native?.anchorNode && native.focusNode && !native.isCollapsed &&
+              view.contentDOM.contains(native.anchorNode) && view.contentDOM.contains(native.focusNode)) {
+            const anchor = view.posAtDOM(native.anchorNode, native.anchorOffset);
+            const head = view.posAtDOM(native.focusNode, native.focusOffset);
+            return view.state.sliceDoc(Math.min(anchor, head), Math.max(anchor, head));
+          }
+          const selected = view?.state.selection.main;
+          return selected ? view!.state.sliceDoc(selected.from, selected.to) : "";
         },
         readingText: fromCursor => {
           const doc = model.current, inRichMode = activeMode.current;

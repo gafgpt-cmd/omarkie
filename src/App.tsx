@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, FolderOpen, X, AlertCircle, Layers } from "lucide-react";
+import { FilePlus2, FolderOpen, X, AlertCircle } from "lucide-react";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -20,6 +20,8 @@ import { InsertDialog } from "./components/InsertDialog";
 import type { InsertKind } from "./components/InsertDialog";
 import { QuickOpen } from "./components/QuickOpen";
 import { Dialog } from "./components/Dialog";
+import { GlassExport } from "./components/GlassExport";
+import { paintGlassPrint } from "./editor/glass-print";
 import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
@@ -39,15 +41,22 @@ import { countCharacters } from "./characters";
 import type { PluginRuntime } from "./plugins/runtime";
 import { t } from "./i18n";
 import { afterDocumentPaint } from "./plugins/startup";
-import { bundledPlugins, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
+import { bundledPlugins, learningPluginId, loadPluginPreferences, pluginPreferenceKey } from "./plugins/catalog";
 import type { PluginDefinition, PluginState } from "./plugins/types";
 const PluginsDialog = lazy(() => import("./components/PluginsDialog").then(module => ({ default: module.PluginsDialog })));
 import { backgroundRevisionKey, backgroundStyle } from "./background";
 import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
-import type { ReadingLayerState } from "./components/ReadingLayers";
-const ReadingLayers = lazy(() => import("./components/ReadingLayers"));
-const defaultReadingLayers: ReadingLayerState = { active: "note", note: true, visual: true };
+const LearningMode = lazy(() => import("./components/LearningMode"));
+const SyncDialog = lazy(() => import("./components/SyncDialog"));
+
+function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
+  if (!folder || !file) return;
+  const root = folder.replaceAll("\\", "/").replace(/\/+$/u, ""), path = file.replaceAll("\\", "/");
+  if (root && path.startsWith(`${root}/`)) return path.slice(root.length + 1);
+  return /^(?:[a-z]:)?\//iu.test(path) ? undefined : path;
+}
+
 export default function App() {
   const [painted, setPainted] = useState(false);
   const [readyEditors, setReadyEditors] = useState<Record<string, "rich" | "source">>({});
@@ -65,22 +74,67 @@ export default function App() {
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
+  const initialPreferences = useRef(preferences);
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
   const [background,setBackground] = useState<BackgroundAsset | null>(null);
   const backgroundRequest = useRef(0);
   const [installedPlugins, setInstalledPlugins] = useState<PluginDefinition[]>([]);
   const [pluginPreferences, setPluginPreferences] = useState(loadPluginPreferences);
+  const initialPluginPreferences = useRef(pluginPreferences);
+
   const [pluginStates, setPluginStates] = useState<Record<string, PluginState>>({});
   const [readOnly, setReadOnly] = useState(false);
   const pluginRuntime = useRef<PluginRuntime | null>(null);
   const [typewriter, setTypewriter] = useState(false);
-  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | InsertKind | null>(null);
+  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | "glass-export" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
-  const [readingOpen, setReadingOpen] = useState(false);
-  const [readingViews, setReadingViews] = useState<Record<string, ReadingLayerState>>({});
+  const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
+  const [showFiles, setShowFiles] = useState(false);
+  const [sheetsRoot, setSheetsRoot] = useState<HTMLDivElement | null>(null);
+  const [halfTile, setHalfTile] = useState(() => window.matchMedia("(max-width: 820px)").matches);
+  const [drawer, setDrawer] = useState(false);
+  const [glassOffer, setGlassOffer] = useState<{ count: number; notes?: { path: string; title?: string }[] } | null>(null);
+  const [glassBusy, setGlassBusy] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
+  const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
+  const glassDismissed = useRef(false);
+  useEffect(() => {
+    glassDismissed.current = false;
+    setGlassOffer(null);
+    if (!session.ready || !session.folder || !host.glass) return;
+    let current = true, received = false;
+    const apply = (status: { bring?: NonNullable<typeof glassOffer> | null } | null) => {
+      if (!current || glassDismissed.current) return;
+      setGlassOffer(status?.bring?.count ? status.bring : null);
+    };
+    const stop = host.onGlassStorage?.(status => { received = true; apply(status); });
+    void host.glass({ action: "status" }).then(status => {
+      if (!received) apply(status as Parameters<typeof apply>[0]);
+    }).catch(() => {});
+    return () => { current = false; stop?.(); };
+  }, [session.ready, session.folder]);
+  async function bringGlass() {
+    if (!host.glass) return;
+    setGlassBusy(true);
+    try {
+      const result = await host.glass({ action: "bring" }) as { brought?: unknown[] };
+      setGlassOffer(null);
+      if (Array.isArray(result?.brought)) session.setMessage(t("Glass brought for {{count}} notes.", { count: result.brought.length }));
+    } catch (error) {
+      session.setMessage((error as Error).message);
+    } finally {
+      setGlassBusy(false);
+    }
+  }
+  useEffect(() => {
+    const tile = window.matchMedia("(max-width: 820px)");
+    const changed = () => { setHalfTile(tile.matches); setDrawer(false); };
+    tile.addEventListener("change", changed);
+    return () => tile.removeEventListener("change", changed);
+  }, []);
   const [selectedText, setSelectedText] = useState("");
   const [selection, setSelection] = useState("");
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
@@ -100,6 +154,56 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const readingSupported = !!window.desktop?.readingStore;
+  const glassSupported = !!window.desktop?.glassState;
+  const [glassOn, setGlassOn] = useState(false);
+  // The last press owns the state: a slow write from an earlier toggle must not flip it back.
+  const glassOnRef = useRef(false), glassSeq = useRef(0), glassPending = useRef(0);
+  const settleGlass = (visible: boolean) => { glassOnRef.current = visible; setGlassOn(visible); };
+  useEffect(() => {
+    if (!glassSupported) return;
+    let current = true;
+    void window.desktop!.glassState({ action: "read" }).then((response: { ok: boolean; value?: { visible?: boolean } }) => {
+      if (current && response?.ok) settleGlass(response.value?.visible === true);
+    }).catch(() => {});
+    // A broadcast from a write this window did not start wins; our own late echoes do not.
+    const stop = window.desktop!.onGlass?.((event: { visible?: boolean }) => { if (!glassPending.current) settleGlass(event?.visible === true); });
+    return () => { current = false; stop?.(); };
+  }, [glassSupported, session.folder]);
+  function toggleGlass() {
+    if (!glassSupported) return;
+    const visible = !glassOnRef.current, seq = ++glassSeq.current;
+    glassPending.current += 1;
+    settleGlass(visible);
+    if (visible) performance.mark("omarkie:glass-toggle");
+    void window.desktop!.glassState({ action: "write", visible }).then((response: { ok: boolean; error?: string; value?: { visible?: boolean } }) => {
+      glassPending.current = Math.max(0, glassPending.current - 1);
+      if (seq !== glassSeq.current) return;
+      if (response?.ok) settleGlass(response.value?.visible === true);
+      else { settleGlass(!visible); session.setMessage(response?.error ?? t("当前不可编辑")); }
+    }).catch((error: Error) => {
+      glassPending.current = Math.max(0, glassPending.current - 1);
+      if (seq === glassSeq.current) { settleGlass(!visible); session.setMessage(error.message); }
+    });
+  }
+  const sharedSupported = !!window.desktop?.sharedGlassState;
+  const [sharedOn, setSharedOn] = useState(false);
+  useEffect(() => {
+    if (!sharedSupported) return;
+    let current = true;
+    void host.sharedGlassState!({ action: "read" }).then(value => { if (current) setSharedOn(value.shared === true); }).catch(() => {});
+    return () => { current = false; };
+  }, [sharedSupported, session.folder]);
+  function toggleSharedGlass() {
+    if (!sharedSupported) return;
+    const shared = !sharedOn;
+    setSharedOn(shared);
+    void host.sharedGlassState!({ action: "write", shared })
+      .then(value => setSharedOn(value.shared === true))
+      .catch((error: Error) => { setSharedOn(!shared); session.setMessage(error.message); });
+  }
+  const learningEnabled = readingSupported && !!pluginPreferences[learningPluginId]?.enabled;
+  const readingVisible = learningEnabled && !!active && !focus && painted;
   const cleanVisible = !!active && cleanId === active.id;
   function closeClean() {
     setCleanId(null);
@@ -109,17 +213,42 @@ export default function App() {
   function openClean() {
     if (active && !editor()?.composing()) setCleanId(active.id);
   }
+  function toggleClean() {
+    if (cleanVisible) closeClean();
+    else openClean();
+  }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
-  const payloadEnabled = preferences.payloadEnabled && !!window.desktop?.payloadRequest;
-  const activePayload = payloadEnabled && payload?.id === active?.id ? payload : null;
+  const payloadSupported = !!window.desktop?.payloadRequest;
+  const payloadEnabled = preferences.payloadEnabled && payloadSupported;
+  const learningSaved = readingVisible && !!active.path && !!session.folder &&
+    active.path.replaceAll("\\", "/").startsWith(session.folder.replaceAll("\\", "/").replace(/\/?$/, "/"));
+  const tutorKey = learningSaved && payloadSupported && activeEditorReady ? `${active.id}:${active.path}:${session.folder}` : null;
+  const tutorOpen = !!tutorKey && tutor === tutorKey;
+  // Payload and the Tutor curtain share the side slot; the editor being ready is not a Tutor.
+  // Keying this on tutorKey hid Payload in every Learning session whose editor stayed mounted.
+  const payloadAvailable = payloadEnabled && !tutorOpen;
+  const activePayload = payload && payload.id === active?.id && payloadAvailable ? payload : null;
+  const sidebarVisible = readingVisible && halfTile ? drawer && !activePayload && !tutorOpen : sidebar;
+  const filesVisible = sidebarVisible && (!readingVisible || showFiles);
+  useEffect(() => { if (readingVisible && !halfTile) setSidebar(true); }, [readingVisible, halfTile]);
+  useEffect(() => { if (tutor && tutor !== tutorKey) setTutor(null); }, [tutor, tutorKey]);
+  function openTutor() {
+    if (!tutorKey) return;
+    setTutor(tutorKey); closeFlashcards();
+    if (halfTile) setDrawer(false);
+  }
+  function closeTutor() { setTutor(null); editor()?.focus(); }
+  function openFilesRail() {
+    setShowFiles(true);
+    openSidebar();
+  }
   useEffect(() => {
-    if (payload && (!payloadEnabled || payload.id !== active?.id)) setPayload(null);
-  }, [payloadEnabled, payload, active?.id]);
-  function openPayload(mode: "summary" | "question", selectedSource?: string) {
-    if (!payloadEnabled || !active) return;
-    const target = editor();
-    const selected = selectedSource ?? target?.selectionText(true);
-    if (selectedSource !== undefined && !selectedSource.trim()) return;
+    if (payload && !activePayload) setPayload(null);
+  }, [payload, activePayload]);
+  function openPayload(mode: "summary" | "question", selection?: string) {
+    if (!active || !payloadAvailable) return;
+    if (learningEnabled && halfTile) setDrawer(false);
+    const target = editor(), selected = selection ?? target?.selectionText(true);
     const source = selected || target?.markdown() || active.content;
     setPayload(previous => ({ id: active.id, sequence: (previous?.sequence ?? 0) + 1, mode, source, selection: !!selected }));
   }
@@ -130,9 +259,9 @@ export default function App() {
     const callout = ["> [!summary] " + t("Payload summary"), ...summary.split(/\r\n?|\n/).map(line => line ? `> ${line}` : ">")].join(eol);
     if (!target.replaceRange(source.length, source.length, (source ? eol.repeat(2) : "") + callout + eol, "", true)) throw new Error(t("当前不可编辑"));
   }
-  const readingView = readingViews[session.activeId] || defaultReadingLayers;
-  const readingVisible = readingOpen && !!active && !focus;
-  const renderedView = readingVisible ? readingView.visual : rendered;
+  const [learningViews, setLearningViews] = useState<Record<string, boolean>>({});
+  const renderedFor = (id: string) => learningEnabled ? learningViews[id] ?? rendered : rendered;
+  const renderedView = active ? renderedFor(active.id) : rendered;
   const suppressRemoteImages = readingVisible || cleanVisible;
   const remoteImages = preferences.remoteImages && !suppressRemoteImages;
   useInsertionEffect(() => {
@@ -140,7 +269,7 @@ export default function App() {
     setMarkdownOptions({ ...preferences, remoteImages });
   }, [preferences, remoteImages]);
   function setRenderedView(value: boolean) {
-    if (readingVisible) setReadingViews(current => ({ ...current, [session.activeId]: { ...readingView, visual: value } }));
+    if (learningEnabled && active) setLearningViews(previous => ({ ...previous, [active.id]: value }));
     else setRendered(value);
   }
   useEffect(() => {
@@ -154,8 +283,10 @@ export default function App() {
   const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
   pluginContext.current = { active, editor, preferences, notify: session.setMessage };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
+  const runtimeDefinitions = useMemo(() => pluginDefinitions.filter(definition => !definition.renderer), [pluginDefinitions]);
+  const runtimeEnabled = runtimeDefinitions.some(definition => pluginPreferences[definition.id]?.enabled);
   useEffect(() => {
-    if (!painted || !Object.values(pluginPreferences).some(value => value.enabled)) { setRuntimeReady(false); return; }
+    if (!painted || !runtimeEnabled) { setRuntimeReady(false); return; }
     let cancelled = false;
     let loaded: PluginRuntime | null = null;
     void import("./plugins/runtime").then(({ PluginRuntime }) => {
@@ -182,20 +313,26 @@ export default function App() {
     loaded = runtime; pluginRuntime.current = runtime; setRuntimeReady(true);
     }).catch(error => session.setMessage(error.message));
     return () => { cancelled = true; pluginRuntime.current = null; void loaded?.destroy(); };
-  }, [painted, Object.values(pluginPreferences).some(value => value.enabled)]);
+  }, [painted, runtimeEnabled]);
   useEffect(() => {
     if (!painted) return;
     void host.plugins().then(items => setInstalledPlugins(items.map(item => ({ ...item, description: t("本地插件，通过兼容接口运行。"), config: {} })))).catch(error => session.setMessage(error.message));
   }, [painted, dialog === "plugins"]);
-  useEffect(() => { localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences)); }, [pluginPreferences]);
+  useLayoutEffect(() => {
+    if (window.desktop?.savePluginPreferences) {
+      if (pluginPreferences !== initialPluginPreferences.current || localStorage.getItem(pluginPreferenceKey) !== null)
+        window.desktop.savePluginPreferences(JSON.stringify(pluginPreferences));
+    } else localStorage.setItem(pluginPreferenceKey, JSON.stringify(pluginPreferences));
+  }, [pluginPreferences]);
+
   useEffect(() => {
     if (!session.ready || !active) return;
-    for (const definition of pluginDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
-    if (!activeEditorReady || paintedDocument !== active.id || !pluginDefinitions.some(definition => pluginPreferences[definition.id]?.enabled)) return;
+    for (const definition of runtimeDefinitions) if (!pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, false);
+    if (!activeEditorReady || paintedDocument !== active.id || !runtimeEnabled) return;
     return afterDocumentPaint(() => {
-      for (const definition of pluginDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
+      for (const definition of runtimeDefinitions) if (pluginPreferences[definition.id]?.enabled) void pluginRuntime.current?.setEnabled(definition, true);
     });
-  }, [pluginDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady]);
+  }, [runtimeDefinitions, pluginPreferences, session.ready, active?.id, activeEditorReady, paintedDocument, runtimeReady, runtimeEnabled]);
   useEffect(() => { if (preferences.spellcheck) void host.spellcheckLanguages(preferences.spellcheckLanguages).catch(() => {}); }, [preferences.spellcheck, preferences.spellcheckLanguages]);
   useEffect(() => { void host.setRemoteImages(remoteImages).catch(() => {}); }, [remoteImages]);
   useEffect(() => {
@@ -203,7 +340,7 @@ export default function App() {
     return afterDocumentPaint(() => pluginRuntime.current?.documentChanged());
   }, [active?.id, active?.path, active?.content, activeEditorReady, paintedDocument, runtimeReady]);
   useEffect(() => { pluginRuntime.current?.event("beforeToggleSourceMode", !renderedView); }, [renderedView]);
-  useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", sidebar); }, [sidebar]);
+  useEffect(() => { pluginRuntime.current?.event("afterToggleSidebar", filesVisible); }, [filesVisible]);
   async function installPlugin(folder = false) { const installed = await host.installPlugin(folder); if (installed) setInstalledPlugins(previous => [...previous.filter(item => item.id !== installed.id), { ...installed, description: t("本地插件，通过兼容接口运行。"), config: {} }]); }
   async function removePlugin(id: string) {
     const definition = pluginDefinitions.find(item => item.id === id); if (!definition || definition.builtin) return;
@@ -213,8 +350,8 @@ export default function App() {
   }
   const settledContent = useSettled(active?.content || "", active?.id);
   const headings = useMemo(
-    () => sidebar && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
-    [settledContent, preferences, sidebar, tab, active?.id],
+    () => filesVisible && tab === "outline" ? (active && editors.current.get(active.id)?.headings(settledContent)) || extractHeadings(settledContent) : [],
+    [settledContent, preferences, filesVisible, tab, active?.id],
   );
   const characters = useMemo(
     () => countCharacters(settledContent),
@@ -224,17 +361,22 @@ export default function App() {
   const statistics = useMemo(() => dialog === "statistics" && selection ? documentStatistics(selection, selection, preferences.readingSpeed) : wholeStatistics, [dialog, selection, wholeStatistics]);
   const selectionCharacters = useMemo(() => Array.from(selection.replace(/\s/g, "")).length, [selection]);
   useEffect(() => { localStorage.setItem("omarkie-count-unit", countUnit); }, [countUnit]);
+  useLayoutEffect(() => {
+    if (window.desktop?.savePreferences) {
+      if (preferences !== initialPreferences.current || localStorage.getItem("omarkie-preferences") !== null)
+        window.desktop.savePreferences(JSON.stringify(preferences));
+    } else localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
+  }, [preferences]);
   useEffect(() => {
-    localStorage.setItem("omarkie-preferences", JSON.stringify(preferences));
     document.documentElement.style.setProperty("--editor-font-size", `${preferences.fontSize}px`);
     document.documentElement.style.setProperty("--editor-line-height", String(preferences.lineHeight));
     document.documentElement.style.setProperty("--editor-columns", `${preferences.editorColumns}ch`);
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar, outline: sidebar && tab === "outline", files: sidebar && tab === "files", "file-tree": sidebar && tab === "tree" };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, glass: glassOn, "shared-glass": sharedOn };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebar, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebar, renderedView, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, glassOn, sharedOn, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -267,33 +409,58 @@ export default function App() {
   const flashcardsVisible = !!flashcardPanel && flashcardPanel.id === active?.id
     && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
   const closeFlashcards = () => setFlashcardPanel(null);
-  function openFlashcards(target?: FlashcardPanel["target"]) {
-    if (window.desktop?.readingStore && active?.path && session.folder)
-      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target });
+  function openFlashcards(target?: FlashcardPanel["target"], answer?: FlashcardPanel["answer"]) {
+    if (window.desktop?.readingStore && active?.path && session.folder) {
+      setTutor(null);
+      if (halfTile) setDrawer(false);
+      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target, answer });
+    }
   }
-  const readingSaved = !!active?.path && !!session.folder;
-  function closeReading() {
-    setReadingOpen(false);
-    if (cleanVisible) closeClean();
-    if (flashcardsVisible) closeFlashcards();
-    setPayload(null);
+  function toggleReading() {
+    if (!readingSupported || editor()?.composing()) return;
+    setPluginPreferences(previous => ({ ...previous, [learningPluginId]: { enabled: !learningEnabled } }));
+    setShowFiles(false);
+    setDrawer(false);
+    if (learningEnabled) {
+      closeFlashcards();
+      setTutor(null);
+      requestAnimationFrame(() => editor()?.focus());
+    } else setFocus(false);
+  }
+  function openSidebar() {
+    if (readingVisible && halfTile) {
+      setTutor(null); setPayload(null); closeFlashcards(); setDrawer(true);
+    } else setSidebar(true);
+  }
+  function toggleSidebar() {
+    if (readingVisible && halfTile) {
+      if (sidebarVisible) setDrawer(false);
+      else openSidebar();
+    } else setSidebar(value => !value);
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setPreferences(next); }
-  async function exportDocument(kind: string, options?: ConversionOptions) {
+  async function exportDocument(kind: string, options?: ConversionOptions, glassScope?: "page" | "flat" | "handout") {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
+    if (glassScope === "handout") document.body.classList.add("printing-handout");
     try {
       await host.persist({ documents: session.documents, activeId: session.activeId });
       await loadHighlighting();
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
+      const glassNote = vaultRelative(session.folder, active.path);
+      if (glassScope && glassNote && host.glass) {
+        const glass = await host.glass({ action: "list", note: glassNote });
+        const magnets = (Array.isArray(glass?.magnets) ? glass.magnets : []).filter((magnet: { deleted?: boolean }) => !magnet.deleted);
+        if (magnets.length) await paintGlassPrint(printDocument.current, { note: glassNote, title: active.name, magnets, scope: glassScope });
+      }
       const result = options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
     } catch (error) { session.setMessage((error as Error).message); }
-    finally { document.body.classList.remove("printing"); exportingRef.current = false; setExporting(false); }
+    finally { document.body.classList.remove("printing", "printing-handout"); exportingRef.current = false; setExporting(false); }
   }
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -301,9 +468,9 @@ export default function App() {
   }, [theme]);
   useEffect(() => {
     const sync = (event: StorageEvent) => {
-      if (event.key === pluginPreferenceKey) setPluginPreferences(loadPluginPreferences());
+      if (event.key === pluginPreferenceKey && !window.desktop?.savePluginPreferences) setPluginPreferences(loadPluginPreferences());
       if (event.key === "omarkie-theme") setTheme(event.newValue || "light");
-      if (event.key === "omarkie-preferences") setPreferences(loadPreferences());
+      if (event.key === "omarkie-preferences" && !window.desktop?.savePreferences) setPreferences(loadPreferences());
       if (event.key === backgroundRevisionKey) void refreshBackground().catch(error => session.setMessage(error.message));
     };
     window.addEventListener("storage", sync); return () => window.removeEventListener("storage", sync);
@@ -314,7 +481,7 @@ export default function App() {
   useEffect(() => {
     editor()?.focus();
   }, [session.activeId]);
-  commands.current = ({ action, document: opened, anchor, line, message }) => {
+  commands.current = ({ action, document: opened, anchor, line, message, note: boardNote, magnet: boardMagnet }) => {
     if (["new", "newWindow", "newTab", "open"].includes(action) && window.desktop?.windowAction) { void host.windowAction(action).catch((error: Error) => session.setMessage(error.message)); return; }
     const context = commandsByAction.get(action)?.context;
     if (readOnly && ((context && context !== "document") || ["delete-word", "undo", "redo", "paste-plain", "image", "table", "link", "reference-link", "footnote", "copy-all-images", "move-all-images", "upload-all-images"].includes(action))) { session.setMessage(t("只读模式已开启，请先在插件管理中关闭或切换只读效果。")); return; }
@@ -330,10 +497,7 @@ export default function App() {
     else if (action === "showcase") void session.openShowcase();
     else if (action === "save") void session.save();
     else if (["document-tools", "properties", "backlinks", "graph"].includes(action) && active) setTools({ tab: action === "document-tools" ? "okf" : action as ToolTab, id: active.id });
-    else if (action === "clean-converted" && active) {
-      if (cleanVisible) closeClean();
-      else openClean();
-    }
+    else if (action === "clean-converted" && active) toggleClean();
     else if (action === "collect-reading" && active) {
       const current = editor();
       if (current?.composing()) { session.setMessage(t("Finish composing text before collecting highlights and callouts.")); return; }
@@ -358,10 +522,29 @@ export default function App() {
     else if (action === "close-window") void session.closeWindow();
     else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRenderedView(!renderedView);
-    else if (action === "sidebar") setSidebar((value) => !value);
+    else if (action === "reading-layers") toggleReading();
+    else if (action === "glass") toggleGlass();
+    else if (action === "shared-glass") toggleSharedGlass();
+    else if (action === "glass-export" && active) setDialog("glass-export");
+    else if (action === "sync") setSyncOpen(true);
+    else if (action === "open-board") {
+      if (!boardNote || !boardMagnet) return;
+      if (!preferences.boardEnabled) { session.setMessage(t("Enable the Board add-on in Settings first.")); return; }
+      void (async () => {
+        const current = vaultRelative(session.folder, active?.path);
+        if (current !== boardNote) {
+          const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === boardNote);
+          if (!file) { session.setMessage(t("Board note is not in this folder.")); return; }
+          const record = await session.openToken(file.token);
+          if (!record) return;
+        }
+        setBoardRequest({ note: boardNote, magnet: boardMagnet, at: Date.now() });
+      })().catch((error: Error) => session.setMessage(error.message));
+    }
+    else if (action === "sidebar") toggleSidebar();
     else if (action === "outline" || action === "files" || action === "file-tree") {
+      openFilesRail();
       setTab(action === "file-tree" ? "tree" : action);
-      setSidebar(true);
     } else if (action === "theme")
       chooseTheme(value => toggledTheme(value, omarchy?.mode !== "light"));
     else if (action === "focus") setFocus((value) => !value);
@@ -444,6 +627,8 @@ export default function App() {
         setAbout(false);
       }
       const action = commandForKey(event);
+      const printable = action ? commandsByAction.get(action)?.key : undefined;
+      if (printable && /^[A-Za-z]$/.test(printable) && event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]')) return;
       if (window.desktop?.windowAction && ["new", "newWindow", "newTab", "open", "save", "saveAs", "close-window"].includes(action || "")) return;
       if (action) {
         event.preventDefault();
@@ -472,9 +657,14 @@ export default function App() {
         : active?.path
           ? t("已保存")
           : t("本地草稿");
+  const payloadView = activePayload && <Suspense fallback={null}><PayloadPanel
+    key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
+    preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
+    configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
+  /></Suspense>;
   return (
     <div
-      className={`app-shell ${sidebar ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${activePayload ? " payload-open" : ""}`}
+      ref={shell} className={`app-shell ${sidebarVisible ? "" : "sidebar-hidden"} ${focus ? "focus-mode" : ""} ${typewriter ? "typewriter-mode" : ""}${readingVisible ? " learning-mode" : ""}${activePayload || tutorOpen ? " payload-open" : ""}${tutorOpen ? " tutor-open" : ""}`}
     >
       <Toolbar
         checked={checked}
@@ -482,13 +672,23 @@ export default function App() {
         edited={!!active && active.content !== active.savedContent}
         rendered={renderedView}
         setRendered={setRenderedView}
-        sidebar={() => setSidebar(!sidebar)}
+        sidebar={toggleSidebar}
         command={(action) => commands.current({ action })}
         autosave={session.autosave}
         disabled={!active}
         context={editor()?.context() || ""}
-        payload={payloadEnabled ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
+        learning={readingSupported ? learningEnabled : undefined}
+        sync={window.desktop?.sync && session.folder ? { open: syncOpen, show: () => setSyncOpen(true) } : undefined}
+        tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
+        payload={payloadAvailable ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
+      {glassOffer && (
+        <div className="glass-banner" role="status">
+          <span>{t("{{count}} notes here already have glass on this computer.", { count: glassOffer.count })}</span>
+          <button disabled={glassBusy} onClick={() => void bringGlass()}>{t("Bring glass")}</button>
+          <button className="glass-banner-dismiss" aria-label={t("Dismiss")} onClick={() => { glassDismissed.current = true; setGlassOffer(null); }}><X size={15} /></button>
+        </div>
+      )}
       <Sidebar
         operation={operation => { if (operation.action === "trash" || operation.action === "undo" || operation.target) void session.fileOperation(operation).catch(e => session.setMessage(e.message)); else setFileOperation(operation); }}
         search={() => setDialog("global-search")} recent={() => setDialog("recent")} notify={session.setMessage}
@@ -498,7 +698,8 @@ export default function App() {
         folder={session.folder}
         headings={headings}
         tab={tab}
-        setTab={setTab}
+        setTab={value => { setTab(value); if (readingVisible) setShowFiles(true); }}
+        sheets={readingVisible ? { selected: !showFiles, show: () => setShowFiles(false), mount: setSheetsRoot } : undefined}
         select={session.setActiveId}
         openToken={session.openToken}
         openFolder={session.openFolder}
@@ -556,10 +757,10 @@ export default function App() {
                     } else editors.current.delete(record.id);
                   }}
                   document={record}
-                  rendered={record.id === session.activeId ? renderedView : rendered}
+                  rendered={renderedFor(record.id)}
                   active={record.id === session.activeId}
                   readOnly={readOnly}
-                  reading={readingVisible && record.id === session.activeId}
+                  reading={learningEnabled}
                   citationVault={painted && record.id === session.activeId && host.bibliography ? session.folder ?? undefined : undefined}
                   preferences={preferences}
                   remoteImages={remoteImages}
@@ -589,20 +790,34 @@ export default function App() {
                 />
               </div>
             ) : null)}
-            {cleanVisible && <Suspense fallback={<p role="status">{t("正在清理文本…")}</p>}><CleanLayer
+            {cleanVisible && <Suspense fallback={<p className="layers-clean-loading" role="status">{t("正在清理文本…")}</p>}><CleanLayer
               key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
-            {readingVisible && <Suspense fallback={null}><ReadingLayers
+            {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
-              saved={readingSaved} state={readingView}
-              change={value => setReadingViews(current => ({ ...current, [active.id]: value }))}
-              actions={{
-                clean: { visible: cleanVisible, open: openClean, close: closeClean },
-                ask: payloadEnabled ? { visible: !!activePayload, open: target => openPayload(target ? "question" : "summary", target?.quote), close: () => setPayload(null) } : undefined,
-                card: readingSaved ? { visible: flashcardsVisible, open: openFlashcards, close: closeFlashcards } : undefined,
+              note={vaultRelative(session.folder, active.path)}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
+              boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
+              glassSaved={active.content === active.savedContent}
+              reloadNote={session.reload}
+              ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
+              preview={renderedView} togglePreview={() => setRenderedView(!renderedView)}
+              canWrite={!readOnly && !active.conflict && !session.fileOperationBusy}
+              tutor={tutorKey ? { open: tutorOpen, root: shell.current, preferences, show: openTutor, close: closeTutor,
+                configure: () => setDialog("preferences") } : undefined}
+              openFiles={openFilesRail} openCard={openFlashcards}
+              askPayload={payloadAvailable ? source => openPayload("question", source) : undefined}
+              openSearchHit={async match => {
+                const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === match.document);
+                const record = file && await session.openToken(file.token);
+                if (!record) return false;
+                if (match.line != null) jumpTo(record.id, match.line);
+                return true;
               }}
-              close={closeReading}
+              cards={flashcardsVisible && flashcardPanel && <Suspense fallback={null}><Flashcards
+                id={active.id} content={active.content} panel={flashcardPanel} close={() => { closeFlashcards(); editor()?.focus(); }}
+              /></Suspense>}
             /></Suspense>}
             <article
               className="print-document"
@@ -611,11 +826,7 @@ export default function App() {
           </>
         )}
       </main>
-      <Suspense fallback={null}>{activePayload && <PayloadPanel
-        key={activePayload.sequence} mode={activePayload.mode} source={activePayload.source} selection={activePayload.selection}
-        preferences={preferences} editable={!readOnly && !active?.conflict && !session.fileOperationBusy} append={appendPayload}
-        configure={() => setDialog("preferences")} close={() => { setPayload(null); editor()?.focus(); }}
-      />}</Suspense>
+      {payloadView}
       <footer className="statusbar">
         <button id="footer-word-count-label" onClick={() => setDialog("statistics")}
           title={t("{{status}} · 第 {{line}} 行，第 {{column}} 列 · Markdown · {{encoding}}", { status, line: cursor.line, column: cursor.column, encoding: encodingNames[active?.encoding || "utf-8"] })}
@@ -623,8 +834,6 @@ export default function App() {
         >
           {countUnit === "characters" ? t("{{count}} 字", { count: selection ? selectionCharacters : characters }) : t("{{count}} 词", { count: selection ? documentStatistics(selection, selection, preferences.readingSpeed).words : wholeStatistics?.words || 0 })}{selection && t("（选中）")}{exporting && t(" · 正在导出…")}
         </button>
-        {window.desktop?.readingStore && active && <button type="button" data-testid="reading-layers-toggle" aria-label={t("阅读图层")} title={t("阅读图层")}
-          aria-pressed={readingVisible} disabled={!activeEditorReady && !readingVisible || focus} onClick={() => readingVisible ? closeReading() : setReadingOpen(true)}><Layers size={15} /></button>}
         {active && <button data-testid="text-encoding" aria-label={t("更改文本编码")} title={t("文本编码与字节顺序标记")} onClick={() => setDialog("encoding")}>{encodingNames[active.encoding || "utf-8"]}{active.bom ? " BOM" : ""}</button>}
       </footer>
       {focus && (
@@ -640,10 +849,6 @@ export default function App() {
           </button>
         </div>
       )}
-      {flashcardsVisible && active && flashcardPanel && <Suspense fallback={null}><Flashcards
-        id={active.id} content={active.content} panel={flashcardPanel}
-        close={closeFlashcards}
-      /></Suspense>}
       <Suspense fallback={null}>{tools && session.documents.find(record => record.id === tools.id) && <DocumentTools
         key={JSON.stringify([tools.id, tools.request, session.folder])} record={session.documents.find(record => record.id === tools.id)!} documents={session.documents} files={session.files} folder={session.folder} preferences={preferences} initial={tools.tab} request={tools.request}
         close={() => setTools(null)}
@@ -667,8 +872,10 @@ export default function App() {
       />}</Suspense>
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
+      {dialog === "glass-export" && active && <GlassExport key={active.id} note={vaultRelative(session.folder, active.path) ?? ""} close={closeDialog} pdf={scope => exportDocument("pdf", undefined, scope)} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
+      <Suspense fallback={null}>{syncOpen && <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

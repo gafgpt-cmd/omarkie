@@ -71,6 +71,12 @@ svg {
   height: 28px;
   position: relative;
   z-index: 20;
+  /* Menus, title and the right-hand buttons share one row: flex keeps them apart at every width. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 8px;
+  min-width: 0;
   -webkit-app-region: drag;
   background: linear-gradient(
     to right,
@@ -82,11 +88,10 @@ svg {
   background: var(--paper);
 }
 .document-title {
-  position: absolute;
-  left: 50%;
-  top: 7px;
-  transform: translateX(-50%);
-  max-width: 60%;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 4px;
+  text-align: center;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -101,6 +106,49 @@ svg {
 .title-edited {
   color: #aaa;
   font-weight: 400;
+}
+.study-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+.toolbar-label {
+  white-space: nowrap;
+}
+@media (max-width: 759px) {
+  /* Under 760 px the free space fits two letters at most: a lone glyph is noise, so the title goes. */
+  .document-title {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  /* Below this the buttons keep their icons and drop their words, so the menus never sit under them. */
+  .toolbar-label {
+    display: none;
+  }
+  .study-toolbar .reading-layers-toggle {
+    padding: 0 6px;
+  }
+  .toolbar {
+    gap: 4px;
+    padding-right: 6px;
+  }
+}
+.reading-layers-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--sidebar);
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.reading-layers-toggle:is([aria-pressed="true"], [aria-expanded="true"]) {
+  border-color: var(--accent);
+  background: var(--selected);
 }
 .icon-button {
   width: 28px;
@@ -564,6 +612,47 @@ svg {
   border-radius: 4px;
   padding: 4px 8px;
 }
+.glass-banner {
+  position: fixed;
+  left: 18px;
+  bottom: 42px;
+  z-index: 30;
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  max-width: min(420px, calc(100vw - 36px));
+  font-size: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px #00000018;
+  padding: 11px 12px;
+  flex-wrap: wrap;
+}
+.glass-banner span {
+  flex: 1;
+  min-width: 180px;
+  line-height: 1.45;
+}
+.glass-banner button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--ink);
+}
+.glass-banner button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.glass-banner button:disabled {
+  opacity: 0.5;
+}
+.glass-banner .glass-banner-dismiss {
+  border: 0;
+  padding: 2px;
+  color: var(--muted);
+}
 .empty-document {
   height: 100%;
   display: flex;
@@ -724,6 +813,21 @@ svg {
 .printing .print-document .mermaid-block {
   color: #222;
 }
+/* G18 print glass: callouts flow with the page; the handout replaces it. */
+.print-document .glass-print { margin-top: 22px; }
+.print-document .glass-print-card { border-left: 3px solid #9aa4ad; background: #fafafa; margin: 10px 0; padding: 8px 12px; border-radius: 3px; break-inside: avoid; }
+.print-document .glass-print-card strong { display: block; font-size: 12px; letter-spacing: .02em; color: #55606a; }
+.print-document .glass-print-card p { margin: 3px 0; white-space: pre-wrap; }
+.print-document .glass-print-card svg, .print-document .glass-print-card img { max-width: 100%; height: auto; }
+.print-document .glass-print-card[data-kind="sticky"] { border-color: #d8b64a; background: #fffbe8; }
+.print-document .glass-print-card[data-kind="comment"] { border-color: #4d8bcd; background: #f4f8fd; }
+.print-document .glass-print-card[data-kind="card"] { border-color: #8b60bf; background: #faf6ff; }
+.print-document .glass-print-ref { color: #55606a; }
+.print-document .glass-print-arrows, .print-document .glass-print-notes { margin-top: 12px; font-size: 12px; color: #55606a; break-inside: avoid; }
+.print-document .glass-print-notes li { margin: 4px 0; }
+.print-document .glass-print-handout { background: #fbf7ee; color: #2f2a22; padding: 24px; border-radius: 4px; }
+.print-document .glass-print-handout h1 { font-size: 27px; margin-top: 0; }
+.print-document .glass-print-handout .glass-print-source { color: #6f6557; font-size: 12px; }
 @media print {
   body {
     overflow: visible !important;
@@ -1016,6 +1120,12 @@ svg {
 .print-document img.md-standalone {
   border-radius: 4px;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+:is(.rich-document .md-inline:has(> .md-view > img[data-image-float="left"]), .print-document img[data-image-float="left"]) {
+  float: left; margin: 0 12px 8px 0; max-width: calc(50% - 12px);
+}
+:is(.rich-document .md-inline:has(> .md-view > img[data-image-float="right"]), .print-document img[data-image-float="right"]) {
+  float: right; margin: 0 0 8px 12px; max-width: calc(50% - 12px);
 }
 .rich-document hr {
   border: 0;

@@ -55,7 +55,9 @@ const server = createServer(async (request, response) => {
     }
     payloadRequests.push(payload);
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ choices: [{ message: { content: payload.messages.length === 3 ? "Synthetic follow-up answer." : "Synthetic summary." } }] }));
+    const content = payload.messages[0].content.startsWith("Rewrite only the supplied paragraph")
+      ? "Rewritten fixture paragraph." : payload.messages.length === 3 ? "Synthetic follow-up answer." : "Synthetic summary.";
+    response.end(JSON.stringify({ choices: [{ message: { content } }] }));
     return;
   }
   try { let body = ""; for await (const chunk of request) body += chunk; const value = JSON.parse(body); assert.equal(request.method, "POST"); assert.equal(value.list.length, 1); const file = value.list[0]; assert.match(file, /fixture-[A-Fa-f0-9-]+\.png$/); const bytes = await readFile(file); assert.deepEqual([...bytes.subarray(0, 8)], [137,80,78,71,13,10,26,10]); uploads.push({ bytes: bytes.length }); response.writeHead(200, {"Content-Type":"application/json"}); response.end(JSON.stringify({success:true,result:["https://images.example.invalid/owned-fixture.png"]})); }
@@ -110,6 +112,7 @@ try {
   await cp("shared/reading-core.cjs", path.join(resources, "reading-core.cjs"));
   await cp("shared/locales", path.join(resources, "locales"), { recursive: true });
   await cp("shared/payload-recipe.json", path.join(resources, "payload-recipe.json"));
+  await cp("shared/tutor-verbs.json", path.join(resources, "tutor-verbs.json"));
   await cp("shared/tts-limit.json", path.join(resources, "tts-limit.json"));
   await cp("tests/fixtures/plugin-package", path.join(resources, "Plugin-package-fixture"), {recursive:true});
   await cp("tests/webkit.js", path.join(resources, "web-tests.js"));
@@ -169,6 +172,7 @@ try {
   assert.deepEqual(payloadRequests.map(body => [body.model, body.max_tokens, body.max_completion_tokens, body.messages.slice(1).map(message => message.content)]), [
     ["native-fixture", 768, undefined, ["Synthetic source paragraph."]],
     ["native-fixture", undefined, 384, ["Synthetic source paragraph.", "What is this?"]],
+    ["native-fixture", 384, undefined, ["Synthetic source paragraph.", "Rewrite this?"]],
   ]);
   console.log("PASS: native Payload only sends approved bounded requests to the owned endpoint");
   assert.deepEqual(grammarRequests, [

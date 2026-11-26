@@ -15,7 +15,7 @@
 .flashcards .dialog-actions { flex-wrap: wrap; }
 .flashcards .recall-grades { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 .flashcards .recall-grades button { text-align: start; }
-.flashcards textarea { resize: vertical; }
+.flashcards textarea { display: block; width: 100%; min-height: 3.5em; padding: 6px; margin-block: 3px 8px; resize: vertical; font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--border); border-radius: 4px; }
 .flashcards textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .flashcard-list { padding-inline-start: 20px; overflow-wrap: anywhere; }
 .flashcard-list li { margin-block: 8px; }
