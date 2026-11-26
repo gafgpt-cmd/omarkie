@@ -95,9 +95,13 @@ export default function GlassSwapPanel({ note, element, live, onClose, onApplied
     setBusy(true); setPreview(undefined); setNotice("");
     await settingsWrite.current.catch(() => undefined);
     try {
+      // The search's "person clicked" half: a one-shot token minted for this window, this note and
+      // this element. An agent calling the bridge cannot produce one.
+      const granted = nextOnline ? await window.desktop?.glassConsent?.({ note, element: element.id }) as { token?: string; value?: { token?: string } } | undefined : undefined;
+      const consent = granted?.value?.token ?? granted?.token;
       const value = await glassCall({ note, action: "swap-options", element: element.id,
         ...(nextKind ? { kind: nextKind } : {}), ...(nextComplaint.trim() ? { complaint: nextComplaint } : {}),
-        ...(nextOnline ? { online: true } : {}) }) as Options;
+        ...(nextOnline && consent ? { online: true, consent } : {}) }) as Options;
       setOptions(value); setKind(value.kind); setComplaint(value.complaint ?? nextComplaint);
       const first = value.candidates.find(candidate => !candidate.current);
       setSelected(first?.id);

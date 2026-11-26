@@ -117,7 +117,8 @@ async function foldState(page, kind, open) {
   const card = page.locator(`.glass-card[data-card-kind="${kind}"]`);
   const folded = await card.getAttribute("data-folded");
   if (open ? folded === "true" : folded !== "true") await card.locator("[data-card-pill]").click();
-  if (open) await expect(card.locator("[data-card-panel]")).toBeVisible();
+  // A cold runner mounts the panel a few seconds after the pill click; the 5 s default failed on CI.
+  if (open) await expect(card.locator("[data-card-panel]")).toBeVisible({ timeout: 30_000 });
   else await expect(card.locator("[data-card-panel]")).toHaveCount(0);
 }
 

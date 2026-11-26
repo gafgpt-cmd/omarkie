@@ -3,7 +3,7 @@
 // never carry the request somewhere else.
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -101,4 +101,55 @@ test("a redirect is refused instead of followed to another host", async () => {
     await elsewhere.close();
     await service.close();
   }
+});
+
+// Consent is a token minted for the app window and bound to one note+element; a caller's flag is not
+// enough, and the vault's switch still wins over any token.
+test("online search runs only with a one-shot consent token from this window", async () => {
+  const { service, element } = await vault();
+  const fixture = path.join(os.tmpdir(), `omarkie-consent-${process.pid}.json`);
+  await writeFile(fixture, JSON.stringify([{ title: "Median nerve", sourceUrl: "https://commons.wikimedia.org/wiki/File:M.jpg",
+    licence: { code: "by", version: "3.0", url: "https://creativecommons.org/licenses/by/3.0/", attribution: "A" }, width: 400, height: 300,
+    bytesBase64: png.toString("base64") }]), "utf8");
+  const previous = process.env.OMARKIE_SWAP_SEARCH;
+  process.env.OMARKIE_SWAP_SEARCH = fixture;
+  try {
+    const ask = async consent => service.request({ action: "swap-options", note: "dose.md", element: element.id, kind: "find", complaint: "too dense", online: true, ...(consent ? { consent } : {}) });
+
+    const flagOnly = await ask(undefined);
+    assert.equal(flagOnly.online.allowed, false);
+    assert.equal(flagOnly.online.code, "CONSENT_REQUIRED");
+    assert.deepEqual(flagOnly.candidates.map(row => row.online === true), flagOnly.candidates.map(() => false));
+
+    const { token } = service.grantSwapConsent({ note: "dose.md", element: element.id });
+    const granted = await ask(token);
+    assert.equal(granted.online.allowed, true, "a token minted for this note and element is accepted");
+    assert.equal(granted.online.code, null);
+
+    const again = await ask(token);
+    assert.equal(again.online.allowed, false, "a token works once");
+
+    const otherElement = service.grantSwapConsent({ note: "dose.md", element: "paragraph-other" });
+    const wrong = await ask(otherElement.token);
+    assert.equal(wrong.online.allowed, false, "a token for another element is refused");
+
+  } finally {
+    if (previous === undefined) delete process.env.OMARKIE_SWAP_SEARCH; else process.env.OMARKIE_SWAP_SEARCH = previous;
+    await service.close();
+  }
+});
+
+test("an accepted swap picture links relative to a nested note in a plain folder", async () => {
+  const { folder, service } = await vault();
+  await mkdir(path.join(folder, "notes"), { recursive: true });
+  await writeFile(path.join(folder, "notes", "map.md"), source);
+  const element = markdownElements(source).find(row => row.text.startsWith("Second"));
+  try {
+    await service.request({ action: "swap-apply", note: "notes/map.md", mode: "replace", approved: true, element: element.id,
+      candidate: { ...candidate(undefined), bytesBase64: png.toString("base64") } });
+    const note = await readFile(path.join(folder, "notes", "map.md"), "utf8");
+    assert.match(note, /!\[[^\]]*\]\(dot\.png/, "link resolves from the note's own folder");
+    assert.doesNotMatch(note, /notes\/dot\.png/);
+    await readFile(path.join(folder, "notes", "dot.png"));
+  } finally { await service.close(); }
 });
