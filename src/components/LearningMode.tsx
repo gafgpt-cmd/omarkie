@@ -312,7 +312,10 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     document.addEventListener("keyup", up);
     document.addEventListener("keydown", down);
     window.addEventListener("blur", blur);
+    // Lazy chunk: these listeners exist only after it loads; mark readiness so tests cannot race the mount.
+    document.documentElement.dataset.studySelection = "ready";
     return () => {
+      delete document.documentElement.dataset.studySelection;
       document.removeEventListener("pointerup", point); document.removeEventListener("pointerdown", dismiss, true);
       document.removeEventListener("keyup", up); document.removeEventListener("keydown", down);
       window.removeEventListener("blur", blur);

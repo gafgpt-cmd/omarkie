@@ -15,7 +15,10 @@ let flock;
 
 export function endpoint(root, kind = "bridge") {
   const key = createHash("sha256").update(root).digest("hex");
-  const directory = path.join(os.tmpdir(), `omarkie-${uid ?? "user"}`, key.slice(0, 32));
+  const under = base => path.join(base, `omarkie-${uid ?? "user"}`, key.slice(0, 32));
+  // A long TMPDIR overflows the Unix socket path limit; /tmp is the same short place for the app and every CLI.
+  let directory = under(os.tmpdir());
+  if (!win && Buffer.byteLength(path.join(directory, `${kind}.sock`)) >= 104) directory = under("/tmp");
   return { directory, discovery: path.join(directory, `${kind}.json`), lock: path.join(directory, `${kind}.lock`),
     socket: win ? `\\\\.\\pipe\\omarkie-${key}${kind === "bridge" ? "" : `-${kind}`}` : path.join(directory, `${kind}.sock`) };
 }

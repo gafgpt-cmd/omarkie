@@ -32,6 +32,21 @@ test("a large Glass answer crosses the bridge instead of reading as a dead bridg
   assert.equal(state.blob.length, 1_500_000);
 });
 
+test("a long TMPDIR still binds a reachable bridge", { skip: process.platform === "win32" }, async () => {
+  const root = await area(), previous = process.env.TMPDIR;
+  // sun_path holds 108 bytes on Linux, 104 on macOS: this TMPDIR alone leaves no room for the socket name.
+  process.env.TMPDIR = path.join(root, "t".repeat(100));
+  try {
+    const place = endpoint(root, "glass");
+    assert.ok(Buffer.byteLength(place.socket) < 104, place.socket);
+    const close = await listenBridge(root, broker(), "glass");
+    try { assert.equal((await requestBridge(root, { size: 2 }, 10_000, "glass")).blob, "xx"); }
+    finally { await close(); await rm(place.directory, { recursive: true, force: true }).catch(() => {}); }
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = previous;
+  }
+});
+
 test("an answer past the frame limit names the size, never the bridge", async () => {
   const root = await area();
   await assert.rejects(bridged(root, () => requestBridge(root, { size: 3_000_000 }, 10_000)), error => {

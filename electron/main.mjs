@@ -131,7 +131,19 @@ async function openPdf(file) {
 const handshakes = new Map();
 ipcMain.on("workspace:prepared", (event, id, value) => { if (event.sender !== window?.webContents) return; handshakes.get(id)?.(value); });
 function prepareOperation(phase, change) { return new Promise((resolve, reject) => { const id = randomUUID(), timeout = setTimeout(() => { handshakes.delete(id); reject(new Error(t("文件操作等待超时。"))); }, 30000); handshakes.set(id, value => { clearTimeout(timeout); handshakes.delete(id); resolve(value); }); window.webContents.send("workspace:operation", id, phase, change); }); }
-let operationRunning = false;
+let operationQueue = Promise.resolve();
+async function fileOperationNow(operation) {
+  try {
+    if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
+    if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
+    const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
+    const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
+    const change = ["rename", "move", "undo", "trash"].includes(operation.action)
+      ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
+    workspace.apply(change, store);
+    await prepareOperation("commit", change); return change;
+  } finally { await prepareOperation("release", {}); }
+}
 let bibliography;
 
 // G17 agent parity: an ink magnet id is the region. The renderer rasterises the stroke it is
@@ -180,6 +192,12 @@ function scheduleGlassRetry(folder) {
     glassRetry = null;
     if (glassRuntime.service && glassRuntime.close) return;
     if (glassRuntime.folder && glassRuntime.folder !== folder) return;
+    // Open storage is serving writes: rebind only the bridge, never close the service under them.
+    if (glassRuntime.service) {
+      const run = glassQueue.then(() => glassRuntime.folder === folder && glassRuntime.service && !glassRuntime.close ? bindGlassBridge(folder) : null);
+      glassQueue = run.catch(() => {});
+      return;
+    }
     glassRuntime.folder = null;
     glassRuntime.error = null;
     void syncGlass(folder).catch(() => {});
@@ -222,54 +240,58 @@ async function syncGlassNow(folder) {
       glassRuntime.sync = null;
       console.warn("Glass index:", error.message);
     }
-    try {
-      glassRuntime.close = await listenBridge(root, {
-        client(request, send) {
-          if (request?.op === "sync") {
-            if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
-            let engine;
-            try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
-            const job = request.action === "status" ? engine.status() : engine.syncNow();
-            Promise.resolve(job).then(async result => {
-              if (request.action === "now" && (result.pulled || result.journals?.length)) {
-                await glassRuntime.service?.reloadStore().catch(() => {});
-                void glassRuntime.sync?.scan("sync").catch(() => {});
-              }
-              send(result);
-            }, error => send({ error: error.message, code: error.code }));
-            return;
-          }
-          if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
-            if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
-            if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
-            send({ opened: true, note: request.note, magnet: request.magnet });
-            window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
-            return;
-          }
-          if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
-          const { op: _, token: __, ...payload } = request;
-          if (payload.action === "ocr") {
-            glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
-            return;
-          }
-          if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
-          Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
-        },
-        stopWait() {}, bind() { return {}; }, unbind() { return 0; },
-      }, "glass");
-      service.bridgeState = "listening";
-    } catch (error) {
-      service.bridgeState = "unavailable";
-      console.warn("Glass bridge:", error.message);
-      scheduleGlassRetry(folder);
-      return;
-    }
-    glassRetries = 0;
+    await bindGlassBridge(folder);
   } catch (error) {
     glassRuntime.error = error;
     scheduleGlassRetry(folder);
     throw error;
   }
+}
+async function bindGlassBridge(folder) {
+  const { root, service } = glassRuntime;
+  try {
+    glassRuntime.close = await listenBridge(root, {
+      client(request, send) {
+        if (request?.op === "sync") {
+          if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
+          let engine;
+          try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
+          const job = request.action === "status" ? engine.status() : engine.syncNow();
+          Promise.resolve(job).then(async result => {
+            if (request.action === "now" && (result.pulled || result.journals?.length)) {
+              await glassRuntime.service?.reloadStore().catch(() => {});
+              void glassRuntime.sync?.scan("sync").catch(() => {});
+            }
+            send(result);
+          }, error => send({ error: error.message, code: error.code }));
+          return;
+        }
+        if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
+          if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
+          if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
+          send({ opened: true, note: request.note, magnet: request.magnet });
+          window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
+          return;
+        }
+        if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
+        const { op: _, token: __, ...payload } = request;
+        if (payload.action === "ocr") {
+          glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
+          return;
+        }
+        if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
+        Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
+      },
+      stopWait() {}, bind() { return {}; }, unbind() { return 0; },
+    }, "glass");
+    service.bridgeState = "listening";
+  } catch (error) {
+    service.bridgeState = "unavailable";
+    console.warn("Glass bridge:", error.message);
+    scheduleGlassRetry(folder);
+    return;
+  }
+  glassRetries = 0;
 }
 let glassWatch = { folder: null, root: null, close: null };
 let voiceRuntime, voiceRuns = new Map();
@@ -602,18 +624,12 @@ const handlers = {
     return { ...result, skipped: result.skipped + inventory.skipped };
   },
   reveal: async (_, file) => shell.showItemInFolder(await workspace.authorize(file, store)),
-  fileOperation: async (_, operation) => {
-    if (operationRunning) throw new Error(t("另一个文件操作正在进行。")); operationRunning = true;
-    try {
-      if (operation.action === "trash") { const answer = await dialog.showMessageBox(window, { message: t("移到废纸篓？"), detail: operation.path, buttons: [t("取消"), t("移到废纸篓")], cancelId: 0 }); if (answer.response !== 1) return null; }
-      if (!await prepareOperation("prepare", { removedPath: operation.action === "trash" ? operation.path : undefined })) throw new Error(t("文件操作已取消。"));
-      const execute = move => workspace.execute(operation, store, file => shell.trashItem(file), move);
-      const folder = operation.action === "undo" ? workspace.undo?.folder : store.folder;
-      const change = ["rename", "move", "undo", "trash"].includes(operation.action)
-        ? await (await import("./reading-store.mjs")).moveReadingEntries(folder, execute, operation.action === "trash" ? operation.path : undefined) : await execute();
-      workspace.apply(change, store);
-      await prepareOperation("commit", change); return change;
-    } finally { try { await prepareOperation("release", {}); } finally { operationRunning = false; } }
+  // A second file operation waits for the first to release the renderer handshake; refusing it made
+  // a quick rename-then-trash lose the trash while the journal was still committing.
+  fileOperation: (_, operation) => {
+    const run = operationQueue.then(() => fileOperationNow(operation));
+    operationQueue = run.catch(() => {});
+    return run;
   },
   restore: async () => {
     // Launch-file problems are reported in the window's message bar, never a modal box.
