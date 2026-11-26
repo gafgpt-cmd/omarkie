@@ -8,7 +8,7 @@ import { LEVELS as FORMAT_LEVELS, levelOf } from "./fold-format.mjs";
 
 export const LOCAL_LEVELS = Object.freeze(FORMAT_LEVELS.filter(entry => entry.local));
 
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^\s*(?:(`{3,})[^`]*$|(~{3,}))/;
 const HEADING = /^\s{0,3}#{1,6}\s/;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
 const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
@@ -16,12 +16,17 @@ const DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
 const FM_OPEN = /^\uFEFF?---[ \t]*$/;
 const FM_CLOSE = /^(?:---|\.\.\.)[ \t]*$/;
-const FM_LINE = /^(?:[ \t]*|[ \t]*#.*|[ \t]+.*|[ \t]*-[ \t]*.*|[A-Za-z0-9_.-]+[ \t]*:.*)$/;
+const FM_LINE = /^(?:[ \t]*|[ \t]*#.*|[ \t]+.*|[ \t]*-(?:[ \t].*)?|(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[\p{L}\p{M}\p{N}_][\p{L}\p{M}\p{N}_. /-]*)[ \t]*:(?:[ \t].*)?)$/u;
 
 // A GFM table starts at a row with a pipe followed by its delimiter row, with or without leading pipes, and
 // may come straight after a paragraph. The delimiter needs a pipe, or `Title` over `---` would be one.
 const tableAt = (lines, i) =>
   (lines[i] ?? "").includes("|") && (lines[i + 1] ?? "").includes("|") && DELIM.test(lines[i + 1] ?? "");
+
+function fenceMark(line) {
+  const match = FENCE.exec(line);
+  return match ? (match[1] ?? match[2]) : null;
+}
 
 function fenceClose(line, mark) {
   const trimmed = line.trim();
@@ -57,9 +62,8 @@ export function blocks(md) {
       i++;
       continue;
     }
-    const fence = FENCE.exec(line);
-    if (fence) {
-      const mark = fence[1] ?? "```";
+    const mark = fenceMark(line);
+    if (mark) {
       const buf = [line];
       i++;
       while (i < lines.length) {
@@ -86,7 +90,7 @@ export function blocks(md) {
     i++;
     while (i < lines.length) {
       const l = lines[i] ?? "";
-      if (!l.trim() || FENCE.test(l) || HEADING.test(l)) break;
+      if (!l.trim() || fenceMark(l) || HEADING.test(l)) break;
       if (kind === "para" && (ITEM.test(l) || tableAt(lines, i))) break;
       buf.push(l);
       i++;
@@ -97,8 +101,9 @@ export function blocks(md) {
   return out;
 }
 
-// Always non-breaking introducers and titles (EN + ES); `etc.` still breaks before `¿`/`¡`.
-const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{N}_])(?:e\.\s*g|i\.\s*e|p\.\s*ej|ej|etc|vs|cf|et\s+al|approx|aprox|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|Ud|Uds|Vd|Vds|St|Fig|Figs|Eq|Ec|Núm|Pág|Págs|Apdo|Av|Avda|Tel|Supl|Obs|Máx|Mín)\.$/iu;
+// Always non-breaking introducers and titles (EN + ES).
+const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{N}_])(?:e\.\s*g|i\.\s*e|p\.\s*ej|ej|vs|cf|et\s+al|approx|aprox|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|Ud|Uds|Vd|Vds|St|Fig|Figs|Eq|Ec|Núm|Pág|Págs|Apdo|Av|Avda|Tel|Supl|Obs|Máx|Mín)\.$/iu;
+const ABBREV_MID = /(?:^|[^\p{L}\p{N}_])etc\.$/iu;
 // Multi-part spaced abbreviations where the first dot precedes the rest (`p. ej.`, `e. g.`, `i. e.`).
 const MULTIPART_START = /(?:^|[^\p{L}\p{N}_])([pei])\.$/iu;
 const MULTIPART_TAIL = { p: /^ej\./i, e: /^g\./i, i: /^e\./i };
@@ -128,17 +133,19 @@ function findClosingBackticks(text, start, runLen) {
   return -1;
 }
 
+function skipBacktickRun(text, i) {
+  let run = 1;
+  while (text[i + run] === "`") run++;
+  const end = findClosingBackticks(text, i + run, run);
+  return end !== -1 ? end - 1 : i + run - 1;
+}
+
 function hasClosingMarkAhead(text, from, target) {
   for (let j = from; j < text.length; j++) {
     const ch = text[j];
     if (ch === "`") {
-      let run = 1;
-      while (text[j + run] === "`") run++;
-      const end = findClosingBackticks(text, j + run, run);
-      if (end !== -1) {
-        j = end - 1;
-        continue;
-      }
+      j = skipBacktickRun(text, j);
+      continue;
     }
     if (ch === target) return true;
   }
@@ -153,13 +160,9 @@ function isNonBreakingDot(text, i, tail) {
   // Multi-part spaced abbreviations like `p. ej.`, `e. g.`, `i. e.`.
   const multi = MULTIPART_START.exec(headSlice);
   if (multi && MULTIPART_TAIL[multi[1].toLowerCase()]?.test(tail)) return true;
-  // `¿`/`¡` unambiguously opens a new Spanish sentence after `etc.`.
-  if (ABBREV_ALWAYS.test(headSlice)) {
-    if ((tail[0] === "¿" || tail[0] === "¡") && /(?:^|[^\p{L}\p{N}_])etc\.$/iu.test(headSlice)) return false;
-    return true;
-  }
+  if (ABBREV_ALWAYS.test(headSlice)) return true;
   if (ABBREV_BEFORE_NUM.test(headSlice) && /^[#\d]/.test(tail)) return true;
-  if (CONTINUES_MID.test(tail) && (UNIT_MULTI.test(headSlice) || UNIT_SINGLE.test(headSlice))) return true;
+  if (CONTINUES_MID.test(tail) && (ABBREV_MID.test(headSlice) || UNIT_MULTI.test(headSlice) || UNIT_SINGLE.test(headSlice))) return true;
   return false;
 }
 
@@ -171,14 +174,7 @@ export function firstSentence(text) {
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (c === "`") {
-      let run = 1;
-      while (text[i + run] === "`") run++;
-      const end = findClosingBackticks(text, i + run, run);
-      if (end !== -1) {
-        i = end - 1;
-        continue;
-      }
-      i += run - 1;
+      i = skipBacktickRun(text, i);
       continue;
     }
     if (c === "¿") { openQ++; continue; }
@@ -196,9 +192,10 @@ export function firstSentence(text) {
     if (!after) continue;
     const cutAt = i + 1 + after[1].length;
     if (c === ".") {
-      if (openQ > 0 && hasClosingMarkAhead(text, cutAt, "?")) continue;
-      if (openE > 0 && hasClosingMarkAhead(text, cutAt, "!")) continue;
-      const tail = text.slice(cutAt, cutAt + 16).trimStart();
+      const tailStart = i + 1 + after[0].length;
+      if (openQ > 0 && hasClosingMarkAhead(text, tailStart, "?")) continue;
+      if (openE > 0 && hasClosingMarkAhead(text, tailStart, "!")) continue;
+      const tail = text.slice(tailStart, tailStart + 16);
       if (isNonBreakingDot(text, i, tail)) continue;
     }
     return cut(text, cutAt);
@@ -207,19 +204,22 @@ export function firstSentence(text) {
 }
 
 function cut(text, at) {
-  const rest = text.slice(at).trim();
-  return { head: balance(text.slice(0, at).trim()), more: rest.length > 0, rest };
+  const rawHead = text.slice(0, at).trim();
+  const rawRest = text.slice(at).trim();
+  if (!hasOddBold(rawHead)) return { head: rawHead, more: rawRest.length > 0, rest: rawRest };
+  return {
+    head: rawHead + "**",
+    more: rawRest.length > 0,
+    rest: rawRest.length > 0 ? "**" + rawRest : "",
+  };
 }
 
-/** Closes an unclosed bold span left open by a cut, ignoring inline code spans. */
-function balance(s) {
+/** Reports whether `s` leaves a bold span open, ignoring inline code spans. */
+function hasOddBold(s) {
   let bold = 0;
   for (let i = 0; i < s.length; i++) {
     if (s[i] === "`") {
-      let run = 1;
-      while (s[i + run] === "`") run++;
-      const end = findClosingBackticks(s, i + run, run);
-      i = end !== -1 ? end - 1 : i + run - 1;
+      i = skipBacktickRun(s, i);
       continue;
     }
     if (s[i] === "*" && s[i + 1] === "*") {
@@ -227,7 +227,7 @@ function balance(s) {
       i++;
     }
   }
-  return bold % 2 ? s + "**" : s;
+  return bold % 2 === 1;
 }
 
 /** Joins the first `n` sentences of `text` and reports whether more text remains. */
@@ -257,17 +257,29 @@ function items(b) {
 
 const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g;
 const NON_CJK_WORD = /(?:\p{N}+(?:[.,]\p{N}+)*|\p{L})[\p{L}\p{N}'’_-]*(?:[/.][\p{L}\p{N}][\p{L}\p{N}'’_-]*)*/gu;
-const FENCED_CODE = /(?:```[\s\S]*?```|~~~[\s\S]*?~~~)/g;
 const CODE_FOLD_PLACEHOLDER = /`⋯ \d+ lines of code`/g;
 
 function stripForWordCount(md) {
-  let body = md.includes("\r") ? md.replace(/\r\n?/g, "\n") : md;
-  if (body.startsWith("---") || body.startsWith("\uFEFF---")) {
-    const lines = body.split("\n");
-    const fmEnd = frontmatterEnd(lines);
-    if (fmEnd > 0) body = lines.slice(fmEnd + 1).join("\n");
+  const lines = (md.includes("\r") ? md.replace(/\r\n?/g, "\n") : md).split("\n");
+  const fmEnd = frontmatterEnd(lines);
+  let i = fmEnd > 0 ? fmEnd + 1 : 0;
+  const kept = [];
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    const mark = fenceMark(line);
+    if (mark) {
+      i++;
+      while (i < lines.length) {
+        const l = lines[i] ?? "";
+        i++;
+        if (fenceClose(l, mark)) break;
+      }
+      continue;
+    }
+    kept.push(line);
+    i++;
   }
-  return body.replace(FENCED_CODE, " ").replace(CODE_FOLD_PLACEHOLDER, " ");
+  return kept.join("\n").replace(CODE_FOLD_PLACEHOLDER, " ");
 }
 
 function wordMetrics(md) {
@@ -332,8 +344,7 @@ function hasMoreAfter(bs, index) {
 }
 
 function codeLineCount(lines) {
-  const fence = FENCE.exec(lines[0] ?? "");
-  const mark = fence?.[1] ?? "```";
+  const mark = fenceMark(lines[0] ?? "") ?? "```";
   const closed = lines.length > 1 && fenceClose(lines[lines.length - 1] ?? "", mark);
   return Math.max(0, lines.length - (closed ? 2 : 1));
 }

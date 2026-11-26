@@ -244,6 +244,22 @@ describe("ES and EN sentence cut", () => {
       firstSentence("Tomar A, B, etc. ¿Qué sigue?"),
       { head: "Tomar A, B, etc.", more: true, rest: "¿Qué sigue?" },
     );
+    assert.deepEqual(
+      firstSentence("Administrar oxígeno, nitratos, diuréticos, etc. Reevaluar a los 30 min."),
+      { head: "Administrar oxígeno, nitratos, diuréticos, etc.", more: true, rest: "Reevaluar a los 30 min." },
+    );
+    assert.deepEqual(
+      firstSentence("Check K, Mg, Cr, etc. Repeat labs at 6 h."),
+      { head: "Check K, Mg, Cr, etc.", more: true, rest: "Repeat labs at 6 h." },
+    );
+    assert.deepEqual(
+      firstSentence("Usar oxígeno, nitratos, etc. (o equivalentes) en fase aguda. Reevaluar."),
+      { head: "Usar oxígeno, nitratos, etc. (o equivalentes) en fase aguda.", more: true, rest: "Reevaluar." },
+    );
+    assert.deepEqual(
+      firstSentence("Usar oxígeno, nitratos, etc. en fase aguda. Reevaluar."),
+      { head: "Usar oxígeno, nitratos, etc. en fase aguda.", more: true, rest: "Reevaluar." },
+    );
   });
 
   test("decimals (1,2 and 3.5) and units stay intact mid-sentence while still cutting at sentence end", () => {
@@ -284,7 +300,23 @@ describe("ES and EN sentence cut", () => {
     );
     assert.deepEqual(
       firstSentence("**First sentence. Second sentence.**"),
-      { head: "**First sentence.**", more: true, rest: "Second sentence.**" },
+      { head: "**First sentence.**", more: true, rest: "**Second sentence.**" },
+    );
+    assert.deepEqual(
+      sentences("**First sentence. Second sentence.**", 2),
+      { text: "**First sentence.** **Second sentence.**", more: false },
+    );
+    assert.equal(
+      fold("**First sentence. Second sentence.**", "brief").text,
+      "**First sentence.** **Second sentence.**",
+    );
+    assert.deepEqual(
+      sentences("**First. Second. Third.**", 2),
+      { text: "**First.** **Second.**", more: true },
+    );
+    assert.deepEqual(
+      sentences("**First. Second. Third.**", 3),
+      { text: "**First.** **Second.** **Third.**", more: false },
     );
     assert.deepEqual(
       firstSentence("Call `**a` first. Next."),
@@ -293,6 +325,14 @@ describe("ES and EN sentence cut", () => {
     assert.deepEqual(
       firstSentence("Esperar... y luego reevaluar. Registrar el cambio."),
       { head: "Esperar... y luego reevaluar.", more: true, rest: "Registrar el cambio." },
+    );
+    assert.deepEqual(
+      firstSentence("¿Primera frase. Luego ``texto `a?` final."),
+      { head: "¿Primera frase.", more: true, rest: "Luego ``texto `a?` final." },
+    );
+    assert.deepEqual(
+      firstSentence(`Dr.${" ".repeat(16)}García evaluó al paciente. Siguiente paso.`),
+      { head: `Dr.${" ".repeat(16)}García evaluó al paciente.`, more: true, rest: "Siguiente paso." },
     );
   });
 
@@ -335,6 +375,9 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     const md = [
       "---",
       "title: ADHF ward guide",
+      "título: Insuficiencia cardíaca",
+      "fecha alta: 2026-11-26",
+      '"clave: clínica": agudo',
       "tags:",
       "  - cardiology",
       "---",
@@ -346,6 +389,46 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     assert.equal(fold(md, "full").text, md);
     assert.equal(fold(md, "topic").text, "ADHF is rapid congestion or hypoperfusion at rest. …");
     assert.ok(!fold(md, "brief").text.includes("title: ADHF"));
+    assert.ok(!fold(md, "brief").text.includes("título:"));
+    assert.equal(words(md), words("## Definition\nADHF is rapid congestion or hypoperfusion at rest. Reassess within 1 h."));
+
+    const tightUrl = "---\nhttps://example.com\n---\n\nSiguiente nota.";
+    assert.notEqual(blocks(tightUrl)[0].kind, "frontmatter");
+    assert.ok(fold(tightUrl, "topic").text.startsWith("https://example.com"));
+
+    const urlBetweenRules = "---\n\nhttps://example.com\n\n---\n\nSiguiente nota.";
+    assert.deepEqual(blocks(urlBetweenRules).map(b => b.kind), ["rule", "para", "rule", "para"]);
+    assert.equal(fold(urlBetweenRules, "topic").text, "https://example.com …");
+  });
+
+  test("fenced code parsing matches word counting on unclosed, nested, and inline triple-backtick code", () => {
+    const unclosed = ["Run this command.", "", "```sh", ...Array.from({ length: 10 }, (_, i) => `echo ${i}`)].join("\n");
+    const foldedUnclosed = fold(unclosed, "brief");
+    assert.ok(foldedUnclosed.text.includes("`⋯ 10 lines of code`"));
+    assert.equal(foldedUnclosed.total, 3);
+    assert.equal(foldedUnclosed.shown, 3);
+
+    const nestedFence = [
+      "Intro.",
+      "",
+      "````md",
+      "```js",
+      "const dose = 40;",
+      "```",
+      "````",
+      "",
+      "Outro.",
+    ].join("\n");
+    assert.equal(words(nestedFence), 2);
+    assert.deepEqual(blocks(nestedFence).map(b => b.kind), ["para", "code", "para"]);
+
+    const inlineTicks = "Use ``` to open and ``` to close.";
+    assert.equal(words(inlineTicks), 6);
+
+    const leadingInline = "```foo``` is inline code.\n\nNext paragraph.";
+    assert.deepEqual(blocks(leadingInline).map(b => b.kind), ["para", "para"]);
+    assert.equal(fold(leadingInline, "topic").text, "```foo``` is inline code. …");
+    assert.equal(words(leadingInline), 6);
   });
 
   test("ellipsis marks dropped paragraphs and sub-items accurately at Takeaway, Key, and Topic", () => {
@@ -367,5 +450,56 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
 
     const nested = "- Primer punto.\n  - Subpunto oculto.\n- Segundo punto.";
     assert.equal(fold(nested, "key").text, "- Primer punto. …\n- Segundo punto.");
+  });
+
+  test("local fold stays within 15 ms per 1k words across all local levels", () => {
+    const section = index => [
+      `## Sección ${index + 1}: Manejo hemodinámico`,
+      `El Dr. García y la Sra. López indicaron aprox. 1,2 mg/kg/h. durante 6 h., p. ej. con furosemida, nitratos, etc. Reevaluar diuresis y TA cada 30 min. ¿Persiste congestión pulmonar? Ajustar dosis según respuesta clínica.`,
+      "",
+      `Start IV furosemide 40 mg. Reassess perfusion, lactate, K, Mg, Cr, etc. Repeat labs at 6 h. **Keep MAP >= 65 mmHg. Escalate early if hypoperfusion persists.**`,
+      "",
+      `- Verificar \`dose.check()\` antes de administrar 40 mg i.v. Registrar hora exacta.`,
+      `  - Confirmar alergias y función renal previa.`,
+      `- Controlar peso diario y balance hídrico. Anotar cambios significativos.`,
+      "",
+      "| Parámetro | Objetivo | Acción |",
+      "| --- | --- | --- |",
+      "| Diuresis | >100 mL/h | Doblar dosis |",
+      "| Potasio | 4.0 mmol/L | Suplementar |",
+      "",
+      "```sh",
+      "echo check-1",
+      "echo check-2",
+      "echo check-3",
+      "```",
+    ].join("\n");
+    const doc = [
+      "---",
+      "título: Protocolo de insuficiencia cardíaca",
+      "fecha alta: 2026-11-26",
+      "---",
+      "",
+      ...Array.from({ length: 12 }, (_, i) => section(i)),
+    ].join("\n\n");
+    const total = words(doc);
+    assert.ok(total >= 1000, `expected >= 1000 words in benchmark fixture, got ${total}`);
+    const scale = total / 1000;
+    for (const entry of LOCAL_LEVELS) {
+      fold(doc, entry.id);
+      const costs = [];
+      for (let run = 0; run < 25; run++) {
+        const started = performance.now();
+        fold(doc, entry.id);
+        costs.push((performance.now() - started) / scale);
+      }
+      costs.sort((a, b) => a - b);
+      const median = costs[Math.floor(costs.length / 2)];
+      const p95 = costs[Math.ceil(costs.length * 0.95) - 1];
+      assert.ok(
+        median < 15,
+        `fold(${entry.id}) cost ${median.toFixed(3)} ms per 1k words (p95 ${p95.toFixed(3)})`,
+      );
+    }
   });
 });
