@@ -32,7 +32,7 @@ import {
 import { assertCalcDefinition, calcLimits, evaluateCalc } from "../shared/calc-model.mjs";
 import {
   decodeNote, encodeNote, inkSvg, insertBlock, mergeAnchorOf, mergeDiff, mergeKindLabel, mergeLines,
-  mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
+  linkFor, mergeableKinds, noteLineEnding, noteMergeSettings, replayMerges, resolveMergeElement,
 } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
 import { journalTimeline, magnetsAt, parseScrubTime } from "../shared/glass-scrub.mjs";
@@ -1372,9 +1372,11 @@ export class GlassService {
       extension = path.extname(fields.asset).slice(1).toLowerCase() || "png";
     }
     const assetName = assetFile(base, extension, taken);
-    const assetPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
+    // The file lands at `attachmentFolder/name`; the link is what the note's own folder resolves.
+    const storedPath = settings.attachmentFolder ? `${settings.attachmentFolder}/${assetName}` : assetName;
+    const assetPath = linkFor(settings, storedPath);
     const mapping = mergeLines(kind, fields, { settings, assetPath, assetName: kind === "ink" ? "Ink" : fields.name || assetName });
-    return { ...mapping, asset: { bytes, name: assetName, base, extension, rel: assetPath, abs: path.join(directory, assetName) } };
+    return { ...mapping, asset: { bytes, name: assetName, base, extension, rel: storedPath, abs: path.join(directory, assetName) } };
   }
 
   async buildMerge(request) {
@@ -1460,9 +1462,9 @@ export class GlassService {
           // Someone put a different file with that name since the preview: pick a free name, never clobber.
           const taken = new Set(await readdir(path.dirname(mapping.asset.abs)));
           const assetName = assetFile(mapping.asset.base, mapping.asset.extension, taken);
-          const assetPath = built.settings.attachmentFolder ? `${built.settings.attachmentFolder}/${assetName}` : assetName;
-          mapping = { ...mergeLines(built.kind, built.fields, { settings: built.settings, assetPath, assetName: built.fields.name || assetName }),
-            asset: { ...mapping.asset, name: assetName, rel: assetPath, abs: path.join(path.dirname(mapping.asset.abs), assetName) } };
+          const storedPath = built.settings.attachmentFolder ? `${built.settings.attachmentFolder}/${assetName}` : assetName;
+          mapping = { ...mergeLines(built.kind, built.fields, { settings: built.settings, assetPath: linkFor(built.settings, storedPath), assetName: built.fields.name || assetName }),
+            asset: { ...mapping.asset, name: assetName, rel: storedPath, abs: path.join(path.dirname(mapping.asset.abs), assetName) } };
           diff = mergeDiff(decodeNote(built.beforeBuffer).text, built.element.to, mapping.lines, built.eol);
           buffer = encodeNote({ bom: built.bom, text: diff.next });
         }
@@ -1748,7 +1750,10 @@ export class GlassService {
       if (candidate) found.push(candidate);
       if (warning) warnings.push(warning);
     }
-    const online = onlineAllowed({ requested: request.online === true, neverOnline: settings.neverOnline });
+    const clicked = request.online === true
+      ? this.takeSwapConsent(request.consent, { notes: [String(note?.path ?? ""), String(note?.title ?? ""), String(name ?? "")], element: element.id })
+      : false;
+    const online = onlineAllowed({ requested: request.online === true && clicked, neverOnline: settings.neverOnline });
     let searched = false;
     if (kind === "find" && online.allowed && complaint) {
       searched = true;
@@ -2031,6 +2036,26 @@ export class GlassService {
     if (!isSwapId(request.swap)) throw new Error("Pass the proposal id to dismiss.");
     await this.appendRecord(journal, { op: "swap-dismiss", swapId: request.swap, hlc: this.clock.next(), device: this.deviceName });
     return { ...this.describe(note, file), dismissed: request.swap };
+  }
+
+  // The "person clicked" half of online consent is minted by the app window, not by the caller:
+  // a token is one-shot, short-lived and bound to the note and element it was asked for.
+  grantSwapConsent({ note, element, ttl = 60_000 } = {}) {
+    if (!this.consents) this.consents = new Map();
+    const token = randomBytes(24).toString("hex");
+    this.consents.set(token, { note: String(note ?? ""), element: String(element ?? ""), until: this.now() + Math.max(1_000, Math.min(ttl, 300_000)) });
+    return { token, expiresAt: this.consents.get(token).until };
+  }
+
+  takeSwapConsent(token, { notes = [], element } = {}) {
+    if (!this.consents || typeof token !== "string") return false;
+    const entry = this.consents.get(token);
+    if (!entry) return false;
+    if (this.now() > entry.until) { this.consents.delete(token); return false; }
+    // A mismatched element or note leaves the token for its real target; only its use consumes it.
+    if (entry.element !== String(element ?? "") || !notes.some(name => name !== "" && name === entry.note)) return false;
+    this.consents.delete(token);
+    return true;
   }
 
   async swapState(request) {
