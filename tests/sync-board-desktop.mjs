@@ -21,7 +21,7 @@ const heading = "Retrieval practice", first = "Recall the answer before looking 
 const source = `# ${heading}\n\n${first}\n\nLeave a day before your next review.\n`;
 await mkdir(vault, { recursive: true });
 await writeFile(path.join(vault, "practice.md"), source);
-git(home, "init", "--bare", remoteRoot);
+git(home, "init", "--bare", "-b", "main", remoteRoot);
 git(remoteRoot, "config", "http.receivepack", "true");
 git(vault, "init", "-b", "main");
 git(vault, "config", "user.name", "Test");

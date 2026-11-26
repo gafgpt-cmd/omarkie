@@ -65,7 +65,7 @@ test("basic_text and an unavailable keychain refuse persistence and offer sessio
 test("two journals diverge offline, merge by reader rules and push through a bare remote", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-sync-"));
   const remoteRoot = path.join(root, "remote.git"), vaultA = path.join(root, "a"), vaultB = path.join(root, "b"), appData = path.join(root, "appdata");
-  git(root, "init", "--bare", remoteRoot);
+  git(root, "init", "--bare", "-b", "main", remoteRoot);
   git(remoteRoot, "config", "http.receivepack", "true");
   const server = await gitHttpServer(root);
   try {
@@ -111,7 +111,7 @@ test("two journals diverge offline, merge by reader rules and push through a bar
 test("a non-journal file changed on both sides stops before writing and reports the conflict", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "omarkie-sync-conflict-"));
   const remoteRoot = path.join(root, "remote.git"), vaultA = path.join(root, "a"), vaultB = path.join(root, "b"), appData = path.join(root, "appdata");
-  git(root, "init", "--bare", remoteRoot);
+  git(root, "init", "--bare", "-b", "main", remoteRoot);
   git(remoteRoot, "config", "http.receivepack", "true");
   const server = await gitHttpServer(root);
   try {
