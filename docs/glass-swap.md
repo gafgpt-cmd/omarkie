@@ -22,6 +22,8 @@ Every candidate shows its source and licence before you can use it.
 - Compare reuses the G15 slider (one widget).
 - Vault pictures are searched first; no index needed.
 - Online search is opt-in twice: the person clicks, and the vault allows it.
+  - The click = one-shot consent token, minted by the app window for one note + element, 60 s.
+  - CLI / Tutor `--online` alone gets `CONSENT_REQUIRED`: no web search.
   - Wikimedia Commons + Openverse, licence allow-list CC0 / BY / BY-SA.
   - Results need title, author, licence and landing URL; NC/ND are refused with the reason.
   - `OMARKIE_SWAP_SEARCH` points at a JSON results file for offline machines and tests.
@@ -47,7 +49,7 @@ Every candidate shows its source and licence before you can use it.
 
 ```sh
 omarkie-axi element swap --note review.md --element paragraph-3 \
-  --complaint "too dense" --kind find --online
+  --complaint "too dense" --kind find
 omarkie-axi element cover --note review.md --element image-2 --candidate '<json>' --accept
 omarkie-axi element swap --note review.md --element image-2 --candidate '<json>' --mode replace --accept
 omarkie-axi element restore --note review.md --element image-2 --accept
