@@ -635,7 +635,7 @@ const handlers = {
   recentAction: async (_, action, file) => { if (action !== "open") return workspace.recentAction(action, file); const item = (await workspace.recent()).find(item => item.path === file); if (!item) throw new Error(t("最近项目已移除。")); await workspace.remember(file, item.folder); return item.folder ? store.scan(file) : store.open(file); },
   searchFiles: async (_, query, options) => {
     const inventory = await store.scan();
-    const result = await workspace.search(inventory.files, query, { ...options, encodings: Object.fromEntries([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding])) });
+    const result = await workspace.search(inventory.files.filter(file => !/\.base$/i.test(file.name)), query, { ...options, encodings: Object.fromEntries([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding])) });
     return { ...result, skipped: result.skipped + inventory.skipped };
   },
   reveal: async (_, file) => shell.showItemInFolder(await workspace.authorize(file, store)),

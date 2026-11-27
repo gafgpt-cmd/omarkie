@@ -29,6 +29,32 @@
 - HTML/PDF export: section text frozen in, title links to the source note.
 - Saved Markdown keeps `![[...]]`. Vault bundle: embed becomes a link to its note; an unresolved embed stops the export at `note:line`.
 
+## Bases
+
+Obsidian `.base` files: read-only table of vault notes.
+
+- Open from the file list or Quick Open. View tabs on top.
+- Keyboard: Left/Right/Home/End switch views; Tab into rows; Up/Down/Home/End move; Enter or Space opens the note.
+- Live: drafts, external edits, renames and deletes update rows. No reindex, no save needed.
+- Never writes the `.base` file. No network. No JS, DataviewJS, remote data or executable formulas.
+
+| Part | Supported |
+| --- | --- |
+| `filters` (global + per view) | `and` / `or` / `not`, comparisons, `&&` `\|\|` `!`, `+ -` dates and durations (`"1 week"`, `"3M"`) |
+| Functions | `file.hasTag`, `file.inFolder`, `file.hasProperty`, `date()`, `now()`, `today()`, `number()`, `list()`, `if()` |
+| Methods | `contains`, `containsAll`, `containsAny`, `startsWith`, `endsWith`, `lower`, `upper`, `trim`, `isEmpty`, `isTruthy`, `toString`, `.length` |
+| Columns (`order`) | `file.name/basename/path/folder/ext/size/ctime/mtime/tags`, note properties (`author`, `note.author`, `note["x y"]`) |
+| `properties.*.displayName` | column titles |
+| `sort`, `limit` | yes; empties last, then path order |
+| View types | `table`; `cards` shown as a table |
+
+Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknown keys, unknown functions or fields (e.g. `file.backlinks`).
+
+- Unsupported filter part: not applied, never hides rows. View flagged "may list extra notes".
+- `limit` cut: count shows "Showing N of M".
+- Bounds: 256 KiB `.base`, 4096-char expression, depth 48, 500 filter conditions, 64 views, 1000 rows drawn.
+- Notes that fail to read are counted, not guessed.
+
 ## Reading summary
 
 - File → Collect highlights and callouts.

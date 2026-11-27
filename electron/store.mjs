@@ -20,6 +20,8 @@ import { findInVault, vaultRoot } from "./vault.mjs";
 export const digest = (value) =>
   createHash("sha256").update(value).digest("hex");
 const markdown = /\.(md|markdown|mdown)$/i;
+// The folder listing also shows Bases (`.base`), which open as read-only views, never as documents.
+const listed = /\.(md|markdown|mdown|base)$/i;
 const fileNameOrder = new Intl.Collator("zh-CN", { numeric: true });
 const within = (base, file) => {
   const relative = path.relative(base, file);
@@ -233,7 +235,7 @@ export class DocumentStore {
           entry.name.startsWith(".") ||
           entry.name === "node_modules" ||
           entry.isSymbolicLink() ||
-          !(entry.isDirectory() || entry.isFile() && markdown.test(entry.name))
+          !(entry.isDirectory() || entry.isFile() && listed.test(entry.name))
         )
           continue;
         if (files.length >= 1000) {
@@ -244,7 +246,7 @@ export class DocumentStore {
         let metadata;
         try { metadata = await lstat(file); }
         catch { skipped++; continue; }
-        if (metadata.isSymbolicLink() || !(metadata.isDirectory() || metadata.isFile() && markdown.test(entry.name))) continue;
+        if (metadata.isSymbolicLink() || !(metadata.isDirectory() || metadata.isFile() && listed.test(entry.name))) continue;
         const token = digest(file);
         tokens.set(token, file);
         files.push({

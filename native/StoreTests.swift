@@ -157,6 +157,11 @@ func runStoreTests() throws {
   var nonNoteRejected = false
   do { _ = try workspace.readNotes(workflowStore, relatives: [".assets/escape.png"]) } catch { nonNoteRejected = true }
   try expect(nonNoteRejected, "embed reads refuse non-note files")
+  try "views:\n  - type: table\n    name: All\n".write(to: workflowRoot.appendingPathComponent("list.base"), atomically: true, encoding: .utf8)
+  let baseScan = try workflowStore.scan()["files"] as! [[String: String]]
+  try expect(baseScan.contains { $0["relative"] == "list.base" }, "folder scan lists Bases")
+  try expect(!((try workspace.vaultSnapshot(workflowStore))["notes"] as! [[String: String]]).contains { $0["relative"] == "list.base" }, "snapshots keep Bases out of notes")
+  try expect(try workspace.readNotes(workflowStore, relatives: ["list.base"]) == [["relative": "list.base", "content": "views:\n  - type: table\n    name: All\n"]], "Bases read as text")
   _ = try store.scan(directory)
   var latest = try store.require(record.id); latest.content = "未保存内容\r\n"; store.records[record.id] = latest
   let renamed = try workspace.execute(["action": "rename", "path": file.path, "name": "renamed.md"], store: store)

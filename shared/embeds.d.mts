@@ -11,7 +11,9 @@ export interface EmbedSection {
   matches?: number;
 }
 export interface EmbedSource {
-  setFiles(list: { relative: string; modified?: string; isDirectory?: string }[]): { changed: string[]; paths: boolean };
+  files(): { relative: string; modified: string; created: string; draft: boolean }[];
+  notes(relatives: string[]): Promise<{ relative: string; content: string }[]>;
+  setFiles(list: { relative: string; modified?: string; created?: string; isDirectory?: string }[]): { changed: string[]; paths: boolean };
   setDrafts(list: { relative: string; content: string }[]): { changed: string[]; paths: boolean };
   section(from: { relative: string; content: string; base?: string }, raw: string, chain?: string[], budget?: { bytes: number }): Promise<EmbedSection>;
 }

@@ -28,6 +28,9 @@ function changed(result: { changed: string[]; paths: boolean }) {
 export function updateEmbedFiles(files: { relative: string; modified?: string; isDirectory?: string }[]) { if (source) changed(source.setFiles(files)); }
 export function updateEmbedDrafts(drafts: Note[]) { if (source) changed(source.setDrafts(drafts)); }
 export function onEmbedsChanged(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+export const vaultFiles = () => source?.files() ?? [];
+export const vaultNotes = (relatives: string[]) => source ? source.notes(relatives) : Promise.resolve([]);
+export function openVaultNote(relative: string, line = 1) { options?.open(relative, line, ""); }
 
 const stamp = (deps: string[]) => `${paths}|${deps.map(relative => `${relative}:${versions.get(relative) ?? 0}`).join("|")}`;
 const outer = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>(".note-embed[data-embed]")].filter(frame => !frame.parentElement?.closest(".note-embed"));

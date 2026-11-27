@@ -81,9 +81,25 @@ export function createEmbedSource({ read }) {
   }
 
   return {
+    // Vault files and open drafts with their stamps; Bases list notes from here.
+    files() {
+      return [...new Set([...files.keys(), ...drafts.keys()])].map(relative => ({ relative, modified: files.get(relative)?.modified ?? "", created: files.get(relative)?.created ?? "", draft: drafts.has(relative) }));
+    },
+    // Text of many files at once: drafts, then unchanged cache entries, then host reads in batches. Unreadable files are left out.
+    async notes(relatives) {
+      const fresh = relative => drafts.has(relative) || cache.get(relative)?.modified === files.get(relative)?.modified && cache.has(relative);
+      const missing = relatives.filter(relative => !fresh(relative));
+      for (let at = 0; at < missing.length; at += embedLimits.read) {
+        const batch = missing.slice(at, at + embedLimits.read), stamps = new Map(batch.map(relative => [relative, files.get(relative)?.modified]));
+        let loaded = [];
+        try { loaded = await read(batch) ?? []; } catch {}
+        for (const note of loaded) if (stamps.has(note?.relative) && typeof note.content === "string" && files.get(note.relative)?.modified === stamps.get(note.relative)) cache.set(note.relative, { modified: stamps.get(note.relative), content: note.content });
+      }
+      return relatives.flatMap(relative => drafts.has(relative) ? [{ relative, content: drafts.get(relative) }] : fresh(relative) ? [{ relative, content: cache.get(relative).content }] : []);
+    },
     // Returns the notes whose text may have changed and whether the set of paths changed.
     setFiles(list) {
-      const next = new Map(list.filter(file => file.isDirectory !== "true").map(file => [file.relative.replaceAll("\\", "/"), { modified: file.modified ?? "" }]));
+      const next = new Map(list.filter(file => file.isDirectory !== "true").map(file => [file.relative.replaceAll("\\", "/"), { modified: file.modified ?? "", created: file.created ?? "" }]));
       const changed = [];
       for (const [relative, file] of next) if (files.get(relative)?.modified !== file.modified) changed.push(relative);
       for (const relative of files.keys()) if (!next.has(relative)) changed.push(relative);
