@@ -344,7 +344,7 @@ function tokenInlineHtml(
         cursor += pipe[0].length; decoded += visible; continue;
       }
       const entity = /^&(?:#x[\da-f]+|#\d+|[a-z][\da-z]+);/i.exec(rest),
-        escaped = /^\\[\\`*_{}\[\]()#+.!~<>|-]/.exec(rest);
+        escaped = /^\\[!-/:-@[-`{-~]/.exec(rest);
       const unit =
         entity?.[0] ||
         escaped?.[0] ||

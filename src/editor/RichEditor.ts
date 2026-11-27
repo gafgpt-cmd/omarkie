@@ -28,6 +28,7 @@ import type { BlockArguments } from "./blockCommands.ts";
 
 import { highlightCode, loadHighlighting, inlineTokens, markdownOptionsVersion } from "./markdown.ts";
 import { imeKey } from "./composition.ts";
+import { smartPunctuateElement, type SmartStyle } from "./smartPunctuation.ts";
 import { t } from "../i18n.ts";
 export interface RichCallbacks {
   change(): void;
@@ -36,7 +37,7 @@ export interface RichCallbacks {
   link(url: string): void;
   compositionFinished(): void;
 }
-export interface RichOptions { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; codeLineNumbers?: boolean; readOnly?: boolean }
+export interface RichOptions { spellcheck: boolean; tabSize: number; typewriter: boolean; autoPair?: boolean; emoji?: boolean; codeLineNumbers?: boolean; readOnly?: boolean; smartPunctuation?: SmartStyle }
 export class RichEditor {
   leaves = new Map<string, Leaf>();
   composing = false;
@@ -99,6 +100,7 @@ export class RichEditor {
   private autoPair = false;
   private codeLineNumbers = false;
   private readOnly = false;
+  private smartPunctuation: SmartStyle = "off";
   private protectReadOnly = (event: Event) => {
     if (!this.readOnly) return;
     if (event.type === "keydown") {
@@ -440,7 +442,7 @@ export class RichEditor {
     for (const child of this.root.children) { const cid = (child as HTMLElement).dataset.cid; if (cid) existing.set(cid, child as HTMLElement); }
     // Heading and footnote lines shift on every Enter; only ids and text affect other blocks' markup.
     const { headings, footnoteDefinitions, ...rest } = this.model.environment as { headings?: DocumentHeading[]; footnoteDefinitions?: Record<string, FootnoteDefinition> };
-    const state = `${this.documentId}\u0001${markdownOptionsVersion}\u0001${JSON.stringify(rest)}\u0001${JSON.stringify(headings?.map(heading => [heading.id, heading.text, heading.level]))}\u0001${JSON.stringify(footnoteDefinitions && Object.values(footnoteDefinitions).map(definition => [definition.id, definition.text]))}`;
+    const state = `${this.documentId}\u0001${markdownOptionsVersion}\u0001${this.smartPunctuation}\u0001${JSON.stringify(rest)}\u0001${JSON.stringify(headings?.map(heading => [heading.id, heading.text, heading.level]))}\u0001${JSON.stringify(footnoteDefinitions && Object.values(footnoteDefinitions).map(definition => [definition.id, definition.text]))}`;
     if (state !== this.renderState) { this.renderState = state; this.renderVersion++; }
     const version = this.renderVersion;
     const nodes = this.model.nodes, ranges = this.windowRanges();
@@ -482,6 +484,7 @@ export class RichEditor {
         } else {
           const local = new Map<string, Leaf>();
           element = renderNode(node, this.documentId, local, this.model.environment);
+          smartPunctuateElement(element, this.smartPunctuation);
           html = element.outerHTML;
           for (const [id, leaf] of local) fresh.set(id, leaf);
           if (node.kind !== "toc") blocks.set(node.id, { source: node.source, kind: node.kind, line: node.line, lineSensitive: lineSensitive(node.source), version, html, leaves: [...local.values()], base: node.from });
@@ -724,6 +727,8 @@ export class RichEditor {
   }
   setOptions(options: RichOptions) {
     this.readOnly = options.readOnly ?? false;
+    // Editable rendering keeps straight punctuation until it has selection and IME parity.
+    this.smartPunctuation = this.readOnly ? options.smartPunctuation ?? "off" : "off";
     this.root.contentEditable = String(!this.readOnly);
     this.root.setAttribute("aria-readonly", String(this.readOnly));
     this.tableToolbar.inert = this.readOnly;

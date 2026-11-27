@@ -521,6 +521,8 @@
   "Removes {{count}} filled cells_other": "Elimina {{count}} cel·les amb contingut",
   "Removes {{count}} filled cells_many": "Elimina {{count}} de cel·les amb contingut",
   "Current size": "Mida actual",
+  "Smart punctuation": "Puntuació tipogràfica",
+  "Quotes, dashes and ellipses in reading mode and exports. The note keeps its straight punctuation.": "Cometes, guions i punts suspensius en mode lectura i a les exportacions. La nota conserva la seva puntuació recta.",
   "向左移动列": "Moure la columna a l'esquerra",
   "启用{{name}}": "Activar {{name}}",
   "四级标题": "Títol 4",

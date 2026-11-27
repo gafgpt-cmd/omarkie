@@ -513,6 +513,8 @@
   "Removes {{count}} filled cells_one": "Removes {{count}} filled cell",
   "Removes {{count}} filled cells_other": "Removes {{count}} filled cells",
   "Current size": "Current size",
+  "Smart punctuation": "Smart punctuation",
+  "Quotes, dashes and ellipses in reading mode and exports. The note keeps its straight punctuation.": "Quotes, dashes and ellipses in reading mode and exports. The note keeps its straight punctuation.",
   "向左移动列": "Move Column Left",
   "启用{{name}}": "Enable {{name}}",
   "四级标题": "Heading 4",

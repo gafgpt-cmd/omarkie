@@ -521,6 +521,8 @@
   "Removes {{count}} filled cells_few": "Elimină {{count}} celule completate",
   "Removes {{count}} filled cells_other": "Elimină {{count}} de celule completate",
   "Current size": "Dimensiunea actuală",
+  "Smart punctuation": "Punctuație tipografică",
+  "Quotes, dashes and ellipses in reading mode and exports. The note keeps its straight punctuation.": "Ghilimele, linii de pauză și puncte de suspensie în modul de citire și la export. Nota își păstrează punctuația dreaptă.",
   "向左移动列": "Mută coloana la stânga",
   "启用{{name}}": "Activează {{name}}",
   "四级标题": "Titlu 4",

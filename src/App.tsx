@@ -476,7 +476,7 @@ export default function App() {
     try {
       await host.persist({ documents: session.documents, activeId: session.activeId });
       await loadHighlighting();
-      printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
+      printDocument.current.innerHTML = renderMarkdown(active.content, active.id, { smartPunctuation: preferences.smartPunctuation });
       await fontFacesReady();
       await renderEmbeds(printDocument.current, active.id); freezeEmbeds(printDocument.current, active.id);
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);

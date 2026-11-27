@@ -1317,6 +1317,13 @@ svg {
 [data-appearance="dark"] .table-size-note.is-warning {
   color: #ffb4ab;
 }
+/* Reading-mode typography: the glyph is drawn, the source characters stay in the DOM. */
+.md-smart::before {
+  content: attr(data-smart);
+}
+.md-smart > span {
+  font-size: 0;
+}
 @media (min-width: 1400px) {
   .rich-document {
     max-width: 1024px;
