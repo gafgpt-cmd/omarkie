@@ -196,7 +196,6 @@ export async function runTextfoldCli({
   python = process.env.TEXTFOLD_PYTHON || "python3",
   mode = "local",
   dataDir,
-  lang,
   timeoutMs = 180_000,
   runner = execFileAsync,
 }) {
@@ -204,7 +203,6 @@ export async function runTextfoldCli({
   assertValidTimeoutMs(timeoutMs);
   const args = ["-m", "textfold", "get", inputPath, "--json"];
   if (mode === "local") args.push("--no-generate");
-  if (lang) args.push("--lang", lang);
 
   const env = { ...process.env, PYTHONUTF8: "1" };
   if (dataDir) env.TEXTFOLD_DATA = dataDir;
@@ -230,7 +228,6 @@ export async function recordFixture({
   python = process.env.TEXTFOLD_PYTHON || "python3",
   mode = "local",
   dataDir,
-  lang,
   timeoutMs = 180_000,
   dryRun = false,
   runner = execFileAsync,
@@ -258,7 +255,6 @@ export async function recordFixture({
       python,
       mode,
       dataDir: isolatedDataDir,
-      lang,
       timeoutMs,
       runner,
     });
