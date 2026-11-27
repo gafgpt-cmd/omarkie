@@ -21,6 +21,7 @@ import type { Leaf } from "./richRender.ts";
 import { renderDiagrams } from "./diagrams.ts";
 import { renderMath } from "./math.ts";
 import { onEmbedsChanged, openEmbed, renderEmbeds } from "./embeds.ts";
+import { TableHandles } from "./tableHandles.ts";
 
 import { applyBlockCommand } from "./blockCommands.ts";
 import type { BlockArguments } from "./blockCommands.ts";
@@ -91,6 +92,7 @@ export class RichEditor {
   private emojiEnabled = true;
   private emojiDismissed = "";
   private tableToolbar: HTMLDivElement;
+  private tableHandles: TableHandles;
   private pendingFormat = new Map<string, string>();
   private tabSize = 2;
   private typewriter = false;
@@ -172,6 +174,12 @@ export class RichEditor {
     this.emojiPopup.addEventListener("mousedown", event => event.preventDefault());
     root.parentElement!.append(this.emojiPopup);
     root.parentElement!.append(this.tableToolbar);
+    this.tableHandles = new TableHandles(root.parentElement!, {
+      move: (axis, from, to, cid) => this.tableMove(axis, from, to, cid),
+      resize: (rows, columns, cid) => this.tableResize(rows, columns, cid),
+      filledOutside: (rows, columns, cid) => this.tableFilledOutside(rows, columns, cid),
+    });
+    this.tableToolbar.append(this.tableHandles.sizeButton);
     if (options) this.setOptions(options);
     this.render(false);
   }
@@ -207,7 +215,7 @@ export class RichEditor {
     this.root.removeEventListener("load", this.loaded, true);
     this.detached.clear();
     this.fence?.view.destroy();
-    this.tableToolbar.remove(); this.emojiPopup.remove();
+    this.tableToolbar.remove(); this.tableHandles.destroy(); this.emojiPopup.remove();
     document.removeEventListener("selectionchange", this.selectionChange);
     document.removeEventListener("pointerup", this.pointerUp);
     for (const [type, listener] of [
@@ -719,6 +727,7 @@ export class RichEditor {
     this.root.contentEditable = String(!this.readOnly);
     this.root.setAttribute("aria-readonly", String(this.readOnly));
     this.tableToolbar.inert = this.readOnly;
+    this.tableHandles.inert = this.readOnly;
     for (const checkbox of this.root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')) checkbox.disabled = this.readOnly;
     this.emojiEnabled = options.emoji !== false;
     this.root.spellcheck = options.spellcheck;
@@ -762,14 +771,17 @@ export class RichEditor {
           ),
         ),
       );
-    const table = anchor?.closest("table");
+    const cell = anchor?.closest<HTMLTableCellElement>("td,th"), table = cell?.closest("table");
     this.tableToolbar.hidden = !table;
     if (table) {
       const rect = table.getBoundingClientRect(),
-        parent = this.root.parentElement!.getBoundingClientRect();
-      this.tableToolbar.style.top = `${Math.max(0, rect.top - parent.top - 29)}px`;
-      this.tableToolbar.style.left = `${rect.left - parent.left}px`;
+        scroller = this.root.parentElement!,
+        parent = scroller.getBoundingClientRect();
+      // The scroller positions its children; scrolled content needs its scroll offset.
+      this.tableToolbar.style.top = `${Math.max(0, rect.top - parent.top + scroller.scrollTop - 37)}px`;
+      this.tableToolbar.style.left = `${rect.left - parent.left + scroller.scrollLeft}px`;
     }
+    this.tableHandles.update(table && !this.readOnly ? cell! : null);
   }
   private selectionChange = () => {
     if (
@@ -1518,15 +1530,13 @@ export class RichEditor {
       rows[1][column] =
         action === "left" ? ":---" : action === "right" ? "---:" : ":---:";
     else if (["moveRowUp", "moveRowDown"].includes(action)) {
-      const other = sourceRow + (action === "moveRowUp" ? -1 : 1);
-      if (sourceRow < 2 || other < 2 || other >= rows.length) return;
-      [rows[sourceRow], rows[other]] = [rows[other], rows[sourceRow]]; targetRow = other;
+      if (sourceRow >= 2) this.tableMove("row", sourceRow - 1, sourceRow - 1 + (action === "moveRowUp" ? -1 : 1), node.id);
+      return;
     } else if (["moveColumnLeft", "moveColumnRight"].includes(action)) {
-      const other = column + (action === "moveColumnLeft" ? -1 : 1);
-      if (other < 0 || other >= rows[0].length) return;
-      for (const cells of rows) [cells[column], cells[other]] = [cells[other], cells[column]];
-      targetColumn = other;
-    } else if (action === "format") { /* Normalize the table in the same transaction. */ }
+      this.tableMove("column", column, column + (action === "moveColumnLeft" ? -1 : 1), node.id);
+      return;
+    } else if (action === "size") { this.restore(selection); this.tableHandles.openPicker(); return; }
+    else if (action === "format") { /* Normalize the table in the same transaction. */ }
     else return;
     const output = rows.map((cells) => `| ${cells.join(" | ")} |`);
     targetRow = Math.min(targetRow, rows.length - 1);
@@ -1555,6 +1565,73 @@ export class RichEditor {
       )
     )
       this.publish();
+  }
+  // Handles address rendered rows (0 = header); the source has the separator line after the header.
+  private tableSource(cid: string) {
+    const node = this.model.node(cid);
+    if (!node || node.kind !== "table_open") return null;
+    const lines = node.source.split("\n"), rows = lines.map(line => tableRowCells(line).map(cell => cell.raw));
+    const selection = this.bookmark(), caret = (position: number) => {
+      if (position < node.from || position > node.to) return null;
+      let local = position - node.from, row = 0;
+      while (row < lines.length - 1 && local > lines[row].length) { local -= lines[row].length + 1; row++; }
+      const cells = tableRowCells(lines[row]), found = cells.findIndex(cell => local <= cell.end), column = found < 0 ? cells.length - 1 : found;
+      return column < 0 ? null : { row, column, offset: Math.max(0, Math.min(cells[column].raw.length, local - cells[column].start)) };
+    };
+    return { node, lines, rows, width: rows[0].length, selection, anchor: caret(selection.anchor), head: caret(selection.head) };
+  }
+  // One closed undo group per committed handle, picker or menu transaction; the caret follows its cell.
+  private tableCommit(table: NonNullable<ReturnType<RichEditor["tableSource"]>>, output: string[], place: (row: number, column: number) => [number, number]) {
+    const { node, selection } = table, at = (point: typeof table.head) => {
+      if (!point) return null;
+      const [row, column] = place(point.row, point.column), line = Math.max(0, Math.min(output.length - 1, row));
+      const cells = tableRowCells(output[line]), index = Math.max(0, Math.min(cells.length - 1, column)), cell = cells[index];
+      if (!cell) return null;
+      const kept = line === row && index === column;
+      return node.from + output.slice(0, line).reduce((n, text) => n + text.length + 1, 0) + cell.start + (kept ? Math.min(cell.raw.length, point.offset) : 0);
+    };
+    const head = at(table.head) ?? node.from, anchor = at(table.anchor) ?? head;
+    this.model.selection = selection;
+    this.model.closeGroup();
+    const changed = this.model.replace(node.from, node.to, output.join("\n"), "table", { anchor, head });
+    if (changed) this.publish();
+    return changed;
+  }
+  tableMove(axis: "row" | "column", from: number, to: number, cid: string) {
+    const table = this.tableSource(cid);
+    if (!table || from === to) return false;
+    const { lines, rows, width } = table;
+    if (axis === "row") {
+      if (Math.min(from, to) < 1 || Math.max(from, to) > lines.length - 2) return false;
+      // Rows keep their exact source lines; only their order changes.
+      const order = lines.map((_, index) => index), [moved] = order.splice(from + 1, 1);
+      order.splice(to + 1, 0, moved);
+      return this.tableCommit(table, order.map(index => lines[index]), (row, column) => [order.indexOf(row), column]);
+    }
+    if (Math.min(from, to) < 0 || Math.max(from, to) >= width) return false;
+    const order = [...Array(width).keys()], [moved] = order.splice(from, 1);
+    order.splice(to, 0, moved);
+    const output = rows.map((cells, index) => {
+      const padded = [...cells, ...Array<string>(Math.max(0, width - cells.length)).fill(index === 1 ? "---" : "")];
+      return `| ${[...order.map(column => padded[column]), ...padded.slice(width)].join(" | ")} |`;
+    });
+    return this.tableCommit(table, output, (row, column) => [row, column < width ? order.indexOf(column) : column]);
+  }
+  // Size counts rendered rows: the header plus body rows.
+  tableFilledOutside(rows: number, columns: number, cid: string) {
+    const table = this.tableSource(cid);
+    if (!table) return 0;
+    return table.rows.reduce((count, cells, index) => index === 1 ? count : count + cells.filter((cell, column) => cell && (index > rows || column >= columns)).length, 0);
+  }
+  tableResize(rows: number, columns: number, cid: string) {
+    const table = this.tableSource(cid);
+    if (!table || rows < 2 || columns < 1) return false;
+    const { lines, width } = table, blank = (index: number) => index === 1 ? "---" : "";
+    // Same width: existing lines stay byte-for-byte; only body rows are added or dropped.
+    const output = columns === width
+      ? [...lines.slice(0, rows + 1), ...Array.from({ length: Math.max(0, rows + 1 - lines.length) }, () => `| ${Array<string>(width).fill("").join(" | ")} |`)]
+      : Array.from({ length: rows + 1 }, (_, index) => `| ${Array.from({ length: columns }, (_, column) => table.rows[index]?.[column] ?? blank(index)).join(" | ")} |`);
+    return this.tableCommit(table, output, (row, column) => [row, column]);
   }
   wrap(before: string, after = "") {
     if (this.fence?.view.hasFocus) return;

@@ -93,6 +93,7 @@
     {"label":"向下移动行","action":"table-moveRowDown","context":"table"},
     {"label":"向左移动列","action":"table-moveColumnLeft","context":"table"},
     {"label":"向右移动列","action":"table-moveColumnRight","context":"table"},
+    {"label":"表格大小…","action":"table-size","context":"table"},
     {"label":"删除行","action":"table-removeRow","key":"Mod-Shift-Backspace","context":"table"},
     {"label":"删除列","action":"table-removeColumn","context":"table"},
     {"label":"左对齐","action":"table-left","context":"table"},

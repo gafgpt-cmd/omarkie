@@ -572,6 +572,68 @@ test("table movement carries alignment and escaped cell content and remains undo
   assert.ok(f.model.text.indexOf("one") < f.model.text.indexOf("x\\|y"));
   f.editor.undo(); assert.equal(f.model.text, source); f.close();
 });
+test("table handle moves keep source lines, alignment, escaped pipes and code, follow the caret and undo exactly", () => {
+  const source = "| A | B | C |\n|:--|:-:|--:|\n|  x\\|y | `a\\|b` | 1 |\n| two | **b** | 2 |\n| three | c | 3 |\n";
+  const f = fixture(source), cid = f.root.querySelector("table").closest("[data-cid]").dataset.cid;
+  try {
+    point(f.editor, source.indexOf("two") + 1);
+    assert.equal(f.editor.tableMove("row", 2, 3, cid), true);
+    assert.equal(f.model.text, "| A | B | C |\n|:--|:-:|--:|\n|  x\\|y | `a\\|b` | 1 |\n| three | c | 3 |\n| two | **b** | 2 |\n");
+    assert.equal(f.model.selection.head, f.model.text.indexOf("two") + 1);
+    f.editor.undo(); assert.equal(f.model.text, source);
+    f.editor.redo(); assert.ok(f.model.text.indexOf("three") < f.model.text.indexOf("two")); f.editor.undo();
+    point(f.editor, source.indexOf("1"));
+    assert.equal(f.editor.tableMove("column", 2, 0, cid), true);
+    assert.match(f.model.text, /^\| C \| A \| B \|\n\| --: \| :-- \| :-: \|\n\| 1 \| x\\\|y \| `a\\\|b` \|/);
+    assert.equal(f.model.text.slice(f.model.selection.head, f.model.selection.head + 1), "1");
+    assert.equal(f.root.querySelectorAll("th").length, 3); assert.equal(f.root.querySelector("td code")?.textContent, "a\\|b");
+    f.editor.undo(); assert.equal(f.model.text, source);
+    assert.equal(f.editor.tableMove("row", 0, 1, cid), false); assert.equal(f.editor.tableMove("column", 0, 3, cid), false);
+    assert.equal(f.model.text, source);
+  } finally { f.close(); }
+});
+test("table size picker resizes by keyboard, warns about filled cells, keeps same-width lines and undoes in one step", () => {
+  const source = "| A | B |\n| :--- | ---: |\n| x\\|y | z |\n| one | |\n";
+  const f = fixture(source), cid = f.root.querySelector("table").closest("[data-cid]").dataset.cid;
+  const key = (target, name) => target.dispatchEvent(new window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  try {
+    assert.equal(f.editor.tableFilledOutside(2, 2, cid), 1);
+    assert.equal(f.editor.tableFilledOutside(4, 1, cid), 2);
+    point(f.editor, source.indexOf("z"));
+    f.editor.command("table-size");
+    const picker = document.querySelector(".table-size-picker"), grid = picker.querySelector(".table-size-grid");
+    assert.equal(picker.hidden, false); assert.match(grid.getAttribute("aria-valuetext"), /^\D*3\D+2\D*$/);
+    key(grid, "Escape"); assert.equal(picker.hidden, true); assert.equal(f.model.text, source);
+    f.editor.command("table-size"); key(grid, "ArrowDown"); key(grid, "Enter");
+    assert.equal(f.model.text, source.replace(/\n$/, "\n|  |  |\n"));
+    assert.ok(f.model.text.startsWith("| A | B |\n| :--- | ---: |\n| x\\|y | z |\n| one | |\n"));
+    assert.equal(f.model.text.slice(f.model.selection.head, f.model.selection.head + 1), "z");
+    f.editor.undo(); assert.equal(f.model.text, source);
+    f.editor.command("table-size"); key(grid, "ArrowUp"); key(grid, "ArrowRight");
+    const note = picker.querySelector(".table-size-note"); assert.ok(note.classList.contains("is-warning")); assert.match(note.textContent, /\b1\b/);
+    key(grid, "Enter");
+    assert.equal(f.model.text, "| A | B |  |\n| :--- | ---: | --- |\n| x\\|y | z |  |\n");
+    f.editor.undo(); assert.equal(f.model.text, source);
+  } finally { f.close(); }
+});
+test("table grips move rows and columns from the keyboard as the same one-step transaction", () => {
+  const source = "| A | B |\n| --- | :-: |\n| one | 1 |\n| two | 2 |\n";
+  const f = fixture(source);
+  const key = (target, name) => target.dispatchEvent(new window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  try {
+    point(f.editor, source.indexOf("one"));
+    const row = document.querySelector(".table-grip-row"), column = document.querySelector(".table-grip-column");
+    assert.equal(row.hidden, false); assert.equal(column.hidden, false);
+    key(row, "ArrowUp"); assert.equal(f.model.text, source);
+    key(row, "ArrowDown"); assert.equal(f.model.text, "| A | B |\n| --- | :-: |\n| two | 2 |\n| one | 1 |\n");
+    f.editor.undo(); assert.equal(f.model.text, source);
+    point(f.editor, source.indexOf("one")); key(column, "ArrowRight");
+    assert.equal(f.model.text, "| B | A |\n| :-: | --- |\n| 1 | one |\n| 2 | two |\n");
+    f.editor.undo(); assert.equal(f.model.text, source);
+    f.editor.setOptions({ spellcheck: false, tabSize: 2, typewriter: false, readOnly: true });
+    assert.equal(row.hidden, true); assert.equal(column.hidden, true);
+  } finally { f.close(); }
+});
 test("auto pair skips an existing closing bracket and deletes a complete empty pair", () => {
   const f = fixture(""); f.editor.setOptions({ spellcheck: false, tabSize: 2, typewriter: false, autoPair: true }); point(f.editor, 0);
   input(f.root, "insertText", "("); assert.equal(f.model.text, "()");

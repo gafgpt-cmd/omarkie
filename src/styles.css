@@ -1202,6 +1202,121 @@ svg {
   font-size: 11px;
   padding: 4px 7px;
 }
+.table-tools .table-size-button {
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+}
+.table-grip {
+  position: absolute;
+  z-index: 24;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: grab;
+  touch-action: none;
+}
+.table-grip-column {
+  width: 18px;
+  height: 12px;
+}
+.table-grip svg {
+  width: 8px;
+  height: 14px;
+}
+.table-grip-column svg {
+  width: 14px;
+  height: 8px;
+}
+.table-grip:hover:not(:disabled),
+.table-grip:focus-visible,
+.table-grip.is-dragging {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--paper);
+}
+.table-grip.is-dragging {
+  cursor: grabbing;
+}
+.table-grip[hidden],
+.table-drag-ghost[hidden],
+.table-drop-line[hidden],
+.table-size-picker[hidden] {
+  display: none;
+}
+.table-drag-ghost,
+.table-drop-line {
+  position: absolute;
+  z-index: 23;
+  pointer-events: none;
+}
+.table-drag-ghost {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid var(--accent);
+}
+.table-drop-line {
+  background: var(--accent);
+}
+.table-size-picker {
+  position: absolute;
+  z-index: 26;
+  padding: 8px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 7px #0002;
+  font-size: 12px;
+}
+.table-size-label {
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.table-size-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--columns), 14px);
+  gap: 2px;
+  max-width: 60vw;
+  max-height: 50vh;
+  overflow: auto;
+  border-radius: 3px;
+}
+.table-size-grid:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.table-size-grid span {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+.table-size-grid span[data-header] {
+  background: var(--code);
+}
+.table-size-grid span[data-current] {
+  border-color: var(--muted);
+}
+.table-size-grid span[data-on] {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  border-color: var(--accent);
+}
+.table-size-note {
+  min-height: 1.4em;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.table-size-note.is-warning {
+  color: #b3261e;
+}
+[data-appearance="dark"] .table-size-note.is-warning {
+  color: #ffb4ab;
+}
 @media (min-width: 1400px) {
   .rich-document {
     max-width: 1024px;
