@@ -199,8 +199,11 @@ Eight paired Linux/Xvfb runs, alternating order with fresh profiles. Times are m
 | First cold photo | 150 | 265 (252–348) | 181 (163–283) |
 
 - Linux timing run: `flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run test:perf'`.
-- Launch did not improve consistently. Launch and cold photo still miss their targets.
+- Launch did not improve consistently. Launch and cold photo still miss their targets on Xvfb.
 - Four photos loaded within three seconds on every run. See [timing report fields](docs/architecture.md#tests).
+- Stage trace: main-module evaluation was the largest launch stage. Glass storage and Git sync now load on first use: about 110 ms less import work before the window.
+- Headless Ozone diagnostic after that change (5 runs, 12-core laptop, busy host): launch 720, big note 574, scroll 21, cold photo 101, warm photo 73. All pass; the Xvfb table above still needs a rerun.
+- Cold photo stages (auth, queue, read, decode-to-visible): read dominates at 30–50 ms; queue stays under 10 ms.
 
 ## Current limitations
 
