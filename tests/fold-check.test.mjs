@@ -564,6 +564,13 @@ test("number extraction handles descending spans, English article 'a', negative 
   assert.equal(checkLine("BP 120-80 mmHg.", "BP 120-80 mmHg.").ok, true);
   assert.equal(checkLine("Published 2024-12-31.", "Published 2024-05-01.").checks.number, "fail");
   assert.equal(checkLine("Published 2024-05-12.", "Published 2024-05-12.").ok, true);
+  assert.equal(checkLine("Published 01-19-2024.", "Published 01-12-2024.").checks.number, "fail");
+  assert.equal(checkLine("Day 12 of 2024.", "Published 01-12-2024.").ok, true);
+  assert.equal(checkLine("Dose schedule 1-29-100 mg.", "Dose schedule 1-20-100 mg.").checks.number, "fail");
+  assert.deepEqual(
+    extractPayload("1-2.5-3").number.map(n => n.value),
+    [1, 2.5, 3],
+  );
   assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--50 mEq/L.").checks.number, "fail");
   assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--5 mEq/L.").ok, true);
 

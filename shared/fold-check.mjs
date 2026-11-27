@@ -502,13 +502,13 @@ function parseNumberValue(raw) {
 const NUM_PART = "\\d+(?:[.,]\\d+)*";
 const SIGNED_NUM_PART = `[-−]?${NUM_PART}`;
 const NUMBER_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}_])(?<![\\p{L}_]-)(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!-\\d))?(?:\\s*(${UNIT_ALT}))?`,
+  `(?<![\\p{L}\\p{N}_])(?<![\\p{L}_]-)(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!\\d|[.,]\\d|-[-−]?\\d))?(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
 const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde)\s+$/iu;
 const VERSION_PREFIX_RE = new RegExp(`${BOUND_L}(?:version|versión|edition|edición)\\s+$`, "iu");
 const BETWEEN_RANGE_RE = new RegExp(
-  `${BOUND_L}(?:entre|between)\\s+(${SIGNED_NUM_PART})\\s+(?:y|and)\\s+(${SIGNED_NUM_PART})(?:\\s*(${UNIT_ALT}))?`,
+  `${BOUND_L}(?:entre|between)\\s+(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)\\s+(?:y|and)\\s+(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
 
