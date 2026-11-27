@@ -317,14 +317,23 @@ function stripQuoteDepth(line, maxDepth = Infinity) {
   return { depth, rest: s };
 }
 
-function stripLeadingListMarkers(line) {
+function stripBlockContainers(line) {
   let s = line;
-  let match = ITEM.exec(s);
-  while (match) {
-    s = s.slice(match[0].length);
-    match = ITEM.exec(s);
+  let quoteDepth = 0;
+  while (true) {
+    const q = QUOTE_LINE.exec(s);
+    if (q) {
+      s = s.slice(q[0].length);
+      quoteDepth++;
+      continue;
+    }
+    const m = ITEM.exec(s);
+    if (m) {
+      s = s.slice(m[0].length);
+      continue;
+    }
+    return { quoteDepth, rest: s };
   }
-  return s;
 }
 
 function stripForWordCount(md) {
@@ -334,8 +343,8 @@ function stripForWordCount(md) {
   const kept = [];
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    const { depth: quoteDepth, rest: unquoted } = stripQuoteDepth(line);
-    const mark = fenceMark(stripLeadingListMarkers(unquoted));
+    const { quoteDepth, rest } = stripBlockContainers(line);
+    const mark = fenceMark(rest);
     if (mark) {
       i++;
       while (i < lines.length) {

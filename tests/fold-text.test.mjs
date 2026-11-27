@@ -640,6 +640,33 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
 
     const fenceWithQuotedBackticks = "```md\n- ```\n> ```\n```\nAfter.";
     assert.equal(words(fenceWithQuotedBackticks), 1);
+
+    const listMarkerQuotedFence = [
+      "- > ```js",
+      "  > const dose = 40;",
+      "  > ```",
+      "- Administer IV furosemide 40 mg.",
+    ].join("\n");
+    assert.equal(words(listMarkerQuotedFence), 5);
+
+    const listMarkerQuotedFenceFollowedByQuote = [
+      "- > ```js",
+      "  > const dose = 40;",
+      "  > ```",
+      "  > Next quoted clinical line.",
+    ].join("\n");
+    assert.equal(words(listMarkerQuotedFenceFollowedByQuote), 4);
+
+    const nestedQuoteListQuoteFence = [
+      "> - > ```js",
+      ">   > const dose = 40;",
+      ">   > ```",
+      "> - Next item.",
+    ].join("\n");
+    assert.equal(words(nestedQuoteListQuoteFence), 2);
+
+    const quotedFenceWithListBackticks = "> ```md\n> - ```\n> ```\n> After.";
+    assert.equal(words(quotedFenceWithListBackticks), 1);
   });
 
   test("ellipsis marks dropped paragraphs and sub-items accurately at Takeaway, Key, and Topic", () => {

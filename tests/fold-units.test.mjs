@@ -720,14 +720,106 @@ describe("raw-block preservation rule (D5)", () => {
       assert.ok(out.includes("$$ E = mc^2 $$"), `tight quote math missing at ${id}`);
       assert.ok(out.includes("![Real](real.png)"), `real inline image missing at ${id}`);
     }
+    assert.ok(ladder.stops.brief.text.includes("const fake ="));
+    assert.ok(ladder.stops.brief.text.includes("const listFake ="));
+    assert.ok(ladder.stops.key.text.includes("const fake ="));
+    assert.ok(ladder.stops.key.text.includes("const listFake ="));
     assert.ok(ladder.stops.takeaway.text.includes("| Lidocaine | 4.5 mg/kg |"));
     assert.equal(ladder.stops.takeaway.text.includes("| Bupivacaine | 2 mg/kg |"), false);
     assert.equal(ladder.stops.topic.text.includes("| Lidocaine | 4.5 mg/kg |"), false);
-    assert.ok(ladder.stops.takeaway.text.includes("`⋯ 1 lines of code`"));
-    assert.ok(ladder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.equal(ladder.stops.takeaway.text.split("`⋯ 1 lines of code`").length - 1, 2);
+    assert.equal(ladder.stops.topic.text.split("`⋯ 1 lines of code`").length - 1, 2);
     assert.equal(ladder.stops.topic.text.includes("![Fake](fake.png)"), false);
     assert.equal(ladder.stops.topic.text.includes("![ListFake](listfake.png)"), false);
     for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
+  });
+
+  test("quoted raw blocks inside lists survive at all stops without flattening or monotonic clobber", () => {
+    const parser = createMarkdown();
+    const listQuotedCode = [
+      "- Check snippet:",
+      "  > ```js",
+      "  > const dose = 40;",
+      "  > const interval = 8;",
+      "  > ```",
+      "- Administer IV furosemide 40 mg. Reassess urine output at 2 h.",
+    ].join("\n");
+    const codeLadder = foldDocumentLadder(listQuotedCode);
+    assert.deepEqual(codeLadder.byUnit[0].violations, []);
+    assert.equal(isMonotonic(codeLadder.byUnit[0].stops), true);
+    assert.equal(codeLadder.stops.brief.text.includes("Reassess urine output at 2 h."), false);
+    assert.equal(codeLadder.stops.key.text.includes("Reassess urine output at 2 h."), false);
+    assert.ok(codeLadder.stops.brief.text.includes("> ```js"));
+    assert.ok(codeLadder.stops.brief.text.includes("> const dose = 40;"));
+    assert.ok(codeLadder.stops.takeaway.text.includes("> `⋯ 2 lines of code`"));
+    assert.ok(codeLadder.stops.topic.text.includes("> `⋯ 2 lines of code`"));
+    assert.equal(codeLadder.stops.topic.text.includes("const dose = 40;"), false);
+    for (const stopId of ["brief", "key"]) {
+      const tokens = parser.parse(codeLadder.stops[stopId].text, {});
+      assert.equal(tokens.some(t => t.type === "blockquote_open"), true);
+      assert.equal(tokens.some(t => t.type === "fence"), true);
+      assert.equal(tokens.some(t => t.type === "code_block"), false);
+    }
+
+    const listQuotedTableMath = [
+      "## Dosing",
+      "",
+      "Lead clinical sentence keeps the section slot. Extra detail.",
+      "",
+      "- Reference table:",
+      "  > | Drug | Dose |",
+      "  > | --- | --- |",
+      "  > | Lidocaine | 4.5 mg/kg |",
+      "  > | Bupivacaine | 2 mg/kg |",
+      "- Formula check:",
+      "  > $$ E = mc^2 $$",
+    ].join("\n");
+    const tmLadder = foldDocumentLadder(listQuotedTableMath);
+    for (const item of tmLadder.byUnit) {
+      assert.deepEqual(item.violations, []);
+      assert.equal(isMonotonic(item.stops), true);
+    }
+    for (const { id } of LOCAL_LEVELS) {
+      assert.ok(tmLadder.stops[id].text.includes("| Drug | Dose |"), `list quoted table missing at ${id}`);
+      assert.ok(tmLadder.stops[id].text.includes("$$ E = mc^2 $$"), `list quoted math missing at ${id}`);
+    }
+    assert.ok(tmLadder.stops.takeaway.text.includes("> | Lidocaine | 4.5 mg/kg |"));
+    assert.equal(tmLadder.stops.takeaway.text.includes("Bupivacaine"), false);
+    assert.equal(tmLadder.stops.topic.text.includes("Lidocaine"), false);
+
+    const markerQuoted = [
+      "- > ```js",
+      "  > const fake = \"![Fake](fake.png)\";",
+      "  > ```",
+      "- > | A | B |",
+      "  > | --- | --- |",
+      "  > | 1 | 2 |",
+      "  > | 3 | 4 |",
+      "- > $$",
+      "  > PaCO_2 = 1.5 \\times HCO_3^- + 8",
+      "  > $$",
+      "- Administer IV furosemide 40 mg. Reassess urine output with ![Real](real.png).",
+    ].join("\n");
+    const mqLadder = foldDocumentLadder(markerQuoted);
+    assert.deepEqual(mqLadder.byUnit[0].violations, []);
+    assert.equal(isMonotonic(mqLadder.byUnit[0].stops), true);
+    assert.equal(mqLadder.units[0].inlineMedia.some(m => m.markdown.includes("Fake")), false);
+    assert.equal(mqLadder.units[0].inlineMedia.some(m => m.markdown === "![Real](real.png)"), true);
+    assert.equal(mqLadder.stops.brief.text.includes("Reassess urine output"), false);
+    assert.ok(mqLadder.stops.brief.text.includes("Administer IV furosemide 40 mg."));
+    assert.ok(mqLadder.stops.topic.text.includes("> `⋯ 1 lines of code`"));
+    assert.ok(mqLadder.stops.topic.text.includes("> | A | B |"));
+    assert.equal(mqLadder.stops.topic.text.includes("| 3 | 4 |"), false);
+    assert.ok(mqLadder.stops.topic.text.includes("PaCO_2 = 1.5"));
+    assert.ok(mqLadder.stops.topic.text.includes("![Real](real.png)"));
+    assert.equal(mqLadder.stops.topic.text.includes("![Fake](fake.png)"), false);
+    for (const stopId of ["brief", "key"]) {
+      const tokens = parser.parse(mqLadder.stops[stopId].text, {});
+      assert.equal(tokens.some(t => t.type === "fence"), true);
+      assert.equal(tokens.some(t => t.type === "table_open"), true);
+      assert.equal(tokens.some(t => t.type === "math_block"), true);
+      assert.equal(tokens.some(t => t.type === "code_block"), false);
+    }
   });
 });
 

@@ -15,6 +15,7 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
 const HEADING_LINE = /^\s{0,3}#{1,6}\s/;
 const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
+const QUOTE_MARKER = /^\s*>\s?/;
 const QUOTE_PREFIXES = /^(?:\s*>\s?)+/;
 const INLINE_MD_IMAGE = /!\[[^\]\r\n]*\]\([^)\s]*(?:(?:[ \t]|\r?\n)[^)\r\n]*)?\)/y;
 const INLINE_WIKI_EMBED = /!\[\[[^\]\r\n]+\]\]/y;
@@ -195,16 +196,39 @@ function indentBlock(markdown, spaces) {
   return splitLines(markdown).map(line => (line ? pad + line : "")).join("\n");
 }
 
-function matchRawBlockCore(lines, i, firstLine) {
+function stripQuoteDepth(line, maxDepth = Infinity) {
+  let s = line;
+  let depth = 0;
+  while (depth < maxDepth) {
+    const match = QUOTE_MARKER.exec(s);
+    if (!match) break;
+    s = s.slice(match[0].length);
+    depth++;
+  }
+  return { depth, rest: s };
+}
+
+function quotedLineAt(lines, j, quoteDepth) {
+  if (j >= lines.length) return null;
+  const raw = lines[j] ?? "";
+  if (quoteDepth <= 0) return raw;
+  const inner = stripQuoteDepth(raw, quoteDepth);
+  return inner.depth < quoteDepth ? null : inner.rest;
+}
+
+function matchRawBlockCore(lines, i, firstLine, quoteDepth = 0) {
   const mark = fenceMark(firstLine);
   if (mark) {
+    const out = [firstLine];
     let j = i + 1;
     while (j < lines.length) {
-      const l = lines[j] ?? "";
+      const l = quotedLineAt(lines, j, quoteDepth);
+      if (l === null) break;
+      out.push(l);
       j++;
       if (fenceClose(l, mark)) break;
     }
-    return { raw: "code", lines: [firstLine, ...lines.slice(i + 1, j)], nextIndex: j };
+    return { raw: "code", lines: out, nextIndex: j };
   }
 
   const trimmed = firstLine.trim();
@@ -213,52 +237,75 @@ function matchRawBlockCore(lines, i, firstLine) {
       return { raw: "math", lines: [firstLine], nextIndex: i + 1 };
     }
     if (trimmed === "$$" || !trimmed.slice(2).includes("$$")) {
+      const out = [firstLine];
       let close = -1;
+      let limit = i + 1;
       for (let j = i + 1; j < lines.length; j++) {
-        if ((lines[j] ?? "").trim().endsWith("$$")) {
+        const l = quotedLineAt(lines, j, quoteDepth);
+        if (l === null) break;
+        out.push(l);
+        limit = j + 1;
+        if (l.trim().endsWith("$$")) {
           close = j;
           break;
         }
       }
       if (close !== -1 || trimmed === "$$") {
-        const end = close !== -1 ? close + 1 : lines.length;
-        return { raw: "math", lines: [firstLine, ...lines.slice(i + 1, end)], nextIndex: end };
+        return { raw: "math", lines: out, nextIndex: close !== -1 ? close + 1 : limit };
       }
     }
   }
 
-  if (firstLine.includes("|") && (lines[i + 1] ?? "").includes("|") && TABLE_DELIM.test(lines[i + 1] ?? "")) {
+  const nextLine = quotedLineAt(lines, i + 1, quoteDepth);
+  if (firstLine.includes("|") && nextLine !== null && nextLine.includes("|") && TABLE_DELIM.test(nextLine)) {
+    const out = [firstLine, nextLine];
     let j = i + 2;
     while (j < lines.length) {
-      const l = lines[j] ?? "";
-      if (!l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || l.trim().startsWith("$$")) break;
+      const l = quotedLineAt(lines, j, quoteDepth);
+      if (l === null || !l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || l.trim().startsWith("$$")) break;
+      out.push(l);
       j++;
     }
-    return { raw: "table", lines: [firstLine, ...lines.slice(i + 1, j)], nextIndex: j };
+    return { raw: "table", lines: out, nextIndex: j };
   }
 
   return null;
 }
 
-function stripListMarkersToVirtualLine(line) {
-  let prefixLen = 0;
-  let rest = line;
-  let match = LIST_ITEM.exec(rest);
-  if (!match) return null;
-  while (match) {
-    prefixLen += match[0].length;
-    rest = rest.slice(match[0].length);
-    match = LIST_ITEM.exec(rest);
+function stripBlockContainers(line) {
+  let s = line;
+  let quoteDepth = 0;
+  let indent = null;
+  let pos = 0;
+  let innerPrefixLen = 0;
+  while (true) {
+    const q = QUOTE_MARKER.exec(s);
+    if (q) {
+      if (indent === null) indent = pos + (q[0].length - q[0].trimStart().length);
+      quoteDepth++;
+      pos += q[0].length;
+      s = s.slice(q[0].length);
+      innerPrefixLen = 0;
+      continue;
+    }
+    const m = LIST_ITEM.exec(s);
+    if (m) {
+      if (quoteDepth > 0) innerPrefixLen += m[0].length;
+      pos += m[0].length;
+      s = s.slice(m[0].length);
+      continue;
+    }
+    break;
   }
-  return " ".repeat(prefixLen) + rest;
+  if (indent === null) indent = pos;
+  return { quoteDepth, indent, virtualLine: " ".repeat(quoteDepth > 0 ? innerPrefixLen : pos) + s };
 }
 
 function matchRawBlock(lines, i) {
   const line = lines[i] ?? "";
-  const direct = matchRawBlockCore(lines, i, line);
-  if (direct) return direct;
-  const virtualLine = stripListMarkersToVirtualLine(line);
-  return virtualLine !== null ? matchRawBlockCore(lines, i, virtualLine) : null;
+  const { quoteDepth, indent, virtualLine } = stripBlockContainers(line);
+  const matched = matchRawBlockCore(lines, i, virtualLine, quoteDepth);
+  return matched ? { ...matched, quoted: quoteDepth > 0, quoteIndent: indent } : null;
 }
 
 function skipBacktickRun(text, i) {
@@ -286,14 +333,14 @@ function nonMediaBlockRanges(markdown) {
     const nl = markdown.indexOf("\n", offset);
     const end = nl === -1 ? markdown.length : nl + 1;
     const text = (nl === -1 ? markdown.slice(offset) : markdown.slice(offset, nl)).replace(/\r$/, "");
-    rawLines.push({ start: offset, end, stripped: stripQuotePrefix(text) });
+    rawLines.push({ start: offset, end, text });
     if (nl === -1) break;
     offset = end;
   }
-  const strippedLines = rawLines.map(entry => entry.stripped);
+  const lineTexts = rawLines.map(entry => entry.text);
   let i = 0;
-  while (i < strippedLines.length) {
-    const raw = matchRawBlock(strippedLines, i);
+  while (i < lineTexts.length) {
+    const raw = matchRawBlock(lineTexts, i);
     if (raw) {
       if (raw.raw === "code" || raw.raw === "math") {
         ranges.push([rawLines[i].start, rawLines[raw.nextIndex - 1].end]);
@@ -560,6 +607,16 @@ function preserveInlineMedia(text, inlineMedia, { quotePrefix = false } = {}) {
   return text ? `${text}${sep}${missing.join("\n")}` : missing.join("\n");
 }
 
+function makeListRawEntry(rawBlock) {
+  const dedented = dedentLines(rawBlock.lines);
+  return {
+    raw: rawBlock.raw,
+    indent: rawBlock.quoted ? rawBlock.quoteIndent : dedented.indent,
+    quoted: rawBlock.quoted,
+    markdown: dedented.lines.join("\n"),
+  };
+}
+
 function parseListItems(markdown) {
   const lines = splitLines(markdown);
   const out = [];
@@ -573,8 +630,7 @@ function parseListItems(markdown) {
       const rest = line.slice(match[0].length);
       const markerRaw = matchRawBlock(lines, i);
       if (markerRaw) {
-        const dedented = dedentLines(markerRaw.lines);
-        const entry = { raw: markerRaw.raw, indent: dedented.indent, markdown: dedented.lines.join("\n") };
+        const entry = makeListRawEntry(markerRaw);
         out.push({ indent, marker, text: "", rawBlocks: [entry] });
         i = markerRaw.nextIndex;
         continue;
@@ -585,10 +641,9 @@ function parseListItems(markdown) {
     }
     const rawBlock = matchRawBlock(lines, i);
     if (rawBlock) {
-      const dedented = dedentLines(rawBlock.lines);
-      const entry = { raw: rawBlock.raw, indent: dedented.indent, markdown: dedented.lines.join("\n") };
+      const entry = makeListRawEntry(rawBlock);
       if (out.length) out[out.length - 1].rawBlocks.push(entry);
-      else out.push({ indent: dedented.indent, marker: "-", text: "", rawBlocks: [entry] });
+      else out.push({ indent: entry.indent, marker: "-", text: "", rawBlocks: [entry] });
       i = rawBlock.nextIndex;
       continue;
     }
@@ -689,6 +744,7 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
         }
         for (const rb of item.rawBlocks) {
           const folded = foldRawBlock(rb.raw, rb.markdown, effectiveDepth);
+          const renderedRaw = rb.quoted ? prefixQuote(folded) : folded;
           const maxIndent = activeContentIndent === null
             ? 0
             : isChildDropped
@@ -696,14 +752,17 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
               : activeContentIndent + 3;
           const targetIndent = Math.min(rb.indent, maxIndent);
           if (activeContentIndent !== null && targetIndent < activeContentIndent) activeContentIndent = null;
-          rendered.push(indentBlock(folded, targetIndent));
+          rendered.push(indentBlock(renderedRaw, targetIndent));
         }
       }
       return preserveInlineMedia(rendered.join("\n"), unit.inlineMedia);
     }
     const foldedRaws = [];
     for (const item of all) {
-      for (const rb of item.rawBlocks) foldedRaws.push(foldRawBlock(rb.raw, rb.markdown, effectiveDepth));
+      for (const rb of item.rawBlocks) {
+        const folded = foldRawBlock(rb.raw, rb.markdown, effectiveDepth);
+        foldedRaws.push(rb.quoted ? prefixQuote(folded) : folded);
+      }
     }
     let prose = "";
     if (keepAtHighStop) {
