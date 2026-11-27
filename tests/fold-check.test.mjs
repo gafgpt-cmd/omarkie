@@ -425,9 +425,16 @@ test("validateEvidence rejects hallucinated anchors and misaligned offsets, acce
   assert.equal(validateEvidence(unitText, [makeEvidence(unitText, "furosemide 40 mg")]).ok, true);
   const wrongOffset = [{ elementId: "paragraph-ab12cd34", quote: "furosemide 40 mg", sentence: 0, start: 0, end: 16 }];
   assert.equal(validateEvidence(unitText, wrongOffset).ok, false);
-  const nfdUnit = "Sin dantroleno: nunca.".normalize("NFD");
-  const nfcQuote = "Sin dantroleno".normalize("NFC");
-  assert.equal(validateEvidence(nfdUnit, [{ elementId: "p", quote: nfcQuote, sentence: 0, start: 0, end: nfcQuote.length }]).ok, true);
+  const nfdUnit = "Café. Start IV furosemide 40 mg.".normalize("NFD");
+  const nfcCafe = "Café".normalize("NFC");
+  assert.notEqual(nfdUnit, nfdUnit.normalize("NFC"));
+  assert.equal(validateEvidence(nfdUnit, [{ elementId: "p", quote: nfcCafe, sentence: 0, start: 0, end: nfcCafe.length }]).ok, true);
+  assert.equal(validateEvidence(nfdUnit, [{ elementId: "p", quote: "furosemide 40 mg", sentence: 0, start: 15, end: 31 }]).ok, true);
+  assert.equal(validateEvidence(nfdUnit, [{ elementId: "p", quote: "furosemide 40 mg", sentence: 0, start: 0, end: 16 }]).ok, false);
+  const nfcUnit = "Café. Start IV furosemide 40 mg.".normalize("NFC");
+  const nfdCafe = "Café".normalize("NFD");
+  assert.equal(validateEvidence(nfcUnit, [{ elementId: "p", quote: nfdCafe, sentence: 0, start: 0, end: nfdCafe.length }]).ok, true);
+  assert.equal(validateEvidence(nfcUnit, [{ elementId: "p", quote: nfdCafe, sentence: 0, start: 1, end: 1 + nfdCafe.length }]).ok, false);
   const hallucinated = [{ elementId: "paragraph-ab12cd34", quote: "furosemide 80 mg", sentence: 0, start: 0, end: 16 }];
   assert.equal(validateEvidence(unitText, hallucinated).ok, false);
 
@@ -505,4 +512,156 @@ test("checkWrittenUnit produces a valid omarkie/fold WrittenUnit passing foldPro
   assert.equal(demotedUnit.checks.monotonic, "fail");
   assert.equal(isAuthorText(demotedUnit.unit.key), true);
   assert.deepEqual(foldProblems({ ...foldRecord, written: [demotedUnit.unit] }), []);
+});
+
+test("malformed model lines and unvalidated quotes cannot forge AuthorText", () => {
+  const unitText = "Start IV furosemide 40 mg if diuretic-naive.";
+
+  const emptyEv = checkLine({ by: "model", text: "Invented clinical claim.", evidence: [] }, undefined, { unitText });
+  assert.equal(emptyEv.evidenceValid, false);
+  assert.equal(emptyEv.ok, false);
+  assert.equal(emptyEv.warning, true);
+  assert.equal(emptyEv.fallback, "brief");
+  assert.equal(isAuthorText(emptyEv.resolved), true);
+  assert.equal(emptyEv.resolved.text, unitText);
+
+  const badShapeNoUnit = checkLine({ by: "model", text: "Invented claim.", evidence: [{ quote: "hallucinated" }] });
+  assert.equal(badShapeNoUnit.evidenceValid, false);
+  assert.equal(badShapeNoUnit.ok, false);
+  assert.equal(badShapeNoUnit.warning, true);
+  assert.equal(badShapeNoUnit.resolved.text, NUMBER_GAP);
+
+  const hallucinatedNoBrief = checkLine(
+    {
+      by: "model",
+      text: "Start IV furosemide 80 mg.",
+      evidence: [{ elementId: "p", quote: "furosemide 80 mg", sentence: 0, start: 0, end: 16 }],
+    },
+    undefined,
+    { unitText },
+  );
+  assert.equal(hallucinatedNoBrief.evidenceValid, false);
+  assert.equal(hallucinatedNoBrief.ok, false);
+  assert.equal(hallucinatedNoBrief.warning, true);
+  assert.equal(hallucinatedNoBrief.fallback, "brief");
+  assert.equal(hallucinatedNoBrief.resolved.text, unitText);
+});
+
+test("number extraction handles descending spans, English article 'a', negative values, and multi-dot thousands", () => {
+  assert.equal(checkLine("Reduce furosemide from 40 to 2 mg.", "Reduce furosemide from 40 to 20 mg.").checks.number, "fail");
+  assert.equal(checkLine("Target furosemide 20 mg.", "Reduce furosemide from 40 to 20 mg.").ok, true);
+  assert.equal(checkLine("In 2024 a 500 mg dose was given.", "In 2024 a 50 mg dose was given.").checks.number, "fail");
+  assert.equal(checkLine("Give 50 mg on day 1.", "At day 1 a 50 mg dose was given.").ok, true);
+  assert.equal(checkLine("At day 1 a 500 mg dose.", "At day 1 a 50 mg dose.").checks.number, "fail");
+  assert.equal(checkLine("Dosis 10-20 mg.", "Administrar de 10 a 20 mg.").ok, true);
+
+  assert.equal(checkLine("Base excess -40 mEq/L.", "Base excess -4 mEq/L.").checks.number, "fail");
+  assert.equal(checkLine("Base excess -4 mEq/L.", "Base excess -4 mEq/L.").ok, true);
+  assert.equal(extractPayload("COVID-19 and SARS-CoV-2 have no numeric values.").number.length, 0);
+
+  assert.equal(checkLine("Penicilina 9.000.000 UI.", "Penicilina 2.400.000 UI.").checks.number, "fail");
+  assert.equal(checkLine("Penicilina 2.400.000 UI.", "Penicilina 2.400.000 UI.").ok, true);
+});
+
+test("compound slash-units, negated verbal comparators, and direction gap replacement", () => {
+  assert.equal(checkLine("Infuse norepinephrine at 5 mg/min.", "Infuse norepinephrine at 5 mcg/min.").checks.number, "fail");
+  assert.equal(checkLine("Give 5 g/day.", "Give 5 mg/day.").checks.number, "fail");
+  assert.equal(checkLine("Give 50 mcg/h.", "Give 50 µg/hr.").ok, true);
+  assert.equal(checkLine("Give 10 mg/m2.", "Give 10 mg/m².").ok, true);
+  assert.equal(checkLine("Heparin 1000 U/h.", "Heparin 1000 U/min.").checks.number, "fail");
+  assert.equal(checkLine("Give 5 mg/d.", "Give 5 mg/día.").ok, true);
+
+  assert.equal(checkLine("Keep MAP ≥65 mmHg.", "Keep MAP not below 65 mmHg.").ok, true);
+  assert.equal(checkLine("Give ≤40 mg.", "Give not more than 40 mg.").ok, true);
+  assert.equal(checkLine("Dar ≤40 mg.", "Dar no mayor que 40 mg.").ok, true);
+  assert.equal(checkLine("Administrar ≤10 mg/kg.", "Administrar no más de 10 mg/kg.").ok, true);
+  assert.equal(checkLine("Give ≤40 mg.", "Give no more than 40 mg.").ok, true);
+
+  const verbalFlip = checkLine("BNP below 100 pg/mL supports dx.", "BNP >100 pg/mL supports diagnosis.");
+  assert.equal(verbalFlip.checks.number, "fail");
+  assert.equal(verbalFlip.text, "BNP —? supports dx.");
+
+  const trailingFlip = checkLine("Give 40 mg min.", "Give 40 mg max.");
+  assert.equal(trailingFlip.checks.number, "fail");
+  assert.equal(trailingFlip.text, "Give —?.");
+});
+
+test("checkFormat reaches fixed point against nested HTML, reconstituted Markdown, whitespace close tags, and unclosed media tags", () => {
+  const cases = [
+    ["<vi<b>deo src=x onerror=alert(1)>", ""],
+    ["![alt]<span>(/local/file.png)", "alt"],
+    ["[click]<span>(/admin)", "click"],
+    ["<script>alert(1)</script >", ""],
+    ["<style>body{display:none}</style  >Keep.", "Keep."],
+    ["<details open ontoggle=alert(1)", ""],
+    ["<video src=x onerror=alert(1)", ""],
+    ["<svg/onload=alert(1)>Safe.", "Safe."],
+  ];
+  for (const [input, expected] of cases) {
+    const res = checkFormat(input);
+    assert.equal(res.ok, false, input);
+    assert.equal(res.sanitized, expected, input);
+    assert.equal(checkFormat(res.sanitized).ok, true, `re-check sanitized: ${input}`);
+  }
+});
+
+test("lexicon disambiguation and sentence-initial attribution matching (ES + EN)", () => {
+  assert.equal(checkLine("Unless improving, intubate.", "If not improving, intubate.").ok, true);
+  assert.equal(checkLine("If not in shock, give fluids.", "Unless in shock, give fluids.").ok, true);
+  assert.equal(checkLine("A menos que mejore, intubar.", "Si no mejora, intubar.").ok, true);
+  assert.equal(checkLine("Unless shock, give fluids.", "In the absence of shock, give fluids.").ok, true);
+
+  assert.equal(checkLine("Patients cannot tolerate beta-blockers.", "Patients could not tolerate beta-blockers.").ok, true);
+  assert.equal(checkLine("Do not use in pregnancy.", "You may not use in pregnancy.").ok, true);
+  assert.equal(extractPayload("Patients can't tolerate beta-blockers.").uncertainty.length, 0);
+
+  assert.equal(checkLine("Avoid benzodiazepines in elderly.", "Avoid benzodiazepines in older adults.").ok, true);
+  assert.equal(checkLine("Evitar benzodiacepinas en ancianos.", "Evitar benzodiacepinas en adultos mayores.").ok, true);
+
+  assert.equal(checkLine("Administrar estrictamente por vía IV.", "Administrar solo por vía IV.").ok, true);
+  assert.equal(checkLine("Give strictly IV.", "Give only IV.").ok, true);
+
+  assert.equal(checkLine("Recheck lactate at 2 h.", "Per protocol, recheck lactate at 2 h.").checks.attribution, "fail");
+  assert.equal(checkLine("Per protocol, recheck lactate at 2 h.", "Per protocol, recheck lactate at 2 h.").ok, true);
+  assert.equal(checkLine("Mortality fell 20%.", "Trial RECOVERY showed mortality fell 20%.").checks.attribution, "fail");
+  assert.equal(checkLine("RECOVERY: mortality fell 20%.", "Trial RECOVERY showed mortality fell 20%.").ok, true);
+});
+
+test("checkPins enforces token boundaries, polarity, and multi-clause isolation", () => {
+  assert.equal(checkPins("Give 140 mg IV.", ["40 mg"]).ok, false);
+  assert.equal(checkPins("Give 40 mg/kg IV.", ["40 mg"]).ok, false);
+  assert.equal(checkPins("Never give fluids in edema.", ["give fluids"]).ok, false);
+  assert.equal(checkPins("Do not give fluids in edema.", ["give fluids"]).ok, false);
+
+  const multiClause = checkPins(
+    "Never stop beta-blocker; start IV furosemide 40 mg if diuretic-naive.",
+    ["start intravenous furosemide 40 mg"],
+  );
+  assert.equal(multiClause.ok, true);
+  assert.equal(multiClause.outOfFold.length, 0);
+});
+
+test("checkMonotonic enforces full as upper word-count bound with or without brief", () => {
+  const withoutBrief = checkMonotonic({
+    full: "Start IV furosemide 40 mg now.",
+    key: "Begin intravenous loop diuretic therapy with furosemide 40 mg immediately for every patient.",
+    takeaway: "IV furosemide 40 mg.",
+    topic: "Furosemide",
+  });
+  assert.equal(withoutBrief.ok, false);
+  assert.equal(withoutBrief.status, "fail");
+  assert.deepEqual(withoutBrief.demoted, ["key"]);
+  assert.equal(withoutBrief.stops.key, "Start IV furosemide 40 mg now.");
+
+  const briefOverFull = checkMonotonic({
+    full: "Start IV furosemide 40 mg now.",
+    brief: "Begin intravenous loop diuretic therapy with furosemide 40 mg immediately.",
+    key: "Start intravenous furosemide 40 mg immediately for naive patients.",
+    takeaway: "IV furosemide 40 mg.",
+    topic: "Furosemide",
+  });
+  assert.equal(briefOverFull.ok, false);
+  assert.deepEqual(briefOverFull.demoted, ["brief", "key"]);
+  assert.equal(briefOverFull.stops.brief, "Start IV furosemide 40 mg now.");
+  assert.equal(briefOverFull.stops.key, "Start IV furosemide 40 mg now.");
 });

@@ -7,7 +7,6 @@ import {
   evidenceFits,
   isAuthorText,
   isEvidence,
-  isWrittenText,
 } from "./fold-format.mjs";
 
 export const PAYLOAD_CLASSES = Object.freeze([
@@ -92,16 +91,19 @@ const CONTRAINDICATION_RE = new RegExp(
   "giu",
 );
 
-function extractNegation(text) {
+function extractNegation(text, suppressedSpans = []) {
   const normalized = text.replace(/’/g, "'");
+  const isSuppressed = m => suppressedSpans.some(([s, e]) => m.index >= s && m.end <= e);
   const out = [];
   for (const m of collectMatches(normalized, CONTRAINDICATION_RE)) {
     out.push({ raw: m.raw, kind: "contraindication", index: m.index });
   }
   for (const m of collectMatches(normalized, NEGATION_PLAIN_RE)) {
+    if (isSuppressed(m)) continue;
     out.push({ raw: m.raw, kind: "negation", index: m.index });
   }
   for (const m of collectMatches(normalized, NEGATION_EXCEPTION_RE)) {
+    if (isSuppressed(m)) continue;
     out.push({ raw: m.raw, kind: "exception", index: m.index });
   }
   out.sort((a, b) => a.index - b.index);
@@ -110,11 +112,11 @@ function extractNegation(text) {
 
 // --- 2. Restriction lexicons (ES + EN) ---
 const RESTRICTION_EXCLUSIVITY = [
-  "tan solo", "tan sólo", "únicamente", "exclusivamente", "solamente", "solo", "sólo",
+  "tan solo", "tan sólo", "únicamente", "exclusivamente", "solamente", "solo", "sólo", "estrictamente",
   "exclusively", "solely", "only", "strictly",
 ];
 const RESTRICTION_UNIVERSALITY = [
-  "en todos los casos", "invariablemente", "obligatoriamente", "estrictamente",
+  "en todos los casos", "invariablemente", "obligatoriamente",
   "in all cases", "every time", "invariably", "mandatory", "always",
 ];
 const RESTRICTION_EXCL_RE = wordRegex(RESTRICTION_EXCLUSIVITY);
@@ -148,17 +150,17 @@ const CONDITION_POSITIVE = [
 const CONDITION_NEG_RE = wordRegex(CONDITION_NEGATIVE);
 const CONDITION_POS_RE = wordRegex(CONDITION_POSITIVE);
 
-function extractCondition(text) {
+function extractConditionWithSpans(text) {
   const negMatches = collectMatches(text, CONDITION_NEG_RE);
   const posMatches = collectMatches(text, CONDITION_POS_RE).filter(pos =>
     !negMatches.some(neg => pos.index >= neg.index && pos.end <= neg.end),
   );
   const out = [
-    ...negMatches.map(m => ({ raw: m.raw, kind: "negative_conditional", index: m.index })),
-    ...posMatches.map(m => ({ raw: m.raw, kind: "conditional", index: m.index })),
+    ...negMatches.map(m => ({ raw: m.raw, kind: "negative_conditional", index: m.index, end: m.end })),
+    ...posMatches.map(m => ({ raw: m.raw, kind: "conditional", index: m.index, end: m.end })),
   ];
   out.sort((a, b) => a.index - b.index);
-  return out.map(({ raw, kind }) => ({ raw, kind }));
+  return out;
 }
 
 // --- 4. Uncertainty / frequency lexicons (ES + EN) ---
@@ -211,8 +213,7 @@ function extractUncertainty(text) {
   }
   for (const m of midMatches) {
     if (isNegatedBefore(m.index)) continue;
-    // Skip "can" in "can not"
-    if (/^can$/iu.test(m.raw) && /^\s+not(?![\p{L}\p{N}_])/iu.test(text.slice(m.end))) continue;
+    if (/^(?:can|could|may)$/iu.test(m.raw) && /^(?:\s+not|['’]t)(?![\p{L}\p{N}_])/iu.test(text.slice(m.end))) continue;
     out.push({ raw: m.raw, tier: "mid", index: m.index, end: m.end });
   }
   for (const m of highMatches) {
@@ -231,67 +232,13 @@ function extractUncertainty(text) {
 
 // --- 5. Number + unit + direction extraction (ES + EN) ---
 const UNIT_CANONICAL = new Map([
-  // Compound dose / rate / concentration
-  ["mg/kg/min", "mg/kg/min"],
-  ["mcg/kg/min", "mcg/kg/min"],
-  ["µg/kg/min", "mcg/kg/min"],
-  ["μg/kg/min", "mcg/kg/min"],
-  ["ug/kg/min", "mcg/kg/min"],
-  ["mg/kg/h", "mg/kg/h"],
-  ["mg/kg/hr", "mg/kg/h"],
-  ["mg/kg/d", "mg/kg/d"],
-  ["mg/kg/day", "mg/kg/d"],
-  ["mg/kg/día", "mg/kg/d"],
-  ["mg/kg/dia", "mg/kg/d"],
-  ["mg/kg", "mg/kg"],
-  ["mcg/kg", "mcg/kg"],
-  ["µg/kg", "mcg/kg"],
-  ["μg/kg", "mcg/kg"],
-  ["ug/kg", "mcg/kg"],
-  ["g/kg", "g/kg"],
-  ["ml/kg/h", "mL/kg/h"],
-  ["ml/kg", "mL/kg"],
-  ["ui/kg", "UI/kg"],
-  ["iu/kg", "UI/kg"],
-  ["u/kg", "U/kg"],
-  ["meq/kg", "mEq/kg"],
-  ["mmol/kg", "mmol/kg"],
-  ["pg/ml", "pg/mL"],
-  ["ng/ml", "ng/mL"],
-  ["ng/l", "ng/L"],
-  ["mcg/ml", "mcg/mL"],
-  ["µg/ml", "mcg/mL"],
-  ["μg/ml", "mcg/mL"],
-  ["mcg/l", "mcg/L"],
-  ["µg/l", "mcg/L"],
-  ["μg/l", "mcg/L"],
-  ["mg/ml", "mg/mL"],
-  ["mg/dl", "mg/dL"],
-  ["mg/l", "mg/L"],
-  ["g/dl", "g/dL"],
-  ["g/l", "g/L"],
-  ["mmol/l", "mmol/L"],
-  ["meq/l", "mEq/L"],
-  ["µmol/l", "mcmol/L"],
-  ["μmol/l", "mcmol/L"],
-  ["umol/l", "mcmol/L"],
-  ["u/l", "U/L"],
-  ["ui/l", "UI/L"],
-  ["iu/l", "UI/L"],
-  ["mosm/kg", "mOsm/kg"],
-  ["mosm/l", "mOsm/L"],
-  ["ml/min/1.73m²", "mL/min/1.73m2"],
-  ["ml/min/1.73m2", "mL/min/1.73m2"],
-  ["ml/min", "mL/min"],
-  ["l/min", "L/min"],
-  ["ml/h", "mL/h"],
   // Pressure / vitals
   ["mmhg", "mmHg"],
   ["cmh2o", "cmH2O"],
   ["kpa", "kPa"],
   ["bpm", "bpm"],
   ["lpm", "lpm"],
-  // Simple mass / volume / molar / activity
+  // Simple mass / volume / molar / activity / area
   ["mcg", "mcg"],
   ["µg", "mcg"],
   ["μg", "mcg"],
@@ -317,6 +264,10 @@ const UNIT_CANONICAL = new Map([
   ["ui", "UI"],
   ["iu", "UI"],
   ["u", "U"],
+  ["1.73m²", "1.73m2"],
+  ["1.73m2", "1.73m2"],
+  ["m²", "m2"],
+  ["m2", "m2"],
   // Percent
   ["%", "%"],
   ["‰", "‰"],
@@ -394,18 +345,77 @@ const UNIT_CANONICAL = new Map([
 
 const UNIT_KEYS_SORTED = [...UNIT_CANONICAL.keys()].sort((a, b) => b.length - a.length);
 const SYMBOL_UNITS = new Set(["%", "‰", "€", "$", "£", "°c", "°f"]);
-const UNIT_ALT = UNIT_KEYS_SORTED.map(u => {
-  const esc = escapeRe(u);
-  return SYMBOL_UNITS.has(u) ? esc : `${esc}(?![\\p{L}\\p{N}_/])`;
-}).join("|");
+const WORD_UNIT_ALT = UNIT_KEYS_SORTED.filter(u => !SYMBOL_UNITS.has(u)).map(escapeRe).join("|");
+const SYMBOL_UNIT_ALT = UNIT_KEYS_SORTED.filter(u => SYMBOL_UNITS.has(u)).map(escapeRe).join("|");
+const COMPOUND_DENOM = "(?:(?:\\d+(?:\\.\\d+)?)?[\\p{L}µμ][\\p{L}\\p{N}µμ²³]*)";
+const UNIT_END_GUARD = "(?![\\p{L}\\p{N}_])(?!\\/[\\p{L}µμ])";
+const UNIT_ALT = `(?:(?:${WORD_UNIT_ALT})(?:\\/${COMPOUND_DENOM})*${UNIT_END_GUARD}|[\\p{L}µμ][\\p{L}\\p{N}µμ²³]*\\/(?:${WORD_UNIT_ALT})(?:\\/${COMPOUND_DENOM})*${UNIT_END_GUARD}|(?:${SYMBOL_UNIT_ALT})(?:(?:\\/${COMPOUND_DENOM})+${UNIT_END_GUARD})?|\\/(?:${WORD_UNIT_ALT})(?:\\/${COMPOUND_DENOM})*${UNIT_END_GUARD})`;
+
+function canonicalizeUnitPart(part) {
+  if (!part) return "";
+  const direct = UNIT_CANONICAL.get(part.toLowerCase());
+  if (direct !== undefined) return direct;
+  const scaled = part.match(/^(\d+(?:\.\d+)?)(.+)$/);
+  if (scaled) {
+    const unitMapped = UNIT_CANONICAL.get(scaled[2].toLowerCase());
+    if (unitMapped !== undefined) return `${scaled[1]}${unitMapped}`;
+  }
+  return part.replace(/²/g, "2").replace(/µ|μ/g, "mc");
+}
 
 function canonicalizeUnit(rawUnit) {
   if (!rawUnit) return null;
-  const key = rawUnit.trim().toLowerCase();
-  return UNIT_CANONICAL.get(key) ?? rawUnit.trim();
+  const trimmed = rawUnit.trim();
+  const direct = UNIT_CANONICAL.get(trimmed.toLowerCase());
+  if (direct !== undefined) return direct;
+  if (trimmed.includes("/")) {
+    return trimmed.split("/").map(canonicalizeUnitPart).join("/");
+  }
+  return trimmed;
 }
 
 const VERBAL_DIRECTIONS = [
+  // Negated >= -> <
+  ["not greater than or equal to", "<"],
+  ["no mayor o igual que", "<"],
+  ["no igual o mayor que", "<"],
+  ["no mayor o igual a", "<"],
+  ["no igual o mayor a", "<"],
+  ["no como mínimo", "<"],
+  ["no al menos", "<"],
+  ["not at least", "<"],
+  // Negated <= -> >
+  ["not less than or equal to", ">"],
+  ["no menor o igual que", ">"],
+  ["no igual o menor que", ">"],
+  ["no menor o igual a", ">"],
+  ["no igual o menor a", ">"],
+  ["no como máximo", ">"],
+  ["not at most", ">"],
+  // Negated < -> >=
+  ["no por debajo de", "≥"],
+  ["not fewer than", "≥"],
+  ["no fewer than", "≥"],
+  ["not less than", "≥"],
+  ["no less than", "≥"],
+  ["no inferior a", "≥"],
+  ["no menor que", "≥"],
+  ["no menor de", "≥"],
+  ["no menos de", "≥"],
+  ["not below", "≥"],
+  ["not under", "≥"],
+  // Negated > -> <=
+  ["no por encima de", "≤"],
+  ["not greater than", "≤"],
+  ["no greater than", "≤"],
+  ["not more than", "≤"],
+  ["no more than", "≤"],
+  ["no superior a", "≤"],
+  ["no mayor que", "≤"],
+  ["no mayor de", "≤"],
+  ["no más de", "≤"],
+  ["not above", "≤"],
+  ["not over", "≤"],
   // >=
   ["greater than or equal to", "≥"],
   ["mayor o igual que", "≥"],
@@ -413,8 +423,6 @@ const VERBAL_DIRECTIONS = [
   ["mayor o igual a", "≥"],
   ["igual o mayor a", "≥"],
   ["como mínimo", "≥"],
-  ["no menos de", "≥"],
-  ["no less than", "≥"],
   ["al menos", "≥"],
   ["at least", "≥"],
   // <=
@@ -424,8 +432,6 @@ const VERBAL_DIRECTIONS = [
   ["menor o igual a", "≤"],
   ["igual o menor a", "≤"],
   ["como máximo", "≤"],
-  ["no más de", "≤"],
-  ["no more than", "≤"],
   ["at most", "≤"],
   ["up to", "≤"],
   ["hasta", "≤"],
@@ -451,8 +457,9 @@ const VERBAL_DIRECTIONS = [
   ["under", "<"],
 ];
 
+const VERBAL_DIRECTIONS_SORTED = [...VERBAL_DIRECTIONS].sort((a, b) => b[0].length - a[0].length);
 const VERBAL_DIR_RE = new RegExp(
-  `${BOUND_L}(${VERBAL_DIRECTIONS.map(([phrase]) => escapeRe(phrase).replace(/\\ /g, "\\s+")).join("|")})\\s+$`,
+  `${BOUND_L}(${VERBAL_DIRECTIONS_SORTED.map(([phrase]) => escapeRe(phrase).replace(/\\ /g, "\\s+")).join("|")})\\s+$`,
   "iu",
 );
 const VERBAL_DIR_MAP = new Map(VERBAL_DIRECTIONS.map(([phrase, dir]) => [phrase.replace(/\s+/g, " "), dir]));
@@ -468,29 +475,39 @@ function normalizeSymDirection(sym) {
 }
 
 function parseNumberValue(raw) {
-  const clean = raw.trim();
+  let clean = raw.trim();
+  let sign = 1;
+  if (clean.startsWith("-") || clean.startsWith("−")) {
+    sign = -1;
+    clean = clean.slice(1);
+  }
   if (clean.includes(",") && clean.includes(".")) {
     const lastComma = clean.lastIndexOf(",");
     const lastDot = clean.lastIndexOf(".");
-    if (lastComma > lastDot) return Number(clean.replace(/\./g, "").replace(",", "."));
-    return Number(clean.replace(/,/g, ""));
+    if (lastComma > lastDot) return sign * Number(clean.replace(/\./g, "").replace(",", "."));
+    return sign * Number(clean.replace(/,/g, ""));
   }
   if (clean.includes(",")) {
-    if (/^[1-9]\d{0,2}(?:,\d{3})+$/.test(clean)) return Number(clean.replace(/,/g, ""));
-    return Number(clean.replace(",", "."));
+    if (/^[1-9]\d{0,2}(?:,\d{3})+$/.test(clean)) return sign * Number(clean.replace(/,/g, ""));
+    return sign * Number(clean.replace(",", "."));
   }
-  return Number(clean);
+  if (clean.includes(".") && /^[1-9]\d{0,2}(?:\.\d{3}){2,}$/.test(clean)) {
+    return sign * Number(clean.replace(/\./g, ""));
+  }
+  return sign * Number(clean);
 }
 
 // Matches optional symbolic comparator, optional prefix currency, number (and optional range end), optional unit.
 const NUM_PART = "\\d+(?:[.,]\\d+)*";
+const SIGNED_NUM_PART = `[-−]?${NUM_PART}`;
 const NUMBER_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}_-])(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${NUM_PART})(?:(?:\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${NUM_PART})(?!-\\d))?(?:\\s*(${UNIT_ALT}))?`,
+  `(?<![\\p{L}\\p{N}_-])(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!-\\d))?(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
+const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde)\s+$/iu;
 const VERSION_PREFIX_RE = new RegExp(`${BOUND_L}(?:version|versión|edition|edición)\\s+$`, "iu");
 const BETWEEN_RANGE_RE = new RegExp(
-  `${BOUND_L}(?:entre|between)\\s+(${NUM_PART})\\s+(?:y|and)\\s+(${NUM_PART})(?:\\s*(${UNIT_ALT}))?`,
+  `${BOUND_L}(?:entre|between)\\s+(${SIGNED_NUM_PART})\\s+(?:y|and)\\s+(${SIGNED_NUM_PART})(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
 
@@ -529,59 +546,82 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     usedSpans.push([m.index, m.end]);
   }
 
-  for (const m of collectMatches(text, NUMBER_RE)) {
-    if (usedSpans.some(([s, e]) => m.index >= s && m.end <= e)) continue;
-    // Skip version numbers owned by scope ("version 2.4", "edición 3").
-    if (!m.groups[1] && !m.groups[2] && VERSION_PREFIX_RE.test(text.slice(Math.max(0, m.index - 20), m.index))) {
+  NUMBER_RE.lastIndex = 0;
+  let match;
+  while ((match = NUMBER_RE.exec(text)) !== null) {
+    const matchStart = match.index;
+    const matchEnd = matchStart + match[0].length;
+    if (match[0].length === 0) {
+      NUMBER_RE.lastIndex += 1;
       continue;
     }
-    const symDir = normalizeSymDirection(m.groups[1]);
-    const prefixCurrency = m.groups[2] ?? null;
-    const lowRaw = m.groups[3];
-    const highRaw = m.groups[4] ?? null;
-    let rawUnit = m.groups[5] ?? prefixCurrency;
+    const enclosing = usedSpans.find(([s, e]) => matchStart >= s && matchStart < e);
+    if (enclosing) {
+      NUMBER_RE.lastIndex = enclosing[1];
+      continue;
+    }
+    // Skip version numbers owned by scope ("version 2.4", "edición 3").
+    if (!match[1] && !match[2] && VERSION_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 20), matchStart))) {
+      continue;
+    }
+    const symDir = normalizeSymDirection(match[1]);
+    const prefixCurrency = match[2] ?? null;
+    const lowRaw = match[3];
+    const rangeSep = match[4] ?? null;
+    const highRaw = match[5] ?? null;
+    let rawUnit = match[6] ?? prefixCurrency;
 
-    // Guard against ISO dates like 2026-11-26: if followed by -digits, reject range split
     const low = parseNumberValue(lowRaw);
     let high = highRaw !== null ? parseNumberValue(highRaw) : undefined;
-    let end = m.end;
-    let raw = m.raw;
+    let start = matchStart;
+    let end = matchEnd;
 
     if (!Number.isFinite(low)) continue;
-    if (high !== undefined && (!Number.isFinite(high) || high < low)) {
-      // Not a valid ascending numeric range (e.g., 2026-11 in a date): drop the second part
+
+    const isBareSpanishA = rangeSep !== null
+      && /^\s+a\s+$/iu.test(rangeSep)
+      && !ES_RANGE_A_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 16), matchStart));
+
+    if (high !== undefined && (!Number.isFinite(high) || high < low || isBareSpanishA)) {
       high = undefined;
       rawUnit = prefixCurrency;
-      const firstEnd = m.index + m.raw.indexOf(lowRaw) + lowRaw.length;
+      const firstEnd = matchStart + match[0].indexOf(lowRaw) + lowRaw.length;
       end = firstEnd;
-      raw = text.slice(m.index, end);
+      NUMBER_RE.lastIndex = firstEnd;
     }
 
     // Check verbal direction immediately preceding the number (only when no symbolic comparator).
     let direction = symDir;
     if (!direction) {
-      const before = text.slice(Math.max(0, m.index - 32), m.index);
+      const beforeStart = Math.max(0, start - 48);
+      const before = text.slice(beforeStart, start);
       const verbal = before.match(VERBAL_DIR_RE);
       if (verbal) {
         const key = verbal[1].toLowerCase().replace(/\s+/g, " ");
-        direction = VERBAL_DIR_MAP.get(key) ?? null;
+        const mapped = VERBAL_DIR_MAP.get(key) ?? null;
+        if (mapped) {
+          direction = mapped;
+          start = beforeStart + verbal.index;
+        }
       }
     }
     if (!direction) {
       const after = text.slice(end, end + 16);
       const trailing = after.match(TRAILING_DIR_RE);
-      if (trailing) direction = trailing[1] ? "≤" : "≥";
+      if (trailing) {
+        direction = trailing[1] ? "≤" : "≥";
+        end += trailing[0].length;
+      }
     }
 
-    // If a single-letter unit like "a" or "s" was accidentally skipped, fine; avoid matching "m" inside "mL" (already longest-first).
     tokens.push({
-      raw: raw.trim(),
+      raw: text.slice(start, end).trim(),
       value: low,
       ...(high !== undefined ? { high } : {}),
       unit: canonicalizeUnit(rawUnit),
       rawUnit,
       direction,
-      start: m.index,
+      start,
       end,
     });
   }
@@ -591,16 +631,25 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       const val = SPELLED_NUMBERS.get(m.groups[1].toLowerCase());
       if (val === undefined) continue;
       const rawUnit = m.groups[2];
-      const before = text.slice(Math.max(0, m.index - 32), m.index);
+      let start = m.index;
+      let direction = null;
+      const beforeStart = Math.max(0, start - 48);
+      const before = text.slice(beforeStart, start);
       const verbal = before.match(VERBAL_DIR_RE);
-      const direction = verbal ? (VERBAL_DIR_MAP.get(verbal[1].toLowerCase().replace(/\s+/g, " ")) ?? null) : null;
+      if (verbal) {
+        const mapped = VERBAL_DIR_MAP.get(verbal[1].toLowerCase().replace(/\s+/g, " ")) ?? null;
+        if (mapped) {
+          direction = mapped;
+          start = beforeStart + verbal.index;
+        }
+      }
       tokens.push({
-        raw: m.raw.trim(),
+        raw: text.slice(start, m.end).trim(),
         value: val,
         unit: canonicalizeUnit(rawUnit),
         rawUnit,
         direction,
-        start: m.index,
+        start,
         end: m.end,
         spelled: true,
       });
@@ -664,14 +713,22 @@ const VERSION_SCOPE_RE = new RegExp(
 );
 
 function extractScope(text) {
-  const out = [];
-  const seen = new Set();
+  const candidates = [];
   for (const group of SCOPE_COMPILED) {
     for (const m of collectMatches(text, group.re)) {
-      if (seen.has(group.canonical)) continue;
-      seen.add(group.canonical);
-      out.push({ raw: m.raw, canonical: group.canonical, kind: group.kind, index: m.index });
+      candidates.push({ raw: m.raw, canonical: group.canonical, kind: group.kind, index: m.index, end: m.end });
     }
+  }
+  candidates.sort((a, b) => (b.end - b.index) - (a.end - a.index) || a.index - b.index);
+  const acceptedSpans = [];
+  const out = [];
+  const seen = new Set();
+  for (const cand of candidates) {
+    if (acceptedSpans.some(([s, e]) => cand.index < e && cand.end > s)) continue;
+    acceptedSpans.push([cand.index, cand.end]);
+    if (seen.has(cand.canonical)) continue;
+    seen.add(cand.canonical);
+    out.push({ raw: cand.raw, canonical: cand.canonical, kind: cand.kind, index: cand.index });
   }
   for (const m of collectMatches(text, VERSION_SCOPE_RE)) {
     const ver = m.groups[1] ?? m.groups[2];
@@ -703,9 +760,10 @@ const TWO_AUTHOR_RE = new RegExp(
   "gu",
 );
 const NAMED_GUIDELINE_RE = new RegExp(
-  `${BOUND_L}(?:guías?|guidelines?|consenso|consensus|ensayo|estudio|trial|study)\\s+(?:de\\s+(?:la\\s+|los\\s+)?)?([A-Z][A-Z0-9/-]{1,})${BOUND_R}`,
-  "gu",
+  `${BOUND_L}(?:guías?|guidelines?|consenso|consensus|ensayo|estudio|trial|study)\\s+(?:de\\s+(?:la\\s+|los\\s+)?)?([A-Za-z][A-Za-z0-9/-]{1,})${BOUND_R}`,
+  "giu",
 );
+const ACRONYM_SOURCE_RE = /^[A-Z][A-Z0-9/-]{1,}$/;
 const ATTRIBUTION_CUES = [
   "de acuerdo con", "conforme a", "reportado por", "descrito por", "propuesto por", "citado por",
   "según", "afirma", "sostiene", "opina",
@@ -714,7 +772,7 @@ const ATTRIBUTION_CUES = [
 const ATTRIBUTION_CUE_RE = wordRegex(ATTRIBUTION_CUES, "giu");
 // Match "per <guideline/protocol/author/...>" but NEVER "per kg", "per day", "per hour", "per cent".
 const PER_ATTRIBUTION_RE = new RegExp(
-  `${BOUND_L}per\\s+(?:the\\s+)?(?:guidelines?|protocol|policy|author|authors|study|trial|manufacturer|consensus|[A-Z]{2,})${BOUND_R}`,
+  `${BOUND_L}(?:[Pp]er|PER)\\s+(?:(?:[Tt]he|THE)\\s+)?(?:[Gg]uidelines?|[Pp]rotocol|[Pp]olicy|[Aa]uthors?|[Ss]tudy|[Tt]rial|[Mm]anufacturer|[Cc]onsensus|[A-Z]{2,})${BOUND_R}`,
   "gu",
 );
 
@@ -742,6 +800,7 @@ function extractAttribution(text) {
     out.push({ raw: m.raw, canonical, kind: "source", index: m.index });
   }
   for (const m of collectMatches(text, NAMED_GUIDELINE_RE)) {
+    if (!ACRONYM_SOURCE_RE.test(m.groups[1])) continue;
     const canonical = m.groups[1].toUpperCase();
     if (seen.has(canonical)) continue;
     seen.add(canonical);
@@ -766,12 +825,19 @@ function extractAttribution(text) {
 
 export function extractPayload(text, options = {}) {
   const value = typeof text === "string" ? text.normalize("NFC") : "";
+  const condition = extractConditionWithSpans(value);
+  const number = extractNumbers(value, { includeSpelled: Boolean(options.includeSpelled) });
+  const numbersForSuppression = options.includeSpelled ? number : extractNumbers(value, { includeSpelled: true });
+  const suppressedNegSpans = [
+    ...condition.filter(c => c.kind === "negative_conditional").map(c => [c.index, c.end]),
+    ...numbersForSuppression.filter(n => n.direction !== null).map(n => [n.start, n.end]),
+  ];
   return {
-    negation: extractNegation(value),
+    negation: extractNegation(value, suppressedNegSpans),
     restriction: extractRestriction(value),
-    condition: extractCondition(value),
+    condition: condition.map(({ raw, kind }) => ({ raw, kind })),
     uncertainty: extractUncertainty(value),
-    number: extractNumbers(value, { includeSpelled: Boolean(options.includeSpelled) }),
+    number,
     scope: extractScope(value),
     attribution: extractAttribution(value),
   };
@@ -781,10 +847,10 @@ export function extractPayload(text, options = {}) {
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g;
 const MD_LINK_RE = /\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g;
 const STRAY_MD_LINK_RE = /\]\(/g;
-const SCRIPT_STYLE_BLOCK_RE = /<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi;
-const BLOCK_HTML_TAG_RE = /<\/?(?:br|p|div|li|ul|ol|tr|td|th|table|hr|h[1-6]|img|iframe|svg|object|embed|form|input|blockquote|pre)\b(?:\s+[^<>]*)?\/?>/gi;
-const HTML_TAG_RE = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*)?\/?>/g;
-const UNCLOSED_DANGEROUS_TAG_RE = /<(?:a|img|script|iframe|svg|object|embed|style|link|meta|form|input|body|html)\b[^<>]*/gi;
+const SCRIPT_STYLE_BLOCK_RE = /<(script|style)\b[^>]*>(?:[\s\S]*?<\/\1\s*>|[\s\S]*$)/gi;
+const BLOCK_HTML_TAG_RE = /<\/?(?:br|p|div|li|ul|ol|tr|td|th|table|hr|h[1-6]|img|iframe|svg|object|embed|form|input|blockquote|pre|video|audio|details|marquee|dialog|section|article|header|footer|nav|aside|main)\b(?:[\s/][^<>]*)?\/?>/gi;
+const HTML_TAG_RE = /<\/?[a-zA-Z][a-zA-Z0-9-]*(?:[\s/][^<>]*)?\/?>/g;
+const UNCLOSED_DANGEROUS_TAG_RE = /<\/?(?:(?:a|img|script|iframe|svg|object|embed|style|link|meta|form|input|body|html|video|audio|details|marquee|source|track|base|textarea|select|button|dialog|math|template|frameset|frame|applet|noscript)\b[^<>]*|[a-zA-Z][a-zA-Z0-9-]*(?:\s+[^<>]*=[^<>]*|\/[^<>]*))/gi;
 const URL_SCHEME_RE = /\b(?:(?:https?|ftp|file):\/\/|(?:javascript|vbscript|data):)(?:[^\s<>]*[^\s<>.,;:!?])?/gi;
 const FENCE_LINE_RE = /(?:^|\n)[ \t]*(?:```+|~~~+)[^\n]*/g;
 const INLINE_FENCE_RE = /```+|~~~/g;
@@ -798,55 +864,24 @@ export function checkFormat(text) {
     reasons.push({ code, raw: match });
   };
 
-  if (MD_IMAGE_RE.test(sanitized)) {
+  for (let pass = 0; pass < 10; pass += 1) {
+    const prev = sanitized;
+
     sanitized = sanitized.replace(MD_IMAGE_RE, (m, alt) => (mark("markdown_link", m), alt));
-  }
-  MD_IMAGE_RE.lastIndex = 0;
-
-  if (MD_LINK_RE.test(sanitized)) {
     sanitized = sanitized.replace(MD_LINK_RE, (m, label) => (mark("markdown_link", m), label));
-  }
-  MD_LINK_RE.lastIndex = 0;
-
-  if (STRAY_MD_LINK_RE.test(sanitized)) {
     sanitized = sanitized.replace(STRAY_MD_LINK_RE, m => (mark("markdown_link", m), " "));
-  }
-  STRAY_MD_LINK_RE.lastIndex = 0;
-
-  if (SCRIPT_STYLE_BLOCK_RE.test(sanitized)) {
     sanitized = sanitized.replace(SCRIPT_STYLE_BLOCK_RE, m => (mark("html", m), " "));
-  }
-  SCRIPT_STYLE_BLOCK_RE.lastIndex = 0;
-
-  if (BLOCK_HTML_TAG_RE.test(sanitized)) {
     sanitized = sanitized.replace(BLOCK_HTML_TAG_RE, m => (mark("html", m), " "));
-  }
-  BLOCK_HTML_TAG_RE.lastIndex = 0;
-
-  if (HTML_TAG_RE.test(sanitized)) {
     sanitized = sanitized.replace(HTML_TAG_RE, m => (mark("html", m), ""));
-  }
-  HTML_TAG_RE.lastIndex = 0;
-
-  if (UNCLOSED_DANGEROUS_TAG_RE.test(sanitized)) {
-    sanitized = sanitized.replace(UNCLOSED_DANGEROUS_TAG_RE, m => (mark("html", m), " "));
-  }
-  UNCLOSED_DANGEROUS_TAG_RE.lastIndex = 0;
-
-  if (URL_SCHEME_RE.test(sanitized)) {
     sanitized = sanitized.replace(URL_SCHEME_RE, m => (mark("url", m), " "));
-  }
-  URL_SCHEME_RE.lastIndex = 0;
-
-  if (FENCE_LINE_RE.test(sanitized)) {
     sanitized = sanitized.replace(FENCE_LINE_RE, m => (mark("fence", m.trim()), "\n"));
-  }
-  FENCE_LINE_RE.lastIndex = 0;
-
-  if (INLINE_FENCE_RE.test(sanitized)) {
     sanitized = sanitized.replace(INLINE_FENCE_RE, m => (mark("fence", m), " "));
+
+    if (sanitized !== prev) continue;
+
+    sanitized = sanitized.replace(UNCLOSED_DANGEROUS_TAG_RE, m => (mark("html", m), " "));
+    if (sanitized === prev) break;
   }
-  INLINE_FENCE_RE.lastIndex = 0;
 
   sanitized = normalizeSpace(sanitized);
 
@@ -1096,12 +1131,20 @@ function compareScope(lineTokens, evTokens, action) {
   }];
 }
 
-function compareAttribution(lineTokens, evTokens, action) {
+function compareAttribution(lineTokens, evTokens, action, lineStr = "") {
   const evSources = evTokens.filter(t => t.kind === "source");
   const lineSources = new Set(lineTokens.filter(t => t.kind === "source").map(t => t.canonical));
 
   if (evSources.length > 0) {
-    const missing = evSources.filter(s => !lineSources.has(s.canonical)).map(s => s.raw);
+    const missing = evSources
+      .filter(s => {
+        if (lineSources.has(s.canonical)) return false;
+        if (lineStr && ACRONYM_SOURCE_RE.test(s.canonical)) {
+          return !new RegExp(`${BOUND_L}${escapeRe(s.canonical)}${BOUND_R}`, "u").test(lineStr);
+        }
+        return true;
+      })
+      .map(s => s.raw);
     if (!missing.length) return [];
     return [{
       class: "attribution",
@@ -1149,32 +1192,86 @@ function pinQuote(pin) {
   return "";
 }
 
-function pinCoveredInLine(lineStr, quote) {
-  const normLine = normalizeSpace(foldAscii(lineStr));
-  const normPin = normalizeSpace(foldAscii(quote));
-  if (!normPin) return true;
-  if (normLine.includes(normPin)) return true;
+const CLAUSE_SPLIT_RE = /(?:[;!?\n]+|(?<!\bal)\.(?=\s|$))/u;
+const SUBCLAUSE_INTRO_RE = new RegExp(
+  `${BOUND_L}(?:a\\s+menos\\s+que|salvo\\s+que|salvo\\s+si|salvo\\s+cuando|excepto\\s+si|excepto\\s+cuando|except\\s+if|except\\s+when|unless|salvo|excepto|except)${BOUND_R}`,
+  "iu",
+);
 
-  const pinWords = significantTokens(quote);
+function buildDirectPinRegex(normPin) {
+  let prefix = "";
+  if (/^\d/.test(normPin)) prefix = "(?<![\\p{L}\\p{N}_.\\-−])";
+  else if (/^[\p{L}\p{N}_]/u.test(normPin)) prefix = BOUND_L;
+
+  let suffix = "";
+  if (/\d$/.test(normPin)) suffix = "(?![\\p{L}\\p{N}_/])(?!\\.\\d)";
+  else if (/[\p{L}\p{N}_%]$/u.test(normPin)) suffix = "(?![\\p{L}\\p{N}_/])";
+
+  return new RegExp(`${prefix}${escapeRe(normPin)}${suffix}`, "u");
+}
+
+function pinCoveredInClause(clauseStr, normPin, pinDirectRe, pinPayload, pinWords) {
+  const normClause = normalizeSpace(foldAscii(clauseStr));
+  if (!normClause) return false;
+
+  const clausePayload = extractPayload(clauseStr, { includeSpelled: true });
+  const pinPlainNeg = pinPayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
+  const clausePlainNeg = clausePayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
+  const numbersOk = () =>
+    pinPayload.number.filter(n => !n.spelled).every(num => numberMatches(num, clausePayload.number).ok);
+
+  const directMatch = pinDirectRe.exec(normClause);
+  if (directMatch) {
+    if (!numbersOk()) return false;
+    if (pinPlainNeg.length > 0) return clausePlainNeg.length > 0;
+    if (clausePlainNeg.length === 0) return true;
+    const matchStart = directMatch.index;
+    const beforeAndMatch = normClause.slice(0, matchStart + directMatch[0].length);
+    const intro = SUBCLAUSE_INTRO_RE.exec(beforeAndMatch);
+    if (intro && intro.index <= matchStart) {
+      const subClause = normClause.slice(intro.index);
+      const subNeg = extractPayload(subClause, { includeSpelled: true }).negation
+        .filter(t => t.kind === "negation" || t.kind === "contraindication");
+      if (subNeg.length === 0) return true;
+    }
+    return false;
+  }
+
   if (pinWords.length < 3) return false;
 
-  const lineWords = new Set(significantTokens(lineStr));
+  const clauseWords = new Set(significantTokens(clauseStr));
   let hits = 0;
   for (const w of pinWords) {
-    if (lineWords.has(w)) hits += 1;
+    if (clauseWords.has(w)) hits += 1;
   }
   if (hits / pinWords.length < 0.65) return false;
 
-  // Numbers and negation polarity inside the pin must also survive in the line.
-  const pinPayload = extractPayload(quote, { includeSpelled: true });
-  const linePayload = extractPayload(lineStr, { includeSpelled: true });
-  if (compareNegation(linePayload.negation, pinPayload.negation, linePayload.condition, pinPayload.condition, "out_of_fold").length > 0) {
+  if (compareNegation(clausePayload.negation, pinPayload.negation, clausePayload.condition, pinPayload.condition, "out_of_fold").length > 0) {
     return false;
   }
-  for (const num of pinPayload.number.filter(n => !n.spelled)) {
-    if (!numberMatches(num, linePayload.number).ok) return false;
+  return numbersOk();
+}
+
+function pinCoveredInLine(lineStr, quote) {
+  const quoteClauses = String(quote ?? "").split(CLAUSE_SPLIT_RE).map(s => s.trim()).filter(Boolean);
+  if (!quoteClauses.length) return true;
+
+  const pinText = quoteClauses.length === 1 ? quoteClauses[0] : String(quote);
+  const normPin = normalizeSpace(foldAscii(pinText));
+  if (!normPin) return true;
+
+  const pinDirectRe = buildDirectPinRegex(normPin);
+  const pinPayload = extractPayload(pinText, { includeSpelled: true });
+  const pinWords = significantTokens(pinText);
+
+  if (quoteClauses.length > 1) {
+    return pinCoveredInClause(lineStr, normPin, pinDirectRe, pinPayload, pinWords);
   }
-  return true;
+  const lineClauses = String(lineStr ?? "").split(CLAUSE_SPLIT_RE).map(s => s.trim()).filter(Boolean);
+  for (const clause of lineClauses) {
+    if (pinCoveredInClause(clause, normPin, pinDirectRe, pinPayload, pinWords)) return true;
+  }
+  return false;
 }
 
 export function checkPins(line, pins = []) {
@@ -1222,15 +1319,31 @@ export function checkMonotonic(stops) {
   const demoted = [];
   const findings = [];
 
-  if (input.brief !== undefined && counts.key > counts.brief) {
-    outStops.key = input.brief;
-    demoted.push("key");
+  if (input.full !== undefined && input.brief !== undefined && counts.brief > counts.full) {
+    outStops.brief = input.full;
+    demoted.push("brief");
     findings.push({
       class: "monotonic",
       code: "over_lower_stop",
-      message: `key (${counts.key} words) exceeds brief (${counts.brief} words); showing brief`,
+      message: `brief (${counts.brief} words) exceeds full (${counts.full} words); showing full`,
       action: "demote",
     });
+  }
+
+  const keyBoundStop = outStops.brief !== undefined ? outStops.brief : input.full;
+  const keyBoundName = outStops.brief !== undefined ? "brief" : "full";
+  if (keyBoundStop !== undefined) {
+    const keyBoundWords = countWords(lineText(keyBoundStop));
+    if (counts.key > keyBoundWords) {
+      outStops.key = keyBoundStop;
+      demoted.push("key");
+      findings.push({
+        class: "monotonic",
+        code: "over_lower_stop",
+        message: `key (${counts.key} words) exceeds ${keyBoundName} (${keyBoundWords} words); showing ${keyBoundName}`,
+        action: "demote",
+      });
+    }
   }
 
   const effectiveKeyWords = countWords(lineText(outStops.key));
@@ -1274,6 +1387,7 @@ export function validateEvidence(unitText, evidenceList) {
   if (!list.length) return { ok: false, problems: ["model line requires at least one evidence entry"] };
 
   const nfcUnit = unitText.normalize("NFC");
+  const nfdUnit = unitText.normalize("NFD");
   const problems = [];
   for (let i = 0; i < list.length; i += 1) {
     const ev = list[i];
@@ -1283,9 +1397,12 @@ export function validateEvidence(unitText, evidenceList) {
     }
     const fitsExact = evidenceFits(unitText, ev);
     const fitsNfc = !fitsExact
-      && (unitText !== nfcUnit || ev.quote !== ev.quote.normalize("NFC"))
-      && nfcUnit.includes(ev.quote.normalize("NFC"));
-    if (!fitsExact && !fitsNfc) {
+      && ev.quote === ev.quote.normalize("NFC")
+      && nfcUnit.slice(ev.start, ev.end) === ev.quote;
+    const fitsNfd = !fitsExact && !fitsNfc
+      && ev.quote === ev.quote.normalize("NFD")
+      && nfdUnit.slice(ev.start, ev.end) === ev.quote;
+    if (!fitsExact && !fitsNfc && !fitsNfd) {
       problems.push(`evidence[${i}]: quote does not match unit text at offsets ${ev.start}..${ev.end}`);
     }
   }
@@ -1298,8 +1415,8 @@ function normalizeEvidenceQuotes(line, evidence) {
   if (Array.isArray(evidence)) {
     return evidence.map(item => (typeof item === "string" ? item : item?.quote ?? "")).filter(Boolean);
   }
-  if (isWrittenText(line)) {
-    return line.evidence.map(e => e.quote);
+  if (line && typeof line === "object" && Array.isArray(line.evidence)) {
+    return line.evidence.map(e => (typeof e?.quote === "string" ? e.quote : "")).filter(Boolean);
   }
   return [];
 }
@@ -1335,13 +1452,22 @@ export function checkLine(line, evidence, options = {}) {
     };
   }
 
+  const isPlainString = typeof line === "string";
+  const isModelObj = line !== null && typeof line === "object" && !Array.isArray(line) && line.by === "model";
+  const isMalformedObj = !isPlainString && !isModelObj;
+
   const rawText = lineText(line);
   const semanticAction = retryAvailable ? "retry" : "fallback_brief";
 
-  // 1. Validate evidence anchors if unitText is supplied.
   let evidenceValid = true;
-  if (typeof unitText === "string" && isWrittenText(line)) {
-    evidenceValid = validateEvidence(unitText, line.evidence).ok;
+  if (isMalformedObj) {
+    evidenceValid = false;
+  } else if (isModelObj) {
+    if (typeof unitText === "string") {
+      evidenceValid = validateEvidence(unitText, line.evidence).ok;
+    } else {
+      evidenceValid = Array.isArray(line.evidence) && line.evidence.length > 0 && line.evidence.every(isEvidence);
+    }
   }
 
   // 2. Format / injection check first.
@@ -1361,7 +1487,7 @@ export function checkLine(line, evidence, options = {}) {
     condition: compareCondition(linePayload.condition, evPayload.condition, linePayload.negation, semanticAction),
     uncertainty: compareUncertainty(linePayload.uncertainty, evPayload.uncertainty, semanticAction),
     scope: compareScope(linePayload.scope, evPayload.scope, semanticAction),
-    attribution: compareAttribution(linePayload.attribution, evPayload.attribution, semanticAction),
+    attribution: compareAttribution(linePayload.attribution, evPayload.attribution, semanticAction, workingText),
   };
 
   const numRes = compareNumbers(workingText, linePayload.number, evPayload.number);
@@ -1408,28 +1534,26 @@ export function checkLine(line, evidence, options = {}) {
   const uniqueRetryTokens = [...new Set(retryTokens)];
 
   const mustFallbackToBrief = (!evidenceValid) || (!workingText.trim()) || (semanticFailed && !retryAvailable);
+  const safeUnitFallback = typeof unitText === "string" ? unitText.trim() : "";
+  const safeFallbackText = evidenceValid
+    ? (evidenceText.trim() || safeUnitFallback)
+    : safeUnitFallback;
   let resolved;
   let fallback = null;
   let warning = !formatRes.ok || checks.number === "fail" || !evidenceValid;
 
-  if (mustFallbackToBrief && (brief !== undefined || evidenceText.trim())) {
-    resolved = toAuthorLine(brief, evidenceText.trim());
+  if (mustFallbackToBrief) {
+    resolved = toAuthorLine(brief, safeFallbackText);
     fallback = "brief";
     warning = true;
-  } else if (isWrittenText(line)) {
-    if (workingText.trim()) {
-      resolved = { by: "model", text: workingText, evidence: line.evidence };
-    } else {
-      resolved = toAuthorLine(brief, evidenceText.trim());
-      fallback = "brief";
-      warning = true;
-    }
+  } else if (isModelObj) {
+    resolved = { by: "model", text: workingText, evidence: line.evidence };
   } else {
     resolved = toAuthorLine(undefined, workingText.trim());
   }
 
   return {
-    ok: evidenceValid && findings.length === 0,
+    ok: evidenceValid && findings.length === 0 && Boolean(workingText.trim()),
     checks,
     findings,
     text: workingText,
@@ -1446,7 +1570,7 @@ export function checkLine(line, evidence, options = {}) {
 export function checkWrittenUnit(unit, options = {}) {
   const { unitText, brief, full, pins, retryAvailable = true } = options;
   const briefLine = brief !== undefined ? toAuthorLine(brief, "") : undefined;
-  const fullLine = full !== undefined ? (typeof full === "string" ? { by: "author", text: full } : full) : undefined;
+  const fullLine = full !== undefined ? (typeof full === "string" ? toAuthorLine(full, "") : full) : undefined;
   const stops = {};
   const allFindings = [];
   const combinedChecks = {};

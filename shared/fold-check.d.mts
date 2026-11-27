@@ -94,7 +94,7 @@ export interface MonotonicCheckResult<T extends FoldLine | string = FoldLine | s
     takeaway: number;
     topic: number;
   };
-  demoted: ("key" | "takeaway" | "topic")[];
+  demoted: ("brief" | "key" | "takeaway" | "topic")[];
   findings: CheckFinding[];
 }
 
