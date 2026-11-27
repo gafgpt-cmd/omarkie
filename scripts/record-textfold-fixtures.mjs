@@ -18,12 +18,48 @@ export const TEXTFOLD_LEVELS = Object.freeze(["topic", "takeaway", "key", "brief
 export const TEXTFOLD_WRITTEN = Object.freeze(["topic", "takeaway", "key"]);
 
 const DEFAULT_FIXTURES_DIR = fileURLToPath(new URL("../tests/fixtures/fold", import.meta.url));
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const HOST_PATH_LEAK = /(?:^|[\s"'(=])(?:\/home\/[^/\s]+|\/Users\/[^/\s]+|[A-Za-z]:\\Users\\[^\\\s]+)/;
+const ISO_UTC = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/;
+export const HOST_PATH_LEAK = /(?:\/home\/|\/Users\/|[A-Za-z]:[\\/]Users[\\/])/;
+const VALID_MODES = new Set(["local", "model"]);
 
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = value => typeof value === "string";
 const isNonEmptyString = value => typeof value === "string" && value.trim().length > 0;
+const equalStringList = (actual, expected) =>
+  Array.isArray(actual)
+  && actual.length === expected.length
+  && actual.every((item, index) => item === expected[index]);
+
+function isValidIsoTimestamp(value) {
+  if (!isString(value)) return false;
+  const match = value.match(ISO_UTC);
+  if (!match || Number.isNaN(Date.parse(value))) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
+    return false;
+  }
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  if (match[8] !== undefined && (Number(match[8]) > 23 || Number(match[9]) > 59)) return false;
+  return true;
+}
+
+function assertValidMode(mode) {
+  if (!VALID_MODES.has(mode)) {
+    throw new Error(`Invalid mode "${mode}": expected "local" or "model"`);
+  }
+}
+
+function assertValidTimeoutMs(timeoutMs) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) {
+    throw new Error(`Invalid timeoutMs "${timeoutMs}": expected a positive integer >= 1`);
+  }
+}
 
 function checkNoHostPathLeak(value, fieldPath, problems) {
   if (typeof value === "string") {
@@ -59,10 +95,10 @@ export function validateTextfoldDoc(doc) {
     }
   }
 
-  if (!Array.isArray(doc.levels) || doc.levels.join(",") !== TEXTFOLD_LEVELS.join(",")) {
+  if (!equalStringList(doc.levels, TEXTFOLD_LEVELS)) {
     problems.push(`doc.levels: expected ${JSON.stringify(TEXTFOLD_LEVELS)}`);
   }
-  if (!Array.isArray(doc.written) || doc.written.join(",") !== TEXTFOLD_WRITTEN.join(",")) {
+  if (!equalStringList(doc.written, TEXTFOLD_WRITTEN)) {
     problems.push(`doc.written: expected ${JSON.stringify(TEXTFOLD_WRITTEN)}`);
   }
 
@@ -70,7 +106,7 @@ export function validateTextfoldDoc(doc) {
     problems.push("doc.provenance: expected an object");
   } else {
     if (!isNonEmptyString(doc.provenance.made_with)) problems.push("doc.provenance.made_with: expected a non-empty string");
-    if (!isString(doc.provenance.exported) || !ISO_UTC.test(doc.provenance.exported)) {
+    if (!isValidIsoTimestamp(doc.provenance.exported)) {
       problems.push("doc.provenance.exported: expected an ISO timestamp");
     }
     if (typeof doc.provenance.ai_generated !== "boolean") problems.push("doc.provenance.ai_generated: expected a boolean");
@@ -117,7 +153,7 @@ export function validateTextfoldDoc(doc) {
             problems.push(`${up}.evidence: out-of-range sentence index ${outOfRange.join(",")}`);
           } else {
             const expectedBrief = unit.evidence.map(i => unit.sentences[i]);
-            if (expectedBrief.length !== unit.brief.length || expectedBrief.some((s, i) => s !== unit.brief[i])) {
+            if (!equalStringList(unit.brief, expectedBrief)) {
               problems.push(`${up}.brief: must match sentences indexed by evidence`);
             }
           }
@@ -164,9 +200,8 @@ export async function runTextfoldCli({
   timeoutMs = 180_000,
   runner = execFileAsync,
 }) {
-  if (mode !== "local" && mode !== "model") {
-    throw new Error(`Invalid mode "${mode}": expected "local" or "model"`);
-  }
+  assertValidMode(mode);
+  assertValidTimeoutMs(timeoutMs);
   const args = ["-m", "textfold", "get", inputPath, "--json"];
   if (mode === "local") args.push("--no-generate");
   if (lang) args.push("--lang", lang);
@@ -200,6 +235,8 @@ export async function recordFixture({
   dryRun = false,
   runner = execFileAsync,
 }) {
+  assertValidMode(mode);
+  assertValidTimeoutMs(timeoutMs);
   const inputPath = path.join(fixtureDir, "input.md");
   const outputPath = path.join(fixtureDir, "textfold.json");
   await readFile(inputPath, "utf8");
@@ -253,22 +290,23 @@ export async function checkFixtureRecording(fixtureDir) {
   try {
     raw = await readFile(outputPath, "utf8");
   } catch (error) {
-    return { fixtureDir, outputPath, ok: false, problems: [`missing or unreadable textfold.json: ${error.message}`] };
+    return { fixtureDir, outputPath, ok: false, problems: [`missing or unreadable textfold.json: ${error.message}`], sections: 0, units: 0 };
   }
   let doc;
   try {
     doc = JSON.parse(raw);
   } catch (error) {
-    return { fixtureDir, outputPath, ok: false, problems: [`invalid JSON: ${error.message}`] };
+    return { fixtureDir, outputPath, ok: false, problems: [`invalid JSON: ${error.message}`], sections: 0, units: 0 };
   }
   const problems = validateTextfoldDoc(doc);
+  const sections = Array.isArray(doc?.sections) ? doc.sections : [];
   return {
     fixtureDir,
     outputPath,
     ok: problems.length === 0,
     problems,
-    sections: Array.isArray(doc.sections) ? doc.sections.length : 0,
-    units: Array.isArray(doc.sections) ? doc.sections.reduce((n, s) => n + (Array.isArray(s?.units) ? s.units.length : 0), 0) : 0,
+    sections: sections.length,
+    units: sections.reduce((n, s) => n + (Array.isArray(s?.units) ? s.units.length : 0), 0),
   };
 }
 
@@ -282,11 +320,10 @@ export async function loadManifest(fixturesDir = DEFAULT_FIXTURES_DIR) {
   return manifest;
 }
 
-function matchesSelector(entry, selectors) {
-  if (!selectors || selectors.length === 0) return true;
+function selectorMatchesEntry(entry, selector) {
   const numStr = String(entry.number);
   const padded = numStr.padStart(2, "0");
-  return selectors.some(sel => sel === entry.id || sel === numStr || sel === padded);
+  return selector === entry.id || selector === numStr || selector === padded;
 }
 
 export async function recordAllFixtures({
@@ -300,10 +337,23 @@ export async function recordAllFixtures({
   dryRun = false,
   runner = execFileAsync,
 } = {}) {
+  assertValidMode(mode);
+  assertValidTimeoutMs(timeoutMs);
   const manifest = await loadManifest(fixturesDir);
-  const selected = manifest.fixtures.filter(entry => matchesSelector(entry, fixtures));
+  const normalizedSelectors = fixtures.map(sel => String(sel).trim());
+  if (normalizedSelectors.length > 0) {
+    const unmatched = normalizedSelectors.filter(
+      sel => !sel || !manifest.fixtures.some(entry => selectorMatchesEntry(entry, sel)),
+    );
+    if (unmatched.length > 0) {
+      throw new Error(`Unknown fixture selector(s): ${unmatched.map(sel => sel || "<empty>").join(", ")}`);
+    }
+  }
+  const selected = normalizedSelectors.length === 0
+    ? manifest.fixtures
+    : manifest.fixtures.filter(entry => normalizedSelectors.some(sel => selectorMatchesEntry(entry, sel)));
   if (selected.length === 0) {
-    throw new Error(`No fixtures matched selector(s): ${fixtures.join(", ")}`);
+    throw new Error(`No fixtures found in manifest at ${fixturesDir}`);
   }
 
   const results = [];
@@ -353,15 +403,24 @@ export function parseArgs(argv) {
     else if (arg === "--fixtures-dir") { options.fixturesDir = path.resolve(takeValue(i, arg)); i += 1; }
     else if (arg === "--fixture") {
       const value = takeValue(i, arg);
-      options.fixtures.push(...value.split(",").map(part => part.trim()).filter(Boolean));
+      const parts = value.split(",").map(part => part.trim()).filter(Boolean);
+      if (parts.length === 0) throw new Error(`Invalid --fixture: ${value}`);
+      options.fixtures.push(...parts);
       i += 1;
     } else if (arg === "--python") { options.python = takeValue(i, arg); i += 1; }
-    else if (arg === "--mode") { options.mode = takeValue(i, arg); i += 1; }
-    else if (arg === "--data-dir") { options.dataDir = takeValue(i, arg); i += 1; }
+    else if (arg === "--mode") {
+      const mode = takeValue(i, arg);
+      assertValidMode(mode);
+      options.mode = mode;
+      i += 1;
+    } else if (arg === "--data-dir") { options.dataDir = takeValue(i, arg); i += 1; }
     else if (arg === "--timeout-ms") {
-      const value = Number(takeValue(i, arg));
-      if (!Number.isFinite(value) || value <= 0) throw new Error(`Invalid --timeout-ms: ${argv[i + 1]}`);
-      options.timeoutMs = Math.trunc(value);
+      const raw = takeValue(i, arg);
+      const value = Number(raw);
+      if (!/^\d+$/.test(raw.trim()) || !Number.isSafeInteger(value) || value < 1) {
+        throw new Error(`Invalid --timeout-ms: ${raw}`);
+      }
+      options.timeoutMs = value;
       i += 1;
     } else {
       throw new Error(`Unknown argument: ${arg}`);

@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmod, copyFile, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
+  HOST_PATH_LEAK,
   TEXTFOLD_FORMAT,
   TEXTFOLD_LEVELS,
   TEXTFOLD_VERSION,
@@ -36,6 +37,30 @@ function extractCardsSection(markdown) {
     .map(line => line.trim())
     .filter(line => line.startsWith("- "));
   return { heading: start[1], lines };
+}
+
+function stripNonFlowSections(markdown) {
+  const kept = [];
+  let skipping = false;
+  for (const line of markdown.split(/\r?\n/)) {
+    if (/^## /.test(line)) {
+      skipping = /^## (?:Tarjetas|Cards|Buzzword\b)/.test(line);
+    }
+    if (!skipping) kept.push(line);
+  }
+  return kept.join("\n");
+}
+
+function extractMathSpans(markdown) {
+  const spans = [];
+  const blockStripped = markdown.replace(/\$\$([\s\S]*?)\$\$/g, (_, body) => {
+    spans.push(body);
+    return "";
+  });
+  for (const match of blockStripped.matchAll(/(?<!\\)\$([^\s$\n](?:[^$\n]*?[^\s$\n])?)\$/g)) {
+    spans.push(match[1]);
+  }
+  return spans;
 }
 
 function hasMarkdownTable(markdown) {
@@ -148,7 +173,7 @@ test("every fixture ships input.md, must-keep.json, expected-estudio.md and vali
       assert.equal(hasMarkdownTable(estudio), true, `${entry.id}: expected Markdown table in expected-estudio.md`);
     }
     if (mustKeep.structure.expectFlow) {
-      assert.ok(estudio.includes("→"), `${entry.id}: expected → flow in expected-estudio.md`);
+      assert.ok(stripNonFlowSections(estudio).includes("→"), `${entry.id}: expected → flow outside Cards/Buzzword sections in expected-estudio.md`);
     }
     if (mustKeep.structure.expectNever) {
       assert.ok(estudio.includes("⚠"), `${entry.id}: expected ⚠ never-do block in expected-estudio.md`);
@@ -158,6 +183,10 @@ test("every fixture ships input.md, must-keep.json, expected-estudio.md and vali
     }
     for (const forbidden of mustKeep.forbidden) {
       assert.ok(!estudio.toLowerCase().includes(forbidden.toLowerCase()), `${entry.id}: forbidden string appeared in expected-estudio.md: ${forbidden}`);
+    }
+
+    for (const tex of extractMathSpans(estudio)) {
+      assert.ok(!tex.includes("=="), `${entry.id}: highlight markers must not appear inside TeX math: ${tex}`);
     }
 
     // Recorded TextFold baseline validation.
@@ -172,15 +201,21 @@ test("every fixture ships input.md, must-keep.json, expected-estudio.md and vali
 
     // No host path leaks across any committed fixture artifact.
     for (const [name, body] of [["input.md", input], ["must-keep.json", mustKeepRaw], ["expected-estudio.md", estudio], ["textfold.json", textfoldRaw]]) {
-      assert.doesNotMatch(body, /(?:\/home\/|\/Users\/|[A-Za-z]:\\Users\\)/, `${entry.id}/${name} leaks a host user path`);
+      assert.doesNotMatch(body, HOST_PATH_LEAK, `${entry.id}/${name} leaks a host user path`);
     }
   }
 });
 
 test("fixture-specific stress contracts hold (math, table-only D5 baseline, negation density, OCR, 10k perf, legal scope, injection)", async () => {
-  // Fixture 6: display math blocks.
+  // Fixture 6: display math blocks and highlighted formulas without == inside TeX.
   const f6 = await readFile(path.join(FIXTURES_DIR, "06-acid-base", "input.md"), "utf8");
+  const f6Estudio = await readFile(path.join(FIXTURES_DIR, "06-acid-base", "expected-estudio.md"), "utf8");
   assert.ok((f6.match(/^\$\$$/gm) || []).length >= 6, "fixture 6 should include multiple display math blocks");
+  const f6Math = extractMathSpans(f6Estudio);
+  assert.ok(f6Math.length >= 4, "fixture 6 expected-estudio should include inline and display TeX formulas");
+  for (const tex of f6Math) {
+    assert.ok(!tex.includes("=="), `fixture 6 TeX math must not contain == highlight markers: ${tex}`);
+  }
 
   // Fixture 9: table-only section exists in input.md and TextFold drops its units (D5 baseline).
   const f9Input = await readFile(path.join(FIXTURES_DIR, "09-anestesia-regional-dosis", "input.md"), "utf8");
@@ -325,9 +360,11 @@ process.stdout.write(JSON.stringify(doc));
     );
     await chmod(stubPython, 0o755);
 
-    // 1. Missing recording fails --check.
+    // 1. Missing recording fails --check with numeric counts.
     const missingCheck = await checkFixtureRecording(path.join(tempFixtures, "01-sample"));
     assert.equal(missingCheck.ok, false);
+    assert.equal(missingCheck.sections, 0);
+    assert.equal(missingCheck.units, 0);
 
     // 2. Dry run does not invoke Python or write textfold.json.
     const dryRun = await execFileAsync(process.execPath, [RECORDER_CLI, "--fixtures-dir", tempFixtures, "--fixture", "01", "--dry-run"]);
@@ -372,11 +409,32 @@ process.stdout.write(JSON.stringify(doc));
     assert.equal(invocations[1].noModels, null);
     assert.ok(!invocations[1].args.includes("--no-generate"));
 
-    // 6. --check fails non-zero when a recorded file is corrupted.
-    await cp(path.join(tempFixtures, "01-sample"), path.join(tempFixtures, "01-bad"), { recursive: true });
-    await copyFile(path.join(tempFixtures, "01-sample", "input.md"), path.join(tempFixtures, "01-bad", "input.md"));
-    await writeFile(path.join(tempFixtures, "01-sample", "textfold.json"), JSON.stringify({ format: "wrong" }), "utf8");
-    await assert.rejects(execFileAsync(process.execPath, [RECORDER_CLI, "--fixtures-dir", tempFixtures, "--check"]));
+    // 6. --check fails non-zero when a recorded file is corrupted, invalid JSON, or JSON null, always reporting numeric counts.
+    for (const badPayload of [JSON.stringify({ format: "wrong" }), "{broken json", "null"]) {
+      await writeFile(path.join(tempFixtures, "01-sample", "textfold.json"), badPayload, "utf8");
+      const checked = await checkFixtureRecording(path.join(tempFixtures, "01-sample"));
+      assert.equal(checked.ok, false);
+      assert.equal(checked.sections, 0);
+      assert.equal(checked.units, 0);
+      await assert.rejects(
+        execFileAsync(process.execPath, [RECORDER_CLI, "--fixtures-dir", tempFixtures, "--check"]),
+        error => {
+          assert.match(error.stdout, /FAIL 01-sample \(0 sections, 0 units\)/);
+          assert.ok(!error.stdout.includes("undefined"));
+          return true;
+        },
+      );
+    }
+
+    // 7. Partial/unmatched fixture selector fails instead of being silently ignored.
+    await assert.rejects(
+      execFileAsync(process.execPath, [RECORDER_CLI, "--fixtures-dir", tempFixtures, "--fixture", "01,99", "--dry-run"]),
+      error => /Unknown fixture selector\(s\): 99/.test(error.stderr),
+    );
+    await assert.rejects(
+      recordAllFixtures({ fixturesDir: tempFixtures, fixtures: ["01", "02-typo"], check: true }),
+      /Unknown fixture selector\(s\): 02-typo/,
+    );
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
@@ -384,7 +442,7 @@ process.stdout.write(JSON.stringify(doc));
 
 test("validateTextfoldDoc and parseArgs reject malformed inputs with specific reasons", () => {
   assert.match(validateTextfoldDoc(null).join("\n"), /expected a JSON object/);
-  const broken = {
+  const makeValidDoc = () => ({
     format: TEXTFOLD_FORMAT,
     version: TEXTFOLD_VERSION,
     id: "md-x",
@@ -400,13 +458,36 @@ test("validateTextfoldDoc and parseArgs reject malformed inputs with specific re
       id: "s1", num: "", title: "S1", depth: 1, takeaway: "", topic: "",
       units: [{
         id: "p1", kind: "paragraph", role: "context",
-        full: "One.", sentences: ["One."], brief: ["Wrong."], evidence: [0],
+        full: "One.", sentences: ["One."], brief: ["One."], evidence: [0],
         key: "One.", takeaway: "One", topic: "One",
       }],
     }],
     links: [],
-  };
-  assert.match(validateTextfoldDoc(broken).join("\n"), /brief: must match sentences indexed by evidence/);
+  });
+  assert.deepEqual(validateTextfoldDoc(makeValidDoc()), []);
+
+  const badBrief = makeValidDoc();
+  badBrief.sections[0].units[0].brief = ["Wrong."];
+  assert.match(validateTextfoldDoc(badBrief).join("\n"), /brief: must match sentences indexed by evidence/);
+
+  const commaLevels = makeValidDoc();
+  commaLevels.levels = ["topic,takeaway", "key", "brief", "full"];
+  commaLevels.written = ["topic,takeaway", "key"];
+  const commaProblems = validateTextfoldDoc(commaLevels).join("\n");
+  assert.match(commaProblems, /doc\.levels/);
+  assert.match(commaProblems, /doc\.written/);
+
+  for (const badDate of ["2026-99-99T99:99:99Z", "2026-02-30T00:00:00Z", "2026-11-27T00:00:00+25:00"]) {
+    const badExport = makeValidDoc();
+    badExport.provenance.exported = badDate;
+    assert.match(validateTextfoldDoc(badExport).join("\n"), /doc\.provenance\.exported/);
+  }
+
+  for (const leakUrl of ["file:///home/alice/input.md", "file:///Users/alice/input.md", "file:///C:/Users/alice/input.md"]) {
+    const leaky = makeValidDoc();
+    leaky.source.url = leakUrl;
+    assert.match(validateTextfoldDoc(leaky).join("\n"), /host-specific user path/);
+  }
 
   const parsed = parseArgs(["--fixture", "01,02", "--fixture", "14-prompt-injection", "--mode", "model", "--check"]);
   assert.deepEqual(parsed.fixtures, ["01", "02", "14-prompt-injection"]);
@@ -414,4 +495,9 @@ test("validateTextfoldDoc and parseArgs reject malformed inputs with specific re
   assert.equal(parsed.check, true);
   assert.throws(() => parseArgs(["--unknown"]), /Unknown argument/);
   assert.throws(() => parseArgs(["--timeout-ms", "0"]), /Invalid --timeout-ms/);
+  assert.throws(() => parseArgs(["--timeout-ms", "0.5"]), /Invalid --timeout-ms/);
+  assert.throws(() => parseArgs(["--timeout-ms", "1.5"]), /Invalid --timeout-ms/);
+  assert.throws(() => parseArgs(["--mode", "bogus", "--dry-run"]), /Invalid mode/);
+  assert.throws(() => parseArgs(["--mode", "bogus", "--check"]), /Invalid mode/);
+  assert.throws(() => parseArgs(["--fixture", ","]), /Invalid --fixture/);
 });

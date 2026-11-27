@@ -8,8 +8,8 @@
 |---|---|---|
 | pH / PaCO₂ / HCO₃⁻ | ==7.35-7.45== · ==35-45 mmHg== · ==22-26 mEq/L== | Acidaemia <7.35; alkalaemia >7.45 |
 | Anion gap (AG) ★ | $\text{Na}^+ - (\text{Cl}^- + \text{HCO}_3^-)$ = ==8-12 mEq/L== | >12 = HAGMA (methanol, uraemia, DKA, propylene glycol, INH/iron, lactate, ethylene glycol, salicylates); normal = NAGMA (RTA, diarrhoea, 0.9% saline) |
-| Corrected AG ★★ | $\text{AG} + ==2.5== \times (==4.0== - \text{Albumin})$ | Hypoalbuminaemia hides elevated AG |
-| Winter's formula ★★ | $\text{PaCO}_2 = ==1.5 \times [\text{HCO}_3^-] + 8 \pm 2\text{ mmHg}==$ | Measured > upper limit = + resp acidosis; < lower limit = + resp alkalosis |
+| Corrected AG ★★ | ==$\text{AG} + 2.5 \times (4.0 - \text{Albumin})$== | Hypoalbuminaemia hides elevated AG |
+| Winter's formula ★★ | ==$\text{PaCO}_2 = 1.5 \times [\text{HCO}_3^-] + 8 \pm 2\text{ mmHg}$== | Measured > upper limit = + resp acidosis; < lower limit = + resp alkalosis |
 | Metabolic alkalosis | ↑PaCO₂ ==0.7 mmHg== per +1 mEq/L HCO₃⁻ >24 | Capped ==<55 mmHg== (hypoxaemia limits hypoventilation) |
 
 ## Respiratory compensation (vs)
