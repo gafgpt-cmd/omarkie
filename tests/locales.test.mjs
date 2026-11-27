@@ -17,7 +17,7 @@ const { bundledPlugins } = await import("../src/plugins/catalog.ts");
 // Forward slashes: the extractor takes glob patterns, and a URL pathname is "/D:/..." on Windows.
 const root = fileURLToPath(new URL("..", import.meta.url)).replaceAll("\\", "/").replace(/\/$/, "");
 const cjk = /[　-〿一-鿿＀-￯]/;
-const languages = ["en", "es", "ca", "ro"];
+const languages = ["en", "es", "ca", "ro", "zh"];
 const config = {
   locales: languages,
   extract: {
@@ -36,6 +36,9 @@ async function dynamicKeys() {
   return keys;
 }
 const placeholders = text => [...text.matchAll(/\{\{(\w+)\}\}/g)].map(match => match[1]).sort().join(",");
+const pluralBase = form => form.replace(/_(zero|one|two|few|many|other)$/, "");
+// Agent prompts stay English on purpose; the agent answers in the note's language.
+const agentPrompt = /Answer with JSON:/;
 
 test("every UI string the i18next extractor finds has a complete translation in each language", async () => {
   const errors = [], { allKeys, objectKeys } = await findKeys(config, quiet, errors);
@@ -47,10 +50,13 @@ test("every UI string the i18next extractor finds has a complete translation in 
   assert.ok(extra.size > bundledPlugins.length);
   for (const { locale, newTranslations, existingTranslations: catalogue } of results) {
     for (const form of new Set([...Object.keys(newTranslations), ...extra])) {
+      // Chinese source keys are the zh text; only English-keyed strings need a zh entry.
+      if (locale === "zh" && cjk.test(form)) continue;
       const value = catalogue[form];
       assert.equal(typeof value, "string", `${locale}: missing ${form}`);
       assert.equal(placeholders(value), placeholders(form), `${locale}: placeholders differ for ${form}`);
-      assert.doesNotMatch(value.replace("中文", ""), cjk, `${locale}: Chinese left in ${form}`);
+      if (locale !== "zh") assert.doesNotMatch(value.replace("中文", ""), cjk, `${locale}: Chinese left in ${form}`);
+      if (locale !== "en" && /[a-z]+ [a-z]+/i.test(form) && !agentPrompt.test(form)) assert.notEqual(value, pluralBase(form), `${locale}: English left in ${form}`);
     }
     if (locale === "ro") assert.doesNotMatch(JSON.stringify(catalogue), /[şţŞŢ]/, "Romanian must use comma-below ș ț");
   }
