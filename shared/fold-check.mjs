@@ -499,10 +499,10 @@ function parseNumberValue(raw) {
 }
 
 // Matches optional symbolic comparator, optional prefix currency, number (and optional range end), optional unit.
-const NUM_PART = "\\d+(?:[.,]\\d+)*";
+const NUM_PART = "(?:\\d+(?:[.,]\\d+)*|\\.\\d+)";
 const SIGNED_NUM_PART = `[-−]?${NUM_PART}`;
 const NUMBER_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}_])(?<![\\p{L}_]-)(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!\\d|[.,]\\d|-[-−]?\\d))?(?:\\s*(${UNIT_ALT}))?`,
+  `(?:(>=|<=|(?<![-=])>|[<≥≤↑↓])\\s*|(?<![\\p{L}\\p{N}_.]))([€$£])?(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!\\d|[.,]\\d|-[-−]?(?:\\d|\\.\\d)))?(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
 const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde)\s+$/iu;
@@ -548,6 +548,7 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
   }
 
   NUMBER_RE.lastIndex = 0;
+  let prevUnitEnd = -1;
   let match;
   while ((match = NUMBER_RE.exec(text)) !== null) {
     const matchStart = match.index;
@@ -570,6 +571,12 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     const rewindToHigh = () => {
       if (rangeSep !== null) NUMBER_RE.lastIndex = firstEnd + rangeSep.length;
     };
+    const fromUnitHyphen = prevUnitEnd >= 0 && prevUnitEnd === matchStart - 1;
+
+    if (!match[1] && !fromUnitHyphen && /[\p{L}_]-$/u.test(text.slice(Math.max(0, matchStart - 2), matchStart))) {
+      rewindToHigh();
+      continue;
+    }
 
     // Skip version numbers owned by scope ("version 2.4", "edición 3").
     if (!match[1] && !match[2] && VERSION_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 20), matchStart))) {
@@ -596,7 +603,7 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       && !ES_RANGE_A_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 16), matchStart));
     const isTupleContinuation = rangeSep !== null
       && /^\s*-\s*$/.test(rangeSep)
-      && /\d-$/.test(text.slice(Math.max(0, matchStart - 2), matchStart));
+      && (/\d-$/.test(text.slice(Math.max(0, matchStart - 2), matchStart)) || fromUnitHyphen);
 
     if (high !== undefined && (!Number.isFinite(high) || high < low || isBareSpanishA || isTupleContinuation)) {
       high = undefined;
@@ -604,6 +611,8 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       end = firstEnd;
       rewindToHigh();
     }
+
+    const hasSuffixUnit = Boolean(match[6]) && end === matchEnd;
 
     // Check verbal direction immediately preceding the number (only when no symbolic comparator).
     let direction = symDir;
@@ -639,6 +648,13 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       start,
       end,
     });
+
+    if (hasSuffixUnit) {
+      prevUnitEnd = end;
+      if (/^-(?:[€$£]|[-−]?(?:\d|\.\d))/.test(text.slice(end))) {
+        NUMBER_RE.lastIndex = end + 1;
+      }
+    }
   }
 
   if (includeSpelled) {
@@ -1076,7 +1092,7 @@ function compareUncertainty(lineTokens, evTokens, action) {
   return findings;
 }
 
-function numberMatches(lineNum, evNums) {
+function numberMatches(lineNum, evNums, peerLineNums = []) {
   if (lineNum.high !== undefined) {
     const exactRange = evNums.some(
       e => e.high !== undefined && e.value === lineNum.value && e.high === lineNum.high && e.unit === lineNum.unit && e.direction === lineNum.direction,
@@ -1099,6 +1115,17 @@ function numberMatches(lineNum, evNums) {
   );
   if (exact) return { ok: true };
 
+  if (lineNum.direction === null && peerLineNums.length > 0) {
+    const matchesRangePair = evNums.some(e =>
+      e.high !== undefined
+      && e.direction === null
+      && e.unit === lineNum.unit
+      && ((e.value === lineNum.value && peerLineNums.some(p => p.high === undefined && p.direction === null && p.unit === e.unit && p.value === e.high))
+        || (e.high === lineNum.value && peerLineNums.some(p => p.high === undefined && p.direction === null && p.unit === e.unit && p.value === e.value))),
+    );
+    if (matchesRangePair) return { ok: true };
+  }
+
   const sameVal = evNums.filter(e => e.high === undefined && e.value === lineNum.value);
   if (sameVal.some(e => e.unit === lineNum.unit)) return { ok: false, code: "direction_mismatch" };
   if (sameVal.length > 0) return { ok: false, code: "unit_mismatch" };
@@ -1109,7 +1136,7 @@ function compareNumbers(text, lineNums, evNums) {
   const badSpans = [];
   const findings = [];
   for (const num of lineNums) {
-    const verdict = numberMatches(num, evNums);
+    const verdict = numberMatches(num, evNums, lineNums);
     if (verdict.ok) continue;
     badSpans.push(num);
     findings.push({
@@ -1233,7 +1260,7 @@ function pinCoveredInClause(clauseStr, normPin, pinDirectRe, pinPayload, pinWord
   const pinPlainNeg = pinPayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
   const clausePlainNeg = clausePayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
   const numbersOk = () =>
-    pinPayload.number.filter(n => !n.spelled).every(num => numberMatches(num, clausePayload.number).ok);
+    pinPayload.number.filter(n => !n.spelled).every(num => numberMatches(num, clausePayload.number, pinPayload.number).ok);
 
   const directMatch = pinDirectRe.exec(normClause);
   if (directMatch) {

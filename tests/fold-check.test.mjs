@@ -583,6 +583,34 @@ test("number extraction handles descending spans, English article 'a', negative 
 
   assert.equal(checkLine("Penicilina 9.000.000 UI.", "Penicilina 2.400.000 UI.").checks.number, "fail");
   assert.equal(checkLine("Penicilina 2.400.000 UI.", "Penicilina 2.400.000 UI.").ok, true);
+
+  // Compact comparators attached to identifiers
+  assert.equal(checkLine("eGFR>30", "eGFR<30").checks.number, "fail");
+  assert.equal(checkLine("p>0.05", "p<0.05").checks.number, "fail");
+  assert.equal(checkLine("SpO2>90%", "SpO2<90%").checks.number, "fail");
+  assert.equal(checkLine("BNP<100 pg/mL", "BNP>100 pg/mL").checks.number, "fail");
+  assert.equal(checkLine("Risk↑20%", "Risk↓20%").checks.number, "fail");
+  assert.equal(checkLine("eGFR <30", "eGFR<30").ok, true);
+  assert.equal(checkLine("MAP ≥65 mmHg", "MAP≥65 mmHg").ok, true);
+
+  // Leading-decimal clinical values and dotted version/code identifiers
+  assert.equal(checkLine("Give 5 mg.", "Give .5 mg.").checks.number, "fail");
+  assert.equal(checkLine("Give .5 mg.", "Give 5 mg.").checks.number, "fail");
+  assert.equal(checkLine("Give 0.5 mg.", "Give .5 mg.").ok, true);
+  assert.equal(checkLine("Give 0.5-1.5 mg.", "Give between .5 and 1.5 mg.").ok, true);
+  assert.equal(checkLine("Only in v2.4 on Linux.", "Only supported in version 2.4 on Linux.").ok, true);
+  assert.equal(checkLine("Give 4 on Linux in v2.4.", "Only supported in v2.4 on Linux.").checks.number, "fail");
+  assert.equal(checkLine("Use ICD-10.1 criteria.", "Use ICD-10 criteria.").ok, true);
+
+  // Compact unit-hyphen ranges (letter-ending and symbol-ending units)
+  assert.equal(checkLine("Give 40 mg-80 mg daily.", "Give 40 mg-20 mg daily.").checks.number, "fail");
+  assert.equal(checkLine("Give 40mg-80mg daily.", "Give 40mg-20mg daily.").checks.number, "fail");
+  assert.equal(checkLine("Give 2.5 mg/kg-10 mg/kg.", "Give 2.5 mg/kg-5 mg/kg.").checks.number, "fail");
+  assert.equal(checkLine("Temp 37°C-42°C.", "Temp 37°C-39°C.").checks.number, "fail");
+  assert.equal(checkLine("Give 80 mg.", "Give 40 mg-80 mg.").ok, true);
+  assert.equal(checkLine("Risk 50%-80%.", "Risk 50% to 80%.").ok, true);
+  assert.equal(checkLine("Risk 50%-80%.", "Risk 50-80%.").ok, true);
+  assert.equal(checkLine("Risk 50%-90%.", "Risk 50-80%.").checks.number, "fail");
 });
 
 test("compound slash-units, prefix currency rates, negated verbal comparators, and direction gap replacement", () => {
