@@ -611,6 +611,27 @@ test("number extraction handles descending spans, English article 'a', negative 
   assert.equal(checkLine("Risk 50%-80%.", "Risk 50% to 80%.").ok, true);
   assert.equal(checkLine("Risk 50%-80%.", "Risk 50-80%.").ok, true);
   assert.equal(checkLine("Risk 50%-90%.", "Risk 50-80%.").checks.number, "fail");
+
+  // Non-hyphen separators after a unit-bearing number do not split a following hyphenated range
+  assert.equal(checkLine("eGFR 30-44 mL/min.", ["Start IV furosemide 40 mg", "30-44 mL/min"]).ok, true);
+  assert.equal(checkLine("Infuse 500 mL 1-2 hours.", "Infuse 500 mL in 1-2 hours.").ok, true);
+  assert.equal(checkLine("Age 65 yr; give 44 mL/min.", "Age 65 yr 30-44 mL/min.").checks.number, "fail");
+  assert.equal(checkLine("Age 65 yr; give 30.", "Age 65 yr 30-44 mL/min.").checks.number, "fail");
+
+  // NFD input redacts bad numbers at exact offsets without drifting into preceding accented words
+  const nfdBad1 = checkLine(
+    "Administración rápida según guía clínica pediátrica: 80 mg.".normalize("NFD"),
+    "Administración rápida según guía clínica pediátrica: 40 mg.",
+  );
+  assert.equal(nfdBad1.checks.number, "fail");
+  assert.equal(nfdBad1.text, "Administración rápida según guía clínica pediátrica: —?.");
+
+  const nfdBad2 = checkLine(
+    "Dosis máxima según guía clínica: 80 mg.".normalize("NFD"),
+    "Dosis máxima según guía clínica: 40 mg.",
+  );
+  assert.equal(nfdBad2.checks.number, "fail");
+  assert.equal(nfdBad2.text, "Dosis máxima según guía clínica: —?.");
 });
 
 test("compound slash-units, prefix currency rates, negated verbal comparators, and direction gap replacement", () => {

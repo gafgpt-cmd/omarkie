@@ -571,7 +571,7 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     const rewindToHigh = () => {
       if (rangeSep !== null) NUMBER_RE.lastIndex = firstEnd + rangeSep.length;
     };
-    const fromUnitHyphen = prevUnitEnd >= 0 && prevUnitEnd === matchStart - 1;
+    const fromUnitHyphen = prevUnitEnd >= 0 && prevUnitEnd === matchStart - 1 && text[prevUnitEnd] === "-";
 
     if (!match[1] && !fromUnitHyphen && /[\p{L}_]-$/u.test(text.slice(Math.max(0, matchStart - 2), matchStart))) {
       rewindToHigh();
@@ -649,11 +649,9 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       end,
     });
 
-    if (hasSuffixUnit) {
+    if (hasSuffixUnit && /^-(?:[€$£]|[-−]?(?:\d|\.\d))/.test(text.slice(end))) {
       prevUnitEnd = end;
-      if (/^-(?:[€$£]|[-−]?(?:\d|\.\d))/.test(text.slice(end))) {
-        NUMBER_RE.lastIndex = end + 1;
-      }
+      NUMBER_RE.lastIndex = end + 1;
     }
   }
 
@@ -1516,7 +1514,7 @@ export function checkLine(line, evidence, options = {}) {
 
   // 2. Format / injection check first.
   const formatRes = checkFormat(rawText);
-  let workingText = formatRes.sanitized;
+  let workingText = formatRes.sanitized.normalize("NFC");
 
   // 3. Extract payload tokens from sanitized line and combined evidence quotes.
   const quotes = normalizeEvidenceQuotes(line, evidence);
