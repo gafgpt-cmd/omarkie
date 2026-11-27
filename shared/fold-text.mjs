@@ -16,9 +16,10 @@ const DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
 const FM_OPEN = /^\uFEFF?---[ \t]*$/;
 const FM_CLOSE = /^(?:---|\.\.\.)[ \t]*$/;
-const FM_KEY = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[\p{L}\p{M}\p{N}_][\p{L}\p{M}\p{N}_. /-]*)[ \t]*:(?:[ \t].*)?$/u;
+const FM_KEY = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[\p{L}\p{M}\p{N}_][\p{L}\p{M}\p{N}_./-]*(?: +[\p{L}\p{M}\p{N}_./-]+)*)[ \t]*:(?:[ \t](.*))?$/u;
 const FM_BLANK_OR_COMMENT = /^[ \t]*(?:#.*)?$/;
-const FM_CONT = /^(?:[ \t]+.*|-(?:[ \t].*)?)$/;
+const FM_INDENT = /^[ \t]+/;
+const FM_SEQ = /^-(?:[ \t].*)?$/;
 
 // A GFM table starts at a row with a pipe followed by its delimiter row, with or without leading pipes, and
 // may come straight after a paragraph. The delimiter needs a pipe, or `Title` over `---` would be one.
@@ -41,15 +42,27 @@ function fenceClose(line, mark) {
 function frontmatterEnd(lines) {
   if (!FM_OPEN.test(lines[0] ?? "")) return -1;
   let hasKey = false;
+  let allowSeq = false;
+  let inSeq = false;
   for (let j = 1; j < lines.length; j++) {
     const line = lines[j] ?? "";
     if (FM_CLOSE.test(line)) return hasKey ? j : -1;
-    if (FM_KEY.test(line)) {
+    const keyMatch = FM_KEY.exec(line);
+    if (keyMatch) {
       hasKey = true;
+      inSeq = false;
+      allowSeq = FM_BLANK_OR_COMMENT.test(keyMatch[1] ?? "");
       continue;
     }
     if (FM_BLANK_OR_COMMENT.test(line)) continue;
-    if (hasKey && FM_CONT.test(line)) continue;
+    if (allowSeq && FM_SEQ.test(line)) {
+      inSeq = true;
+      continue;
+    }
+    if (hasKey && FM_INDENT.test(line)) {
+      if (!inSeq) allowSeq = false;
+      continue;
+    }
     return -1;
   }
   return -1;
@@ -111,15 +124,15 @@ export function blocks(md) {
 }
 
 // Always non-breaking introducers and titles (EN + ES).
-const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{N}_])(?:[eE]\.\s*g|[iI]\.\s*e|[pP]\.\s*ej|[eE]j|[vV]s|[cC]f|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|St|Fig|Figs|Eq|Ec|[Nn]úm|[Pp]ág|[Pp]ágs|[Aa]pdo|Av|[Aa]vda|[Tt]el|[Ss]upl|Obs)\.$/u;
-const ABBREV_MID = /(?:^|[^\p{L}\p{N}_])(?:[eE]tc|[eE]t\s+al|[aA]pprox|[aA]prox|[mM][áa]x|[mM][íi]n|[uU]ds?|[vV]ds?)\.$/u;
+const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{M}\p{N}_])(?:[eE]\.\s*g|[iI]\.\s*e|[pP]\.\s*ej|[eE]j|[vV]s|[cC]f|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|St|Fig|Figs|Eq|Ec|[Nn]úm|[Pp]ág|[Pp]ágs|[Aa]pdo|Av|[Aa]vda|[Tt]el|[Ss]upl|Obs)\.$/u;
+const ABBREV_MID = /(?:^|[^\p{L}\p{M}\p{N}_])(?:[eE]tc|[eE]t\s+al|[aA]pprox|[aA]prox|[mM][áa]x|[mM][íi]n|[uU]ds?|[vV]ds?)\.$/u;
 // Multi-part spaced abbreviations where the first dot precedes the rest (`p. ej.`, `e. g.`, `i. e.`).
-const MULTIPART_START = /(?:^|[^\p{L}\p{N}_])([pei])\.$/iu;
+const MULTIPART_START = /(?:^|[^\p{L}\p{M}\p{N}_])([pei])\.$/iu;
 const MULTIPART_TAIL = { p: /^ej\./i, e: /^g\./i, i: /^e\./i };
 // Reference/number introducers that stay mid-sentence only before a digit or `#` (avoids splitting `"No."` or `"art."`).
-const ABBREV_BEFORE_NUM = /(?:^|[^\p{L}\p{N}_])(?:[Nn]o|[Aa]rts?|[Cc]ap|[Tt]ab|[Ss]ec|[Vv]ols?|[Rr]efs?|[Ff]igs?|[Ee]q|[Ee]c|pp?|v|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|[Ee]ne|[Aa]br|[Aa]go|[Dd]ic)\.$/u;
+const ABBREV_BEFORE_NUM = /(?:^|[^\p{L}\p{M}\p{N}_])(?:[Nn]o|[Aa]rts?|[Cc]ap|[Tt]ab|[Ss]ec|[Vv]ols?|[Rr]efs?|[Ff]igs?|[Ee]q|[Ee]c|pp?|v|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|[Ee]ne|[Aa]br|[Aa]go|[Dd]ic)\.$/u;
 // Multi-char units, compound units (`mg/kg/h.`), or clinical route/time abbreviations mid-sentence before lowercase/digit/symbol.
-const UNIT_MULTI = /(?:^|[^\p{L}\p{N}_])(?:(?:mg|mcg|µg|μg|ug|ng|pg|kg|mL|ml|dL|dl|µL|μL|uL|mmol|mol|µmol|μmol|mEq|meq|mOsm|mosm|UI|IU|mmHg|cmH2O|kPa|bpm|lpm|rpm|cc|kcal|cal|cm|mm|µm|μm|nm|km|hr|hrs|min|seg|sec|ms|sem|mes|Hz|kHz|MHz|mV|kV|mA|mSv|Sv|Gy|Bq)(?:\/(?:mg|mcg|µg|μg|ug|kg|g|mL|ml|dL|dl|L|l|mmol|mEq|UI|IU|U|min|h|hr|s|d|m2|m²))*|(?:g|L|l|U|m|h|s|d)\/(?:kg|g|mL|ml|dL|dl|L|l|min|h|hr|s|d|m2|m²)(?:\/(?:min|h|hr|s|d|kg|m2|m²))*|i\.v|i\.m|s\.c|v\.o|p\.o|i\.n|s\.l|q\.d|b\.i\.d|t\.i\.d|q\.i\.d|p\.r\.n|c\.s\.p|a\.m|p\.m|d\.s|h\.s|stat|sol|comp|amp|cáps|caps|iny|adm|diag|tto)\.$/iu;
+const UNIT_MULTI = /(?:^|[^\p{L}\p{M}\p{N}_])(?:(?:mg|mcg|µg|μg|ug|ng|pg|kg|mL|ml|dL|dl|µL|μL|uL|mmol|mol|µmol|μmol|mEq|meq|mOsm|mosm|UI|IU|mmHg|cmH2O|kPa|bpm|lpm|rpm|cc|kcal|cal|cm|mm|µm|μm|nm|km|hr|hrs|min|seg|sec|ms|sem|mes|Hz|kHz|MHz|mV|kV|mA|mSv|Sv|Gy|Bq)(?:\/(?:mg|mcg|µg|μg|ug|kg|g|mL|ml|dL|dl|L|l|mmol|mEq|UI|IU|U|min|h|hr|s|d|m2|m²))*|(?:g|L|l|U|m|h|s|d)\/(?:kg|g|mL|ml|dL|dl|L|l|min|h|hr|s|d|m2|m²)(?:\/(?:min|h|hr|s|d|kg|m2|m²))*|i\.v|i\.m|s\.c|v\.o|p\.o|i\.n|s\.l|q\.d|b\.i\.d|t\.i\.d|q\.i\.d|p\.r\.n|c\.s\.p|a\.m|p\.m|d\.s|h\.s|stat|sol|comp|amp|cáps|caps|iny|adm|diag|tto)\.$/iu;
 // Single-letter SI/clinical units (`1,2 g.`, `6 h.`, `10 s.`, `5 m.`) preceded by a number, mid-sentence before lowercase/digit/symbol.
 const UNIT_SINGLE = /\p{N}\s*(?:g|L|l|U|m|h|s|d|a|V|A|W|J)\.$/u;
 
@@ -165,7 +178,7 @@ function isNonBreakingDot(text, i, tail) {
   if (!tail) return false;
   // Ellipsis (`...`) mid-sentence before a lowercase continuation.
   if (i > 0 && text[i - 1] === "." && /^\p{Ll}/u.test(tail)) return true;
-  const headSlice = text.slice(Math.max(0, i - 24), i + 1);
+  const headSlice = text.slice(Math.max(0, i - 24), i + 1).normalize("NFC");
   // Multi-part spaced abbreviations like `p. ej.`, `e. g.`, `i. e.`.
   const multi = MULTIPART_START.exec(headSlice);
   if (multi && MULTIPART_TAIL[multi[1].toLowerCase()]?.test(tail)) return true;
@@ -215,7 +228,9 @@ export function firstSentence(text) {
 function cut(text, at) {
   const rawHead = text.slice(0, at).trim();
   const rawRest = text.slice(at).trim();
-  if (!rawRest.length || !hasOddBold(rawHead)) return { head: rawHead, more: rawRest.length > 0, rest: rawRest };
+  if (!rawRest.length || !scanBold(rawHead, false) || !scanBold(rawRest, true)) {
+    return { head: rawHead, more: rawRest.length > 0, rest: rawRest };
+  }
   return {
     head: rawHead + "**",
     more: true,
@@ -223,20 +238,41 @@ function cut(text, at) {
   };
 }
 
-/** Reports whether `s` leaves a bold span open, ignoring inline code spans. */
-function hasOddBold(s) {
-  let bold = 0;
+const PUNCT_OR_SYM = /[\p{P}\p{S}]/u;
+
+function scanBold(s, stopOnUnmatchedClose) {
+  let depth = 0;
   for (let i = 0; i < s.length; i++) {
-    if (s[i] === "`") {
+    const ch = s[i];
+    if (ch === "\\" && i + 1 < s.length) {
+      i++;
+      continue;
+    }
+    if (ch === "`") {
       i = skipBacktickRun(s, i);
       continue;
     }
-    if (s[i] === "*" && s[i + 1] === "*") {
-      bold++;
-      i++;
+    if (ch !== "*") continue;
+    let run = 1;
+    while (s[i + run] === "*") run++;
+    if (run >= 2) {
+      const before = i > 0 ? s[i - 1] : "";
+      const after = i + run < s.length ? s[i + run] : "";
+      const beforeWs = before === "" || /\s/.test(before);
+      const afterWs = after === "" || /\s/.test(after);
+      const beforePunct = !beforeWs && PUNCT_OR_SYM.test(before);
+      const afterPunct = !afterWs && PUNCT_OR_SYM.test(after);
+      const canOpen = !afterWs && (!afterPunct || beforeWs || beforePunct);
+      const canClose = !beforeWs && (!beforePunct || afterWs || afterPunct);
+      for (let pairs = Math.floor(run / 2); pairs > 0; pairs--) {
+        if (canClose && depth > 0) depth--;
+        else if (canClose && stopOnUnmatchedClose) return true;
+        else if (canOpen) depth++;
+      }
     }
+    i += run - 1;
   }
-  return bold % 2 === 1;
+  return stopOnUnmatchedClose ? false : depth > 0;
 }
 
 /** Joins the first `n` sentences of `text` and reports whether more text remains. */
@@ -265,7 +301,7 @@ function items(b) {
 }
 
 const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g;
-const NON_CJK_WORD = /(?:\p{N}+(?:[.,]\p{N}+)*|\p{L})[\p{L}\p{N}'’_-]*(?:[/.][\p{L}\p{N}][\p{L}\p{N}'’_-]*)*/gu;
+const NON_CJK_WORD = /(?:\p{N}+(?:[.,]\p{N}+)*|\p{L})[\p{L}\p{M}\p{N}'’_-]*(?:[/.][\p{L}\p{N}][\p{L}\p{M}\p{N}'’_-]*)*/gu;
 const CODE_FOLD_PLACEHOLDER = /`⋯ \d+ lines of code`/g;
 
 function stripForWordCount(md) {

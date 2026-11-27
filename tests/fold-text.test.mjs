@@ -416,8 +416,57 @@ describe("ES and EN sentence cut", () => {
     );
     assert.equal(fold("Use 2 ** 3 = 8.", "brief").text, "Use 2 ** 3 = 8.");
     assert.deepEqual(
+      firstSentence("Use 2 ** 3 = 8. Next check 4."),
+      { head: "Use 2 ** 3 = 8.", more: true, rest: "Next check 4." },
+    );
+    assert.equal(fold("Use 2 ** 3 = 8. Next check 4.", "brief").text, "Use 2 ** 3 = 8. Next check 4.");
+    assert.deepEqual(
+      firstSentence("Use 2 ** 3 = 8. And 2 ** 4 = 16."),
+      { head: "Use 2 ** 3 = 8.", more: true, rest: "And 2 ** 4 = 16." },
+    );
+    assert.deepEqual(
       firstSentence("计算 2 ** 3 = 8。"),
       { head: "计算 2 ** 3 = 8。", more: false, rest: "" },
+    );
+    assert.deepEqual(
+      firstSentence("计算 2 ** 3 = 8。下一步。"),
+      { head: "计算 2 ** 3 = 8。", more: true, rest: "下一步。" },
+    );
+    assert.deepEqual(
+      firstSentence("**第一句。第二句。**"),
+      { head: "**第一句。**", more: true, rest: "**第二句。**" },
+    );
+    assert.deepEqual(
+      firstSentence("Unclosed **bold. Next sentence."),
+      { head: "Unclosed **bold.", more: true, rest: "Next sentence." },
+    );
+    assert.deepEqual(
+      firstSentence("Unclosed **foo. Bar **baz**."),
+      { head: "Unclosed **foo.", more: true, rest: "Bar **baz**." },
+    );
+    assert.deepEqual(
+      firstSentence("Unclosed **foo. (**bar**)."),
+      { head: "Unclosed **foo.", more: true, rest: "(**bar**)." },
+    );
+    assert.deepEqual(
+      firstSentence("**First. (**inner**) second.**"),
+      { head: "**First.**", more: true, rest: "**(**inner**) second.**" },
+    );
+    assert.deepEqual(
+      firstSentence("Escaped \\**not bold. Next.**"),
+      { head: "Escaped \\**not bold.", more: true, rest: "Next.**" },
+    );
+    assert.deepEqual(
+      firstSentence("**Bold. Next\\**"),
+      { head: "**Bold.", more: true, rest: "Next\\**" },
+    );
+    assert.deepEqual(
+      firstSentence("**Bold. `code**` end."),
+      { head: "**Bold.", more: true, rest: "`code**` end." },
+    );
+    assert.deepEqual(
+      firstSentence("La Dra. Ruiz cito\u0301 la Pa\u0301g. 12 y el Nu\u0301m. 4. Confirmar."),
+      { head: "La Dra. Ruiz cito\u0301 la Pa\u0301g. 12 y el Nu\u0301m. 4.", more: true, rest: "Confirmar." },
     );
     assert.deepEqual(
       firstSentence("Esperar... y luego reevaluar. Registrar el cambio."),
@@ -453,8 +502,14 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     assert.throws(() => fold(REPLY, 6), RangeError);
   });
 
-  test("words() keeps Spanish accents, decimals 1,2, and compound units as single tokens", () => {
+  test("words() keeps Spanish accents, NFD combining marks, decimals 1,2, and compound units as single tokens", () => {
     assert.equal(words("diagnóstico hipertensión niño único"), 4);
+    assert.equal(words("diagno\u0301stico nin\u0303o"), 2);
+    assert.equal(words("diagno\u0301stico/nin\u0303o"), 1);
+    assert.deepEqual(
+      fold("diagno\u0301stico nin\u0303o. Siguiente frase.", "topic"),
+      { text: "diagno\u0301stico nin\u0303o. …", total: 4, shown: 2 },
+    );
     assert.equal(words("Administrar 1,2 mg/kg en 20 min"), 6);
     assert.equal(words("BNP >100 pg/mL y 3.5 mmol/L"), 6);
   });
@@ -512,9 +567,24 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     const emptyRules = "---\n\n---\n\nBody.";
     assert.deepEqual(blocks(emptyRules).map(b => b.kind), ["rule", "rule", "para"]);
 
-    const commentedFm = "---\n# metadata\ntitle: Guide\ntags:\n- icu\n---\n\nBody sentence.";
+    const ruledColonChecklist = "---\n\n# Clinical Checklist\n\nNote: check airway first.\n\n- Check breathing.\n\n---\n\nFollow-up note.";
+    assert.deepEqual(blocks(ruledColonChecklist).map(b => b.kind), ["rule", "heading", "para", "list", "rule", "para"]);
+    assert.ok(fold(ruledColonChecklist, "key").text.includes("# Clinical Checklist"));
+    assert.ok(fold(ruledColonChecklist, "key").text.includes("Note: check airway first."));
+    assert.ok(fold(ruledColonChecklist, "key").text.includes("- Check breathing."));
+    assert.equal(words(ruledColonChecklist), 10);
+
+    const indentThenSeq = "---\nmeta:\n  author: Doc\n- Check breathing.\n---\n\nBody.";
+    assert.notEqual(blocks(indentThenSeq)[0].kind, "frontmatter");
+
+    const commentedFm = "---\n# metadata\ntitle: Guide\ntags: # clinical\n- icu\n  continued\n- pain\n---\n\nBody sentence.";
     assert.equal(blocks(commentedFm)[0].kind, "frontmatter");
     assert.equal(fold(commentedFm, "topic").text, "Body sentence.");
+
+    const spacePadded = `---\na${" ".repeat(20000)}!\n---\n\nBody.`;
+    const started = performance.now();
+    assert.equal(blocks(spacePadded)[0].kind, "rule");
+    assert.ok(performance.now() - started < 100);
   });
 
   test("fenced code parsing matches word counting on unclosed, nested, and inline triple-backtick code", () => {
