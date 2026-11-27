@@ -213,6 +213,94 @@ describe("ES and EN sentence cut", () => {
     );
     assert.equal(firstSentence("Ver Art. 14 del contrato. Firmar abajo.").head, "Ver Art. 14 del contrato.");
     assert.equal(firstSentence("She studies art. Next term begins soon.").head, "She studies art.");
+    assert.equal(firstSentence("Ver fig. 2 del anexo. Confirmar.").head, "Ver fig. 2 del anexo.");
+    assert.deepEqual(
+      firstSentence("She ate a fig. Next course arrived."),
+      { head: "She ate a fig.", more: true, rest: "Next course arrived." },
+    );
+  });
+
+  test("clinical acronyms, lowercase ms., and sentence-ending abbreviations cut at sentence ends", () => {
+    assert.deepEqual(
+      firstSentence("The PR interval is 180 ms. Check for AV block."),
+      { head: "The PR interval is 180 ms.", more: true, rest: "Check for AV block." },
+    );
+    assert.deepEqual(
+      firstSentence("Esperar 10 ms. antes del estímulo. Registrar."),
+      { head: "Esperar 10 ms. antes del estímulo.", more: true, rest: "Registrar." },
+    );
+    assert.deepEqual(
+      firstSentence("Elevación del segmento ST. Activar código infarto."),
+      { head: "Elevación del segmento ST.", more: true, rest: "Activar código infarto." },
+    );
+    assert.deepEqual(
+      firstSentence("Bloqueo AV. Colocar marcapasos."),
+      { head: "Bloqueo AV.", more: true, rest: "Colocar marcapasos." },
+    );
+    assert.deepEqual(
+      firstSentence("Severe MR. Refer for surgery."),
+      { head: "Severe MR.", more: true, rest: "Refer for surgery." },
+    );
+    assert.deepEqual(
+      firstSentence("Patient with MS. Start therapy."),
+      { head: "Patient with MS.", more: true, rest: "Start therapy." },
+    );
+    assert.deepEqual(
+      firstSentence("Suspected CF. Order sweat test."),
+      { head: "Suspected CF.", more: true, rest: "Order sweat test." },
+    );
+    assert.deepEqual(
+      firstSentence("Sospecha de EC. Confirmar biopsia."),
+      { head: "Sospecha de EC.", more: true, rest: "Confirmar biopsia." },
+    );
+    assert.deepEqual(
+      firstSentence("Administer inhaled NO. 20 ppm is standard."),
+      { head: "Administer inhaled NO.", more: true, rest: "20 ppm is standard." },
+    );
+    assert.deepEqual(
+      firstSentence("Esto depende de Ud. Mañana revisamos."),
+      { head: "Esto depende de Ud.", more: true, rest: "Mañana revisamos." },
+    );
+    assert.deepEqual(
+      firstSentence("Esto depende de Ud. ¿Mañana revisamos?"),
+      { head: "Esto depende de Ud.", more: true, rest: "¿Mañana revisamos?" },
+    );
+    assert.deepEqual(
+      firstSentence("Gracias a Ud. podemos seguir. Mañana revisamos."),
+      { head: "Gracias a Ud. podemos seguir.", more: true, rest: "Mañana revisamos." },
+    );
+    assert.deepEqual(
+      firstSentence("Queda a cargo de Vds. Revisar mañana."),
+      { head: "Queda a cargo de Vds.", more: true, rest: "Revisar mañana." },
+    );
+    assert.deepEqual(
+      firstSentence("This was shown by García et al. The trial enrolled 400 patients."),
+      { head: "This was shown by García et al.", more: true, rest: "The trial enrolled 400 patients." },
+    );
+    assert.deepEqual(
+      firstSentence("La infusión dura 30 min aprox. Reevaluar la presión arterial."),
+      { head: "La infusión dura 30 min aprox.", more: true, rest: "Reevaluar la presión arterial." },
+    );
+    assert.deepEqual(
+      firstSentence("The infusion takes 30 min approx. Reassess blood pressure."),
+      { head: "The infusion takes 30 min approx.", more: true, rest: "Reassess blood pressure." },
+    );
+    assert.deepEqual(
+      firstSentence("Administrar 40 mg máx. Controlar potasio."),
+      { head: "Administrar 40 mg máx.", more: true, rest: "Controlar potasio." },
+    );
+    assert.deepEqual(
+      firstSentence("Dosis máx. 40 mg cada 8 h. Controlar potasio."),
+      { head: "Dosis máx. 40 mg cada 8 h.", more: true, rest: "Controlar potasio." },
+    );
+    assert.deepEqual(
+      firstSentence("Esperar 10 min mín. Reevaluar presión."),
+      { head: "Esperar 10 min mín.", more: true, rest: "Reevaluar presión." },
+    );
+    assert.deepEqual(
+      firstSentence("Dosis mín. 10 mg cada 8 h. Reevaluar presión."),
+      { head: "Dosis mín. 10 mg cada 8 h.", more: true, rest: "Reevaluar presión." },
+    );
   });
 
   test("Spanish inverted punctuation ¿¡ and guillemets «» cut cleanly without breaking inside spans", () => {
@@ -323,6 +411,15 @@ describe("ES and EN sentence cut", () => {
       { head: "Call `**a` first.", more: true, rest: "Next." },
     );
     assert.deepEqual(
+      firstSentence("Use 2 ** 3 = 8."),
+      { head: "Use 2 ** 3 = 8.", more: false, rest: "" },
+    );
+    assert.equal(fold("Use 2 ** 3 = 8.", "brief").text, "Use 2 ** 3 = 8.");
+    assert.deepEqual(
+      firstSentence("计算 2 ** 3 = 8。"),
+      { head: "计算 2 ** 3 = 8。", more: false, rest: "" },
+    );
+    assert.deepEqual(
       firstSentence("Esperar... y luego reevaluar. Registrar el cambio."),
       { head: "Esperar... y luego reevaluar.", more: true, rest: "Registrar el cambio." },
     );
@@ -399,6 +496,25 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     const urlBetweenRules = "---\n\nhttps://example.com\n\n---\n\nSiguiente nota.";
     assert.deepEqual(blocks(urlBetweenRules).map(b => b.kind), ["rule", "para", "rule", "para"]);
     assert.equal(fold(urlBetweenRules, "topic").text, "https://example.com …");
+
+    const ruledChecklist = "---\n\n# Clinical Checklist\n\n- Check airway.\n- Check breathing.\n\n---\n\nFollow-up note.";
+    assert.deepEqual(blocks(ruledChecklist).map(b => b.kind), ["rule", "heading", "list", "rule", "para"]);
+    assert.ok(fold(ruledChecklist, "key").text.includes("# Clinical Checklist"));
+    assert.ok(fold(ruledChecklist, "key").text.includes("- Check airway."));
+    assert.equal(words(ruledChecklist), 8);
+
+    const listBeforeKey = "---\n- Check airway.\ntitle: Not frontmatter\n---\n\nBody.";
+    assert.notEqual(blocks(listBeforeKey)[0].kind, "frontmatter");
+
+    const indentedBeforeKey = "---\n  indented line\ntitle: Not frontmatter\n---\n\nBody.";
+    assert.notEqual(blocks(indentedBeforeKey)[0].kind, "frontmatter");
+
+    const emptyRules = "---\n\n---\n\nBody.";
+    assert.deepEqual(blocks(emptyRules).map(b => b.kind), ["rule", "rule", "para"]);
+
+    const commentedFm = "---\n# metadata\ntitle: Guide\ntags:\n- icu\n---\n\nBody sentence.";
+    assert.equal(blocks(commentedFm)[0].kind, "frontmatter");
+    assert.equal(fold(commentedFm, "topic").text, "Body sentence.");
   });
 
   test("fenced code parsing matches word counting on unclosed, nested, and inline triple-backtick code", () => {

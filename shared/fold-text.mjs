@@ -16,7 +16,9 @@ const DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
 const FM_OPEN = /^\uFEFF?---[ \t]*$/;
 const FM_CLOSE = /^(?:---|\.\.\.)[ \t]*$/;
-const FM_LINE = /^(?:[ \t]*|[ \t]*#.*|[ \t]+.*|[ \t]*-(?:[ \t].*)?|(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[\p{L}\p{M}\p{N}_][\p{L}\p{M}\p{N}_. /-]*)[ \t]*:(?:[ \t].*)?)$/u;
+const FM_KEY = /^(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[\p{L}\p{M}\p{N}_][\p{L}\p{M}\p{N}_. /-]*)[ \t]*:(?:[ \t].*)?$/u;
+const FM_BLANK_OR_COMMENT = /^[ \t]*(?:#.*)?$/;
+const FM_CONT = /^(?:[ \t]+.*|-(?:[ \t].*)?)$/;
 
 // A GFM table starts at a row with a pipe followed by its delimiter row, with or without leading pipes, and
 // may come straight after a paragraph. The delimiter needs a pipe, or `Title` over `---` would be one.
@@ -38,10 +40,17 @@ function fenceClose(line, mark) {
 
 function frontmatterEnd(lines) {
   if (!FM_OPEN.test(lines[0] ?? "")) return -1;
+  let hasKey = false;
   for (let j = 1; j < lines.length; j++) {
     const line = lines[j] ?? "";
-    if (FM_CLOSE.test(line)) return j;
-    if (!FM_LINE.test(line)) return -1;
+    if (FM_CLOSE.test(line)) return hasKey ? j : -1;
+    if (FM_KEY.test(line)) {
+      hasKey = true;
+      continue;
+    }
+    if (FM_BLANK_OR_COMMENT.test(line)) continue;
+    if (hasKey && FM_CONT.test(line)) continue;
+    return -1;
   }
   return -1;
 }
@@ -102,15 +111,15 @@ export function blocks(md) {
 }
 
 // Always non-breaking introducers and titles (EN + ES).
-const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{N}_])(?:e\.\s*g|i\.\s*e|p\.\s*ej|ej|vs|cf|et\s+al|approx|aprox|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|Ud|Uds|Vd|Vds|St|Fig|Figs|Eq|Ec|Núm|Pág|Págs|Apdo|Av|Avda|Tel|Supl|Obs|Máx|Mín)\.$/iu;
-const ABBREV_MID = /(?:^|[^\p{L}\p{N}_])etc\.$/iu;
+const ABBREV_ALWAYS = /(?:^|[^\p{L}\p{N}_])(?:[eE]\.\s*g|[iI]\.\s*e|[pP]\.\s*ej|[eE]j|[vV]s|[cC]f|Dr|Dra|Dres|Dras|Mr|Mrs|Ms|Sr|Sra|Sres|Sras|Srta|Prof|Profa|Lic|Ing|Dña|St|Fig|Figs|Eq|Ec|[Nn]úm|[Pp]ág|[Pp]ágs|[Aa]pdo|Av|[Aa]vda|[Tt]el|[Ss]upl|Obs)\.$/u;
+const ABBREV_MID = /(?:^|[^\p{L}\p{N}_])(?:[eE]tc|[eE]t\s+al|[aA]pprox|[aA]prox|[mM][áa]x|[mM][íi]n|[uU]ds?|[vV]ds?)\.$/u;
 // Multi-part spaced abbreviations where the first dot precedes the rest (`p. ej.`, `e. g.`, `i. e.`).
 const MULTIPART_START = /(?:^|[^\p{L}\p{N}_])([pei])\.$/iu;
 const MULTIPART_TAIL = { p: /^ej\./i, e: /^g\./i, i: /^e\./i };
 // Reference/number introducers that stay mid-sentence only before a digit or `#` (avoids splitting `"No."` or `"art."`).
-const ABBREV_BEFORE_NUM = /(?:^|[^\p{L}\p{N}_])(?:No|Art|Arts|Cap|Tab|Sec|Vol|Vols|Ref|Refs|p|pp|v|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|ene|abr|ago|dic)\.$/iu;
+const ABBREV_BEFORE_NUM = /(?:^|[^\p{L}\p{N}_])(?:[Nn]o|[Aa]rts?|[Cc]ap|[Tt]ab|[Ss]ec|[Vv]ols?|[Rr]efs?|[Ff]igs?|[Ee]q|[Ee]c|pp?|v|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|[Ee]ne|[Aa]br|[Aa]go|[Dd]ic)\.$/u;
 // Multi-char units, compound units (`mg/kg/h.`), or clinical route/time abbreviations mid-sentence before lowercase/digit/symbol.
-const UNIT_MULTI = /(?:^|[^\p{L}\p{N}_])(?:(?:mg|mcg|µg|μg|ug|ng|pg|kg|mL|ml|dL|dl|µL|μL|uL|mmol|mol|µmol|μmol|mEq|meq|mOsm|mosm|UI|IU|mmHg|cmH2O|kPa|bpm|lpm|rpm|cc|kcal|cal|cm|mm|µm|μm|nm|km|hr|hrs|min|seg|sec|sem|mes|Hz|kHz|MHz|mV|kV|mA|mSv|Sv|Gy|Bq)(?:\/(?:mg|mcg|µg|μg|ug|kg|g|mL|ml|dL|dl|L|l|mmol|mEq|UI|IU|U|min|h|hr|s|d|m2|m²))*|(?:g|L|l|U|m|h|s|d)\/(?:kg|g|mL|ml|dL|dl|L|l|min|h|hr|s|d|m2|m²)(?:\/(?:min|h|hr|s|d|kg|m2|m²))*|i\.v|i\.m|s\.c|v\.o|p\.o|i\.n|s\.l|q\.d|b\.i\.d|t\.i\.d|q\.i\.d|p\.r\.n|c\.s\.p|a\.m|p\.m|d\.s|h\.s|stat|sol|comp|amp|cáps|caps|iny|adm|diag|tto)\.$/iu;
+const UNIT_MULTI = /(?:^|[^\p{L}\p{N}_])(?:(?:mg|mcg|µg|μg|ug|ng|pg|kg|mL|ml|dL|dl|µL|μL|uL|mmol|mol|µmol|μmol|mEq|meq|mOsm|mosm|UI|IU|mmHg|cmH2O|kPa|bpm|lpm|rpm|cc|kcal|cal|cm|mm|µm|μm|nm|km|hr|hrs|min|seg|sec|ms|sem|mes|Hz|kHz|MHz|mV|kV|mA|mSv|Sv|Gy|Bq)(?:\/(?:mg|mcg|µg|μg|ug|kg|g|mL|ml|dL|dl|L|l|mmol|mEq|UI|IU|U|min|h|hr|s|d|m2|m²))*|(?:g|L|l|U|m|h|s|d)\/(?:kg|g|mL|ml|dL|dl|L|l|min|h|hr|s|d|m2|m²)(?:\/(?:min|h|hr|s|d|kg|m2|m²))*|i\.v|i\.m|s\.c|v\.o|p\.o|i\.n|s\.l|q\.d|b\.i\.d|t\.i\.d|q\.i\.d|p\.r\.n|c\.s\.p|a\.m|p\.m|d\.s|h\.s|stat|sol|comp|amp|cáps|caps|iny|adm|diag|tto)\.$/iu;
 // Single-letter SI/clinical units (`1,2 g.`, `6 h.`, `10 s.`, `5 m.`) preceded by a number, mid-sentence before lowercase/digit/symbol.
 const UNIT_SINGLE = /\p{N}\s*(?:g|L|l|U|m|h|s|d|a|V|A|W|J)\.$/u;
 
@@ -206,11 +215,11 @@ export function firstSentence(text) {
 function cut(text, at) {
   const rawHead = text.slice(0, at).trim();
   const rawRest = text.slice(at).trim();
-  if (!hasOddBold(rawHead)) return { head: rawHead, more: rawRest.length > 0, rest: rawRest };
+  if (!rawRest.length || !hasOddBold(rawHead)) return { head: rawHead, more: rawRest.length > 0, rest: rawRest };
   return {
     head: rawHead + "**",
-    more: rawRest.length > 0,
-    rest: rawRest.length > 0 ? "**" + rawRest : "",
+    more: true,
+    rest: "**" + rawRest,
   };
 }
 

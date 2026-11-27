@@ -3,6 +3,13 @@ import type { Level } from "./fold-format.mjs";
 export type LocalLevelId = "full" | "brief" | "key" | "takeaway" | "topic";
 export type FoldBlockKind = "frontmatter" | "heading" | "code" | "list" | "table" | "quote" | "para" | "rule" | "art";
 
+export interface LocalLevel extends Level {
+  readonly id: LocalLevelId;
+  readonly digit: 1 | 2 | 3 | 4 | 5;
+  readonly local: true;
+  readonly nested: true;
+}
+
 export interface FoldBlock {
   kind: FoldBlockKind;
   lines: string[];
@@ -25,7 +32,7 @@ export interface FoldResult {
   shown: number;
 }
 
-export declare const LOCAL_LEVELS: readonly Level[];
+export declare const LOCAL_LEVELS: readonly LocalLevel[];
 export declare const MIN_WORDS: 80;
 export declare const MIN_HIDDEN: 0.25;
 
