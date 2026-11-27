@@ -303,6 +303,29 @@ function items(b) {
 const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g;
 const NON_CJK_WORD = /(?:\p{N}+(?:[.,]\p{N}+)*|\p{L})[\p{L}\p{M}\p{N}'’_-]*(?:[/.][\p{L}\p{N}][\p{L}\p{M}\p{N}'’_-]*)*/gu;
 const CODE_FOLD_PLACEHOLDER = /`⋯ \d+ lines of code`/g;
+const QUOTE_LINE = /^\s*>\s?/;
+
+function stripQuoteDepth(line, maxDepth = Infinity) {
+  let s = line;
+  let depth = 0;
+  while (depth < maxDepth) {
+    const match = QUOTE_LINE.exec(s);
+    if (!match) break;
+    s = s.slice(match[0].length);
+    depth++;
+  }
+  return { depth, rest: s };
+}
+
+function stripLeadingListMarkers(line) {
+  let s = line;
+  let match = ITEM.exec(s);
+  while (match) {
+    s = s.slice(match[0].length);
+    match = ITEM.exec(s);
+  }
+  return s;
+}
 
 function stripForWordCount(md) {
   const lines = (md.includes("\r") ? md.replace(/\r\n?/g, "\n") : md).split("\n");
@@ -311,13 +334,16 @@ function stripForWordCount(md) {
   const kept = [];
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    const mark = fenceMark(line);
+    const { depth: quoteDepth, rest: unquoted } = stripQuoteDepth(line);
+    const mark = fenceMark(stripLeadingListMarkers(unquoted));
     if (mark) {
       i++;
       while (i < lines.length) {
         const l = lines[i] ?? "";
+        const inner = stripQuoteDepth(l, quoteDepth);
+        if (inner.depth < quoteDepth) break;
         i++;
-        if (fenceClose(l, mark)) break;
+        if (fenceClose(inner.rest, mark)) break;
       }
       continue;
     }

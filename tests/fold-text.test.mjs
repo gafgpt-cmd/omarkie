@@ -615,6 +615,31 @@ describe("Omarkie levels, Unicode words, frontmatter, and … more accounting", 
     assert.deepEqual(blocks(leadingInline).map(b => b.kind), ["para", "para"]);
     assert.equal(fold(leadingInline, "topic").text, "```foo``` is inline code. …");
     assert.equal(words(leadingInline), 6);
+
+    const listMarkerFence = [
+      "- ```js",
+      "  const x = 1;",
+      "  ```",
+      "- Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+    ].join("\n");
+    assert.equal(words(listMarkerFence), words("Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h."));
+
+    const emptyListFence = "- ```\n  ```\n- Administer IV furosemide 40 mg.";
+    assert.equal(words(emptyListFence), 5);
+
+    const quotedListFence = [
+      "> - ```js",
+      ">   const x = 1;",
+      ">   ```",
+      "> - Administer IV furosemide 40 mg.",
+    ].join("\n");
+    assert.equal(words(quotedListFence), 5);
+
+    const tightQuotedUnclosed = ">>```js\n>>const x = 1;\n\nOutside paragraph words.";
+    assert.equal(words(tightQuotedUnclosed), 3);
+
+    const fenceWithQuotedBackticks = "```md\n- ```\n> ```\n```\nAfter.";
+    assert.equal(words(fenceWithQuotedBackticks), 1);
   });
 
   test("ellipsis marks dropped paragraphs and sub-items accurately at Takeaway, Key, and Topic", () => {

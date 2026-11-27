@@ -7,6 +7,7 @@ import {
   enforceMonotonic, extractUnits, foldDocument, foldDocumentLadder, foldUnit,
   isMonotonic, rawClassOf, sha256, toFoldUnit, unitHash,
 } from "../shared/fold-units.mjs";
+import { createMarkdown } from "../shared/markdown.mjs";
 
 const FIXTURE_9_TABLE_ONLY_ES = `## Dosis máximas de anestésicos locales
 
@@ -560,6 +561,172 @@ describe("raw-block preservation rule (D5)", () => {
       assert.equal(out.includes("![Scan](scan.png\n>"), false, `broken quote md image at ${id}`);
       assert.equal(out.includes("![AlertScan](alert.png\n>"), false, `broken callout md image at ${id}`);
     }
+    for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
+  });
+
+  test("marker-line fenced code in lists folds monotonically without clobbering stops back to full", () => {
+    const cases = [
+      [
+        "- ```js",
+        "  const x = 1;",
+        "  ```",
+        "- Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+      ].join("\n"),
+      [
+        "- ```",
+        "  ```",
+        "- Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+      ].join("\n"),
+      [
+        "10. ```js",
+        "    const x = 1;",
+        "    ```",
+        "11. Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+      ].join("\n"),
+      [
+        "> - ```js",
+        ">   const x = 1;",
+        ">   ```",
+        "> - Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+      ].join("\n"),
+    ];
+
+    for (const md of cases) {
+      const ladder = foldDocumentLadder(md);
+      assert.deepEqual(ladder.byUnit[0].violations, []);
+      assert.equal(isMonotonic(ladder.byUnit[0].stops), true);
+      assert.equal(ladder.stops.brief.text.includes("Reassess urine output at 2 h."), false);
+      assert.equal(ladder.stops.key.text.includes("Reassess urine output at 2 h."), false);
+      assert.ok(ladder.stops.brief.text.includes("Administer IV furosemide 40 mg if diuretic-naive."));
+      assert.ok(ladder.stops.topic.text.includes("Administer IV furosemide 40 mg if diuretic-naive."));
+      assert.equal(ladder.stops.topic.text.includes("const x = 1;"), false);
+      assert.match(ladder.stops.topic.text, /`⋯ \d+ lines of code`/);
+    }
+  });
+
+  test("wide marker-line and nested raw blocks never turn into CommonMark indented code blocks", () => {
+    const parser = createMarkdown();
+    const cases = [
+      {
+        name: "2-digit ordered table",
+        md: "10. | Drug | Dose |\n    | --- | --- |\n    | Lidocaine | 4.5 mg/kg |\n11. Reassess.",
+        expectedToken: "table_open",
+      },
+      {
+        name: "nested marker table",
+        md: "- - | A | B |\n    | --- | --- |\n    | 1 | 2 |\n- Next.",
+        expectedToken: "table_open",
+      },
+      {
+        name: "indented bullet table",
+        md: "  - | A | B |\n    | --- | --- |\n    | 1 | 2 |\n  - Next.",
+        expectedToken: "table_open",
+      },
+      {
+        name: "2-digit ordered math",
+        md: "10. $$\n    E = mc^2\n    $$\n11. Reassess.",
+        expectedToken: "math_block",
+      },
+      {
+        name: "2-digit ordered fence",
+        md: "10. ```js\n    const x = 1;\n    ```\n11. Reassess.",
+        expectedToken: "fence",
+      },
+      {
+        name: "indented child table past active content column",
+        md: "- Outer item.\n  - - | A | B |\n      | --- | --- |\n      | 1 | 2 |",
+        expectedToken: "table_open",
+      },
+      {
+        name: "outdented raw block followed by wide marker raw block",
+        md: "- Outer item.\n  - Inner item.\n    10. Deep item.\n- | A | B |\n  | --- | --- |\n  | 1 | 2 |\n- - - | C | D |\n      | --- | --- |\n      | 3 | 4 |",
+        expectedToken: "table_open",
+      },
+    ];
+
+    for (const { name, md, expectedToken } of cases) {
+      const ladder = foldDocumentLadder(md);
+      for (const stopId of ["brief", "key"]) {
+        const tokens = parser.parse(ladder.stops[stopId].text, {});
+        assert.equal(
+          tokens.some(t => t.type === "code_block"),
+          false,
+          `${name} turned into indented code_block at ${stopId}:\n${ladder.stops[stopId].text}`,
+        );
+        assert.equal(
+          tokens.some(t => t.type === expectedToken),
+          true,
+          `${name} missing ${expectedToken} at ${stopId}:\n${ladder.stops[stopId].text}`,
+        );
+      }
+      for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
+    }
+  });
+
+  test("HTML img tags with > inside single- or double-quoted attributes are preserved intact", () => {
+    const md = [
+      "## Biomarkers",
+      "",
+      "Lead clinical sentence. Extra detail.",
+      "",
+      "<figure><img src=\"bnp.png\" alt=\"BNP >100 pg/mL\"><figcaption>Threshold</figcaption></figure>",
+      "",
+      "<figure><img src='spo2.png' alt='SpO2 >=90%'><figcaption>Oxygen</figcaption></figure>",
+      "",
+      "> Quote lead. Second sentence has <img src=\"map.png\"",
+      "> alt=\"MAP >65 mmHg\">.",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    for (const { id } of LOCAL_LEVELS) {
+      const out = ladder.stops[id].text;
+      assert.equal(out.split("<img src=\"bnp.png\" alt=\"BNP >100 pg/mL\">").length - 1, 1, `double-quoted > img at ${id}`);
+      assert.equal(out.split("<img src='spo2.png' alt='SpO2 >=90%'>").length - 1, 1, `single-quoted > img at ${id}`);
+      if (id !== "full") {
+        assert.equal(out.split("<img src=\"map.png\" alt=\"MAP >65 mmHg\">").length - 1, 1, `quoted multiline > img at ${id}`);
+      }
+      assert.equal(out.includes("alt=\"BNP >\n"), false, `truncated double-quoted img at ${id}`);
+      assert.equal(out.includes("alt='SpO2 >\n"), false, `truncated single-quoted img at ${id}`);
+    }
+    for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
+  });
+
+  test("tight nested blockquotes preserve tables, math, and fenced code and skip fake media inside code", () => {
+    const md = [
+      "## Dosing",
+      "",
+      "Lead clinical sentence occupies the first-in-section slot. Extra detail.",
+      "",
+      ">>| Drug | Dose |",
+      ">>| --- | --- |",
+      ">>| Lidocaine | 4.5 mg/kg |",
+      ">>| Bupivacaine | 2 mg/kg |",
+      "",
+      ">>$$ E = mc^2 $$",
+      "",
+      ">>```js",
+      ">>const fake = \"![Fake](fake.png)\";",
+      ">>```",
+      "",
+      "- List item with nested tight quote code.",
+      "  >>```js",
+      "  >>const listFake = \"![ListFake](listfake.png)\";",
+      "  >>```",
+      "  - Child with ![Real](real.png).",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    for (const { id } of LOCAL_LEVELS) {
+      const out = ladder.stops[id].text;
+      assert.ok(out.includes("| Drug | Dose |"), `tight quote table header missing at ${id}`);
+      assert.ok(out.includes("$$ E = mc^2 $$"), `tight quote math missing at ${id}`);
+      assert.ok(out.includes("![Real](real.png)"), `real inline image missing at ${id}`);
+    }
+    assert.ok(ladder.stops.takeaway.text.includes("| Lidocaine | 4.5 mg/kg |"));
+    assert.equal(ladder.stops.takeaway.text.includes("| Bupivacaine | 2 mg/kg |"), false);
+    assert.equal(ladder.stops.topic.text.includes("| Lidocaine | 4.5 mg/kg |"), false);
+    assert.ok(ladder.stops.takeaway.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(ladder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.equal(ladder.stops.topic.text.includes("![Fake](fake.png)"), false);
+    assert.equal(ladder.stops.topic.text.includes("![ListFake](listfake.png)"), false);
     for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
   });
 });

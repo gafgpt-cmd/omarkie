@@ -15,9 +15,10 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
 const HEADING_LINE = /^\s{0,3}#{1,6}\s/;
 const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
+const QUOTE_PREFIXES = /^(?:\s*>\s?)+/;
 const INLINE_MD_IMAGE = /!\[[^\]\r\n]*\]\([^)\s]*(?:(?:[ \t]|\r?\n)[^)\r\n]*)?\)/y;
 const INLINE_WIKI_EMBED = /!\[\[[^\]\r\n]+\]\]/y;
-const INLINE_HTML_IMG = /<img\b[^>]*>/iy;
+const INLINE_HTML_IMG = /<img\b(?:[^>"']|"[^"]*"|'[^']*')*>/iy;
 const MORE = " …";
 
 // FIPS 180-4 SHA-256 constants (first 32 bits of fractional parts of cube roots of first 64 primes).
@@ -163,9 +164,7 @@ function containerPriority(kind) {
 }
 
 function stripQuotePrefix(line) {
-  let s = line.replace(/^\s*>\s?/, "");
-  while (/^\s*>(?:\s|$)/.test(s)) s = s.replace(/^\s*>\s?/, "");
-  return s;
+  return line.replace(QUOTE_PREFIXES, "");
 }
 
 function prefixQuote(markdown) {
@@ -326,7 +325,7 @@ function stripQuotedSource(markdown) {
     const nl = markdown.indexOf("\n", offset);
     const lineEnd = nl === -1 ? markdown.length : nl;
     const line = markdown.slice(offset, lineEnd);
-    const prefix = /^(?:\s*>\s?)+/.exec(line);
+    const prefix = QUOTE_PREFIXES.exec(line);
     const skip = prefix ? prefix[0].length : 0;
     for (let k = offset + skip; k < lineEnd; k++) {
       text += markdown[k];
@@ -675,17 +674,28 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
     const minIndent = Math.min(...all.map(item => item.indent));
     if (effectiveDepth <= 3) {
       const rendered = [];
+      let activeContentIndent = null;
       for (let k = 0; k < all.length; k++) {
         const item = all[k];
         const isChildDropped = effectiveDepth === 3 && item.indent > minIndent;
         if (!isChildDropped && item.text.trim()) {
           const droppedChildren = effectiveDepth === 3 && k + 1 < all.length && all[k + 1].indent > item.indent;
           const s = firstSentence(item.text);
-          rendered.push(`${" ".repeat(item.indent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
+          const emitIndent = activeContentIndent === null
+            ? (item.indent <= 3 ? item.indent : 0)
+            : Math.min(item.indent, activeContentIndent + 3);
+          rendered.push(`${" ".repeat(emitIndent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
+          activeContentIndent = emitIndent + item.marker.length + 1;
         }
         for (const rb of item.rawBlocks) {
           const folded = foldRawBlock(rb.raw, rb.markdown, effectiveDepth);
-          const targetIndent = isChildDropped ? Math.min(rb.indent, minIndent + 2) : rb.indent;
+          const maxIndent = activeContentIndent === null
+            ? 0
+            : isChildDropped
+              ? activeContentIndent
+              : activeContentIndent + 3;
+          const targetIndent = Math.min(rb.indent, maxIndent);
+          if (activeContentIndent !== null && targetIndent < activeContentIndent) activeContentIndent = null;
           rendered.push(indentBlock(folded, targetIndent));
         }
       }
