@@ -1,0 +1,47 @@
+{
+  "id": "09-anestesia-regional-dosis",
+  "number": 9,
+  "lang": "es",
+  "genre": "clinical",
+  "title": "Anestesia regional: dosis máximas de anestésicos locales",
+  "stresses": ["table-only section", "table survives every stop (D5)"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "4,5 / 7", "unit": "mg/kg", "context": "Lidocaína sin / con adrenalina (máx 300 / 500 mg)", "source": "4,5 mg/kg (máx 300 mg)" },
+    { "value": "2 / 2,5-3", "unit": "mg/kg", "context": "Bupivacaína sin / con adrenalina (máx 175 / 225 mg)", "source": "2 mg/kg (máx 175 mg)" },
+    { "value": "2,5 / 3", "unit": "mg/kg", "context": "Levobupivacaína sin / con adrenalina", "source": "2,5 mg/kg (máx 150-200 mg)" },
+    { "value": "3", "unit": "mg/kg", "context": "Ropivacaína (máx 200-250 mg)", "source": "3 mg/kg (máx 200-250 mg)" },
+    { "value": "20", "unit": "%", "context": "Concentración de emulsión lipídica en LAST", "source": "emulsión lipídica al 20 %" },
+    { "value": "1,5", "unit": "mL/kg", "context": "Bolo inicial IV de emulsión lipídica 20 % en 1 min", "source": "bolo IV de 1,5 mL/kg en 1 minuto" },
+    { "value": "0,25", "unit": "mL/kg/min", "context": "Perfusión continua de emulsión lipídica 20 %", "source": "0,25 mL/kg/min" },
+    { "value": "10-12", "unit": "mL/kg", "context": "Dosis máxima acumulada de emulsión lipídica en 30 min", "source": "10-12 mL/kg en 30 minutos" },
+    { "value": "<1", "unit": "µg/kg", "context": "Dosis reducida de adrenalina en RCP por LAST", "source": "<1 µg/kg" }
+  ],
+  "negations": [
+    { "token": "nunca", "phrase": "nunca por peso real en obesidad", "rule": "Calcular siempre por peso corporal ideal, nunca por peso real en obesidad" },
+    { "token": "sin", "phrase": "bupivacaína puede causar parada cardiaca sin pródromos neurológicos", "rule": "Bupivacaína puede dar cardiotoxicidad directa sin pródromos neurológicos" },
+    { "token": "no", "phrase": "no usar propofol si existe inestabilidad hemodinámica", "rule": "Convulsiones con benzodiacepinas; no usar propofol si hay inestabilidad hemodinámica" },
+    { "token": "nunca", "phrase": "nunca administrar vasopresina, bloqueantes de los canales de calcio, betabloqueantes ni lidocaína como antiarrítmico", "rule": "Fármacos prohibidos en RCP por LAST" }
+  ],
+  "conditions": [
+    { "token": "siempre", "phrase": "Calcular siempre la dosis según el peso corporal ideal", "rule": "Usar siempre peso corporal ideal" },
+    { "token": "únicamente", "phrase": "Controlar las convulsiones únicamente con benzodiacepinas", "rule": "Benzodiacepinas como único anticonvulsivante preferido" },
+    { "token": "si", "phrase": "si existe inestabilidad hemodinámica", "rule": "Evitar propofol si hay inestabilidad hemodinámica" }
+  ],
+  "highYield": [
+    { "fact": "Dosis máximas (peso corporal ideal, nunca real en obesidad): lidocaína 4,5/7 mg/kg, mepivacaína 4,5-5/7, bupivacaína 2/2,5-3, levobupivacaína 2,5/3, ropivacaína 3 mg/kg", "stars": 2 },
+    { "fact": "Absorción sistémica decreciente: intercostal > caudal > epidural > plexo braquial > subcutáneo", "stars": 2 },
+    { "fact": "Bupivacaína: alta cardiotoxicidad, puede causar parada cardiaca sin pródromos neurológicos", "stars": 2 },
+    { "fact": "Emulsión lipídica 20 %: bolo 1,5 mL/kg IV en 1 min + perfusión 0,25 mL/kg/min (máx 10-12 mL/kg en 30 min)", "stars": 2 },
+    { "fact": "SVA en LAST: reducir adrenalina a <1 µg/kg; nunca vasopresina, calcioantagonistas, betabloqueantes ni lidocaína; convulsiones con benzodiacepinas (no propofol si inestable)", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": ["Dosis máximas recomendadas"]
+  },
+  "forbidden": []
+}

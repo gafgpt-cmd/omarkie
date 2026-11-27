@@ -1,0 +1,163 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-nephritic-vs-nephrotic-syndrome-f834dff2",
+  "lang": "en",
+  "title": "Nephritic vs Nephrotic Syndrome",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:17Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-overview",
+      "num": "",
+      "title": "Overview",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-d7911c19",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Glomerular disease divides clinically into nephritic syndrome (glomerular inflammation with capillary wall damage) and nephrotic syndrome (podocyte injury causing massive loss of the charge and size filtration barrier). Recognising which syndrome dominates directs biopsy timing, serology, and complication prophylaxis.",
+          "sentences": [
+            "Glomerular disease divides clinically into nephritic syndrome (glomerular inflammation with capillary wall damage) and nephrotic syndrome (podocyte injury causing massive loss of the charge and size filtration barrier).",
+            "Recognising which syndrome dominates directs biopsy timing, serology, and complication prophylaxis."
+          ],
+          "brief": [
+            "Glomerular disease divides clinically into nephritic syndrome (glomerular inflammation with capillary wall damage) and nephrotic syndrome (podocyte injury causing massive loss of the charge and size filtration barrier)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Glomerular disease divides clinically into nephritic syndrome (glomerular inflammation with capillary wall damage) and nephrotic syndrome (podocyte injury causing massive loss of the charge and size filtration barrier).",
+          "takeaway": "Glomerular disease divides clinically into nephritic syndrome (glomerular inflammation with capillary wall damage) and",
+          "topic": "Glomerular disease divides"
+        }
+      ]
+    },
+    {
+      "id": "sec-nephritic-syndrome",
+      "num": "",
+      "title": "Nephritic syndrome",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-fa121f80",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood cells and mild-to-moderate protein to leak into the urine. Proteinuria stays below 3.5 g/day. Urinalysis classically shows dysmorphic red blood cells (acanthocytes) and red blood cell casts, producing cola-coloured haematuria. Impaired glomerular filtration leads to oliguria, azotaemia (rising BUN and creatinine), salt retention, and hypertension, with mild-to-moderate periorbital oedema. Key prototypes include post-streptococcal glomerulonephritis (low C3, subepithelial humps, 2-4 weeks after pharyngitis or impetigo), IgA nephropathy (synpharyngitic haematuria within 1-3 days, normal complement), and rapidly progressive glomerulonephritis (crescents on biopsy, rapid renal failure over days to weeks).",
+          "sentences": [
+            "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood cells and mild-to-moderate protein to leak into the urine.",
+            "Proteinuria stays below 3.5 g/day.",
+            "Urinalysis classically shows dysmorphic red blood cells (acanthocytes) and red blood cell casts, producing cola-coloured haematuria.",
+            "Impaired glomerular filtration leads to oliguria, azotaemia (rising BUN and creatinine), salt retention, and hypertension, with mild-to-moderate periorbital oedema.",
+            "Key prototypes include post-streptococcal glomerulonephritis (low C3, subepithelial humps, 2-4 weeks after pharyngitis or impetigo), IgA nephropathy (synpharyngitic haematuria within 1-3 days, normal complement), and rapidly progressive glomerulonephritis (crescents on biopsy, rapid renal failure over days to weeks)."
+          ],
+          "brief": [
+            "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood cells and mild-to-moderate protein to leak into the urine."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood cells and mild-to-moderate protein to leak into the urine.",
+          "takeaway": "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood",
+          "topic": "Nephritic syndrome results"
+        }
+      ]
+    },
+    {
+      "id": "sec-nephrotic-syndrome",
+      "num": "",
+      "title": "Nephrotic syndrome",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-bd8386b4",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation. Hallmark proteinuria is ≥3.5 g/day (urine protein-to-creatinine ratio ≥3.5 g/g), producing frothy urine, severe hypoalbuminaemia (<3.0 g/dL), and marked dependent or periorbital oedema (anasarca). Urinalysis reveals fatty casts, oval fat bodies, and Maltese crosses under polarised light, without red blood cell casts. Loss of albumin drives compensatory hepatic lipoprotein synthesis (hyperlipidaemia). Urinary loss of antithrombin III creates a hypercoagulable state with risk of renal vein thrombosis (especially in membranous nephropathy), and urinary loss of immunoglobulins increases susceptibility to encapsulated bacteria such as Streptococcus pneumoniae. Key prototypes include minimal change disease (most common in children, normal light microscopy, steroid-responsive), focal segmental glomerulosclerosis (most common in adults of African ancestry, poor steroid response), and membranous nephropathy (anti-PLA2R antibodies, spike-and-dome subepithelial deposits).",
+          "sentences": [
+            "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation.",
+            "Hallmark proteinuria is ≥3.5 g/day (urine protein-to-creatinine ratio ≥3.5 g/g), producing frothy urine, severe hypoalbuminaemia (<3.0 g/dL), and marked dependent or periorbital oedema (anasarca).",
+            "Urinalysis reveals fatty casts, oval fat bodies, and Maltese crosses under polarised light, without red blood cell casts.",
+            "Loss of albumin drives compensatory hepatic lipoprotein synthesis (hyperlipidaemia).",
+            "Urinary loss of antithrombin III creates a hypercoagulable state with risk of renal vein thrombosis (especially in membranous nephropathy), and urinary loss of immunoglobulins increases susceptibility to encapsulated bacteria such as Streptococcus pneumoniae.",
+            "Key prototypes include minimal change disease (most common in children, normal light microscopy, steroid-responsive), focal segmental glomerulosclerosis (most common in adults of African ancestry, poor steroid response), and membranous nephropathy (anti-PLA2R antibodies, spike-and-dome subepithelial deposits)."
+          ],
+          "brief": [
+            "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation.",
+          "takeaway": "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation",
+          "topic": "Nephrotic syndrome reflects"
+        }
+      ]
+    },
+    {
+      "id": "sec-memory-aid-and-traps",
+      "num": "",
+      "title": "Memory aid and traps",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-7f28ecb2",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Use the mnemonic PHARAOH for nephritic features: Proteinuria (<3.5 g/day), Haematuria (dysmorphic RBCs and RBC casts), Azotaemia, RBC casts, Antistreptolysin O / low complement in PSGN, Oliguria, and Hypertension. Do not diagnose nephrotic syndrome on dipstick alone without quantifying proteinuria ≥3.5 g/day. Do not overlook overlap presentations: membranoproliferative glomerulonephritis and diffuse proliferative lupus nephritis can display both nephritic and nephrotic features simultaneously.",
+          "sentences": [
+            "Use the mnemonic PHARAOH for nephritic features: Proteinuria (<3.5 g/day), Haematuria (dysmorphic RBCs and RBC casts), Azotaemia, RBC casts, Antistreptolysin O / low complement in PSGN, Oliguria, and Hypertension.",
+            "Do not diagnose nephrotic syndrome on dipstick alone without quantifying proteinuria ≥3.5 g/day.",
+            "Do not overlook overlap presentations: membranoproliferative glomerulonephritis and diffuse proliferative lupus nephritis can display both nephritic and nephrotic features simultaneously."
+          ],
+          "brief": [
+            "Use the mnemonic PHARAOH for nephritic features: Proteinuria (<3.5 g/day), Haematuria (dysmorphic RBCs and RBC casts), Azotaemia, RBC casts, Antistreptolysin O / low complement in PSGN, Oliguria, and Hypertension."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Use the mnemonic PHARAOH for nephritic features: Proteinuria (<3.5 g/day), Haematuria (dysmorphic RBCs and RBC casts), Azotaemia, RBC casts, Antistreptolysin O / low complement in PSGN, Oliguria, and Hypertension.",
+          "takeaway": "Use the mnemonic PHARAOH for nephritic features: Proteinuria (<3.5 g/day), Haematuria (dysmorphic RBCs",
+          "topic": "Use the mnemonic"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

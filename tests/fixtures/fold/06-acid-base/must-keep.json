@@ -1,0 +1,47 @@
+{
+  "id": "06-acid-base",
+  "number": 6,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Acid-Base Disorders: Thresholds and Compensation Formulas",
+  "stresses": ["numbers + units + direction", "math blocks"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "7.35-7.45", "unit": "pH", "context": "Normal arterial pH range (<7.35 acidaemia, >7.45 alkalaemia)", "source": "pH 7.35 to 7.45" },
+    { "value": "35-45", "unit": "mmHg", "context": "Normal arterial PaCO2", "source": "PaCO2 35 to 45 mmHg" },
+    { "value": "22-26", "unit": "mEq/L", "context": "Normal arterial HCO3-", "source": "HCO3- 22 to 26 mEq/L" },
+    { "value": "8-12", "unit": "mEq/L", "context": "Normal serum anion gap (>12 high AG)", "source": "8 to 12 mEq/L" },
+    { "value": "+2.5", "unit": "mEq/L", "context": "Add to AG per 1.0 g/dL albumin below 4.0 g/dL", "source": "add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL" },
+    { "value": "1.5 x HCO3 + 8 +/- 2", "unit": "mmHg", "context": "Winter's formula expected PaCO2", "source": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2" },
+    { "value": "0.7", "unit": "mmHg", "context": "Metabolic alkalosis PaCO2 rise per 1 mEq/L HCO3- above 24 (capped <55 mmHg)", "source": "0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L" },
+    { "value": "1 / 3.5-4", "unit": "mEq/L", "context": "Respiratory acidosis acute vs chronic HCO3- rise per 10 mmHg PaCO2", "source": "↑ 3.5 to 4 mEq/L" },
+    { "value": "2 / 4-5", "unit": "mEq/L", "context": "Respiratory alkalosis acute vs chronic HCO3- drop per 10 mmHg PaCO2", "source": "↓ 4 to 5 mEq/L" }
+  ],
+  "negations": [
+    { "token": "never", "phrase": "compensation never fully normalises pH except possibly in mild chronic respiratory alkalosis", "rule": "Compensation does not fully normalise pH (except possibly mild chronic respiratory alkalosis)" },
+    { "token": "Do not", "phrase": "Do not assume a normal pH excludes an acid-base disorder", "rule": "Normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder" },
+    { "token": "Do not", "phrase": "Do not rapidly overcorrect chronic respiratory acidosis with aggressive mechanical ventilation", "rule": "Avoid rapid overcorrection of chronic hypercapnia (causes post-hypercapnic alkalosis, arrhythmias, seizures)" }
+  ],
+  "conditions": [
+    { "token": "except", "phrase": "except possibly in mild chronic respiratory alkalosis", "rule": "Only possible exception to incomplete pH compensation" },
+    { "token": "If", "phrase": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present", "rule": "PaCO2 > Winter's = additional respiratory acidosis" },
+    { "token": "if", "phrase": "if lower than the lower limit, a concomitant respiratory alkalosis is present", "rule": "PaCO2 < Winter's = additional respiratory alkalosis" }
+  ],
+  "highYield": [
+    { "fact": "Normal ABG: pH 7.35-7.45, PaCO2 35-45 mmHg, HCO3- 22-26 mEq/L; AG 8-12 mEq/L", "stars": 2 },
+    { "fact": "Albumin AG correction: +2.5 mEq/L per 1.0 g/dL albumin below 4.0 g/dL", "stars": 2 },
+    { "fact": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 +/- 2 mmHg", "stars": 2 },
+    { "fact": "Respiratory compensation per 10 mmHg PaCO2: acidosis ↑1 acute / ↑3.5-4 chronic; alkalosis ↓2 acute / ↓4-5 chronic", "stars": 2 },
+    { "fact": "Delta-delta ratio (AG_corr - 12)/(24 - HCO3-): <1 concurrent NAGMA, 1-2 pure HAGMA, >2 concurrent metabolic alkalosis or chronic resp acidosis", "stars": 2 },
+    { "fact": "Normal pH + abnormal PaCO2 & HCO3- proves mixed disorder; never rapidly overcorrect chronic respiratory acidosis", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

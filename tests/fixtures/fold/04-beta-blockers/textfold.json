@@ -1,0 +1,232 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-beta-blockers-class-guide-71c0d29a",
+  "lang": "en",
+  "title": "Beta-Blockers: Class Guide",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:15Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-mechanism-and-subclasses",
+      "num": "",
+      "title": "Mechanism and subclasses",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-78755411",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium in cardiac myocytes and vascular smooth muscle. Cardioselective beta-1 blockers (metoprolol, bisoprolol, atenolol, esmolol) lower heart rate, contractility, AV nodal conduction, and renin release while largely sparing beta-2 bronchial receptors at standard doses, although selectivity is lost at high doses. Non-selective beta-1 and beta-2 blockers (propranolol, nadolol, timolol) additionally block peripheral beta-2 vasodilation, bronchodilation, and glycogenolysis. Mixed alpha-1 and beta blockers (carvedilol, labetalol) add peripheral vasodilation to reduce afterload. Agents with intrinsic sympathomimetic activity (pindolol, acebutolol) act as partial agonists and produce less resting bradycardia.",
+          "sentences": [
+            "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium in cardiac myocytes and vascular smooth muscle.",
+            "Cardioselective beta-1 blockers (metoprolol, bisoprolol, atenolol, esmolol) lower heart rate, contractility, AV nodal conduction, and renin release while largely sparing beta-2 bronchial receptors at standard doses, although selectivity is lost at high doses.",
+            "Non-selective beta-1 and beta-2 blockers (propranolol, nadolol, timolol) additionally block peripheral beta-2 vasodilation, bronchodilation, and glycogenolysis.",
+            "Mixed alpha-1 and beta blockers (carvedilol, labetalol) add peripheral vasodilation to reduce afterload.",
+            "Agents with intrinsic sympathomimetic activity (pindolol, acebutolol) act as partial agonists and produce less resting bradycardia."
+          ],
+          "brief": [
+            "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium in cardiac myocytes and vascular smooth muscle."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium in cardiac myocytes and vascular smooth muscle.",
+          "takeaway": "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium in cardiac myocytes",
+          "topic": "Beta-blockers competitively antagonise"
+        }
+      ]
+    },
+    {
+      "id": "sec-clinical-uses",
+      "num": "",
+      "title": "Clinical uses",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-837db8f2",
+          "kind": "list item",
+          "role": "context",
+          "full": "Ischaemic heart disease and post-MI: reduce myocardial oxygen demand by slowing heart rate and decreasing contractility.",
+          "sentences": [
+            "Ischaemic heart disease and post-MI: reduce myocardial oxygen demand by slowing heart rate and decreasing contractility."
+          ],
+          "brief": [
+            "Ischaemic heart disease and post-MI: reduce myocardial oxygen demand by slowing heart rate and decreasing contractility."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Ischaemic heart disease and post-MI: reduce myocardial oxygen demand by slowing heart rate and decreasing contractility.",
+          "takeaway": "Ischaemic heart disease and post-MI: reduce myocardial oxygen demand by slowing heart rate and",
+          "topic": "Ischaemic heart disease"
+        },
+        {
+          "id": "p-9eb72ee2",
+          "kind": "list item",
+          "role": "context",
+          "full": "Chronic HFrEF: bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic; never start in acute decompensated shock.",
+          "sentences": [
+            "Chronic HFrEF: bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic; never start in acute decompensated shock."
+          ],
+          "brief": [
+            "Chronic HFrEF: bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic; never start in acute decompensated shock."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Chronic HFrEF: bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic; never start in acute decompensated shock.",
+          "takeaway": "Chronic HFrEF: bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic",
+          "topic": "Chronic HFrEF: bisoprolol"
+        },
+        {
+          "id": "p-c694a667",
+          "kind": "list item",
+          "role": "context",
+          "full": "Rate control and arrhythmias: slow AV nodal conduction in atrial fibrillation and supraventricular tachycardia; esmolol has an ultra-short half-life of 9 minutes for acute perioperative control.",
+          "sentences": [
+            "Rate control and arrhythmias: slow AV nodal conduction in atrial fibrillation and supraventricular tachycardia; esmolol has an ultra-short half-life of 9 minutes for acute perioperative control."
+          ],
+          "brief": [
+            "Rate control and arrhythmias: slow AV nodal conduction in atrial fibrillation and supraventricular tachycardia; esmolol has an ultra-short half-life of 9 minutes for acute perioperative control."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Rate control and arrhythmias: slow AV nodal conduction in atrial fibrillation and supraventricular tachycardia; esmolol has an ultra-short half-life of 9 minutes for acute perioperative control.",
+          "takeaway": "Rate control and arrhythmias: slow AV nodal conduction in atrial fibrillation and supraventricular tachycardia",
+          "topic": "Rate control and"
+        },
+        {
+          "id": "p-a806e4b2",
+          "kind": "list item",
+          "role": "context",
+          "full": "Hypertensive emergencies and aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood pressure.",
+          "sentences": [
+            "Hypertensive emergencies and aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood pressure."
+          ],
+          "brief": [
+            "Hypertensive emergencies and aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood pressure."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Hypertensive emergencies and aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood pressure.",
+          "takeaway": "Hypertensive emergencies and aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood",
+          "topic": "Hypertensive emergencies and"
+        },
+        {
+          "id": "p-0c1cdbad",
+          "kind": "list item",
+          "role": "context",
+          "full": "Non-cardiac uses: propranolol treats essential tremor, migraine prophylaxis, thyroid storm (inhibits peripheral T4 to T3 conversion), and portal hypertension prophylaxis against variceal bleeding.",
+          "sentences": [
+            "Non-cardiac uses: propranolol treats essential tremor, migraine prophylaxis, thyroid storm (inhibits peripheral T4 to T3 conversion), and portal hypertension prophylaxis against variceal bleeding."
+          ],
+          "brief": [
+            "Non-cardiac uses: propranolol treats essential tremor, migraine prophylaxis, thyroid storm (inhibits peripheral T4 to T3 conversion), and portal hypertension prophylaxis against variceal bleeding."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Non-cardiac uses: propranolol treats essential tremor, migraine prophylaxis, thyroid storm (inhibits peripheral T4 to T3 conversion), and portal hypertension prophylaxis against variceal bleeding.",
+          "takeaway": "Non-cardiac uses: propranolol treats essential tremor, migraine prophylaxis, thyroid storm (inhibits peripheral T4 to",
+          "topic": "Non-cardiac uses: propranolol"
+        }
+      ]
+    },
+    {
+      "id": "sec-adverse-effects-and-traps",
+      "num": "",
+      "title": "Adverse effects and traps",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-e44f95f2",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Beta-2 blockade can trigger severe bronchospasm in asthma or reactive COPD, making non-selective beta-blockers contraindicated in asthma. In diabetes, beta-blockers mask adrenergic hypoglycaemia warning signs (tremor, palpitations) while diaphoresis persists because sweating is cholinergic. In cocaine toxicity or untreated phaeochromocytoma, pure beta blockade causes unopposed alpha-1 vasoconstriction and dangerous hypertension. Abrupt withdrawal causes rebound tachycardia and angina due to beta-receptor upregulation: taper over 1 to 2 weeks. Overdose presents with refractory bradycardia, hypotension, and hypoglycaemia; treat with intravenous glucagon (activates adenylyl cyclase independent of beta receptors), atropine, and high-dose insulin euglycaemia.",
+          "sentences": [
+            "Beta-2 blockade can trigger severe bronchospasm in asthma or reactive COPD, making non-selective beta-blockers contraindicated in asthma.",
+            "In diabetes, beta-blockers mask adrenergic hypoglycaemia warning signs (tremor, palpitations) while diaphoresis persists because sweating is cholinergic.",
+            "In cocaine toxicity or untreated phaeochromocytoma, pure beta blockade causes unopposed alpha-1 vasoconstriction and dangerous hypertension.",
+            "Abrupt withdrawal causes rebound tachycardia and angina due to beta-receptor upregulation: taper over 1 to 2 weeks.",
+            "Overdose presents with refractory bradycardia, hypotension, and hypoglycaemia; treat with intravenous glucagon (activates adenylyl cyclase independent of beta receptors), atropine, and high-dose insulin euglycaemia."
+          ],
+          "brief": [
+            "Beta-2 blockade can trigger severe bronchospasm in asthma or reactive COPD, making non-selective beta-blockers contraindicated in asthma."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Beta-2 blockade can trigger severe bronchospasm in asthma or reactive COPD, making non-selective beta-blockers contraindicated in asthma.",
+          "takeaway": "Beta-2 blockade can trigger severe bronchospasm in asthma or reactive COPD, making non-selective beta-blockers",
+          "topic": "Beta-2 blockade can"
+        }
+      ]
+    },
+    {
+      "id": "sec-contraindications",
+      "num": "",
+      "title": "Contraindications",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-cb3ca864",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure. Avoid non-selective agents in asthma.",
+          "sentences": [
+            "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure.",
+            "Avoid non-selective agents in asthma."
+          ],
+          "brief": [
+            "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure.",
+          "takeaway": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe",
+          "topic": "Do not give"
+        }
+      ]
+    }
+  ],
+  "links": []
+}
