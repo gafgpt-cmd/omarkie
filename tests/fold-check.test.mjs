@@ -567,6 +567,13 @@ test("number extraction handles descending spans, English article 'a', negative 
   assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--50 mEq/L.").checks.number, "fail");
   assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--5 mEq/L.").ok, true);
 
+  assert.equal(checkLine("Version 2.4 — 80 mg.", "Version 2.4 — 40 mg.").checks.number, "fail");
+  assert.equal(checkLine("Edition 3 - 80 mg.", "Edition 3 - 40 mg.").checks.number, "fail");
+  assert.equal(checkLine("4.4.1 — 80 mg IV.", "4.4.1 — 40 mg IV.").checks.number, "fail");
+  assert.equal(checkLine("Section 1.2.3 to 500 mg.", "Section 1.2.3 to 50 mg.").checks.number, "fail");
+  assert.equal(checkLine("Version 2.4 — 40 mg.", "Version 2.4 — 40 mg.").ok, true);
+  assert.equal(checkLine("4.4.1 — 40 mg IV.", "4.4.1 — 40 mg IV.").ok, true);
+
   assert.equal(checkLine("Penicilina 9.000.000 UI.", "Penicilina 2.400.000 UI.").checks.number, "fail");
   assert.equal(checkLine("Penicilina 2.400.000 UI.", "Penicilina 2.400.000 UI.").ok, true);
 });
@@ -719,4 +726,21 @@ test("checkWrittenUnit treats blank brief and full options as omitted rather tha
   );
   assert.equal(fallbackWithBlankBrief.stops.key.fallback, "brief");
   assert.equal(fallbackWithBlankBrief.stops.key.resolved.text, unitText);
+
+  const plainUnitText = "Routine monitoring recommended.";
+  const plainEv = makeEvidence(plainUnitText, plainUnitText);
+  const blankStopRes = checkWrittenUnit(
+    {
+      elementId: "paragraph-ab12cd34",
+      role: "monitoring",
+      key: { by: "model", text: " ", evidence: [plainEv] },
+      takeaway: { by: "model", text: "Routine monitoring.", evidence: [plainEv] },
+      topic: { by: "model", text: "Monitoring", evidence: [plainEv] },
+      checks: {},
+    },
+    { unitText: plainUnitText },
+  );
+  assert.equal(blankStopRes.stops.key.ok, false);
+  assert.equal(blankStopRes.warning, true);
+  assert.equal(blankStopRes.ok, false);
 });

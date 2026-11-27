@@ -561,15 +561,22 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       NUMBER_RE.lastIndex = enclosing[1];
       continue;
     }
-    // Skip version numbers owned by scope ("version 2.4", "edición 3").
-    if (!match[1] && !match[2] && VERSION_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 20), matchStart))) {
-      continue;
-    }
     const symDir = normalizeSymDirection(match[1]);
     const prefixCurrency = match[2] ?? null;
     const lowRaw = match[3];
     const rangeSep = match[4] ?? null;
     const highRaw = match[5] ?? null;
+    const firstEnd = matchStart + match[0].indexOf(lowRaw) + lowRaw.length;
+    const rewindToHigh = () => {
+      if (rangeSep !== null) NUMBER_RE.lastIndex = firstEnd + rangeSep.length;
+    };
+
+    // Skip version numbers owned by scope ("version 2.4", "edición 3").
+    if (!match[1] && !match[2] && VERSION_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 20), matchStart))) {
+      rewindToHigh();
+      continue;
+    }
+
     let rawUnit = match[6]
       ? (prefixCurrency && match[6].startsWith("/") ? `${prefixCurrency}${match[6]}` : match[6])
       : prefixCurrency;
@@ -579,7 +586,10 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     let start = matchStart;
     let end = matchEnd;
 
-    if (!Number.isFinite(low)) continue;
+    if (!Number.isFinite(low)) {
+      rewindToHigh();
+      continue;
+    }
 
     const isBareSpanishA = rangeSep !== null
       && /^\s+a\s+$/iu.test(rangeSep)
@@ -591,9 +601,8 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     if (high !== undefined && (!Number.isFinite(high) || high < low || isBareSpanishA || isTupleContinuation)) {
       high = undefined;
       rawUnit = prefixCurrency;
-      const firstEnd = matchStart + match[0].indexOf(lowRaw) + lowRaw.length;
       end = firstEnd;
-      NUMBER_RE.lastIndex = firstEnd + rangeSep.length;
+      rewindToHigh();
     }
 
     // Check verbal direction immediately preceding the number (only when no symbolic comparator).
@@ -1627,7 +1636,7 @@ export function checkWrittenUnit(unit, options = {}) {
   };
 
   return {
-    ok: allFindings.length === 0 && stops.key.evidenceValid && stops.takeaway.evidenceValid && stops.topic.evidenceValid,
+    ok: stops.key.ok && stops.takeaway.ok && stops.topic.ok && monoRes.ok,
     checks: combinedChecks,
     stops,
     monotonic: monoRes,
