@@ -821,6 +821,146 @@ describe("raw-block preservation rule (D5)", () => {
       assert.equal(tokens.some(t => t.type === "code_block"), false);
     }
   });
+
+  test("quote and callout nested > - > raw blocks and unclosed inner quotes do not leak or swallow", () => {
+    const quotedNestedCode = [
+      "> - > ```js",
+      ">   > const fake = \"![Fake](fake.png)\";",
+      ">   > ```",
+      "> - Administer IV furosemide 40 mg. Reassess urine output with ![Real](real.png).",
+    ].join("\n");
+    const codeLadder = foldDocumentLadder(quotedNestedCode);
+    assert.deepEqual(codeLadder.byUnit[0].violations, []);
+    assert.equal(isMonotonic(codeLadder.byUnit[0].stops), true);
+    assert.equal(codeLadder.units[0].inlineMedia.some(m => m.markdown.includes("Fake")), false);
+    assert.equal(codeLadder.units[0].inlineMedia.some(m => m.markdown === "![Real](real.png)"), true);
+    assert.ok(codeLadder.stops.brief.text.includes("Administer IV furosemide 40 mg."));
+    assert.ok(codeLadder.stops.topic.text.includes("Administer IV furosemide 40 mg."));
+    assert.ok(codeLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(codeLadder.stops.topic.text.includes("![Real](real.png)"));
+    assert.equal(codeLadder.stops.topic.text.includes("![Fake](fake.png)"), false);
+    assert.equal(codeLadder.stops.topic.text.includes("const fake"), false);
+
+    const calloutNested = [
+      "> [!note] Protocol",
+      "> - > $$",
+      ">   > E = mc^2",
+      ">   > $$",
+      "> - > | A | B |",
+      ">   > | --- | --- |",
+      ">   > | 1 | 2 |",
+      ">   > | 3 | 4 |",
+      "> - Callout follow-up sentence. Extra detail.",
+    ].join("\n");
+    const calloutLadder = foldDocumentLadder(calloutNested);
+    assert.deepEqual(calloutLadder.byUnit[0].violations, []);
+    assert.equal(isMonotonic(calloutLadder.byUnit[0].stops), true);
+    assert.ok(calloutLadder.stops.topic.text.includes("E = mc^2"));
+    assert.ok(calloutLadder.stops.topic.text.includes("> | A | B |"));
+    assert.equal(calloutLadder.stops.topic.text.includes("| 3 | 4 |"), false);
+    assert.ok(calloutLadder.stops.topic.text.includes("Callout follow-up sentence."));
+
+    const rawOnlyNestedQuote = [
+      "## Dosing",
+      "",
+      "> - > ```js",
+      ">   > const x = 1;",
+      ">   > ```",
+      "",
+      "Real clinical takeaway sentence. Extra detail.",
+    ].join("\n");
+    const slotLadder = foldDocumentLadder(rawOnlyNestedQuote);
+    assert.ok(slotLadder.stops.takeaway.text.includes("Real clinical takeaway sentence."));
+    assert.ok(slotLadder.stops.topic.text.includes("Real clinical takeaway sentence."));
+    assert.ok(slotLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+
+    const unclosedInnerQuote = [
+      "> > ```js",
+      "> > const x = 1;",
+      ">",
+      "> Outside clinical sentence. Second sentence.",
+    ].join("\n");
+    const unclosedLadder = foldDocumentLadder(unclosedInnerQuote);
+    assert.deepEqual(unclosedLadder.byUnit[0].violations, []);
+    assert.equal(isMonotonic(unclosedLadder.byUnit[0].stops), true);
+    assert.ok(unclosedLadder.stops.topic.text.includes("Outside clinical sentence."));
+    assert.ok(unclosedLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+  });
+
+  test("adjacent raw blocks in lists stay separated and tables stop before nested blockquote rows", () => {
+    const parser = createMarkdown();
+    const twoTablesInList = [
+      "- First regimen:",
+      "  | Drug | Dose |",
+      "  | --- | --- |",
+      "  | Lidocaine | 4.5 mg/kg |",
+      "- Second regimen:",
+      "  | Drug | Dose |",
+      "  | --- | --- |",
+      "  | Bupivacaine | 2 mg/kg |",
+    ].join("\n");
+    const twoLadder = foldDocumentLadder(twoTablesInList);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const tokens = parser.parse(twoLadder.stops[stopId].text, {});
+      assert.equal(
+        tokens.filter(t => t.type === "table_open").length,
+        2,
+        `expected 2 distinct tables at ${stopId}:\n${twoLadder.stops[stopId].text}`,
+      );
+    }
+
+    const consecutiveMarkerTables = [
+      "- | A | B |",
+      "  | --- | --- |",
+      "  | 1 | 2 |",
+      "- | C | D |",
+      "  | --- | --- |",
+      "  | 3 | 4 |",
+    ].join("\n");
+    const markerLadder = foldDocumentLadder(consecutiveMarkerTables);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const tokens = parser.parse(markerLadder.stops[stopId].text, {});
+      assert.equal(
+        tokens.filter(t => t.type === "table_open").length,
+        2,
+        `expected 2 distinct marker tables at ${stopId}:\n${markerLadder.stops[stopId].text}`,
+      );
+    }
+
+    const tableFollowedByQuotedTable = [
+      "- | Drug | Dose |",
+      "  | --- | --- |",
+      "  | Lidocaine | 4.5 mg/kg |",
+      "  > | Quoted | Table |",
+      "  > | --- | --- |",
+      "  > | Bupivacaine | 2 mg/kg |",
+    ].join("\n");
+    const listQuoteTableLadder = foldDocumentLadder(tableFollowedByQuotedTable);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const out = listQuoteTableLadder.stops[stopId].text;
+      assert.ok(out.includes("| Drug | Dose |"), `outer table missing at ${stopId}`);
+      assert.ok(out.includes("| Quoted | Table |"), `quoted table swallowed at ${stopId}`);
+      const tokens = parser.parse(out, {});
+      assert.equal(tokens.filter(t => t.type === "table_open").length, 2, `expected 2 tables at ${stopId}:\n${out}`);
+    }
+
+    const outerQuoteFollowedByInnerQuoteTable = [
+      "> | A | B |",
+      "> | --- | --- |",
+      "> | 1 | 2 |",
+      "> > | C | D |",
+      "> > | --- | --- |",
+      "> > | 3 | 4 |",
+    ].join("\n");
+    const nestedQuoteTableLadder = foldDocumentLadder(outerQuoteFollowedByInnerQuoteTable);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const out = nestedQuoteTableLadder.stops[stopId].text;
+      assert.ok(out.includes("| A | B |"), `outer quoted table missing at ${stopId}`);
+      assert.ok(out.includes("| C | D |"), `inner quoted table swallowed at ${stopId}`);
+      const tokens = parser.parse(out, {});
+      assert.equal(tokens.filter(t => t.type === "table_open").length, 2, `expected 2 quoted tables at ${stopId}:\n${out}`);
+    }
+  });
 });
 
 describe("monotonic guard (D4)", () => {

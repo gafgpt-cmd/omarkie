@@ -262,7 +262,7 @@ function matchRawBlockCore(lines, i, firstLine, quoteDepth = 0) {
     let j = i + 2;
     while (j < lines.length) {
       const l = quotedLineAt(lines, j, quoteDepth);
-      if (l === null || !l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || l.trim().startsWith("$$")) break;
+      if (l === null || !l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || QUOTE_MARKER.test(l) || l.trim().startsWith("$$")) break;
       out.push(l);
       j++;
     }
@@ -325,25 +325,31 @@ function skipBacktickRun(text, i) {
   return i + run;
 }
 
-function nonMediaBlockRanges(markdown) {
-  const ranges = [];
-  const rawLines = [];
+function lineSpans(text) {
+  const spans = [];
   let offset = 0;
-  while (offset <= markdown.length) {
-    const nl = markdown.indexOf("\n", offset);
-    const end = nl === -1 ? markdown.length : nl + 1;
-    const text = (nl === -1 ? markdown.slice(offset) : markdown.slice(offset, nl)).replace(/\r$/, "");
-    rawLines.push({ start: offset, end, text });
+  while (offset <= text.length) {
+    const nl = text.indexOf("\n", offset);
+    const end = nl === -1 ? text.length : nl + 1;
+    const line = (nl === -1 ? text.slice(offset) : text.slice(offset, nl)).replace(/\r$/, "");
+    spans.push({ start: offset, end, text: line });
     if (nl === -1) break;
     offset = end;
   }
-  const lineTexts = rawLines.map(entry => entry.text);
+  return spans;
+}
+
+function nonMediaBlockRanges(markdown, targetText = markdown) {
+  const ranges = [];
+  const sourceLines = lineSpans(markdown);
+  const targetLines = targetText === markdown ? sourceLines : lineSpans(targetText);
+  const lineTexts = sourceLines.map(entry => entry.text);
   let i = 0;
   while (i < lineTexts.length) {
     const raw = matchRawBlock(lineTexts, i);
     if (raw) {
       if (raw.raw === "code" || raw.raw === "math") {
-        ranges.push([rawLines[i].start, rawLines[raw.nextIndex - 1].end]);
+        ranges.push([targetLines[i].start, targetLines[raw.nextIndex - 1].end]);
       }
       i = raw.nextIndex;
       continue;
@@ -394,7 +400,7 @@ function scanInlineMedia(markdown, baseOffset, existingList, ordinals, isQuoted 
   const { text: scanText, rawIndex } = isQuoted ? stripQuotedSource(markdown) : { text: markdown, rawIndex: null };
   const existingBySpan = new Map(existing.map(item => [`${item.from}:${item.to}`, item]));
   const matchedKeys = new Set();
-  const skipRanges = nonMediaBlockRanges(scanText);
+  const skipRanges = nonMediaBlockRanges(markdown, scanText);
   let skipIdx = 0;
   const found = [];
 
@@ -662,7 +668,8 @@ function parseQuotedBody(lines) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    if (!line.trim()) {
+    const stripped = stripQuotePrefix(line).trim();
+    if (!stripped) {
       i++;
       continue;
     }
@@ -672,7 +679,7 @@ function parseQuotedBody(lines) {
       i = rawBlock.nextIndex;
       continue;
     }
-    proseLines.push(line.trim());
+    proseLines.push(stripped);
     i++;
   }
   return { proseLines, rawBlocks };
@@ -710,7 +717,7 @@ function isProseUnit(unit) {
   if (unit.kind === "paragraph") return !isArtParagraph(splitLines(unit.markdown));
   if (unit.kind === "html") return !isHtmlComment(unit.markdown);
   if (unit.kind === "list") return parseListItems(unit.markdown).some(item => item.text.trim().length > 0);
-  if (unit.kind === "quote") return parseQuotedBody(splitLines(unit.markdown).map(stripQuotePrefix)).proseLines.length > 0;
+  if (unit.kind === "quote") return parseQuotedBody(splitLines(unit.markdown)).proseLines.length > 0;
   return true;
 }
 
@@ -730,6 +737,7 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
     if (effectiveDepth <= 3) {
       const rendered = [];
       let activeContentIndent = null;
+      let prevWasRaw = false;
       for (let k = 0; k < all.length; k++) {
         const item = all[k];
         const isChildDropped = effectiveDepth === 3 && item.indent > minIndent;
@@ -741,6 +749,7 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
             : Math.min(item.indent, activeContentIndent + 3);
           rendered.push(`${" ".repeat(emitIndent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
           activeContentIndent = emitIndent + item.marker.length + 1;
+          prevWasRaw = false;
         }
         for (const rb of item.rawBlocks) {
           const folded = foldRawBlock(rb.raw, rb.markdown, effectiveDepth);
@@ -752,7 +761,9 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
               : activeContentIndent + 3;
           const targetIndent = Math.min(rb.indent, maxIndent);
           if (activeContentIndent !== null && targetIndent < activeContentIndent) activeContentIndent = null;
+          if (prevWasRaw) rendered.push("");
           rendered.push(indentBlock(renderedRaw, targetIndent));
+          prevWasRaw = true;
         }
       }
       return preserveInlineMedia(rendered.join("\n"), unit.inlineMedia);
@@ -773,14 +784,14 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
         prose = s.head + (more ? MORE : "");
       }
     }
-    const combined = [prose, ...foldedRaws].filter(Boolean).join("\n");
+    const combined = [prose, ...foldedRaws].filter(Boolean).join("\n\n");
     return preserveInlineMedia(combined, unit.inlineMedia);
   }
 
   if (unit.kind === "callout") {
     const lines = splitLines(unit.markdown);
     const header = lines[0] ?? "";
-    const { proseLines, rawBlocks } = parseQuotedBody(lines.slice(1).map(stripQuotePrefix));
+    const { proseLines, rawBlocks } = parseQuotedBody(lines.slice(1));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
     if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const body = proseLines.join(" ");
@@ -796,7 +807,7 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
   }
 
   if (unit.kind === "quote") {
-    const { proseLines, rawBlocks } = parseQuotedBody(splitLines(unit.markdown).map(stripQuotePrefix));
+    const { proseLines, rawBlocks } = parseQuotedBody(splitLines(unit.markdown));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
     if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const raw = proseLines.join(" ");
