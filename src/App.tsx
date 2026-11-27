@@ -132,6 +132,7 @@ export default function App() {
   }
   const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
   const [canvasRequest, setCanvasRequest] = useState<CanvasRequest | null>(null);
+  const [tutorRequest, setTutorRequest] = useState<{ text: string; at: number }>();
   const glassDismissed = useRef(false);
   useEffect(() => {
     glassDismissed.current = false;
@@ -844,6 +845,7 @@ export default function App() {
               note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
+              openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}
               reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
@@ -922,7 +924,8 @@ export default function App() {
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
       <Suspense fallback={null}>{syncOpen && <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />}</Suspense>
       <Suspense fallback={null}>{canvasRequest && session.folder && host.canvas && <CanvasView key={session.folder} vault={session.folder} request={canvasRequest}
-        close={() => { setCanvasRequest(null); editor()?.focus(); }} openNote={(file, line) => void openCanvasNote(file, line)} />}</Suspense>
+        close={() => { setCanvasRequest(null); editor()?.focus(); }} openNote={(file, line) => void openCanvasNote(file, line)}
+        askTutor={tutorKey ? text => { setCanvasRequest(null); setTutorRequest({ text, at: Date.now() }); } : undefined} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>
