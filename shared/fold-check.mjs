@@ -7,6 +7,7 @@ import {
   evidenceFits,
   isAuthorText,
   isEvidence,
+  isFoldLine,
 } from "./fold-format.mjs";
 
 export const PAYLOAD_CLASSES = Object.freeze([
@@ -501,7 +502,7 @@ function parseNumberValue(raw) {
 const NUM_PART = "\\d+(?:[.,]\\d+)*";
 const SIGNED_NUM_PART = `[-−]?${NUM_PART}`;
 const NUMBER_RE = new RegExp(
-  `(?<![\\p{L}\\p{N}_-])(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!-\\d))?(?:\\s*(${UNIT_ALT}))?`,
+  `(?<![\\p{L}\\p{N}_])(?<![\\p{L}_]-)(?:(>=|<=|[><≥≤↑↓])\\s*)?([€$£])?(${SIGNED_NUM_PART})(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!-\\d))?(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
 const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde)\s+$/iu;
@@ -569,7 +570,9 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     const lowRaw = match[3];
     const rangeSep = match[4] ?? null;
     const highRaw = match[5] ?? null;
-    let rawUnit = match[6] ?? prefixCurrency;
+    let rawUnit = match[6]
+      ? (prefixCurrency && match[6].startsWith("/") ? `${prefixCurrency}${match[6]}` : match[6])
+      : prefixCurrency;
 
     const low = parseNumberValue(lowRaw);
     let high = highRaw !== null ? parseNumberValue(highRaw) : undefined;
@@ -581,13 +584,16 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     const isBareSpanishA = rangeSep !== null
       && /^\s+a\s+$/iu.test(rangeSep)
       && !ES_RANGE_A_PREFIX_RE.test(text.slice(Math.max(0, matchStart - 16), matchStart));
+    const isTupleContinuation = rangeSep !== null
+      && /^\s*-\s*$/.test(rangeSep)
+      && /\d-$/.test(text.slice(Math.max(0, matchStart - 2), matchStart));
 
-    if (high !== undefined && (!Number.isFinite(high) || high < low || isBareSpanishA)) {
+    if (high !== undefined && (!Number.isFinite(high) || high < low || isBareSpanishA || isTupleContinuation)) {
       high = undefined;
       rawUnit = prefixCurrency;
       const firstEnd = matchStart + match[0].indexOf(lowRaw) + lowRaw.length;
       end = firstEnd;
-      NUMBER_RE.lastIndex = firstEnd;
+      NUMBER_RE.lastIndex = firstEnd + rangeSep.length;
     }
 
     // Check verbal direction immediately preceding the number (only when no symbolic comparator).
@@ -1302,16 +1308,18 @@ export function checkPins(line, pins = []) {
 // --- 9. Monotonic size-ladder guard ---
 export function checkMonotonic(stops) {
   const input = stops && typeof stops === "object" ? stops : {};
+  const hasFull = input.full !== undefined && lineText(input.full).trim().length > 0;
+  const hasBrief = input.brief !== undefined && lineText(input.brief).trim().length > 0;
   const counts = {
-    ...(input.full !== undefined ? { full: countWords(lineText(input.full)) } : {}),
-    ...(input.brief !== undefined ? { brief: countWords(lineText(input.brief)) } : {}),
+    ...(hasFull ? { full: countWords(lineText(input.full)) } : {}),
+    ...(hasBrief ? { brief: countWords(lineText(input.brief)) } : {}),
     key: countWords(lineText(input.key)),
     takeaway: countWords(lineText(input.takeaway)),
     topic: countWords(lineText(input.topic)),
   };
 
   const outStops = {
-    ...(input.brief !== undefined ? { brief: input.brief } : {}),
+    ...(hasBrief ? { brief: input.brief } : {}),
     key: input.key,
     takeaway: input.takeaway,
     topic: input.topic,
@@ -1319,7 +1327,7 @@ export function checkMonotonic(stops) {
   const demoted = [];
   const findings = [];
 
-  if (input.full !== undefined && input.brief !== undefined && counts.brief > counts.full) {
+  if (hasFull && hasBrief && counts.brief > counts.full) {
     outStops.brief = input.full;
     demoted.push("brief");
     findings.push({
@@ -1330,7 +1338,7 @@ export function checkMonotonic(stops) {
     });
   }
 
-  const keyBoundStop = outStops.brief !== undefined ? outStops.brief : input.full;
+  const keyBoundStop = outStops.brief !== undefined ? outStops.brief : (hasFull ? input.full : undefined);
   const keyBoundName = outStops.brief !== undefined ? "brief" : "full";
   if (keyBoundStop !== undefined) {
     const keyBoundWords = countWords(lineText(keyBoundStop));
@@ -1566,11 +1574,23 @@ export function checkLine(line, evidence, options = {}) {
   };
 }
 
+function optionalAuthorLine(value) {
+  if (isAuthorText(value)) return value;
+  if (typeof value === "string" && value.trim()) return { by: "author", text: value };
+  return undefined;
+}
+
+function optionalFoldLine(value) {
+  if (isFoldLine(value)) return value;
+  if (typeof value === "string" && value.trim()) return { by: "author", text: value };
+  return undefined;
+}
+
 // --- Full WrittenUnit validator + checker + monotonic guard ---
 export function checkWrittenUnit(unit, options = {}) {
   const { unitText, brief, full, pins, retryAvailable = true } = options;
-  const briefLine = brief !== undefined ? toAuthorLine(brief, "") : undefined;
-  const fullLine = full !== undefined ? (typeof full === "string" ? toAuthorLine(full, "") : full) : undefined;
+  const briefLine = optionalAuthorLine(brief);
+  const fullLine = optionalFoldLine(full);
   const stops = {};
   const allFindings = [];
   const combinedChecks = {};

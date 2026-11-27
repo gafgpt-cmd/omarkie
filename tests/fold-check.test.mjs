@@ -557,19 +557,32 @@ test("number extraction handles descending spans, English article 'a', negative 
 
   assert.equal(checkLine("Base excess -40 mEq/L.", "Base excess -4 mEq/L.").checks.number, "fail");
   assert.equal(checkLine("Base excess -4 mEq/L.", "Base excess -4 mEq/L.").ok, true);
-  assert.equal(extractPayload("COVID-19 and SARS-CoV-2 have no numeric values.").number.length, 0);
+  assert.equal(extractPayload("COVID-19, SARS-CoV-2, and IL-6 have no numeric values.").number.length, 0);
+
+  assert.equal(checkLine("Reduce furosemide 40-2 mg.", "Reduce furosemide 40-20 mg.").checks.number, "fail");
+  assert.equal(checkLine("BP 120-40 mmHg.", "BP 120-80 mmHg.").checks.number, "fail");
+  assert.equal(checkLine("BP 120-80 mmHg.", "BP 120-80 mmHg.").ok, true);
+  assert.equal(checkLine("Published 2024-12-31.", "Published 2024-05-01.").checks.number, "fail");
+  assert.equal(checkLine("Published 2024-05-12.", "Published 2024-05-12.").ok, true);
+  assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--50 mEq/L.").checks.number, "fail");
+  assert.equal(checkLine("Delta 10--5 mEq/L.", "Delta 10--5 mEq/L.").ok, true);
 
   assert.equal(checkLine("Penicilina 9.000.000 UI.", "Penicilina 2.400.000 UI.").checks.number, "fail");
   assert.equal(checkLine("Penicilina 2.400.000 UI.", "Penicilina 2.400.000 UI.").ok, true);
 });
 
-test("compound slash-units, negated verbal comparators, and direction gap replacement", () => {
+test("compound slash-units, prefix currency rates, negated verbal comparators, and direction gap replacement", () => {
   assert.equal(checkLine("Infuse norepinephrine at 5 mg/min.", "Infuse norepinephrine at 5 mcg/min.").checks.number, "fail");
   assert.equal(checkLine("Give 5 g/day.", "Give 5 mg/day.").checks.number, "fail");
   assert.equal(checkLine("Give 50 mcg/h.", "Give 50 µg/hr.").ok, true);
   assert.equal(checkLine("Give 10 mg/m2.", "Give 10 mg/m².").ok, true);
   assert.equal(checkLine("Heparin 1000 U/h.", "Heparin 1000 U/min.").checks.number, "fail");
   assert.equal(checkLine("Give 5 mg/d.", "Give 5 mg/día.").ok, true);
+  assert.equal(checkLine("$50/month", "€50/month").checks.number, "fail");
+  assert.equal(checkLine("50/month", "€50/month").checks.number, "fail");
+  assert.equal(checkLine("€50/month", "50 EUR/month").ok, true);
+  assert.equal(checkLine("$50-100/month", "€50-100/month").checks.number, "fail");
+  assert.equal(checkLine("€50-100/month", "50-100 EUR/month").ok, true);
 
   assert.equal(checkLine("Keep MAP ≥65 mmHg.", "Keep MAP not below 65 mmHg.").ok, true);
   assert.equal(checkLine("Give ≤40 mg.", "Give not more than 40 mg.").ok, true);
@@ -664,4 +677,46 @@ test("checkMonotonic enforces full as upper word-count bound with or without bri
   assert.deepEqual(briefOverFull.demoted, ["brief", "key"]);
   assert.equal(briefOverFull.stops.brief, "Start IV furosemide 40 mg now.");
   assert.equal(briefOverFull.stops.key, "Start IV furosemide 40 mg now.");
+
+  const blankBounds = checkMonotonic({
+    full: "   ",
+    brief: "",
+    key: "IV furosemide 40 mg.",
+    takeaway: "IV furosemide.",
+    topic: "Furosemide",
+  });
+  assert.equal(blankBounds.ok, true);
+  assert.deepEqual(blankBounds.demoted, []);
+  assert.equal(blankBounds.stops.key, "IV furosemide 40 mg.");
+});
+
+test("checkWrittenUnit treats blank brief and full options as omitted rather than coercing to NUMBER_GAP", () => {
+  const unitText = "Start IV furosemide 40 mg if diuretic-naive.";
+  const evAll = makeEvidence(unitText, unitText);
+  const evDose = makeEvidence(unitText, "furosemide 40 mg");
+  const unit = {
+    elementId: "paragraph-ab12cd34",
+    role: "treatment",
+    key: { by: "model", text: "IV furosemide 40 mg if diuretic-naive.", evidence: [evAll] },
+    takeaway: { by: "model", text: "IV furosemide 40 mg.", evidence: [evDose] },
+    topic: { by: "model", text: "Furosemide", evidence: [evDose] },
+    checks: {},
+  };
+
+  const blankBrief = checkWrittenUnit(unit, { unitText, brief: "", full: "   " });
+  assert.equal(blankBrief.ok, true);
+  assert.equal(blankBrief.checks.monotonic, "pass");
+  assert.equal(blankBrief.unit.key.text, "IV furosemide 40 mg if diuretic-naive.");
+  assert.equal(blankBrief.unit.takeaway.text, "IV furosemide 40 mg.");
+  assert.equal(blankBrief.unit.topic.text, "Furosemide");
+
+  const fallbackWithBlankBrief = checkWrittenUnit(
+    {
+      ...unit,
+      key: { by: "model", text: "IV furosemide 40 mg.", evidence: [evAll] },
+    },
+    { unitText, brief: "   ", retryAvailable: false },
+  );
+  assert.equal(fallbackWithBlankBrief.stops.key.fallback, "brief");
+  assert.equal(fallbackWithBlankBrief.stops.key.resolved.text, unitText);
 });
