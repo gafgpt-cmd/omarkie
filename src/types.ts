@@ -105,6 +105,7 @@ export interface Host {
   onTutor?(callback: (event: TutorEvent) => void): () => void;
   learningSearch?(id: string, query: string): Promise<StudySearchMatch[]>;
   vaultSnapshot(chaptersOnly?: boolean): Promise<VaultSnapshot>;
+  readNotes?(relatives: string[]): Promise<{ relative: string; content: string }[]>;
   bibliography?<T extends keyof BibliographyOperations>(folder: string, action: T, value?: string): Promise<BibliographyOperations[T]>;
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;

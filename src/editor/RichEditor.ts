@@ -20,6 +20,7 @@ import {
 import type { Leaf } from "./richRender.ts";
 import { renderDiagrams } from "./diagrams.ts";
 import { renderMath } from "./math.ts";
+import { onEmbedsChanged, openEmbed, renderEmbeds } from "./embeds.ts";
 
 import { applyBlockCommand } from "./blockCommands.ts";
 import type { BlockArguments } from "./blockCommands.ts";
@@ -101,6 +102,7 @@ export class RichEditor {
     if (event.type === "keydown") {
       const key = event as KeyboardEvent;
       if (["Enter", " "].includes(key.key) && key.target instanceof Element && key.target.closest('button.md-ui[contenteditable="false"]')) return;
+      if (key.key === "Enter" && (key.metaKey || key.ctrlKey) && this.caretEmbed()) return;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Escape"].includes(key.key) || ((key.metaKey || key.ctrlKey) && ["a", "c", "f"].includes(key.key.toLowerCase()))) return;
     }
     event.preventDefault(); event.stopImmediatePropagation();
@@ -193,6 +195,7 @@ export class RichEditor {
     }
   }
   destroy() {
+    this.stopEmbeds();
     this.pendingFence = null;
     this.codeObserver?.disconnect();
     if (this.compositionTimer !== null) clearTimeout(this.compositionTimer);
@@ -527,6 +530,31 @@ export class RichEditor {
     this.highlightVisibleCode();
     void renderDiagrams(this.root).catch(() => {}).then(() => this.scheduleMeasure());
     void renderMath(this.root).catch(() => {}).then(() => this.scheduleMeasure());
+    this.refreshEmbeds();
+  }
+  private refreshEmbeds = () => { void renderEmbeds(this.root, this.documentId).catch(() => {}).then(() => this.scheduleMeasure()); };
+  private stopEmbeds = onEmbedsChanged(this.refreshEmbeds);
+  // The first note embed on the caret's line: Ctrl/Cmd+Enter opens its source note.
+  private caretEmbed() {
+    const block = this.leafElement(window.getSelection()?.anchorNode)?.closest<HTMLElement>("[data-cid]");
+    return block?.querySelector<HTMLElement>("a[data-embed-open][data-embed-relative]") ?? null;
+  }
+  // Native ArrowUp/Down has no caret stop in a line that holds only a non-editable embed and skips past it.
+  private embedStep(down: boolean) {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount || !selection.isCollapsed) return false;
+    const block = this.leafElement(selection.anchorNode)?.closest<HTMLElement>("[data-cid]"), next = (down ? block?.nextElementSibling : block?.previousElementSibling) as HTMLElement | null;
+    const inEmbed = !!block?.querySelector(".note-embed");
+    if (!block || !next?.dataset.cid || (!inEmbed && !next.querySelector(".note-embed"))) return false;
+    const caret = selection.getRangeAt(0).getBoundingClientRect(), box = block.getBoundingClientRect();
+    if (!inEmbed && caret.height && (down ? box.bottom - caret.bottom : caret.top - box.top) > caret.height) return false;
+    const node = this.model.nodes.find(item => item.id === next.dataset.cid);
+    if (!node) return false;
+    const at = down || next.querySelector(".note-embed") ? node.from : node.from + node.source.trimEnd().length;
+    this.model.selection = { anchor: at, head: at };
+    this.restore();
+    next.scrollIntoView({ block: "nearest" });
+    return true;
   }
   private createSpacer() {
     const element = document.createElement("div");
@@ -1200,7 +1228,8 @@ export class RichEditor {
     if (link) {
       event.preventDefault();
       const address = link.getAttribute("href") || "";
-      if (link.dataset.headingLine) this.jump(Number(link.dataset.headingLine));
+      if (link.dataset.embedOpen) openEmbed(link, this.documentId);
+      else if (link.dataset.headingLine) this.jump(Number(link.dataset.headingLine));
       else if (link.dataset.footnote) {
         const definition = (this.model.environment.footnoteDefinitions as Record<string, { line: number }>)?.[link.dataset.footnote];
         if (definition) this.jump(definition.line);
@@ -1258,6 +1287,16 @@ export class RichEditor {
         window.getSelection()?.anchorNode?.parentElement?.closest("td,th")) {
       event.preventDefault();
       this.tableAction("row");
+      return;
+    }
+    const embed = event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey ? this.caretEmbed() : null;
+    if (embed) {
+      event.preventDefault();
+      openEmbed(embed, this.documentId);
+      return;
+    }
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !event.shiftKey && !event.altKey && !event.metaKey && !event.ctrlKey && this.embedStep(event.key === "ArrowDown")) {
+      event.preventDefault();
       return;
     }
     if (event.key === "Tab") {

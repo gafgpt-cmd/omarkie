@@ -732,6 +732,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       try owner.workspace.remember(file, folder: true)
       return try await scanVault(file)
     case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)
+    case "readNotes": return try owner.workspace.readNotes(store, relatives: try arg(args, 0, [String].self))
     case "exportBundle":
       let payload = try arg(args, 0, [String: Any].self)
       let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false

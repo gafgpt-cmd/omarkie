@@ -156,6 +156,23 @@ final class Workspace {
     try walk(root, depth: 0)
     return ["notes": notes, "assets": assets, "truncated": truncated]
   }
+  func readNotes(_ store: DocumentStore, relatives: [String]) throws -> [[String: String]] {
+    guard let root = store.folder else { throw NativeFailure("请先打开文件夹") }
+    let notesOnly = ["md", "markdown", "mdown"]
+    guard relatives.count <= 64, relatives.allSatisfy({ notesOnly.contains(($0 as NSString).pathExtension.lowercased()) }) else { throw NativeFailure("知识库路径无效") }
+    let encodings = Dictionary(store.records.values.compactMap { record in record.path.map { ($0, record.encoding ?? "utf-8") } }, uniquingKeysWith: { first, _ in first })
+    var notes = [[String: String]](), total = 0
+    for relative in relatives {
+      guard let file = try? workflowFile(root, relative: relative),
+        let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]), values.isRegularFile == true,
+        let size = values.fileSize, size <= 8 * 1024 * 1024, total + size <= 16 * 1024 * 1024,
+        let data = try? Data(contentsOf: file) else { continue }
+      total += data.count
+      let marked = data.starts(with: [0xef, 0xbb, 0xbf]) || data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff])
+      if let (content, _, _) = try? store.decode(data, encoding: marked ? nil : encodings[file.path]) { notes.append(["relative": relative, "content": content]) }
+    }
+    return notes
+  }
   func workflowFile(_ root: URL, relative: String) throws -> URL {
     guard !relative.isEmpty, !relative.hasPrefix("/"), !relative.contains(":"), !relative.contains("\\"), !relative.contains("\0"), !relative.split(separator: "/").contains(where: { $0.hasPrefix(".") && $0 != ".assets" }) else { throw NativeFailure("知识库路径无效") }
     let file = root.appendingPathComponent(relative)

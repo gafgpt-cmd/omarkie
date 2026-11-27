@@ -152,6 +152,11 @@ func runStoreTests() throws {
   try atomicWrite(legacyWorkflowFile, try DocumentStore.encode("# BOM wins\n", encoding: "utf-16le", bom: true))
   let bomWorkflowSnapshot = try workspace.vaultSnapshot(workflowStore)
   try expect((bomWorkflowSnapshot["notes"] as! [[String: String]]).contains { $0["relative"] == "legacy.md" && $0["content"] == "# BOM wins\n" }, "snapshot BOM overrides the previously chosen encoding")
+  let embedded = try workspace.readNotes(workflowStore, relatives: ["legacy.md", ".private/secret.md", "../outside.md", "missing.md"])
+  try expect(embedded == [["relative": "legacy.md", "content": "# BOM wins\n"]], "embed reads return vault notes only")
+  var nonNoteRejected = false
+  do { _ = try workspace.readNotes(workflowStore, relatives: [".assets/escape.png"]) } catch { nonNoteRejected = true }
+  try expect(nonNoteRejected, "embed reads refuse non-note files")
   _ = try store.scan(directory)
   var latest = try store.require(record.id); latest.content = "未保存内容\r\n"; store.records[record.id] = latest
   let renamed = try workspace.execute(["action": "rename", "path": file.path, "name": "renamed.md"], store: store)

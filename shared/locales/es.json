@@ -1387,6 +1387,16 @@
   "{{count}} local changes_one": "{{count}} cambio local",
   "{{count}} local changes_other": "{{count}} cambios locales",
   "{{count}} local changes_many": "{{count}} de cambios locales",
+  "Embedded note not found.": "No se encuentra la nota incrustada.",
+  "Several notes match this name: {{names}}. Write the folder path.": "Varias notas tienen este nombre: {{names}}. Escribe la ruta de la carpeta.",
+  "Heading not found in {{note}}.": "No se encuentra el encabezado en {{note}}.",
+  "{{total}} headings share this name. Write the parent heading too (Note#Parent#Heading) or the numbered link (Heading-1).": "{{total}} encabezados tienen este nombre. Escribe también el encabezado superior (Nota#Superior#Encabezado) o el enlace numerado (Encabezado-1).",
+  "This embed shows itself; stopped here.": "Esta incrustación se muestra a sí misma; se detiene aquí.",
+  "Embeds nested too deep; stopped here.": "Demasiadas incrustaciones anidadas; se detiene aquí.",
+  "Embedded text is too long to show here.": "El texto incrustado es demasiado largo para mostrarlo aquí.",
+  "Block embeds (#^id) are not supported yet.": "Las incrustaciones de bloque (#^id) aún no se admiten.",
+  "Open the source note (Ctrl/Cmd+Enter on this line)": "Abrir la nota de origen (Ctrl/Cmd+Intro en esta línea)",
+  "Embedded from {{note}}": "Incrustado desde {{note}}",
   "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}": "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}",
   "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}": "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}"
 }

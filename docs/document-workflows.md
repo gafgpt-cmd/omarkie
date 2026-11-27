@@ -8,6 +8,27 @@
 - Open a folder before vault search, linked mentions or graph.
 - Graph loads only when opened. First 200 notes; reports use the bounded inventory below.
 
+## Section embeds
+
+| Syntax | Shows |
+| --- | --- |
+| `![[Note]]` | whole note, no frontmatter |
+| `![[Note#Heading]]` | heading + its section, to next heading of same or higher level |
+| `![[#Heading]]` | section of this note |
+| `![[Note#Parent#Heading]]` | nested heading path |
+| `![[Note#Heading-1]]` | 2nd duplicate heading (`-1`, `-2`: same ids as heading links) |
+| `![[Note#^block-id]]` | not supported yet: visible notice |
+
+- Read-only preview in rich mode and reading layer. Source stays the line you wrote.
+- Click the title, or Ctrl/Cmd+Enter on the line: opens the source note at the heading. Arrow keys stop on embed lines.
+- Headings in fences and frontmatter never match. Exact heading text wins over slug match.
+- Paths and images inside the section resolve from the embedded note's folder.
+- Unsaved drafts win over disk. Every open note embedding a changed note refreshes, no save needed.
+- Visible states: missing note, several notes (write the folder), missing heading, duplicate heading, self/cycle, too deep (4 levels), too long (512 KiB total).
+- Vault notes only. No remote loads. Local reads: 64 notes per batch, 8 MiB per note, inside the vault.
+- HTML/PDF export: section text frozen in, title links to the source note.
+- Saved Markdown keeps `![[...]]`. Vault bundle: embed becomes a link to its note; an unresolved embed stops the export at `note:line`.
+
 ## Reading summary
 
 - File → Collect highlights and callouts.

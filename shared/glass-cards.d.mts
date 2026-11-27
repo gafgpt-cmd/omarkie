@@ -38,6 +38,7 @@ export const cardFieldNames: Set<string>;
 export function parseCardLink(value: unknown): CardLink | null;
 export function cardLink(target: string, section?: string): string;
 export function extractSection(markdown: unknown, section?: string): CardSection;
+export function sectionRange(markdown: unknown, path: string[]): { start: number; end: number; level: number; heading: string; matches: number; lines: string[] } | null;
 export function normalizeChoices(value: unknown): CardChoice[];
 export function cardFields(fields: Record<string, unknown>): Record<string, unknown>;
 export function cardTitle(card: CardShape | undefined): string;

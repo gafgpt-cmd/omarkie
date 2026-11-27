@@ -1390,5 +1390,15 @@
   "Ask the Tutor": "Întreabă tutorele",
   "Glass storage refused the change.": "Stocarea Glass a refuzat modificarea.",
   "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}": "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}",
-  "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}": "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}"
+  "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}": "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}",
+  "Embedded note not found.": "Nota încorporată nu a fost găsită.",
+  "Several notes match this name: {{names}}. Write the folder path.": "Mai multe note au acest nume: {{names}}. Scrie calea dosarului.",
+  "Heading not found in {{note}}.": "Titlul nu a fost găsit în {{note}}.",
+  "{{total}} headings share this name. Write the parent heading too (Note#Parent#Heading) or the numbered link (Heading-1).": "{{total}} titluri au acest nume. Scrie și titlul părinte (Notă#Părinte#Titlu) sau linkul numerotat (Titlu-1).",
+  "This embed shows itself; stopped here.": "Această încorporare se afișează pe sine; oprit aici.",
+  "Embeds nested too deep; stopped here.": "Încorporări imbricate prea adânc; oprit aici.",
+  "Embedded text is too long to show here.": "Textul încorporat este prea lung pentru a fi afișat aici.",
+  "Block embeds (#^id) are not supported yet.": "Încorporările de bloc (#^id) nu sunt încă acceptate.",
+  "Open the source note (Ctrl/Cmd+Enter on this line)": "Deschide nota sursă (Ctrl/Cmd+Enter pe această linie)",
+  "Embedded from {{note}}": "Încorporat din {{note}}"
 }

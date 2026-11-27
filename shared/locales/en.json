@@ -1374,6 +1374,16 @@
   "not checked out": "not checked out",
   "{{count}} local changes": "{{count}} local changes",
   "同步需要桌面应用。": "Sync needs the desktop app.",
+  "Embedded note not found.": "Embedded note not found.",
+  "Several notes match this name: {{names}}. Write the folder path.": "Several notes match this name: {{names}}. Write the folder path.",
+  "Heading not found in {{note}}.": "Heading not found in {{note}}.",
+  "{{total}} headings share this name. Write the parent heading too (Note#Parent#Heading) or the numbered link (Heading-1).": "{{total}} headings share this name. Write the parent heading too (Note#Parent#Heading) or the numbered link (Heading-1).",
+  "This embed shows itself; stopped here.": "This embed shows itself; stopped here.",
+  "Embeds nested too deep; stopped here.": "Embeds nested too deep; stopped here.",
+  "Embedded text is too long to show here.": "Embedded text is too long to show here.",
+  "Block embeds (#^id) are not supported yet.": "Block embeds (#^id) are not supported yet.",
+  "Open the source note (Ctrl/Cmd+Enter on this line)": "Open the source note (Ctrl/Cmd+Enter on this line)",
+  "Embedded from {{note}}": "Embedded from {{note}}",
   "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}": "Rewrite this Mermaid diagram so it reads clearly. Keep the same meaning. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<mermaid source>\"}",
   "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}": "Rewrite this paragraph simpler and as a study cue, in the note's language. Keep every fact. Answer with JSON: {\"feedback\":\"...\",\"replacement\":\"<rewritten text>\"}"
 }

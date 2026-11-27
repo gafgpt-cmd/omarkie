@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("desktop", {
     return () => ipcRenderer.removeListener("glass:storage", listener);
   },
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
+  readNotes: relatives => call("readNotes", relatives),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
   exportBundle: payload => call("exportBundle", payload),
   cleanConverted: body => call("cleanConverted", body),

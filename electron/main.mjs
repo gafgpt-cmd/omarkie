@@ -17,7 +17,7 @@ import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
-import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
+import { vaultSnapshot, readNotes, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -564,6 +564,7 @@ const handlers = {
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
+  readNotes: (_, relatives) => readNotes(store, relatives),
   bibliography: async (_, folder, action, value) => {
     if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
     if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));

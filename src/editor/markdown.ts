@@ -2,6 +2,7 @@ import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
 import { collectImages } from "../../shared/image-references.mjs";
 import { parserContext } from "../../shared/parser-context.mjs";
 import { sourceLines } from "../../shared/source-lines.mjs";
+import { noteEmbed } from "../../shared/embeds.mjs";
 import { markdownBlocks, plainProposal } from "../../shared/markdown-blocks.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
@@ -128,7 +129,7 @@ md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
   const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
   return media && documentId
     ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
-    : `<span class="wiki-embed">${name}</span>`;
+    : noteEmbed(meta.target || "") ? `<span class="note-embed" data-embed="${md.utils.escapeHtml(meta.target || "")}">${name}</span>` : `<span class="wiki-embed">${name}</span>`;
 };
 function imageCandidates(value: string, documentId?: string) {
   const tokens = /[\t\n\f\r ,]*([^\t\n\f\r ]+)(?:(?<=,)|([\t\n\f\r ]+(?:\([^)]*\)|[^,(])*)(?:,|$)|$)/gy;

@@ -11,6 +11,7 @@ import { loadHighlighting, extractHeadings, renderMarkdown, setMarkdownOptions }
 import { host } from "./host";
 import { refreshDiagrams, renderDiagrams } from "./editor/diagrams";
 import { renderMath } from "./editor/math";
+import { configureEmbeds, freezeEmbeds, renderEmbeds, updateEmbedDrafts, updateEmbedFiles } from "./editor/embeds";
 import { exportHtml, portableHtml, conversionMarkdown } from "./editor/print";
 import { commandForKey, commandKey, commandsByAction } from "./commands";
 import { loadPreferences } from "./preferences";
@@ -73,6 +74,24 @@ export default function App() {
   }
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
+  const embedSession = useRef(session);
+  embedSession.current = session;
+  useEffect(() => configureEmbeds({
+    read: relatives => host.readNotes ? host.readNotes(relatives) : Promise.resolve([]),
+    note: id => {
+      const current = embedSession.current, record = current.documents.find(item => item.id === id);
+      return record && { relative: vaultRelative(current.folder, record.path) ?? "", content: record.content };
+    },
+    open: async (relative, line) => {
+      const file = embedSession.current.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === relative);
+      const record = file && await embedSession.current.openToken(file.token);
+      if (record) jumpTo(record.id, line);
+    },
+  }), []);
+  useEffect(() => { updateEmbedFiles(session.folder ? session.files : []); }, [session.files, session.folder]);
+  useEffect(() => {
+    updateEmbedDrafts(session.documents.flatMap(record => { const relative = vaultRelative(session.folder, record.path); return relative ? [{ relative, content: record.content }] : []; }));
+  }, [session.documents, session.folder]);
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
   const initialPreferences = useRef(preferences);
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
@@ -450,6 +469,7 @@ export default function App() {
       await loadHighlighting();
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
+      await renderEmbeds(printDocument.current, active.id); freezeEmbeds(printDocument.current, active.id);
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
       const glassNote = vaultRelative(session.folder, active.path);
       if (glassScope && glassNote && host.glass) {

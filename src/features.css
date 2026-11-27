@@ -73,3 +73,11 @@
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body{position:relative;padding-left:4.5em}
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body>code{white-space:pre}
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body::before{content:attr(data-line-numbers);position:absolute;left:0;top:0;bottom:0;width:3.5em;padding:inherit;padding-left:0;padding-right:.6em;text-align:right;color:var(--muted);border-right:1px solid var(--border);white-space:pre;pointer-events:none;user-select:none;font:inherit}
+.note-embed{display:block;margin:.6em 0;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;background:color-mix(in srgb,var(--paper) 94%,var(--accent));padding:.35em .9em .5em;white-space:normal;user-select:text}
+.note-embed-head{display:flex;align-items:baseline;gap:.6em;font-family:var(--interface-font);font-size:.8em;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:.25em;margin-bottom:.4em}
+.note-embed-open{font-weight:600;color:var(--accent);text-decoration:none;cursor:pointer}.note-embed-open:hover,.note-embed-open:focus-visible{text-decoration:underline}
+.note-embed-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-embed-body{display:block}.note-embed-body>:first-child{margin-top:0}.note-embed-body>:last-child{margin-bottom:0}
+.note-embed-message{display:block;font-family:var(--interface-font);font-size:.85em;color:var(--warning)}
+.note-embed-paragraph{margin:1em 0}
+@media print{.note-embed{background:none}}
