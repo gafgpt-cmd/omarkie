@@ -1,8 +1,9 @@
 // Fold units from the shared element model, raw-block preservation (D5), and monotonic guard (D4).
 // Pure ESM (Node + browser): no disk, network, or Node-only built-ins.
 
-import { markdownElements, tableCells } from "./element-model.mjs";
-import { levelOf } from "./fold-format.mjs";
+import { normalizeText } from "./anchor-core.mjs";
+import { elementId, markdownElements, tableCells } from "./element-model.mjs";
+import { isFoldLine, levelOf } from "./fold-format.mjs";
 import { LOCAL_LEVELS, firstSentence, sentences, words } from "./fold-text.mjs";
 
 const LOCAL_STOP_IDS = Object.freeze(LOCAL_LEVELS.map(entry => entry.id));
@@ -11,7 +12,12 @@ const SKIP_UNIT_KINDS = new Set(["divider"]);
 const PROSE_KINDS = new Set(["paragraph", "list", "quote", "callout", "html"]);
 const FENCE_OPEN = /^\s*(?:(`{3,})[^`]*$|(~{3,}))/;
 const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+/;
+const HEADING_LINE = /^\s{0,3}#{1,6}\s/;
+const TABLE_DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 const ART_ROW = /^(`+).*\1 {2}$/;
+const INLINE_MD_IMAGE = /!\[[^\]\r\n]*\]\([^)\s]*(?:(?:[ \t]|\r?\n)[^)\r\n]*)?\)/y;
+const INLINE_WIKI_EMBED = /!\[\[[^\]\r\n]+\]\]/y;
+const INLINE_HTML_IMG = /<img\b[^>]*>/iy;
 const MORE = " …";
 
 // FIPS 180-4 SHA-256 constants (first 32 bits of fractional parts of cube roots of first 64 primes).
@@ -156,14 +162,236 @@ function containerPriority(kind) {
   return kind === "quote" || kind === "callout" ? 0 : kind === "list" ? 1 : 2;
 }
 
+function stripQuotePrefix(line) {
+  let s = line.replace(/^\s*>\s?/, "");
+  while (/^\s*>(?:\s|$)/.test(s)) s = s.replace(/^\s*>\s?/, "");
+  return s;
+}
+
+function prefixQuote(markdown) {
+  return splitLines(markdown).map(line => (line ? `> ${line}` : ">")).join("\n");
+}
+
+function commonIndent(lines) {
+  let min = Infinity;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const len = line.length - line.trimStart().length;
+    if (len < min) min = len;
+  }
+  return Number.isFinite(min) ? min : 0;
+}
+
+function dedentLines(lines) {
+  const indent = commonIndent(lines);
+  return {
+    indent,
+    lines: indent > 0 ? lines.map(line => (line.trim() ? line.slice(indent) : "")) : lines,
+  };
+}
+
+function indentBlock(markdown, spaces) {
+  if (spaces <= 0) return markdown;
+  const pad = " ".repeat(spaces);
+  return splitLines(markdown).map(line => (line ? pad + line : "")).join("\n");
+}
+
+function tableAt(lines, i) {
+  return (lines[i] ?? "").includes("|") && (lines[i + 1] ?? "").includes("|") && TABLE_DELIM.test(lines[i + 1] ?? "");
+}
+
+function matchRawBlock(lines, i) {
+  const line = lines[i] ?? "";
+  const mark = fenceMark(line);
+  if (mark) {
+    let j = i + 1;
+    while (j < lines.length) {
+      const l = lines[j] ?? "";
+      j++;
+      if (fenceClose(l, mark)) break;
+    }
+    return { raw: "code", lines: lines.slice(i, j), nextIndex: j };
+  }
+
+  const trimmed = line.trim();
+  if (trimmed.startsWith("$$")) {
+    if (trimmed.length >= 4 && trimmed.endsWith("$$")) {
+      return { raw: "math", lines: [line], nextIndex: i + 1 };
+    }
+    if (trimmed === "$$" || !trimmed.slice(2).includes("$$")) {
+      let close = -1;
+      for (let j = i + 1; j < lines.length; j++) {
+        if ((lines[j] ?? "").trim().endsWith("$$")) {
+          close = j;
+          break;
+        }
+      }
+      if (close !== -1 || trimmed === "$$") {
+        const end = close !== -1 ? close + 1 : lines.length;
+        return { raw: "math", lines: lines.slice(i, end), nextIndex: end };
+      }
+    }
+  }
+
+  if (tableAt(lines, i)) {
+    let j = i + 2;
+    while (j < lines.length) {
+      const l = lines[j] ?? "";
+      if (!l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || l.trim().startsWith("$$")) break;
+      j++;
+    }
+    return { raw: "table", lines: lines.slice(i, j), nextIndex: j };
+  }
+
+  return null;
+}
+
+function skipBacktickRun(text, i) {
+  let run = 1;
+  while (text[i + run] === "`") run++;
+  let pos = i + run;
+  while (pos < text.length) {
+    if (text[pos] !== "`") {
+      pos++;
+      continue;
+    }
+    let len = 1;
+    while (text[pos + len] === "`") len++;
+    if (len === run) return pos + len;
+    pos += len;
+  }
+  return i + run;
+}
+
+function nonMediaBlockRanges(markdown) {
+  const ranges = [];
+  const rawLines = [];
+  let offset = 0;
+  while (offset <= markdown.length) {
+    const nl = markdown.indexOf("\n", offset);
+    const end = nl === -1 ? markdown.length : nl + 1;
+    const text = (nl === -1 ? markdown.slice(offset) : markdown.slice(offset, nl)).replace(/\r$/, "");
+    rawLines.push({ start: offset, end, stripped: stripQuotePrefix(text) });
+    if (nl === -1) break;
+    offset = end;
+  }
+  const strippedLines = rawLines.map(entry => entry.stripped);
+  let i = 0;
+  while (i < strippedLines.length) {
+    const raw = matchRawBlock(strippedLines, i);
+    if (raw) {
+      if (raw.raw === "code" || raw.raw === "math") {
+        ranges.push([rawLines[i].start, rawLines[raw.nextIndex - 1].end]);
+      }
+      i = raw.nextIndex;
+      continue;
+    }
+    i++;
+  }
+  return ranges;
+}
+
+function nextMediaId(kind, markdown, ordinals) {
+  const key = `${kind}\u0001${normalizeText(markdown)}`;
+  const ordinal = (ordinals.get(key) ?? 0) + 1;
+  ordinals.set(key, ordinal);
+  return elementId(kind, markdown, ordinal);
+}
+
+function scanInlineMedia(markdown, baseOffset, existingList, ordinals) {
+  const existing = existingList ?? [];
+  if (!existing.length && !markdown.includes("![") && !/<img\b/i.test(markdown)) return [];
+
+  const existingBySpan = new Map(existing.map(item => [`${item.from}:${item.to}`, item]));
+  const matchedKeys = new Set();
+  const skipRanges = nonMediaBlockRanges(markdown);
+  let skipIdx = 0;
+  const found = [];
+
+  for (let i = 0; i < markdown.length; ) {
+    while (skipIdx < skipRanges.length && skipRanges[skipIdx][1] <= i) skipIdx++;
+    if (skipIdx < skipRanges.length && i >= skipRanges[skipIdx][0] && i < skipRanges[skipIdx][1]) {
+      i = skipRanges[skipIdx][1];
+      continue;
+    }
+    if (markdown.startsWith("<!--", i)) {
+      const close = markdown.indexOf("-->", i + 4);
+      i = close === -1 ? markdown.length : close + 3;
+      continue;
+    }
+    if (markdown[i] === "\\" && i + 1 < markdown.length) {
+      i += 2;
+      continue;
+    }
+    if (markdown[i] === "`") {
+      i = skipBacktickRun(markdown, i);
+      continue;
+    }
+    let kind = null;
+    let match = null;
+    if (markdown[i] === "!") {
+      INLINE_WIKI_EMBED.lastIndex = i;
+      match = INLINE_WIKI_EMBED.exec(markdown);
+      if (match) {
+        kind = "embed";
+      } else {
+        INLINE_MD_IMAGE.lastIndex = i;
+        match = INLINE_MD_IMAGE.exec(markdown);
+        if (match) kind = "image";
+      }
+    } else if (markdown[i] === "<") {
+      INLINE_HTML_IMG.lastIndex = i;
+      match = INLINE_HTML_IMG.exec(markdown);
+      if (match) kind = "image";
+    }
+    if (match && kind) {
+      const from = baseOffset + i;
+      const to = from + match[0].length;
+      const spanKey = `${from}:${to}`;
+      const reused = existingBySpan.get(spanKey);
+      if (reused) {
+        found.push(reused);
+        matchedKeys.add(spanKey);
+      } else {
+        found.push({
+          elementId: nextMediaId(kind, match[0], ordinals),
+          kind,
+          markdown: match[0],
+          from,
+          to,
+        });
+      }
+      i += match[0].length;
+      continue;
+    }
+    i++;
+  }
+
+  for (const item of existing) {
+    const spanKey = `${item.from}:${item.to}`;
+    if (!matchedKeys.has(spanKey)) found.push(item);
+  }
+  found.sort((a, b) => a.from - b.from || a.to - b.to);
+  return found;
+}
+
+function isHtmlComment(markdown) {
+  return markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim().length === 0;
+}
+
 /** Extracts ordered, non-overlapping top-level Fold units from `markdownElements()`. */
 export function extractUnits(markdown, options = {}) {
   if (typeof markdown !== "string" || !markdown) return [];
   const elements = markdownElements(markdown, options);
   const inlineMediaByParent = new Map();
+  const mediaOrdinals = new Map();
   const candidates = [];
 
   for (const element of elements) {
+    if (element.kind === "image" || element.kind === "embed") {
+      const key = `${element.kind}\u0001${normalizeText(element.markdown)}`;
+      mediaOrdinals.set(key, (mediaOrdinals.get(key) ?? 0) + 1);
+    }
     if (element.parent !== undefined) {
       if (element.kind === "image" || element.kind === "embed") {
         let list = inlineMediaByParent.get(element.parent);
@@ -199,6 +427,9 @@ export function extractUnits(markdown, options = {}) {
   return topLevel.map(element => {
     if (element.kind === "heading") currentSectionId = element.id;
     const raw = rawClassOf(element.kind);
+    const inlineMedia = raw === null && PROSE_KINDS.has(element.kind)
+      ? scanInlineMedia(element.markdown, element.from, inlineMediaByParent.get(element.id), mediaOrdinals)
+      : [];
     const unit = {
       elementId: element.id,
       kind: element.kind,
@@ -213,7 +444,7 @@ export function extractUnits(markdown, options = {}) {
       hash: unitHash(element.kind, element.markdown),
       raw,
       rawMeta: rawMetadata(element, raw),
-      inlineMedia: inlineMediaByParent.get(element.id) ?? [],
+      inlineMedia,
     };
     if (element.level !== undefined) unit.level = element.level;
     if (element.language !== undefined) unit.language = element.language;
@@ -247,17 +478,30 @@ function countOccurrences(haystack, needle) {
   return count;
 }
 
+function normalizeMediaKey(text) {
+  return text.replace(/\r?\n(?:\s*>\s?)+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function preserveInlineMedia(text, inlineMedia) {
   if (!inlineMedia?.length) return text;
   const required = new Map();
-  for (const media of inlineMedia) required.set(media.markdown, (required.get(media.markdown) ?? 0) + 1);
-  const appended = new Map();
+  for (const media of inlineMedia) {
+    const key = normalizeMediaKey(media.markdown);
+    required.set(key, (required.get(key) ?? 0) + 1);
+  }
+  const normText = normalizeMediaKey(text);
+  const present = new Map();
   const missing = [];
   for (const media of inlineMedia) {
-    const seen = countOccurrences(text, media.markdown) + (appended.get(media.markdown) ?? 0);
-    if (seen < required.get(media.markdown)) {
+    const key = normalizeMediaKey(media.markdown);
+    let seen = present.get(key);
+    if (seen === undefined) {
+      seen = countOccurrences(normText, key);
+      present.set(key, seen);
+    }
+    if (seen < required.get(key)) {
       missing.push(media.markdown);
-      appended.set(media.markdown, (appended.get(media.markdown) ?? 0) + 1);
+      present.set(key, seen + 1);
     }
   }
   if (!missing.length) return text;
@@ -267,95 +511,178 @@ function preserveInlineMedia(text, inlineMedia) {
 function parseListItems(markdown) {
   const lines = splitLines(markdown);
   const out = [];
-  let inFence = null;
-  for (const line of lines) {
-    if (inFence) {
-      if (fenceClose(line, inFence)) inFence = null;
-      continue;
-    }
-    const mark = fenceMark(line);
-    if (mark) {
-      inFence = mark;
-      continue;
-    }
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
     const match = LIST_ITEM.exec(line);
-    if (match) out.push({ indent: (match[1] ?? "").length, marker: match[2] ?? "-", text: line.slice(match[0].length) });
-    else if (out.length && line.trim()) out[out.length - 1].text += " " + line.trim();
+    if (match) {
+      const indent = (match[1] ?? "").length;
+      const marker = match[2] ?? "-";
+      const rest = line.slice(match[0].length);
+      const trimmed = rest.trim();
+      if (trimmed.length >= 4 && trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
+        out.push({ indent, marker, text: "", rawBlocks: [{ raw: "math", indent: indent + marker.length + 1, markdown: trimmed }] });
+      } else {
+        out.push({ indent, marker, text: rest, rawBlocks: [] });
+      }
+      i++;
+      continue;
+    }
+    const rawBlock = matchRawBlock(lines, i);
+    if (rawBlock) {
+      const dedented = dedentLines(rawBlock.lines);
+      const entry = { raw: rawBlock.raw, indent: dedented.indent, markdown: dedented.lines.join("\n") };
+      if (out.length) out[out.length - 1].rawBlocks.push(entry);
+      else out.push({ indent: dedented.indent, marker: "-", text: "", rawBlocks: [entry] });
+      i = rawBlock.nextIndex;
+      continue;
+    }
+    if (out.length && line.trim()) {
+      const prev = out[out.length - 1];
+      prev.text = prev.text ? `${prev.text} ${line.trim()}` : line.trim();
+    }
+    i++;
   }
   return out;
 }
 
-function foldRawUnit(unit, depth) {
-  if (depth <= 1) return unit.markdown;
-  if (unit.raw === "table") {
-    if (depth <= 3) return unit.markdown;
-    const lines = splitLines(unit.markdown);
-    if (depth === 4) return lines.length > 3 ? lines.slice(0, 3).join("\n") : unit.markdown;
-    return lines.length >= 2 ? lines.slice(0, 2).join("\n") : (lines[0] ?? unit.markdown);
+function parseQuotedBody(lines) {
+  const proseLines = [];
+  const rawBlocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? "";
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+    const rawBlock = matchRawBlock(lines, i);
+    if (rawBlock) {
+      rawBlocks.push({ raw: rawBlock.raw, markdown: dedentLines(rawBlock.lines).lines.join("\n") });
+      i = rawBlock.nextIndex;
+      continue;
+    }
+    proseLines.push(line.trim());
+    i++;
   }
-  if (unit.raw === "code") {
-    const lines = splitLines(unit.markdown);
-    const bodyLines = unit.rawMeta?.class === "code" ? unit.rawMeta.lines : codeBodyLines(lines);
-    if (depth <= 3 && lines.length <= 8) return unit.markdown;
+  return { proseLines, rawBlocks };
+}
+
+function foldRawBlock(raw, markdown, effectiveDepth, knownCodeLines) {
+  if (effectiveDepth <= 1) return markdown;
+  if (raw === "table") {
+    if (effectiveDepth <= 3) return markdown;
+    const lines = splitLines(markdown);
+    if (effectiveDepth === 4) return lines.length > 3 ? lines.slice(0, 3).join("\n") : markdown;
+    return lines.length >= 2 ? lines.slice(0, 2).join("\n") : (lines[0] ?? markdown);
+  }
+  if (raw === "code") {
+    const lines = splitLines(markdown);
+    const bodyLines = knownCodeLines ?? codeBodyLines(lines);
+    if (effectiveDepth <= 3 && lines.length <= 8) return markdown;
     return `\`⋯ ${bodyLines} lines of code\``;
   }
   // Math and image/embed blocks stay verbatim at every stop (D5).
-  return unit.markdown;
+  return markdown;
+}
+
+function foldRawUnit(unit, effectiveDepth) {
+  const codeLines = unit.raw === "code" && unit.rawMeta?.class === "code" ? unit.rawMeta.lines : undefined;
+  return foldRawBlock(unit.raw, unit.markdown, effectiveDepth, codeLines);
 }
 
 function isArtParagraph(lines) {
   return lines.length > 1 && lines.slice(0, -1).every(line => ART_ROW.test(line));
 }
 
-function foldProseUnit(unit, depth, ctx) {
-  if (depth <= 1) return unit.markdown;
-  const effectiveDepth = depth === 4 && !ctx.hasHeadings ? 3 : depth;
+function isProseUnit(unit) {
+  if (unit.kind === "heading" || unit.raw !== null || !PROSE_KINDS.has(unit.kind)) return false;
+  if (unit.kind === "paragraph") return !isArtParagraph(splitLines(unit.markdown));
+  if (unit.kind === "html") return !isHtmlComment(unit.markdown);
+  if (unit.kind === "list") return parseListItems(unit.markdown).some(item => item.text.trim().length > 0);
+  if (unit.kind === "quote") return parseQuotedBody(splitLines(unit.markdown).map(stripQuotePrefix)).proseLines.length > 0;
+  return true;
+}
+
+function foldProseUnit(unit, effectiveDepth, ctx) {
   const keepAtHighStop = effectiveDepth <= 3 || (effectiveDepth === 4 ? ctx.isFirstInSection : ctx.isFirstInDocument);
 
   if (unit.kind === "html") {
-    return keepAtHighStop ? unit.markdown : "";
+    if (isHtmlComment(unit.markdown)) return effectiveDepth <= 3 ? unit.markdown : "";
+    const text = keepAtHighStop ? unit.markdown : "";
+    return preserveInlineMedia(text, unit.inlineMedia);
   }
 
   if (unit.kind === "list") {
     const all = parseListItems(unit.markdown);
-    if (!all.length) return keepAtHighStop ? unit.markdown : "";
+    if (!all.length) return preserveInlineMedia(keepAtHighStop ? unit.markdown : "", unit.inlineMedia);
     const minIndent = Math.min(...all.map(item => item.indent));
     if (effectiveDepth <= 3) {
       const rendered = [];
       for (let k = 0; k < all.length; k++) {
         const item = all[k];
-        if (effectiveDepth === 3 && item.indent > minIndent) continue;
-        const droppedChildren = effectiveDepth === 3 && k + 1 < all.length && all[k + 1].indent > item.indent;
-        const s = firstSentence(item.text);
-        rendered.push(`${" ".repeat(item.indent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
+        const isChildDropped = effectiveDepth === 3 && item.indent > minIndent;
+        if (!isChildDropped && item.text.trim()) {
+          const droppedChildren = effectiveDepth === 3 && k + 1 < all.length && all[k + 1].indent > item.indent;
+          const s = firstSentence(item.text);
+          rendered.push(`${" ".repeat(item.indent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
+        }
+        for (const rb of item.rawBlocks) {
+          const folded = foldRawBlock(rb.raw, rb.markdown, effectiveDepth);
+          const targetIndent = isChildDropped ? Math.min(rb.indent, minIndent + 2) : rb.indent;
+          rendered.push(indentBlock(folded, targetIndent));
+        }
       }
-      return rendered.join("\n");
+      return preserveInlineMedia(rendered.join("\n"), unit.inlineMedia);
     }
-    if (!keepAtHighStop) return "";
-    const top = all.find(item => item.indent === minIndent) ?? all[0];
-    const s = firstSentence(top.text);
-    const more = s.more || all.length > 1 || (effectiveDepth === 4 ? ctx.hasMoreProseInSection : ctx.hasMoreProseAfter);
-    return s.head + (more ? MORE : "");
+    const foldedRaws = [];
+    for (const item of all) {
+      for (const rb of item.rawBlocks) foldedRaws.push(foldRawBlock(rb.raw, rb.markdown, effectiveDepth));
+    }
+    let prose = "";
+    if (keepAtHighStop) {
+      const top = all.find(item => item.indent === minIndent && item.text.trim()) ?? all.find(item => item.text.trim());
+      if (top) {
+        const s = firstSentence(top.text);
+        const more = s.more || all.length > 1 || (effectiveDepth === 4 ? ctx.hasMoreProseInSection : ctx.hasMoreProseAfter);
+        prose = s.head + (more ? MORE : "");
+      }
+    }
+    const combined = [prose, ...foldedRaws].filter(Boolean).join("\n");
+    return preserveInlineMedia(combined, unit.inlineMedia);
   }
 
   if (unit.kind === "callout") {
-    if (!keepAtHighStop) return "";
     const lines = splitLines(unit.markdown);
     const header = lines[0] ?? "";
-    const body = lines.slice(1).map(l => l.replace(/^\s*>\s?/, "").trim()).filter(Boolean).join(" ");
-    if (!body) return header;
-    const s = sentences(body, effectiveDepth === 2 ? 2 : 1);
-    const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
-    return `${header}\n> ${s.text}${more ? MORE : ""}`;
+    const { proseLines, rawBlocks } = parseQuotedBody(lines.slice(1).map(stripQuotePrefix));
+    const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
+    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia);
+    const body = proseLines.join(" ");
+    if (!body && !foldedRaws.length) return preserveInlineMedia(header, unit.inlineMedia);
+    const parts = [];
+    if (body) {
+      const s = sentences(body, effectiveDepth === 2 ? 2 : 1);
+      const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
+      parts.push(`> ${s.text}${more ? MORE : ""}`);
+    }
+    parts.push(...foldedRaws);
+    return preserveInlineMedia(`${header}\n${parts.join("\n>\n")}`, unit.inlineMedia);
   }
 
   if (unit.kind === "quote") {
-    if (!keepAtHighStop) return "";
-    const raw = splitLines(unit.markdown).map(l => l.replace(/^\s*>\s?/, "").trim()).filter(Boolean).join(" ");
-    if (!raw) return unit.markdown;
-    const s = sentences(raw, effectiveDepth === 2 ? 2 : 1);
-    const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
-    return `> ${s.text}${more ? MORE : ""}`;
+    const { proseLines, rawBlocks } = parseQuotedBody(splitLines(unit.markdown).map(stripQuotePrefix));
+    const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
+    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia);
+    const raw = proseLines.join(" ");
+    const parts = [];
+    if (raw) {
+      const s = sentences(raw, effectiveDepth === 2 ? 2 : 1);
+      const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
+      parts.push(`> ${s.text}${more ? MORE : ""}`);
+    }
+    parts.push(...foldedRaws);
+    return preserveInlineMedia(parts.join("\n>\n"), unit.inlineMedia);
   }
 
   // Paragraph (default prose block).
@@ -376,10 +703,11 @@ export function foldUnit(unit, level, context = {}) {
   const entry = resolveLocalLevel(level);
   const depth = entry.digit;
   if (depth <= 1) return unit.markdown;
-  if (unit.kind === "heading") return depth <= 4 ? unit.markdown : "";
-  if (unit.raw !== null) return foldRawUnit(unit, depth);
-  return foldProseUnit(unit, depth, {
-    hasHeadings: context.hasHeadings ?? false,
+  const hasHeadings = context.hasHeadings ?? true;
+  const effectiveDepth = depth === 4 && !hasHeadings ? 3 : depth;
+  if (unit.kind === "heading") return effectiveDepth <= 4 ? unit.markdown : "";
+  if (unit.raw !== null) return foldRawUnit(unit, effectiveDepth);
+  return foldProseUnit(unit, effectiveDepth, {
     isFirstInSection: context.isFirstInSection ?? true,
     isFirstInDocument: context.isFirstInDocument ?? true,
     hasMoreProseInSection: context.hasMoreProseInSection ?? false,
@@ -389,17 +717,18 @@ export function foldUnit(unit, level, context = {}) {
 
 function stopText(value) {
   if (typeof value === "string") return value;
-  if (value && typeof value === "object" && typeof value.text === "string") return value.text;
-  throw new TypeError("Monotonic stop value must be a string or FoldLine");
+  if (isFoldLine(value)) return value.text;
+  throw new TypeError("Monotonic stop value must be a string or valid FoldLine");
 }
 
 function cloneStopValue(value) {
   if (typeof value === "string") return value;
+  if (!isFoldLine(value)) throw new TypeError("Monotonic stop value must be a string or valid FoldLine");
   if (value.by === "model") {
     return {
       by: "model",
       text: value.text,
-      evidence: Array.isArray(value.evidence) ? value.evidence.map(entry => ({ ...entry })) : [],
+      evidence: value.evidence.map(entry => ({ ...entry })),
     };
   }
   return { by: "author", text: value.text };
@@ -438,18 +767,19 @@ export function enforceMonotonic(stops) {
 /** Returns true when every present stop in the unit ladder is no longer than the stop before it. */
 export function isMonotonic(stops) {
   let prevWords = Infinity;
+  let monotonic = true;
   for (const stopId of LOCAL_STOP_IDS) {
     if (!Object.prototype.hasOwnProperty.call(stops, stopId) || stops[stopId] === undefined) continue;
     const count = words(stopText(stops[stopId]));
-    if (count > prevWords) return false;
+    if (count > prevWords) monotonic = false;
     prevWords = count;
   }
-  return true;
+  return monotonic;
 }
 
 function buildContexts(units) {
   const hasHeadings = units.some(unit => unit.kind === "heading");
-  const isProse = unit => unit.kind !== "heading" && unit.raw === null && PROSE_KINDS.has(unit.kind);
+  const proseFlags = units.map(isProseUnit);
   const contexts = new Array(units.length);
   let seenInDoc = false;
   let seenInSection = false;
@@ -461,7 +791,7 @@ function buildContexts(units) {
       contexts[i] = { hasHeadings, isFirstInSection: false, isFirstInDocument: false, hasMoreProseInSection: false, hasMoreProseAfter: false };
       continue;
     }
-    if (!isProse(unit)) {
+    if (!proseFlags[i]) {
       contexts[i] = { hasHeadings, isFirstInSection: false, isFirstInDocument: false, hasMoreProseInSection: false, hasMoreProseAfter: false };
       continue;
     }
@@ -478,7 +808,7 @@ function buildContexts(units) {
         passedHeading = true;
         continue;
       }
-      if (isProse(units[j])) {
+      if (proseFlags[j]) {
         hasMoreProseAfter = true;
         if (!passedHeading) hasMoreProseInSection = true;
         if (hasMoreProseInSection || passedHeading) break;
@@ -492,7 +822,6 @@ function buildContexts(units) {
 /** Computes all five local stops in one pass with D5 raw-block preservation and D4 per-unit monotonic guard. */
 export function foldDocumentLadder(markdown, options = {}) {
   const source = typeof markdown === "string" ? markdown : "";
-  const total = words(source);
   const units = extractUnits(source, options);
   const contexts = buildContexts(units);
 
@@ -516,10 +845,14 @@ export function foldDocumentLadder(markdown, options = {}) {
     return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations };
   });
 
+  const total = byUnit.reduce((sum, item) => sum + item.words.full, 0);
   const stops = {};
   for (const stopId of LOCAL_STOP_IDS) {
+    let shown = 0;
     const entries = byUnit.map(item => {
       const text = item.stops[stopId];
+      const count = item.words[stopId];
+      shown += count;
       return {
         elementId: item.unit.elementId,
         kind: item.unit.kind,
@@ -531,7 +864,7 @@ export function foldDocumentLadder(markdown, options = {}) {
         sectionId: item.unit.sectionId,
         text,
         visible: text.length > 0,
-        words: item.words[stopId],
+        words: count,
       };
     });
     const text = stopId === "full"
@@ -541,7 +874,7 @@ export function foldDocumentLadder(markdown, options = {}) {
       level: stopId,
       text,
       total,
-      shown: stopId === "full" ? total : words(text),
+      shown,
       entries,
     };
   }

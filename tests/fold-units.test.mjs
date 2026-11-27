@@ -362,6 +362,98 @@ describe("raw-block preservation rule (D5)", () => {
     }
     assert.equal(isMonotonic(ladder.byUnit[0].stops), true);
   });
+
+  test("inline media inside lists, quotes, callouts, and html blocks survives every stop without code false positives", () => {
+    const clinical = foldDocumentLadder(FIXTURE_CLINICAL_ES);
+    for (const { id } of LOCAL_LEVELS) {
+      const count = clinical.stops[id].text.split("![[eco-basal.png]]").length - 1;
+      assert.equal(count, 1, `expected ![[eco-basal.png]] once at ${id}`);
+    }
+
+    const md = [
+      "## Section",
+      "",
+      "Lead sentence keeps the section slot. Extra detail.",
+      "",
+      "- First item. Second sentence has ![ListImg](list.png) and `![Fake](fake.png)`.",
+      "  - Child item with ![[child-embed.png]].",
+      "",
+      "> Quote first sentence. Quote second sentence with ![QuoteImg](quote.png).",
+      "",
+      "> [!warning] Alert",
+      "> Callout first sentence. Callout second sentence with ![CalloutImg](callout.png).",
+      "",
+      "<figure><img src=\"scan.png\" alt=\"Basal scan\"><figcaption>Scan</figcaption></figure>",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    for (const { id } of LOCAL_LEVELS) {
+      const out = ladder.stops[id].text;
+      assert.equal(out.split("![ListImg](list.png)").length - 1, 1, `list image count at ${id}`);
+      assert.equal(out.split("![[child-embed.png]]").length - 1, 1, `child embed count at ${id}`);
+      assert.equal(out.split("![QuoteImg](quote.png)").length - 1, 1, `quote image count at ${id}`);
+      assert.equal(out.split("![CalloutImg](callout.png)").length - 1, 1, `callout image count at ${id}`);
+      assert.equal(out.split("<img src=\"scan.png\" alt=\"Basal scan\">").length - 1, 1, `html img count at ${id}`);
+      if (id === "takeaway" || id === "topic") {
+        assert.equal(out.includes("![Fake](fake.png)"), false, `inline-code media leaked at ${id}`);
+      }
+    }
+  });
+
+  test("nested raw blocks inside lists, quotes, and callouts survive without mangling or dropping", () => {
+    const nested = foldDocumentLadder(FIXTURE_NESTED_EDGE);
+    assert.ok(nested.stops.brief.text.includes("const hidden = 1;"));
+    assert.ok(nested.stops.key.text.includes("const hidden = 1;"));
+    assert.ok(nested.stops.topic.text.includes("`⋯ 2 lines of code`"));
+    assert.ok(nested.stops.brief.text.includes("> | Quoted | Table |\n> | --- | --- |\n> | x | y |"));
+    assert.ok(nested.stops.key.text.includes("> | Quoted | Table |\n> | --- | --- |\n> | x | y |"));
+    assert.ok(nested.stops.topic.text.includes("> | Quoted | Table |\n> | --- | --- |"));
+    assert.equal(nested.stops.topic.text.includes("> | x | y |"), false);
+
+    const headed = [
+      "## Protocol",
+      "",
+      "Lead clinical sentence. Secondary note.",
+      "",
+      "- Step one. Secondary detail.",
+      "  ```js",
+      "  const dose = 40;",
+      "  const repeat = 2;",
+      "  ```",
+      "",
+      "> [!note] Reference",
+      "> Summary line one. Summary line two.",
+      ">",
+      "> | Drug | Dose |",
+      "> | --- | --- |",
+      "> | A | 1 mg |",
+      "> | B | 2 mg |",
+      ">",
+      "> $$ E = mc^2 $$",
+    ].join("\n");
+    const ladder = foldDocumentLadder(headed);
+    assert.ok(ladder.stops.brief.text.includes("const dose = 40;"));
+    assert.ok(ladder.stops.key.text.includes("const dose = 40;"));
+    assert.ok(ladder.stops.takeaway.text.includes("`⋯ 2 lines of code`"));
+    assert.ok(ladder.stops.topic.text.includes("`⋯ 2 lines of code`"));
+
+    for (const { id } of LOCAL_LEVELS) {
+      assert.ok(ladder.stops[id].text.includes("$$ E = mc^2 $$"), `callout math missing at ${id}`);
+      assert.ok(ladder.stops[id].text.includes("> | Drug | Dose |\n> | --- | --- |"), `callout table header missing at ${id}`);
+    }
+    assert.ok(ladder.stops.takeaway.text.includes("> | A | 1 mg |"));
+    assert.equal(ladder.stops.takeaway.text.includes("> | B | 2 mg |"), false);
+    assert.equal(ladder.stops.topic.text.includes("> | A | 1 mg |"), false);
+  });
+
+  test("multiline inline image in a paragraph is preserved once without duplication", () => {
+    const md = "## Media\n\nSee ![Alt](img.png\n\"Title\") here. Second sentence.\n\nSecond paragraph without images.\n";
+    const ladder = foldDocumentLadder(md);
+    for (const id of ["brief", "key", "takeaway", "topic"]) {
+      const normalized = ladder.stops[id].text.replace(/\s+/g, " ");
+      const count = normalized.split("![Alt](img.png \"Title\")").length - 1;
+      assert.equal(count, 1, `expected multiline image once at ${id}, got ${count}`);
+    }
+  });
 });
 
 describe("monotonic guard (D4)", () => {
@@ -428,6 +520,55 @@ describe("monotonic guard (D4)", () => {
     assert.equal(isMonotonic(result.stops), true);
   });
 
+  test("enforceMonotonic and isMonotonic reject invalid FoldLine attribution or missing evidence", () => {
+    const invalidLines = [
+      { text: "missing by field" },
+      { by: "assistant", text: "unknown attribution" },
+      { by: "model", text: "missing evidence" },
+      { by: "model", text: "empty evidence", evidence: [] },
+      { by: "model", text: "malformed evidence", evidence: [{ elementId: "paragraph-ab12cd34" }] },
+      { by: "author", text: "   " },
+    ];
+    for (const bad of invalidLines) {
+      assert.throws(() => enforceMonotonic({ brief: bad }), TypeError);
+      assert.throws(() => isMonotonic({ brief: bad }), TypeError);
+      assert.throws(
+        () => isMonotonic({ brief: "Short.", key: "Longer than brief here.", takeaway: bad }),
+        TypeError,
+      );
+    }
+  });
+
+  test("whole-document shown stays monotonic and matches summed unit counts even with unclosed fences", () => {
+    const md = [
+      "## Section 1",
+      "",
+      "Lead clinical sentence here.",
+      "",
+      "<div>",
+      "```",
+      "unclosed fence inside html block",
+      "</div>",
+      "",
+      "## Section 2",
+      "",
+      "Second section clinical guidance with several important words.",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    const order = LOCAL_LEVELS.map(entry => entry.id);
+    assert.equal(ladder.total, ladder.stops.full.shown);
+    for (const id of order) {
+      const sum = ladder.stops[id].entries.reduce((acc, entry) => acc + entry.words, 0);
+      assert.equal(ladder.stops[id].shown, sum, `shown must equal sum of entry words at ${id}`);
+    }
+    for (let i = 1; i < order.length; i++) {
+      assert.ok(
+        ladder.stops[order[i]].shown <= ladder.stops[order[i - 1]].shown,
+        `${order[i]}(${ladder.stops[order[i]].shown}) > ${order[i - 1]}(${ladder.stops[order[i - 1]].shown})`,
+      );
+    }
+  });
+
   test("size ladder is monotonically non-increasing per unit and per document on all fixtures", () => {
     const order = LOCAL_LEVELS.map(entry => entry.id);
     for (const [name, md] of ALL_FIXTURES) {
@@ -477,6 +618,74 @@ describe("foldDocument and edge cases", () => {
     assert.equal(ladder.stops.takeaway.text, ladder.stops.key.text);
     assert.ok(ladder.stops.takeaway.text.includes("Segundo párrafo"));
     assert.ok(!ladder.stops.topic.text.includes("Segundo párrafo"));
+
+    const unheadedWithRaw = [
+      "First sentence. Second sentence.",
+      "",
+      "| Drug | Dose |",
+      "| --- | --- |",
+      "| A | 1 mg |",
+      "| B | 2 mg |",
+      "",
+      "```sh",
+      "echo one",
+      "echo two",
+      "```",
+    ].join("\n");
+    const rawLadder = foldDocumentLadder(unheadedWithRaw);
+    assert.equal(rawLadder.stops.takeaway.text, rawLadder.stops.key.text);
+    assert.ok(rawLadder.stops.takeaway.text.includes("| B | 2 mg |"));
+    assert.ok(rawLadder.stops.takeaway.text.includes("echo two"));
+  });
+
+  test("standalone foldUnit defaults hasHeadings to true so takeaway applies section rules", () => {
+    const [para, list] = extractUnits("First sentence. Second sentence.\n\n- Item one. Extra.\n- Item two.\n");
+    assert.equal(foldUnit(para, "takeaway", { isFirstInSection: false }), "");
+    assert.equal(foldUnit(list, "takeaway"), "Item one. …");
+  });
+
+  test("art paragraphs, HTML comments, and raw-only quotes do not steal the first-prose slot", () => {
+    const artDoc = [
+      "## Art section",
+      "",
+      "`+---+`  ",
+      "`| A |`  ",
+      "`+---+`",
+      "",
+      "Real clinical takeaway sentence. Extra detail.",
+    ].join("\n");
+    const artLadder = foldDocumentLadder(artDoc);
+    assert.ok(artLadder.stops.takeaway.text.includes("Real clinical takeaway sentence."));
+    assert.ok(artLadder.stops.topic.text.includes("Real clinical takeaway sentence."));
+
+    const commentDoc = [
+      "<!-- internal draft note -->",
+      "",
+      "## Clinical note",
+      "",
+      "<!-- section comment -->",
+      "",
+      "Administer furosemide 40 mg IV. Monitor urine output.",
+    ].join("\n");
+    const commentLadder = foldDocumentLadder(commentDoc);
+    assert.equal(commentLadder.stops.takeaway.text.includes("<!--"), false);
+    assert.equal(commentLadder.stops.topic.text.includes("<!--"), false);
+    assert.ok(commentLadder.stops.takeaway.text.includes("Administer furosemide 40 mg IV."));
+    assert.ok(commentLadder.stops.topic.text.includes("Administer furosemide 40 mg IV."));
+
+    const rawQuoteDoc = [
+      "## Dosing",
+      "",
+      "> | Drug | Dose |",
+      "> | --- | --- |",
+      "> | Lidocaine | 4.5 mg/kg |",
+      "",
+      "Check maximum safe dose before infiltration. Reassess after 15 min.",
+    ].join("\n");
+    const rawQuoteLadder = foldDocumentLadder(rawQuoteDoc);
+    assert.ok(rawQuoteLadder.stops.takeaway.text.includes("Check maximum safe dose before infiltration."));
+    assert.ok(rawQuoteLadder.stops.topic.text.includes("Check maximum safe dose before infiltration."));
+    assert.ok(rawQuoteLadder.stops.topic.text.includes("> | Drug | Dose |"));
   });
 
   test("local unit ladder stays fast on a 1k-word clinical document", () => {
