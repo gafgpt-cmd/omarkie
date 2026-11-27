@@ -739,6 +739,9 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       guard panel.runModal() == .OK, let directory = panel.url else { return nil }
       return try owner.workspace.exportBundle(payload, store: store, parent: directory)
     case "scan": return try store.scan()
+    case "canvas":
+      guard let folder = store.folder else { throw NativeFailure("Open a notes folder first.", "NO_FOLDER") }
+      return try CanvasBoards.perform(folder, try arg(args, 0, [String: Any].self))
     case "openToken":
       let token = try arg(args, 0, String.self)
       guard let file = store.tokens[token] else { throw NativeFailure("目录已更新，请刷新后重试。") }
@@ -963,7 +966,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
         if key.hasPrefix("F"), let number = Int(key.dropFirst()), (1...20).contains(number) { key = String(UnicodeScalar(0xF703 + number)!) }
         if key == "Backspace" { key = "\u{8}" }
         let item = NSMenuItem(
-          title: ["clean-converted", "collect-reading", "reading-layers"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
+          title: ["clean-converted", "collect-reading", "reading-layers", "canvas-boards"].contains(command.action) ? Self.localized(command.label, locale: rendererLocale) : command.label,
           action: command.selector.map { NSSelectorFromString($0) } ?? #selector(NativeApplication.command(_:)), keyEquivalent: key.lowercased())
         if command.selector == nil { item.target = owner }
         item.representedObject = command.action

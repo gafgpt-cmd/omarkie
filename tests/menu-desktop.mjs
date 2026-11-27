@@ -936,6 +936,13 @@ async function auditFull() {
     await expect(page.locator('.study-rail')).toBeHidden();
     pass(`reading-layers: ${route}`, 'Learning opens and the toolbar toggle closes it');
   }
+  for (const route of ['menu', 'native']) {
+    await command('canvas-boards', route);
+    const picker = page.getByRole('dialog', { name: t('Canvas boards'), exact: true });
+    await expect(picker).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(picker).toBeHidden();
+    pass(`canvas-boards: ${route}`, 'Board picker for the open folder opens; Escape closes it');
+  }
   for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
     await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     await command(action, route);

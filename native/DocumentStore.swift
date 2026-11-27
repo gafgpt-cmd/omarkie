@@ -433,3 +433,137 @@ final class DocumentStore {
     return record.path == nil ? destination.path.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: " ()#?"))) ?? destination.path : relative
   }
 }
+// JSON Canvas boards inside the open vault; mirrors electron/canvas-store.mjs.
+enum CanvasBoards {
+  static let maxBytes = 20 * 1024 * 1024
+  static let noteLimit = 4 * 1024 * 1024
+  static let notes = ["md", "markdown", "mdown"]
+  static func resolve(_ root: URL, _ value: Any?, board: Bool, existing: Bool = true) throws -> (url: URL, relative: String, size: Int?) {
+    guard let relative = value as? String, !relative.isEmpty, relative.utf8.count <= 1024, !relative.contains("\0"),
+      !relative.hasPrefix("/"), !relative.hasPrefix("\\") else { throw NativeFailure("The board path is not valid.", "CANVAS_ERROR") }
+    let parts = relative.replacingOccurrences(of: "\\", with: "/").split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." || $0.hasPrefix(".") }) else {
+      throw NativeFailure("The board path is not valid.", "CANVAS_ERROR")
+    }
+    let ext = (parts.last! as NSString).pathExtension.lowercased()
+    guard board ? ext == "canvas" : notes.contains(ext) else {
+      throw NativeFailure(board ? "Choose a .canvas board." : "Choose a Markdown note.", "CANVAS_ERROR")
+    }
+    var file = root
+    for part in parts { file.appendPathComponent(part) }
+    let parent = file.deletingLastPathComponent().standardizedFileURL
+    guard contained(root, file), canonicalFileURL(parent).path == parent.path else {
+      throw NativeFailure("The file is outside the notes folder.", "CANVAS_ERROR")
+    }
+    // attributesOfItem does not follow a final symlink, so a linked board reports its link type here.
+    let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+    if let attributes, attributes[.type] as? FileAttributeType != .typeRegular {
+      throw NativeFailure("The file is outside the notes folder.", "CANVAS_ERROR")
+    }
+    if attributes == nil && existing { throw NativeFailure("The file no longer exists.", "ENOENT") }
+    return (file, parts.joined(separator: "/"), (attributes?[.size] as? NSNumber)?.intValue)
+  }
+  static func text(_ bytes: Data) throws -> String {
+    let body = bytes.starts(with: [0xef, 0xbb, 0xbf]) ? Data(bytes.dropFirst(3)) : bytes
+    guard let text = String(data: body, encoding: .utf8) else { throw NativeFailure("The board is not UTF-8 text.", "CANVAS_ERROR") }
+    return text
+  }
+  static func read(_ root: URL, _ value: Any?) throws -> [String: Any] {
+    let (url, relative, size) = try resolve(root, value, board: true)
+    guard (size ?? maxBytes + 1) <= maxBytes else { throw NativeFailure("The board is larger than 20 MB.", "CANVAS_TOO_LARGE") }
+    let bytes = try Data(contentsOf: url)
+    return ["file": relative, "name": url.lastPathComponent, "text": try text(bytes), "hash": hashData(bytes)]
+  }
+  static func currentHash(_ url: URL) -> String? {
+    guard let bytes = try? Data(contentsOf: url) else { return nil }
+    return hashData(bytes)
+  }
+  static func validBoard(_ text: String) throws {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+      object["nodes"] == nil || object["nodes"] is [Any], object["edges"] == nil || object["edges"] is [Any] else {
+      throw NativeFailure("A JSON Canvas board must be a JSON object.", "CANVAS_INVALID")
+    }
+  }
+  static func save(_ root: URL, _ request: [String: Any]) throws -> [String: Any] {
+    guard let body = request["text"] as? String, body.utf8.count <= maxBytes else {
+      throw NativeFailure("The board is larger than 20 MB.", "CANVAS_TOO_LARGE")
+    }
+    try validBoard(body)
+    let base = request["base"] as? String
+    if let base, base.count != 64 || !base.allSatisfy({ $0.isHexDigit }) { throw NativeFailure("The board revision is not valid.", "CANVAS_ERROR") }
+    let (url, relative, _) = try resolve(root, request["file"], board: true, existing: false)
+    let verify = {
+      guard currentHash(url) == base else { throw NativeFailure("The board changed on disk. Your edits are kept.", "EXTERNAL_CHANGE") }
+    }
+    try verify()
+    let bytes = Data(body.utf8)
+    try atomicWrite(url, bytes, beforeCommit: verify)
+    return ["file": relative, "name": url.lastPathComponent, "hash": hashData(bytes)]
+  }
+  static func create(_ root: URL, _ request: [String: Any]) throws -> [String: Any] {
+    var folder = (request["folder"] as? String ?? "").replacingOccurrences(of: "\\", with: "/")
+    while folder.hasSuffix("/") { folder.removeLast() }
+    let blocked = CharacterSet(charactersIn: "/\\:*?\"<>|").union(.controlCharacters)
+    var stem = String((request["name"] as? String ?? "").unicodeScalars.map { blocked.contains($0) ? " " : Character($0) })
+    if stem.lowercased().hasSuffix(".canvas") { stem = String(stem.dropLast(7)) }
+    stem = String(stem.drop(while: { $0 == "." || $0.isWhitespace }).trimmingCharacters(in: .whitespaces).prefix(120))
+    if stem.isEmpty { stem = "Untitled board" }
+    let body = Data("{\n\t\"nodes\": [],\n\t\"edges\": []\n}".utf8)
+    for index in 1...200 {
+      let relative = (folder.isEmpty ? "" : folder + "/") + stem + (index > 1 ? " \(index)" : "") + ".canvas"
+      let (url, _, size) = try resolve(root, relative, board: true, existing: false)
+      if size != nil { continue }
+      do {
+        try atomicWrite(url, body) { if currentHash(url) != nil { throw NativeFailure("exists", "EEXIST") } }
+      } catch let error as NativeFailure where error.code == "EEXIST" { continue }
+      return try read(root, relative)
+    }
+    throw NativeFailure("Choose another board name.", "CANVAS_ERROR")
+  }
+  static func list(_ root: URL) throws -> [String: Any] {
+    var files = [[String: Any]](), truncated = false
+    let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey]
+    func walk(_ directory: URL, _ depth: Int) throws {
+      let children: [URL]
+      do {
+        children = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles])
+          .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+      } catch {
+        if depth == 0 { throw error }
+        return
+      }
+      for child in children {
+        if truncated { return }
+        guard child.lastPathComponent != "node_modules", let values = try? child.resourceValues(forKeys: keys), values.isSymbolicLink != true else { continue }
+        if values.isDirectory == true { if depth < 8 { try walk(child, depth + 1) }; continue }
+        guard values.isRegularFile == true, child.pathExtension.lowercased() == "canvas" else { continue }
+        if files.count >= 1000 { truncated = true; return }
+        files.append([
+          "file": String(child.path.dropFirst(root.path == "/" ? 1 : root.path.count + 1)), "name": child.lastPathComponent,
+          "modified": values.contentModificationDate?.timeIntervalSince1970 ?? 0,
+        ])
+      }
+    }
+    try walk(root, 0)
+    return ["files": files, "truncated": truncated]
+  }
+  static func note(_ root: URL, _ value: Any?) throws -> [String: Any] {
+    let resolved: (url: URL, relative: String, size: Int?)
+    do { resolved = try resolve(root, value, board: false) }
+    catch let error as NativeFailure where error.code == "ENOENT" { return ["file": value as? String ?? "", "missing": true] }
+    guard (resolved.size ?? noteLimit + 1) <= noteLimit else { throw NativeFailure("The note is too large to preview.", "CANVAS_ERROR") }
+    let bytes = try Data(contentsOf: resolved.url)
+    return ["file": resolved.relative, "text": try text(bytes), "hash": hashData(bytes)]
+  }
+  static func perform(_ folder: URL, _ request: [String: Any]) throws -> Any {
+    let root = canonicalFileURL(folder)
+    switch request["action"] as? String {
+    case "list": return try list(root)
+    case "read": return try read(root, request["file"])
+    case "save": return try save(root, request)
+    case "create": return try create(root, request)
+    case "note": return try note(root, request["file"])
+    default: throw NativeFailure("Unknown board action.", "CANVAS_ERROR")
+    }
+  }
+}
