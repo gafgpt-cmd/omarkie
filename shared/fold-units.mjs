@@ -196,13 +196,8 @@ function indentBlock(markdown, spaces) {
   return splitLines(markdown).map(line => (line ? pad + line : "")).join("\n");
 }
 
-function tableAt(lines, i) {
-  return (lines[i] ?? "").includes("|") && (lines[i + 1] ?? "").includes("|") && TABLE_DELIM.test(lines[i + 1] ?? "");
-}
-
-function matchRawBlock(lines, i) {
-  const line = lines[i] ?? "";
-  const mark = fenceMark(line);
+function matchRawBlockCore(lines, i, firstLine) {
+  const mark = fenceMark(firstLine);
   if (mark) {
     let j = i + 1;
     while (j < lines.length) {
@@ -210,13 +205,13 @@ function matchRawBlock(lines, i) {
       j++;
       if (fenceClose(l, mark)) break;
     }
-    return { raw: "code", lines: lines.slice(i, j), nextIndex: j };
+    return { raw: "code", lines: [firstLine, ...lines.slice(i + 1, j)], nextIndex: j };
   }
 
-  const trimmed = line.trim();
+  const trimmed = firstLine.trim();
   if (trimmed.startsWith("$$")) {
     if (trimmed.length >= 4 && trimmed.endsWith("$$")) {
-      return { raw: "math", lines: [line], nextIndex: i + 1 };
+      return { raw: "math", lines: [firstLine], nextIndex: i + 1 };
     }
     if (trimmed === "$$" || !trimmed.slice(2).includes("$$")) {
       let close = -1;
@@ -228,22 +223,43 @@ function matchRawBlock(lines, i) {
       }
       if (close !== -1 || trimmed === "$$") {
         const end = close !== -1 ? close + 1 : lines.length;
-        return { raw: "math", lines: lines.slice(i, end), nextIndex: end };
+        return { raw: "math", lines: [firstLine, ...lines.slice(i + 1, end)], nextIndex: end };
       }
     }
   }
 
-  if (tableAt(lines, i)) {
+  if (firstLine.includes("|") && (lines[i + 1] ?? "").includes("|") && TABLE_DELIM.test(lines[i + 1] ?? "")) {
     let j = i + 2;
     while (j < lines.length) {
       const l = lines[j] ?? "";
       if (!l.trim() || !l.includes("|") || fenceMark(l) || LIST_ITEM.test(l) || HEADING_LINE.test(l) || l.trim().startsWith("$$")) break;
       j++;
     }
-    return { raw: "table", lines: lines.slice(i, j), nextIndex: j };
+    return { raw: "table", lines: [firstLine, ...lines.slice(i + 1, j)], nextIndex: j };
   }
 
   return null;
+}
+
+function stripListMarkersToVirtualLine(line) {
+  let prefixLen = 0;
+  let rest = line;
+  let match = LIST_ITEM.exec(rest);
+  if (!match) return null;
+  while (match) {
+    prefixLen += match[0].length;
+    rest = rest.slice(match[0].length);
+    match = LIST_ITEM.exec(rest);
+  }
+  return " ".repeat(prefixLen) + rest;
+}
+
+function matchRawBlock(lines, i) {
+  const line = lines[i] ?? "";
+  const direct = matchRawBlockCore(lines, i, line);
+  if (direct) return direct;
+  const virtualLine = stripListMarkersToVirtualLine(line);
+  return virtualLine !== null ? matchRawBlockCore(lines, i, virtualLine) : null;
 }
 
 function skipBacktickRun(text, i) {
@@ -298,55 +314,84 @@ function nextMediaId(kind, markdown, ordinals) {
   return elementId(kind, markdown, ordinal);
 }
 
-function scanInlineMedia(markdown, baseOffset, existingList, ordinals) {
+function normalizeInlineMediaMarkdown(text) {
+  return text.replace(/\r?\n(?:\s*>\s?)*[ \t]*/g, " ").trim();
+}
+
+function stripQuotedSource(markdown) {
+  let text = "";
+  const rawIndex = [];
+  let offset = 0;
+  while (offset <= markdown.length) {
+    const nl = markdown.indexOf("\n", offset);
+    const lineEnd = nl === -1 ? markdown.length : nl;
+    const line = markdown.slice(offset, lineEnd);
+    const prefix = /^(?:\s*>\s?)+/.exec(line);
+    const skip = prefix ? prefix[0].length : 0;
+    for (let k = offset + skip; k < lineEnd; k++) {
+      text += markdown[k];
+      rawIndex.push(k);
+    }
+    if (nl === -1) break;
+    text += "\n";
+    rawIndex.push(nl);
+    offset = nl + 1;
+  }
+  rawIndex.push(markdown.length);
+  return { text, rawIndex };
+}
+
+function scanInlineMedia(markdown, baseOffset, existingList, ordinals, isQuoted = false) {
   const existing = existingList ?? [];
   if (!existing.length && !markdown.includes("![") && !/<img\b/i.test(markdown)) return [];
 
+  const { text: scanText, rawIndex } = isQuoted ? stripQuotedSource(markdown) : { text: markdown, rawIndex: null };
   const existingBySpan = new Map(existing.map(item => [`${item.from}:${item.to}`, item]));
   const matchedKeys = new Set();
-  const skipRanges = nonMediaBlockRanges(markdown);
+  const skipRanges = nonMediaBlockRanges(scanText);
   let skipIdx = 0;
   const found = [];
 
-  for (let i = 0; i < markdown.length; ) {
+  for (let i = 0; i < scanText.length; ) {
     while (skipIdx < skipRanges.length && skipRanges[skipIdx][1] <= i) skipIdx++;
     if (skipIdx < skipRanges.length && i >= skipRanges[skipIdx][0] && i < skipRanges[skipIdx][1]) {
       i = skipRanges[skipIdx][1];
       continue;
     }
-    if (markdown.startsWith("<!--", i)) {
-      const close = markdown.indexOf("-->", i + 4);
-      i = close === -1 ? markdown.length : close + 3;
+    if (scanText.startsWith("<!--", i)) {
+      const close = scanText.indexOf("-->", i + 4);
+      i = close === -1 ? scanText.length : close + 3;
       continue;
     }
-    if (markdown[i] === "\\" && i + 1 < markdown.length) {
+    if (scanText[i] === "\\" && i + 1 < scanText.length) {
       i += 2;
       continue;
     }
-    if (markdown[i] === "`") {
-      i = skipBacktickRun(markdown, i);
+    if (scanText[i] === "`") {
+      i = skipBacktickRun(scanText, i);
       continue;
     }
     let kind = null;
     let match = null;
-    if (markdown[i] === "!") {
+    if (scanText[i] === "!") {
       INLINE_WIKI_EMBED.lastIndex = i;
-      match = INLINE_WIKI_EMBED.exec(markdown);
+      match = INLINE_WIKI_EMBED.exec(scanText);
       if (match) {
         kind = "embed";
       } else {
         INLINE_MD_IMAGE.lastIndex = i;
-        match = INLINE_MD_IMAGE.exec(markdown);
+        match = INLINE_MD_IMAGE.exec(scanText);
         if (match) kind = "image";
       }
-    } else if (markdown[i] === "<") {
+    } else if (scanText[i] === "<") {
       INLINE_HTML_IMG.lastIndex = i;
-      match = INLINE_HTML_IMG.exec(markdown);
+      match = INLINE_HTML_IMG.exec(scanText);
       if (match) kind = "image";
     }
     if (match && kind) {
-      const from = baseOffset + i;
-      const to = from + match[0].length;
+      const from = baseOffset + (rawIndex ? rawIndex[i] : i);
+      const to = baseOffset + (rawIndex ? rawIndex[i + match[0].length - 1] + 1 : i + match[0].length);
+      const cleanMarkdown = isQuoted ? normalizeInlineMediaMarkdown(match[0]) : match[0];
       const spanKey = `${from}:${to}`;
       const reused = existingBySpan.get(spanKey);
       if (reused) {
@@ -354,9 +399,9 @@ function scanInlineMedia(markdown, baseOffset, existingList, ordinals) {
         matchedKeys.add(spanKey);
       } else {
         found.push({
-          elementId: nextMediaId(kind, match[0], ordinals),
+          elementId: nextMediaId(kind, cleanMarkdown, ordinals),
           kind,
-          markdown: match[0],
+          markdown: cleanMarkdown,
           from,
           to,
         });
@@ -428,7 +473,13 @@ export function extractUnits(markdown, options = {}) {
     if (element.kind === "heading") currentSectionId = element.id;
     const raw = rawClassOf(element.kind);
     const inlineMedia = raw === null && PROSE_KINDS.has(element.kind)
-      ? scanInlineMedia(element.markdown, element.from, inlineMediaByParent.get(element.id), mediaOrdinals)
+      ? scanInlineMedia(
+        element.markdown,
+        element.from,
+        inlineMediaByParent.get(element.id),
+        mediaOrdinals,
+        element.kind === "quote" || element.kind === "callout",
+      )
       : [];
     const unit = {
       elementId: element.id,
@@ -482,7 +533,7 @@ function normalizeMediaKey(text) {
   return text.replace(/\r?\n(?:\s*>\s?)+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function preserveInlineMedia(text, inlineMedia) {
+function preserveInlineMedia(text, inlineMedia, { quotePrefix = false } = {}) {
   if (!inlineMedia?.length) return text;
   const required = new Map();
   for (const media of inlineMedia) {
@@ -500,12 +551,14 @@ function preserveInlineMedia(text, inlineMedia) {
       present.set(key, seen);
     }
     if (seen < required.get(key)) {
-      missing.push(media.markdown);
+      const clean = normalizeInlineMediaMarkdown(media.markdown);
+      missing.push(quotePrefix ? prefixQuote(clean) : clean);
       present.set(key, seen + 1);
     }
   }
   if (!missing.length) return text;
-  return text ? `${text}\n${missing.join("\n")}` : missing.join("\n");
+  const sep = quotePrefix ? "\n>\n" : "\n";
+  return text ? `${text}${sep}${missing.join("\n")}` : missing.join("\n");
 }
 
 function parseListItems(markdown) {
@@ -519,12 +572,15 @@ function parseListItems(markdown) {
       const indent = (match[1] ?? "").length;
       const marker = match[2] ?? "-";
       const rest = line.slice(match[0].length);
-      const trimmed = rest.trim();
-      if (trimmed.length >= 4 && trimmed.startsWith("$$") && trimmed.endsWith("$$")) {
-        out.push({ indent, marker, text: "", rawBlocks: [{ raw: "math", indent: indent + marker.length + 1, markdown: trimmed }] });
-      } else {
-        out.push({ indent, marker, text: rest, rawBlocks: [] });
+      const markerRaw = matchRawBlock(lines, i);
+      if (markerRaw) {
+        const dedented = dedentLines(markerRaw.lines);
+        const entry = { raw: markerRaw.raw, indent: dedented.indent, markdown: dedented.lines.join("\n") };
+        out.push({ indent, marker, text: "", rawBlocks: [entry] });
+        i = markerRaw.nextIndex;
+        continue;
       }
+      out.push({ indent, marker, text: rest, rawBlocks: [] });
       i++;
       continue;
     }
@@ -657,9 +713,9 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
     const header = lines[0] ?? "";
     const { proseLines, rawBlocks } = parseQuotedBody(lines.slice(1).map(stripQuotePrefix));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
-    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia);
+    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const body = proseLines.join(" ");
-    if (!body && !foldedRaws.length) return preserveInlineMedia(header, unit.inlineMedia);
+    if (!body && !foldedRaws.length) return preserveInlineMedia(header, unit.inlineMedia, { quotePrefix: true });
     const parts = [];
     if (body) {
       const s = sentences(body, effectiveDepth === 2 ? 2 : 1);
@@ -667,13 +723,13 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
       parts.push(`> ${s.text}${more ? MORE : ""}`);
     }
     parts.push(...foldedRaws);
-    return preserveInlineMedia(`${header}\n${parts.join("\n>\n")}`, unit.inlineMedia);
+    return preserveInlineMedia(`${header}\n${parts.join("\n>\n")}`, unit.inlineMedia, { quotePrefix: true });
   }
 
   if (unit.kind === "quote") {
     const { proseLines, rawBlocks } = parseQuotedBody(splitLines(unit.markdown).map(stripQuotePrefix));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
-    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia);
+    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const raw = proseLines.join(" ");
     const parts = [];
     if (raw) {
@@ -682,7 +738,7 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
       parts.push(`> ${s.text}${more ? MORE : ""}`);
     }
     parts.push(...foldedRaws);
-    return preserveInlineMedia(parts.join("\n>\n"), unit.inlineMedia);
+    return preserveInlineMedia(parts.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
   }
 
   // Paragraph (default prose block).

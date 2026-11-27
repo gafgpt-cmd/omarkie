@@ -454,6 +454,114 @@ describe("raw-block preservation rule (D5)", () => {
       assert.equal(count, 1, `expected multiline image once at ${id}, got ${count}`);
     }
   });
+
+  test("marker-line code, multiline math, and tables in lists and quotes do not swallow later items", () => {
+    const listCode = [
+      "- ```js",
+      "  const fake = \"![Fake](fake.png)\";",
+      "  ```",
+      "- Next item. Extra detail with ![Real](real.png).",
+    ].join("\n");
+    const listCodeLadder = foldDocumentLadder(listCode);
+    assert.equal(listCodeLadder.units[0].inlineMedia.map(m => m.markdown).includes("![Real](real.png)"), true);
+    assert.equal(listCodeLadder.units[0].inlineMedia.some(m => m.markdown.includes("Fake")), false);
+    assert.ok(listCodeLadder.stops.brief.text.includes("- Next item."));
+    assert.ok(listCodeLadder.stops.key.text.includes("- Next item."));
+    assert.ok(listCodeLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(listCodeLadder.stops.topic.text.includes("![Real](real.png)"));
+    assert.equal(listCodeLadder.stops.topic.text.includes("![Fake](fake.png)"), false);
+    assert.equal(isMonotonic(listCodeLadder.byUnit[0].stops), true);
+
+    const listMath = [
+      "- $$",
+      "  E = mc^2",
+      "  $$",
+      "- Next math item. Second sentence.",
+    ].join("\n");
+    const listMathLadder = foldDocumentLadder(listMath);
+    for (const { id } of LOCAL_LEVELS) {
+      assert.ok(listMathLadder.stops[id].text.includes("E = mc^2"), `math missing at ${id}`);
+      assert.ok(listMathLadder.stops[id].text.includes("Next math item."), `next item missing at ${id}`);
+    }
+    assert.equal(isMonotonic(listMathLadder.byUnit[0].stops), true);
+
+    const listTable = [
+      "- | A | B |",
+      "  | --- | --- |",
+      "  | 1 | 2 |",
+      "  | 3 | 4 |",
+      "- Next table item. Second sentence.",
+    ].join("\n");
+    const listTableLadder = foldDocumentLadder(listTable);
+    assert.ok(listTableLadder.stops.brief.text.includes("| 3 | 4 |"));
+    assert.ok(listTableLadder.stops.brief.text.includes("- Next table item."));
+    assert.ok(listTableLadder.stops.topic.text.includes("| A | B |"));
+    assert.ok(listTableLadder.stops.topic.text.includes("Next table item."));
+    assert.equal(listTableLadder.stops.topic.text.includes("| 3 | 4 |"), false);
+    assert.equal(isMonotonic(listTableLadder.byUnit[0].stops), true);
+
+    const quotedList = [
+      "> - ```js",
+      ">   const fake = \"![Fake](fake.png)\";",
+      ">   ```",
+      "> - Quoted item. Second sentence with ![Real](real.png).",
+      "",
+      "> [!note] Formula",
+      "> - $$",
+      ">   E = mc^2",
+      ">   $$",
+      "> - Callout item. Extra detail.",
+    ].join("\n");
+    const quotedLadder = foldDocumentLadder(quotedList);
+    assert.equal(quotedLadder.units[0].inlineMedia.some(m => m.markdown.includes("Fake")), false);
+    assert.equal(quotedLadder.units[0].inlineMedia.some(m => m.markdown === "![Real](real.png)"), true);
+    assert.ok(quotedLadder.stops.brief.text.includes("Quoted item."));
+    assert.ok(quotedLadder.stops.key.text.includes("Quoted item."));
+    assert.ok(quotedLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(quotedLadder.stops.topic.text.includes("![Real](real.png)"));
+    assert.equal(quotedLadder.stops.topic.text.includes("![Fake](fake.png)"), false);
+    assert.ok(quotedLadder.stops.brief.text.includes("Callout item."));
+    assert.ok(quotedLadder.stops.topic.text.includes("E = mc^2"));
+    for (const item of quotedLadder.byUnit) assert.equal(isMonotonic(item.stops), true);
+  });
+
+  test("quoted multiline markdown images and HTML img tags normalize cleanly without truncation or duplication", () => {
+    const md = [
+      "## Imaging",
+      "",
+      "> First sentence. Second has ![Scan](scan.png",
+      "> \"Basal\") and <img src=\"scan.png\"",
+      "> alt=\"Basal\">.",
+      "",
+      "> [!warning] Alert",
+      "> Callout lead. Second has ![AlertScan](alert.png",
+      "> \"Peak\") and <img src=\"alert.png\"",
+      "> alt=\"Peak\">.",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    const quoteUnit = ladder.units.find(u => u.kind === "quote");
+    const calloutUnit = ladder.units.find(u => u.kind === "callout");
+    assert.deepEqual(
+      quoteUnit.inlineMedia.map(m => m.markdown),
+      ["![Scan](scan.png \"Basal\")", "<img src=\"scan.png\" alt=\"Basal\">"],
+    );
+    assert.deepEqual(
+      calloutUnit.inlineMedia.map(m => m.markdown),
+      ["![AlertScan](alert.png \"Peak\")", "<img src=\"alert.png\" alt=\"Peak\">"],
+    );
+
+    for (const id of ["brief", "key", "takeaway", "topic"]) {
+      const out = ladder.stops[id].text;
+      assert.equal(out.split("![Scan](scan.png \"Basal\")").length - 1, 1, `quote md image count at ${id}`);
+      assert.equal(out.split("<img src=\"scan.png\" alt=\"Basal\">").length - 1, 1, `quote html img count at ${id}`);
+      assert.equal(out.split("![AlertScan](alert.png \"Peak\")").length - 1, 1, `callout md image count at ${id}`);
+      assert.equal(out.split("<img src=\"alert.png\" alt=\"Peak\">").length - 1, 1, `callout html img count at ${id}`);
+      assert.equal(out.includes("<img src=\"scan.png\"\n>"), false, `truncated quote html img at ${id}`);
+      assert.equal(out.includes("![Scan](scan.png\n>"), false, `broken quote md image at ${id}`);
+      assert.equal(out.includes("![AlertScan](alert.png\n>"), false, `broken callout md image at ${id}`);
+    }
+    for (const item of ladder.byUnit) assert.equal(isMonotonic(item.stops), true);
+  });
 });
 
 describe("monotonic guard (D4)", () => {
