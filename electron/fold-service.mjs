@@ -7,8 +7,8 @@ import { mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { assembleFold, chunkUnits, foldRecord, planChunks, queueOrder, sameWriter } from "../shared/fold-cache.mjs";
-import { countWords, checkFormat, checkLine, checkWrittenUnit, validateEvidence } from "../shared/fold-check.mjs";
-import { foldProblems, isFoldLine, isRole } from "../shared/fold-format.mjs";
+import { checkLadderChunk } from "../shared/fold-check.mjs";
+import { foldProblems } from "../shared/fold-format.mjs";
 import { extractUnits, foldDocumentLadder, isHiddenUnit } from "../shared/fold-units.mjs";
 import { glassFileName } from "../shared/glass-core.mjs";
 import { atomicWrite } from "./store.mjs";
@@ -56,12 +56,6 @@ function untilAborted(promise, signal) {
     );
   });
 }
-
-const nfc = text => String(text ?? "").normalize("NFC");
-const authorFits = (line, unit) => line.by !== "author" || [unit.text, unit.markdown].some(source => nfc(source).includes(nfc(line.text).trim()));
-const evidenceIn = (line, allowed, textOf) => line.by !== "model"
-  || line.evidence.every(entry => allowed.has(entry.elementId) && validateEvidence(textOf.get(entry.elementId), [entry]).ok);
-const authorLine = text => (typeof text === "string" && text.trim() ? { by: "author", text } : null);
 
 export class FoldService extends EventEmitter {
   /**
@@ -232,16 +226,14 @@ export class FoldService extends EventEmitter {
     return untilAborted(pending, signal);
   }
 
-  // One chunk: call, validate, payload-check, retry once naming the missing tokens, then fall back to Brief words.
+  // One chunk: the shared ladder validator calls, validates, payload-checks, retries once naming the lost tokens,
+  // then falls back to Brief words (shared/fold-check.mjs `checkLadderChunk`).
   async #foldChunk({ noteId, meta, chunk, chunkUnits: allUnits, stops, pins, connection, signal, tally }) {
     // HTML comments are invisible on the page: the model never sees them, so no line can quote or obey them.
     const chunkUnits = allUnits.filter(unit => !isHiddenUnit(unit));
     const chunkIds = new Set(chunkUnits.map(unit => unit.elementId));
-    const unitPins = new Map();
-    for (const pin of pins) {
-      if (!chunkIds.has(pin?.elementId) || typeof pin.quote !== "string" || !pin.quote.trim()) continue;
-      unitPins.set(pin.elementId, [...(unitPins.get(pin.elementId) ?? []), pin.quote]);
-    }
+    const chunkPins = pins.filter(pin => chunkIds.has(pin?.elementId) && typeof pin.quote === "string" && pin.quote.trim())
+      .map(pin => ({ elementId: pin.elementId, quote: pin.quote }));
     const request = {
       noteId,
       slot: SLOT,
@@ -258,86 +250,16 @@ export class FoldService extends EventEmitter {
           elementId: unit.elementId, kind: unit.kind, raw: unit.raw, sectionId: unit.sectionId, headings: unit.headings,
           markdown: unit.markdown, text: unit.text, brief: stops.get(unit.elementId).brief,
         })),
-        pins: [...unitPins].flatMap(([elementId, quotes]) => quotes.map(quote => ({ elementId, quote }))),
+        pins: chunkPins,
       },
       retry: null,
     };
-    const textOf = new Map(chunkUnits.map(unit => [unit.elementId, unit.text]));
-    const unitOf = new Map(chunkUnits.map(unit => [unit.elementId, unit]));
-    const check = (entry, retryAvailable) => {
-      const unit = unitOf.get(entry.elementId);
-      const local = stops.get(entry.elementId);
-      return checkWrittenUnit({ ...entry, checks: {} }, { unitText: unit.text, brief: local.brief, full: local.full, pins: unitPins.get(entry.elementId) ?? [], retryAvailable });
+    const ask = async retry => {
+      if (!retry) return this.#call(request, signal, tally);
+      try { return await this.#call({ ...request, retry }, signal, tally); }
+      catch (error) { if (isAbort(error) || signal.aborted) throw error; return null; }
     };
-    // Unknown units, raw blocks, bad roles or malformed lines are dropped; a stop that quotes outside its unit,
-    // claims author words the author never wrote, or carries markup the prompt forbids (a model that obeyed text
-    // inside the note, fixture 14) is restored to the unit's Brief words, as section lines already are.
-    const accept = reply => {
-      const out = new Map();
-      let restored = 0;
-      for (const entry of Array.isArray(reply?.written) ? reply.written : []) {
-        const unit = unitOf.get(entry?.elementId);
-        if (!unit || unit.raw || out.has(unit.elementId) || !isRole(entry.role) || !STOPS.every(stop => isFoldLine(entry[stop]))) continue;
-        const brief = authorLine(stops.get(unit.elementId).brief);
-        const own = new Set([unit.elementId]);
-        const lines = Object.fromEntries(STOPS.map(stop => {
-          const line = entry[stop];
-          return [stop, authorFits(line, unit) && evidenceIn(line, own, textOf) && (line.by !== "model" || checkFormat(line.text).ok) ? line : brief];
-        }));
-        const fixed = STOPS.filter(stop => lines[stop] !== entry[stop]).length;
-        if ((fixed && !brief) || fixed === STOPS.length) continue;
-        restored += fixed;
-        out.set(unit.elementId, { elementId: unit.elementId, role: entry.role, ...lines });
-      }
-      return { entries: out, restored };
-    };
-
-    const foldable = chunkUnits.some(unit => unit.kind === "heading" || (!unit.raw && unit.text.trim()));
-    if (!foldable) return { written: [], sections: [], warnings: 0 };
-    const first = await this.#call(request, signal, tally);
-    const { entries, restored } = accept(first);
-    const results = new Map([...entries].map(([id, entry]) => [id, check(entry, true)]));
-    const retry = Object.fromEntries([...results]
-      .map(([id, result]) => [id, [...new Set(STOPS.flatMap(stop => result.stops[stop].retryTokens))]])
-      .filter(([, tokens]) => tokens.length));
-    if (Object.keys(retry).length) {
-      let second = null;
-      try { second = accept(await this.#call({ ...request, retry }, signal, tally)).entries; }
-      catch (error) { if (isAbort(error) || signal.aborted) throw error; }
-      for (const id of Object.keys(retry)) results.set(id, check(second?.get(id) ?? entries.get(id), false));
-    }
-
-    const written = chunk.unitIds.filter(id => results.has(id)).map(id => results.get(id).unit);
-    const sections = this.#sections(first, chunk, chunkUnits, stops, textOf);
-    if (!written.length && !sections.lines.length) throw Object.assign(new Error("The fold reply held no usable line."), { code: "FOLD_INVALID" });
-    const warnings = [...results.values()].filter(result => result.warning || !result.ok).length;
-    return { written, sections: sections.lines, warnings: warnings + restored + sections.warnings };
-  }
-
-  // Section lines quote units of their own section; ungrounded or failing lines fall back to the heading's local stop.
-  #sections(reply, chunk, chunkUnits, stops, textOf) {
-    const lines = [];
-    let warnings = 0;
-    const seen = new Set();
-    for (const entry of Array.isArray(reply?.sections) ? reply.sections : []) {
-      const id = entry?.elementId;
-      if (!chunk.sectionIds.includes(id) || seen.has(id)) continue;
-      seen.add(id);
-      const allowed = new Set(chunkUnits.filter(unit => unit.sectionId === id).map(unit => unit.elementId));
-      const local = stops.get(id);
-      const resolved = {};
-      for (const stop of ["takeaway", "topic"]) {
-        const line = entry[stop];
-        const fallback = authorLine(local[stop]) ?? authorLine(local.brief);
-        const grounded = isFoldLine(line) && line.by === "model" && evidenceIn(line, allowed, textOf);
-        const result = grounded ? checkLine(line, undefined, { brief: fallback ?? undefined, retryAvailable: false }) : null;
-        if (result?.ok) resolved[stop] = result.resolved;
-        else { warnings++; resolved[stop] = fallback; }
-      }
-      if (resolved.takeaway && resolved.topic && countWords(resolved.topic.text) > countWords(resolved.takeaway.text)) resolved.topic = resolved.takeaway;
-      if (resolved.takeaway && resolved.topic) lines.push({ elementId: id, takeaway: resolved.takeaway, topic: resolved.topic });
-    }
-    return { lines, warnings };
+    return checkLadderChunk(ask, { units: chunkUnits, stops, pins: chunkPins, sectionIds: chunk.sectionIds });
   }
 
   async #records(dir, chunks, meta) {

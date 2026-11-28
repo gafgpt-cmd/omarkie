@@ -8,6 +8,7 @@ import {
   isAuthorText,
   isEvidence,
   isFoldLine,
+  isRole,
 } from "./fold-format.mjs";
 
 export const PAYLOAD_CLASSES = Object.freeze([
@@ -946,6 +947,22 @@ function compareNegation(lineTokens, evTokens, lineCond, evCond, action) {
       missing,
       action,
     });
+  } else if (linePlain.length > 0 && linePlain.length < evPlain.length) {
+    // Each negated clause keeps its own negation: dropping one of several flips that clause while polarity survives.
+    const left = linePlain.map(t => foldAscii(t.raw));
+    const missing = [...new Set(evPlain.filter(t => {
+      const at = left.indexOf(foldAscii(t.raw));
+      if (at < 0) return true;
+      left.splice(at, 1);
+      return false;
+    }).map(t => t.raw))];
+    findings.push({
+      class: "negation",
+      code: "dropped_negation",
+      message: `Negation dropped from one of ${evPlain.length} negated clauses; missing: ${(missing.length ? missing : evPlain.map(t => t.raw)).join(", ")}`,
+      missing: missing.length ? missing : [...new Set(evPlain.map(t => t.raw))],
+      action,
+    });
   } else if (evPlain.length === 0 && linePlain.length > 0) {
     const extra = [...new Set(linePlain.map(t => t.raw))];
     findings.push({
@@ -1669,4 +1686,118 @@ export function checkWrittenUnit(unit, options = {}) {
     unit: checkedUnit,
     warning: stops.key.warning || stops.takeaway.warning || stops.topic.warning,
   };
+}
+
+// --- Written ladder validator (OM-112): one chunk's model reply → the lines Fold may show ---
+const LADDER_STOPS = ["key", "takeaway", "topic"];
+const SECTION_STOPS = ["takeaway", "topic"];
+const RETRY_CLASSES = ["negation", "restriction", "condition", "uncertainty", "scope", "attribution"];
+
+const nfcText = text => String(text ?? "").normalize("NFC");
+const contains = (source, text) => nfcText(source).includes(nfcText(text).trim());
+const authorLineOf = text => (typeof text === "string" && text.trim() ? { by: "author", text } : null);
+// Author words come from the unit; words found only in its Markdown source carry no markup.
+const authorFits = (line, unit) => contains(unit.text, line.text) || (contains(unit.markdown, line.text) && checkFormat(line.text).ok);
+const grounded = (line, allowed, textOf) => line.evidence.every(entry => allowed.has(entry.elementId) && validateEvidence(textOf.get(entry.elementId), [entry]).ok);
+const hasWords = text => /[\p{L}\p{N}]/u.test(String(text ?? ""));
+
+/**
+ * Written ladder validator (design §4.4). `ask(retry)` calls the model for this chunk: `retry` null on the first
+ * call, else `{ elementId: lostTokens[] }`; it resolves to the reply, or null when the retry call failed.
+ * A stop outside the contract (malformed, evidence outside its own unit or off its offsets, author words the
+ * author never wrote, markup a model that obeyed the note would add: fixture 14) shows the unit's Brief words;
+ * a stop that loses payload retries once naming the lost tokens, then shows Brief words; numbers it invented
+ * become gaps; Key ≤ Brief ≤ Full, Takeaway ≤ Key, Topic ≤ Takeaway. Raw, unknown and duplicate units are dropped.
+ * Section lines are model lines quoting units of their own section, else the heading's local stop.
+ * A chunk with nothing to fold makes no call; a reply that leaves no usable line throws `FOLD_INVALID`.
+ */
+export async function checkLadderChunk(ask, { units, stops, pins = [], sectionIds = [] }) {
+  const unitOf = new Map(units.map(unit => [unit.elementId, unit]));
+  const textOf = new Map(units.map(unit => [unit.elementId, unit.text]));
+  if (!units.some(unit => unit.kind === "heading" || (!unit.raw && hasWords(unit.text)))) return { written: [], sections: [], warnings: 0, retried: [] };
+  const unitPins = new Map();
+  for (const pin of Array.isArray(pins) ? pins : []) {
+    if (!unitOf.has(pin?.elementId) || typeof pin.quote !== "string" || !pin.quote.trim()) continue;
+    unitPins.set(pin.elementId, [...(unitPins.get(pin.elementId) ?? []), pin.quote]);
+  }
+
+  const accept = reply => {
+    const entries = new Map();
+    for (const entry of Array.isArray(reply?.written) ? reply.written : []) {
+      const unit = unitOf.get(entry?.elementId);
+      if (!unit || unit.raw || unit.kind === "heading" || entries.has(unit.elementId) || !isRole(entry.role)) continue;
+      const brief = authorLineOf(stops.get(unit.elementId)?.brief);
+      const own = new Set([unit.elementId]);
+      let restored = 0, markup = false;
+      const lines = Object.fromEntries(LADDER_STOPS.map(stop => {
+        const line = entry[stop];
+        const fits = isFoldLine(line) && (line.by === "author" ? authorFits(line, unit) : grounded(line, own, textOf));
+        const clean = fits && (line.by !== "model" || checkFormat(line.text).ok);
+        if (clean) return [stop, line];
+        restored++;
+        if (fits) markup = true;
+        return [stop, brief];
+      }));
+      if ((restored && !brief) || restored === LADDER_STOPS.length) continue;
+      entries.set(unit.elementId, { elementId: unit.elementId, role: entry.role, ...lines, restored, markup });
+    }
+    return entries;
+  };
+
+  const check = (entry, retryAvailable) => {
+    const local = stops.get(entry.elementId) ?? {};
+    const result = checkWrittenUnit({ ...entry, checks: {} }, {
+      unitText: unitOf.get(entry.elementId).text, brief: local.brief, full: local.full, pins: unitPins.get(entry.elementId) ?? [], retryAvailable,
+    });
+    if (entry.markup) result.unit.checks.format = "fail";
+    return { ...result, restored: entry.restored };
+  };
+  // A stop still showing model words with a failed payload class needs the retry, even with no token to name.
+  const lost = result => LADDER_STOPS.some(stop => {
+    const line = result.stops[stop];
+    return line.fallback === null && line.resolved.by === "model" && RETRY_CLASSES.some(name => line.checks[name] === "fail");
+  });
+
+  const first = await ask(null);
+  const accepted = accept(first);
+  const results = new Map([...accepted].map(([id, entry]) => [id, check(entry, true)]));
+  const retry = Object.fromEntries([...results].filter(([, result]) => lost(result))
+    .map(([id, result]) => [id, [...new Set(LADDER_STOPS.flatMap(stop => result.stops[stop].retryTokens))]]));
+  const retried = Object.keys(retry);
+  if (retried.length) {
+    const second = accept(await ask(retry));
+    for (const id of retried) results.set(id, check(second.get(id) ?? accepted.get(id), false));
+  }
+
+  const written = units.filter(unit => results.has(unit.elementId)).map(unit => results.get(unit.elementId).unit);
+  const sections = ladderSections(first, { units, stops, sectionIds, textOf });
+  if (!written.length && !sections.lines.length) throw Object.assign(new Error("The fold reply held no usable line."), { code: "FOLD_INVALID" });
+  const warnings = [...results.values()].reduce((sum, result) => sum + result.restored + (result.warning || !result.ok ? 1 : 0), 0);
+  return { written, sections: sections.lines, warnings: warnings + sections.warnings, retried };
+}
+
+function ladderSections(reply, { units, stops, sectionIds, textOf }) {
+  const lines = [];
+  let warnings = 0;
+  const seen = new Set();
+  for (const entry of Array.isArray(reply?.sections) ? reply.sections : []) {
+    const id = entry?.elementId;
+    if (!sectionIds.includes(id) || seen.has(id)) continue;
+    seen.add(id);
+    const allowed = new Set(units.filter(unit => unit.sectionId === id).map(unit => unit.elementId));
+    const local = stops.get(id) ?? {};
+    const resolved = {};
+    for (const stop of SECTION_STOPS) {
+      const line = entry[stop];
+      const fallback = authorLineOf(local[stop]) ?? authorLineOf(local.brief);
+      const result = isFoldLine(line) && line.by === "model" && grounded(line, allowed, textOf)
+        ? checkLine(line, undefined, { brief: fallback ?? undefined, retryAvailable: false })
+        : null;
+      if (result?.ok) resolved[stop] = result.resolved;
+      else { warnings++; resolved[stop] = fallback; }
+    }
+    if (resolved.takeaway && resolved.topic && countWords(resolved.topic.text) > countWords(resolved.takeaway.text)) resolved.topic = resolved.takeaway;
+    if (resolved.takeaway && resolved.topic) lines.push({ elementId: id, takeaway: resolved.takeaway, topic: resolved.topic });
+  }
+  return { lines, warnings };
 }
