@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { installPlugin } from "../electron/plugins.mjs";
 import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
+import { appReady, readinessReport, saved as savedFile } from "./app-readiness.mjs";
 
 const data=await realpath(await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-")));
 const qa=process.env.OMARKIE_QA_DIR || path.join(data,"evidence"); await mkdir(qa,{recursive:true});
@@ -30,6 +31,7 @@ try {
   page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message)); await fullSize(app,page);
   console.log('IME: launched');
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({ timeout: 30_000 });
+  await appReady(app,page); console.log('IME: app ready');
   await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name:'插件管理…',exact:true}).click();
   await page.getByRole('checkbox',{name:'启用IME-probe',exact:true}).check();
   await expect.poll(()=>page.evaluate(()=>!!window.imeProbe)).toBe(true);
@@ -43,7 +45,7 @@ try {
   const cdp=await page.context().newCDPSession(page);
   await page.evaluate(()=>{window.imeEvents=[]; for(const type of ['compositionstart','compositionend','beforeinput','input']) document.addEventListener(type,event=>window.imeEvents.push({type,data:event.data,inputType:event.inputType,source:!!event.target.closest('.source-surface')}),true);});
   const mod=process.platform==='darwin'?'Meta':'Control';
-  const saved=text=>expect.poll(()=>readFile(file,'utf8')).toBe(text);
+  const saved=text=>savedFile(app,file,text);
   const point=async label=>root.evaluate((root,label)=>{const walk=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while(node=walk.nextNode()){if(!node.parentElement.closest('.md-meta,.md-view,.md-ui')&&node.data.includes(label)){root.focus();getSelection().collapse(node,node.data.indexOf(label)+label.length);document.dispatchEvent(new Event('selectionchange'));return;}}throw Error('Missing '+label);},label);
   const mark=async text=>cdp.send('Input.imeSetComposition',{text,selectionStart:text.length,selectionEnd:text.length});
   for (const label of ['输入区：','列表：','单元格：']) {
@@ -98,8 +100,8 @@ try {
   for(const candidate of ['同','同同','中文😀']) {
     await root.evaluate(root=>{const nodes=root.querySelectorAll(':scope > p');root.focus();getSelection().setBaseAndExtent(nodes[0].firstChild,0,nodes[1].firstChild,1);document.dispatchEvent(new Event('selectionchange'));});
     await mark('tong');await page.waitForTimeout(100);assert.equal(await readFile(repeatFile,'utf8'),repeatSource);
-    await cdp.send('Input.insertText',{text:candidate});await expect.poll(()=>readFile(repeatFile,'utf8')).toBe(prefix+candidate+'\n');
-    await page.keyboard.press(`${mod}+z`);await expect.poll(()=>readFile(repeatFile,'utf8')).toBe(repeatSource);
+    await cdp.send('Input.insertText',{text:candidate});await savedFile(app,repeatFile,prefix+candidate+'\n');
+    await page.keyboard.press(`${mod}+z`);await savedFile(app,repeatFile,repeatSource);
   }
   await expect.poll(fixtureLoads).toEqual([file,repeatFile]);
   checks.push('Repeated Chinese and emoji replace the selected paragraphs, preserve the surrounding Markdown and undo once');
@@ -107,5 +109,5 @@ try {
   await page.screenshot({path:path.join(qa,'ime-and-plugins.png')});
   await writeFile(path.join(qa,'ime-results.json'),JSON.stringify({platform:process.platform,checks,errors,mechanism:'Chromium Input.imeSetComposition and Input.insertText; not physical IME candidate acceptance'},null,2));
   for(const check of checks) console.log('PASS: '+check);
-} catch(error) { console.error(await page?.evaluate(()=>({events:window.imeEvents?.slice(-18),text:document.querySelector('.document-editor:not([hidden]) .source-surface')?.textContent,selection:getSelection()?.toString(),alerts:[...document.querySelectorAll('[role="alert"]')].map(x=>x.textContent)})).catch(()=>null)); await page?.screenshot({path:path.join(qa,'ime-failure.png')}).catch(()=>{});throw error; }
+} catch(error) { console.error(await page?.evaluate(()=>({events:window.imeEvents?.slice(-18),text:document.querySelector('.document-editor:not([hidden]) .source-surface')?.textContent,selection:getSelection()?.toString(),alerts:[...document.querySelectorAll('[role="alert"]')].map(x=>x.textContent)})).catch(()=>null)); console.error(JSON.stringify(await readinessReport(app,page))); await page?.screenshot({path:path.join(qa,'ime-failure.png')}).catch(()=>{});throw error; }
 finally {if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});}}

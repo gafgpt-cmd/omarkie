@@ -8,24 +8,28 @@ $process = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$destina
 if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
 $env:OMARKIE_EXECUTABLE = Join-Path $destination 'Omarkie.exe'
 if (!(Test-Path $env:OMARKIE_EXECUTABLE)) { throw 'Installer did not produce the application executable' }
-node tests/desktop.mjs
-$desktopExit = $LASTEXITCODE
-node tests/electron-shell.mjs
-$shellExit = $LASTEXITCODE
-node tests/parity-desktop.mjs
-$parityExit = $LASTEXITCODE
-$parityLog = Join-Path $env:OMARKIE_QA_DIR 'parity-app.log'
-if ($parityExit -ne 0 -and (Test-Path $parityLog)) {
-  Write-Output '::group::Editing parity app log (Glass startup steps, saves, main-process stalls)'
-  Get-Content $parityLog -Encoding UTF8
-  Write-Output '::endgroup::'
+# Each test runs with its own app debug log (startup steps, Glass, saves, dirty flips, main/renderer stalls).
+# The log prints after every test: open on failure, folded on success so green runs still show Windows timings.
+# Output goes to Out-Host/Write-Host so the function's return value is only the exit code.
+function Invoke-AppTest([string]$name, [string]$script) {
+  $log = Join-Path $env:OMARKIE_QA_DIR "$name-app.log"
+  $env:OMARKIE_DEBUG_LOG = $log
+  node $script | Out-Host
+  $exit = $LASTEXITCODE
+  Remove-Item Env:OMARKIE_DEBUG_LOG
+  if (Test-Path $log) {
+    if ($exit -ne 0) { Write-Host "$name failed; app debug log:" } else { Write-Host "::group::$name app debug log" }
+    Get-Content $log -Encoding UTF8 | Out-Host
+    if ($exit -eq 0) { Write-Host '::endgroup::' }
+  }
+  return $exit
 }
-node tests/compatibility-desktop.mjs
-$compatibilityExit = $LASTEXITCODE
-node tests/ime-desktop.mjs
-$imeExit = $LASTEXITCODE
-node tests/plugin-package-desktop.mjs
-$packageExit = $LASTEXITCODE
+$desktopExit = Invoke-AppTest 'desktop' 'tests/desktop.mjs'
+$shellExit = Invoke-AppTest 'shell' 'tests/electron-shell.mjs'
+$parityExit = Invoke-AppTest 'parity' 'tests/parity-desktop.mjs'
+$compatibilityExit = Invoke-AppTest 'compatibility' 'tests/compatibility-desktop.mjs'
+$imeExit = Invoke-AppTest 'ime' 'tests/ime-desktop.mjs'
+$packageExit = Invoke-AppTest 'plugin-package' 'tests/plugin-package-desktop.mjs'
 if ($packageExit -ne 0) { throw 'Installed plugin package regression failed' }
 if ($imeExit -ne 0) { throw 'Installed composition and plugin regression failed' }
 if ($desktopExit -ne 0) { throw 'Installed desktop regression failed' }
