@@ -1767,5 +1767,13 @@
   "Too short to fold": "Demasiado corta para plegar",
   "Local fold · model lines when you choose": "Pliegue local · líneas del modelo cuando elijas",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}} % de las palabras",
-  "Estudio needs a model; local stops only for now": "Estudio necesita un modelo; por ahora solo niveles locales"
+  "Estudio needs a model; local stops only for now": "Estudio necesita un modelo; por ahora solo niveles locales",
+  "Evidence": "Evidencia",
+  "Source · line {{line}}": "Fuente · línea {{line}}",
+  "Open in editor": "Abrir en editor",
+  "Back to fold · Esc": "Volver al pliegue · Esc",
+  "Corte": "Corte",
+  "Compare with Full · C": "Comparar con Completo · C",
+  "Divider between Full and {{level}}": "Divisor entre Completo y {{level}}",
+  "{{percent}}% shows Full": "{{percent}} % muestra Completo"
 }

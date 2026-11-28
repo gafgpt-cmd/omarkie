@@ -910,5 +910,13 @@
   "Too short to fold": "太短，无法折叠",
   "Local fold · model lines when you choose": "本地折叠 · 需要时再加模型句子",
   "{{level}}, {{percent}}% of words": "{{level}}，{{percent}}% 的字词",
-  "Estudio needs a model; local stops only for now": "学习版需要模型；目前仅本地层级"
+  "Estudio needs a model; local stops only for now": "学习版需要模型；目前仅本地层级",
+  "Evidence": "依据",
+  "Source · line {{line}}": "原文 · 第 {{line}} 行",
+  "Open in editor": "在编辑器中打开",
+  "Back to fold · Esc": "返回折叠 · Esc",
+  "Corte": "剖面",
+  "Compare with Full · C": "与全文对比 · C",
+  "Divider between Full and {{level}}": "全文与{{level}}之间的分隔线",
+  "{{percent}}% shows Full": "{{percent}}% 显示全文"
 }

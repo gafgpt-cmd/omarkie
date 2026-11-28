@@ -4,8 +4,8 @@ import { STOPS, stopLabel as labelOf } from "./stops";
 
 const stopLabel = (index: number) => labelOf(STOPS[index]);
 
-// Floating level bar: five local stops on one slider, the model stop apart and off.
-export function FoldBar({ index, percents, disabled, hint, pick, scrub, release }: {
+// Floating level bar: five local stops on one slider, the model stop apart and off, then the Corte divider toggle.
+export function FoldBar({ index, percents, disabled, hint, pick, scrub, release, cut, toggleCut }: {
   index: number;
   percents: number[];
   disabled: boolean;
@@ -13,6 +13,8 @@ export function FoldBar({ index, percents, disabled, hint, pick, scrub, release 
   pick(index: number): void;
   scrub(value: number): void;
   release(): void;
+  cut: boolean;
+  toggleCut(): void;
 }) {
   const track = useRef<HTMLDivElement>(null), drag = useRef<{ id: number; moved: boolean; x: number } | null>(null);
   // Piecewise between stop label centres, so the thumb lands on a label at each whole stop.
@@ -63,6 +65,10 @@ export function FoldBar({ index, percents, disabled, hint, pick, scrub, release 
       <span className="fold-gap" aria-hidden="true" />
       <button type="button" className="fold-stop fold-estudio" disabled title={t("Estudio needs a model; local stops only for now")}>
         <span>{t("Estudio")}</span><small>{t("off")}</small>
+      </button>
+      <span className="fold-gap" aria-hidden="true" />
+      <button type="button" className="fold-stop fold-cut-toggle" aria-pressed={cut} disabled={disabled} title={t("Compare with Full · C")} onClick={toggleCut}>
+        <span>{t("Corte")}</span><small aria-hidden="true">C</small>
       </button>
     </div>
   </div>;
