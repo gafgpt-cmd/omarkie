@@ -1,11 +1,11 @@
 name: Desktop release
 
+# Packaging runs on demand only: workflow_dispatch, release tags, or a PR labelled release-ci.
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "packaging/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "packaging/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
@@ -27,6 +27,7 @@ env:
 
 jobs:
   arch:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'release-ci')
     runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 30
     container: archlinux:base-devel
@@ -77,6 +78,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'release-ci')
     runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 30
     steps:
@@ -127,6 +129,7 @@ jobs:
           retention-days: 7
 
   windows:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'release-ci')
     runs-on: windows-2025
     timeout-minutes: 30
     steps:
