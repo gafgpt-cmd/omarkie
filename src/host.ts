@@ -1,7 +1,9 @@
-import type { DocumentRecord, Host, Recovery, SessionSnapshot } from "./types";
+import type { DocumentRecord, FileEntry, FolderResult, Host, Recovery, SearchResult, SessionSnapshot } from "./types";
 import { browserBackground, chooseBrowserBackground } from "./browserBackground";
 import { t } from "./i18n";
 import { bundledImageUrls } from "./editor/htmlResources";
+import { localImageSources } from "./editor/markdown";
+import * as companion from "./companion";
 const browserRecords = new Map<string, DocumentRecord>();
 const showcaseImages = new Map(Object.entries(import.meta.glob<string>("../docs/showcase/images/*", { query: "?url", import: "default", eager: true }))
   .map(([file, url]) => [file.replace("../docs/showcase/", ""), url]));
@@ -33,6 +35,36 @@ function download(name: string, text: string, type = "text/markdown;charset=utf-
   anchor.download = name;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// Companion notes live at "/<vault>/<relative path>"; drafts have no path.
+const companionPath = (record: DocumentRecord) => record.path?.split("/").slice(2).join("/") || null;
+let imageUrls: Map<string, string> | null = null;
+async function companionFolder(): Promise<FolderResult | null> {
+  const vault = await companion.status();
+  if (!vault) return null;
+  const root = `/${vault.name}`, rows = await companion.notes(), folders = new Set<string>();
+  for (const row of rows) { const parts = row.path.split("/"); for (let depth = 1; depth < parts.length; depth++) folders.add(parts.slice(0, depth).join("/")); }
+  const entry = (relative: string, directory: boolean): FileEntry => ({ token: directory ? `folder:${relative}` : relative, name: relative.split("/").pop()!, relative, path: `${root}/${relative}`, ...(directory ? { isDirectory: "true" } : {}) });
+  return { folder: root, files: [...[...folders].map(relative => entry(relative, true)), ...rows.map(row => entry(row.path, false))], truncated: false };
+}
+// Relative images in a companion note resolve to the photos imported with it, as blob URLs.
+async function registerCompanionImages(record: DocumentRecord) {
+  const relative = companionPath(record);
+  if (!relative) return;
+  if (!imageUrls) imageUrls = new Map((await companion.images()).map(image => [image.path, URL.createObjectURL(image.blob)]));
+  const folder = relative.split("/").slice(0, -1);
+  for (const source of localImageSources(record.content)) {
+    let decoded = source;
+    try { decoded = decodeURI(source); } catch {}
+    const parts = [...(decoded.startsWith("/") ? [] : folder), ...decoded.split(/[?#]/)[0].split("/")].reduce<string[]>((path, part) => part === ".." ? path.slice(0, -1) : part && part !== "." ? [...path, part] : path, []);
+    const name = parts.at(-1), candidates = [...imageUrls.keys()].filter(path => path.split("/").pop() === name);
+    const url = imageUrls.get(parts.join("/")) ?? (candidates.length === 1 ? imageUrls.get(candidates[0]) : undefined);
+    if (url) for (const key of new Set([source, encodeURI(decoded)])) bundledImageUrls.set(`omarkie-asset://local/${encodeURIComponent(record.id)}/${encodeURIComponent(key)}`, url);
+  }
+}
+export async function resetCompanionImages() {
+  for (const url of imageUrls?.values() ?? []) URL.revokeObjectURL(url);
+  imageUrls = null;
 }
 const browser: Host = {
   native: false,
@@ -67,9 +99,21 @@ const browser: Host = {
     session ??= {
       documents: showcase.map(sample => draft(sample.name, sample.content)),
     };
+    // Companion notes reopen from this device's copy. A note no longer there comes back as an unsaved draft,
+    // never as a file that seems to exist.
+    const folder = await companionFolder().catch(() => null);
+    session.folder = folder?.folder ?? null;
+    session.documents = await Promise.all(session.documents.map(async record => {
+      const relative = companionPath(record);
+      if (!relative) return record;
+      const row = folder && record.path!.startsWith(folder.folder + "/") ? await companion.note(relative).catch(() => undefined) : undefined;
+      if (!row) return { ...record, path: null, diskHash: null, savedContent: "" };
+      return record.content === record.savedContent ? { ...record, content: row.text, savedContent: row.text } : { ...record, savedContent: row.text };
+    }));
     for (const record of session.documents) {
       browserRecords.set(record.id, record);
       if (showcase.some(sample => sample.name === record.name)) registerShowcaseImages(record);
+      await registerCompanionImages(record).catch(() => {});
     }
     return session;
   },
@@ -101,19 +145,52 @@ const browser: Host = {
       input.click();
     }),
   async openFolder() {
-    throw new Error(t("打开文件夹请使用桌面应用。浏览器预览可以打开单个文件。"));
+    const existing = await companionFolder();
+    if (existing) return existing;
+    const files = await new Promise<FileList | null>(resolve => {
+      const input = document.createElement("input");
+      input.type = "file"; input.webkitdirectory = true; input.multiple = true;
+      input.onchange = () => resolve(input.files);
+      input.addEventListener("cancel", () => resolve(null));
+      input.click();
+    });
+    if (!files?.length) return null;
+    await companion.importFolder(files);
+    await resetCompanionImages();
+    return companionFolder();
   },
   async fileOperation() { throw new Error(t("文件操作请使用桌面应用。")); },
   onFileOperation() { return () => {}; },
   async recent() { return []; },
   async recentAction() { return null; },
-  async searchFiles() { return { matches: [], truncated: false, skipped: 0 }; },
+  async searchFiles(query, options) {
+    if (!query || query.length > 1000) return { matches: [], truncated: false, skipped: 0 };
+    const vault = await companion.status();
+    if (!vault) return { matches: [], truncated: false, skipped: 0 };
+    const notes = await companion.notes(), worker = new Worker(new URL("./companionSearch.worker.ts", import.meta.url), { type: "module" });
+    try {
+      const reply = await new Promise<Partial<SearchResult> & { error?: string; timedOut?: boolean }>(resolve => {
+        const timer = setTimeout(() => resolve({ matches: [], truncated: true, timedOut: true }), 5000);
+        worker.onmessage = event => { clearTimeout(timer); resolve(event.data); };
+        worker.postMessage({ notes, query, regex: options.regex, caseSensitive: options.caseSensitive });
+      });
+      if (reply.error) throw new Error(reply.error);
+      return { matches: (reply.matches ?? []).map(match => ({ ...match, path: `/${vault.name}/${match.token}` })), truncated: !!reply.truncated, skipped: 0 };
+    } finally { worker.terminate(); }
+  },
   async reveal() {},
   async scan() {
-    return { folder: null, files: [], truncated: false };
+    return await companionFolder() ?? { folder: null, files: [], truncated: false };
   },
-  async openToken() {
-    throw new Error(t("浏览器预览不支持文件夹。"));
+  async openToken(token) {
+    const [vault, row] = await Promise.all([companion.status(), companion.note(token)]);
+    if (!vault || !row) throw new Error(t("目录已更新，请刷新后重试。"));
+    const path = `/${vault.name}/${token}`, existing = [...browserRecords.values()].find(record => record.path === path);
+    if (existing) return existing;
+    const record = { ...draft(token.split("/").pop()!, row.text), path };
+    browserRecords.set(record.id, record);
+    await registerCompanionImages(record);
+    return record;
   },
   async reopen(id) { const record = browserRecords.get(id); if (!record) throw new Error(t("文档已不可用。")); return record; },
   chooseImage: (id) => new Promise(resolve => {
@@ -122,8 +199,9 @@ const browser: Host = {
     input.addEventListener("cancel", () => resolve(null)); input.click();
   }),
   async save(id, text) {
-    const record = browserRecords.get(id)!;
-    download(record.name, text);
+    const record = browserRecords.get(id)!, relative = companionPath(record);
+    if (relative) await companion.saveNote(relative, text);
+    else download(record.name, text);
     const next = { ...record, content: text, savedContent: text };
     browserRecords.set(id, next);
     return next;
@@ -183,7 +261,7 @@ export const host: Host = window.desktop
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
         if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage" || name === "sync") && !window.desktop![name]) return undefined;
-        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
+        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch" || name === "peek" || name === "resolveConflict") && !window.desktop?.[name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {

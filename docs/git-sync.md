@@ -28,7 +28,7 @@ The remote is stored in `.omarkie/settings.json` as `sync.remote` and `sync.bran
 
 ## Folder-sync apps
 
-A vault inside Google Drive, OneDrive, Dropbox, Nextcloud, Syncthing or iCloud Drive is labelled **Synced by <app>** in Sync settings. Omarkie only detects the folder name or metadata marker; it does not manage or pause those apps.
+A vault inside Google Drive, OneDrive, Dropbox, Nextcloud, Syncthing or iCloud Drive is labelled **Synced by <app>** in Sync settings. Omarkie only detects the folder name or metadata marker; it does not manage or pause those apps. How Omarkie handles their changes and conflict copies, and a private Syncthing setup: [folder sync](folder-sync.md). Use one sync engine per vault.
 
 ## Agent parity
 

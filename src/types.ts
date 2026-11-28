@@ -11,6 +11,7 @@ export interface DocumentRecord {
   diskHash: string | null;
   lineEnding: string;
   conflict?: boolean;
+  missing?: boolean;
   bom?: boolean;
   encoding?: string;
   controlCharacters?: number;
@@ -48,7 +49,18 @@ export interface DiskChange {
   diskHash?: string;
   error?: string;
   missing?: boolean;
+  moved?: boolean;
+  path?: string;
+  name?: string;
+  encoding?: string;
+  bom?: boolean;
 }
+export interface DiskVersion { content: string; diskHash: string; path: string; name: string; encoding: string; bom: boolean }
+export type ConflictRequest =
+  { action: "keep-draft" | "keep-disk"; text: string; diskHash: string } |
+  { action: "restore"; text: string } |
+  { action: "drop-copy" | "use-copy"; token: string };
+export interface ConflictResult { record: DocumentRecord; copy?: string; removedPath?: string }
 export interface SessionSnapshot {
   documents: DocumentRecord[];
   activeId: string;
@@ -109,6 +121,8 @@ export interface Host {
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;
   native: boolean;
+  peek?(token: string): Promise<DiskVersion>;
+  resolveConflict?(id: string, request: ConflictRequest): Promise<ConflictResult>;
   cancelClose(): Promise<unknown>;
   windowAction(action: string): Promise<unknown>;
   imageAction(id: string, sources: string[], action: string, options?: Record<string, unknown>): Promise<Record<string, string> | null>;

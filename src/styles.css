@@ -612,6 +612,23 @@ svg {
   border-radius: 4px;
   padding: 4px 8px;
 }
+[data-appearance="dark"] .conflict-banner {
+  background: #4a3d1f;
+  color: #f3dfae;
+}
+[data-appearance="dark"] .conflict-banner button {
+  border-color: #8a7240;
+}
+.conflict-banner.sync-banner {
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  color: var(--ink);
+}
+.conflict-banner.sync-banner button {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.tree-conflict-copy {
+  color: var(--accent);
+}
 .glass-banner {
   position: fixed;
   left: 18px;

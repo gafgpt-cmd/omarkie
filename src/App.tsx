@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FilePlus2, FolderOpen, X, AlertCircle } from "lucide-react";
+import { FilePlus2, Files, FolderOpen, X, AlertCircle } from "lucide-react";
+import { conflictCopy, copiesOf } from "../shared/sync-conflicts.mjs";
 import { useDocuments } from "./useDocuments";
 import { EncodingDialog, encodingNames } from "./components/EncodingDialog";
 import { Toolbar } from "./components/Toolbar";
@@ -49,6 +50,8 @@ import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 const LearningMode = lazy(() => import("./components/LearningMode"));
 const SyncDialog = lazy(() => import("./components/SyncDialog"));
+const VersionCompare = lazy(() => import("./components/VersionCompare"));
+const CompanionDialog = lazy(() => import("./components/CompanionDialog"));
 
 function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
   if (!folder || !file) return;
@@ -154,6 +157,11 @@ export default function App() {
   const printDocument = useRef<HTMLElement>(null);
   const commands = useRef<(command: Command) => void>(() => {});
   const active = session.active;
+  const [compare, setCompare] = useState<"disk" | "copy" | null>(null);
+  // Conflict copies exist only where the folder scan saw them; hosts without conflict tools skip the banners.
+  const conflictCopies = useMemo(() => active?.path && host.resolveConflict ? copiesOf(active.path, session.files) : [], [active?.path, session.files]);
+  const activeCopy = active?.path && host.resolveConflict ? conflictCopy(active.name) : null;
+  const activeBase = activeCopy && session.files.find(file => file.path === active!.path!.slice(0, -active!.name.length) + activeCopy.base);
   const readingSupported = !!window.desktop?.readingStore;
   const glassSupported = !!window.desktop?.glassState;
   const [glassOn, setGlassOn] = useState(false);
@@ -678,7 +686,7 @@ export default function App() {
         disabled={!active}
         context={editor()?.context() || ""}
         learning={readingSupported ? learningEnabled : undefined}
-        sync={window.desktop?.sync && session.folder ? { open: syncOpen, show: () => setSyncOpen(true) } : undefined}
+        sync={window.desktop ? window.desktop.sync && session.folder ? { open: syncOpen, show: () => setSyncOpen(true) } : undefined : { open: syncOpen, show: () => setSyncOpen(true), companion: true }}
         tutor={tutorKey ? { open: tutorOpen, show: tutorOpen ? closeTutor : openTutor } : undefined}
         payload={payloadAvailable ? { open: !!activePayload, show: () => activePayload ? setPayload(null) : openPayload("summary") } : undefined}
       />
@@ -715,12 +723,35 @@ export default function App() {
         {active?.conflict && (
           <div className="conflict-banner" role="alert">
             <AlertCircle size={17} />
-            <span>{t("文件在磁盘上已改变。当前草稿已保留。")}</span>
+            <span>{active.missing ? t("This note is gone from disk: deleted or moved away by another app. Your text is kept here.") : t("文件在磁盘上已改变。当前草稿已保留。")}</span>
+            {host.resolveConflict ? (active.missing
+              ? <button onClick={() => void session.resolveConflict(active.id, { action: "restore", text: active.content })
+                  .then(() => session.setMessage(t("Restored “{{name}}” on disk.", { name: active.name })), error => session.setMessage(error instanceof Error ? error.message : String(error)))}>{t("Restore file")}</button>
+              : <button onClick={() => setCompare("disk")}>{t("Compare versions")}</button>)
+            : <>
+              <button onClick={() => void session.reload()}>{t("重新载入")}</button>
+              <button onClick={() => void session.save(false, active.id, true)}>{t("覆盖磁盘")}</button>
+            </>}
             <button onClick={() => void session.save(true)}>{t("另存副本")}</button>
-            <button onClick={() => void session.reload()}>{t("重新载入")}</button>
-            <button onClick={() => void session.save(false, active.id, true)}>
-              {t("覆盖磁盘")}
-            </button>
+          </div>
+        )}
+        {active && !active.conflict && conflictCopies.length > 0 && (
+          <div className="conflict-banner sync-banner" role="status">
+            <Files size={17} aria-hidden="true" />
+            <span>{t("A sync app kept another version of this note.")}</span>
+            <button onClick={() => setCompare("copy")}>{t("Compare versions")}</button>
+          </div>
+        )}
+        {active?.path && activeCopy && (
+          <div className="conflict-banner sync-banner" role="status">
+            <Files size={17} aria-hidden="true" />
+            {activeBase ? <>
+              <span>{t("This file is another version of “{{name}}”.", { name: activeCopy.base })}</span>
+              <button onClick={() => void session.openToken(activeBase.token)}>{t("Open “{{name}}”", { name: activeCopy.base })}</button>
+            </> : <>
+              <span>{t("This is the only version left of “{{name}}”.", { name: activeCopy.base })}</span>
+              <button disabled={active.content !== active.savedContent} onClick={() => void session.fileOperation({ action: "rename", path: active.path!, name: activeCopy.base }).catch(error => session.setMessage(error instanceof Error ? error.message : String(error)))}>{t("Restore as “{{name}}”", { name: activeCopy.base })}</button>
+            </>}
           </div>
         )}
         {!session.ready ? (
@@ -875,7 +906,10 @@ export default function App() {
       {dialog === "glass-export" && active && <GlassExport key={active.id} note={vaultRelative(session.folder, active.path) ?? ""} close={closeDialog} pdf={scope => exportDocument("pdf", undefined, scope)} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
-      <Suspense fallback={null}>{syncOpen && <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />}</Suspense>
+      <Suspense fallback={null}>{syncOpen && (window.desktop ? <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />
+        : <CompanionDialog close={() => setSyncOpen(false)} notify={session.setMessage} mounted={session.refresh} />)}</Suspense>
+      <Suspense fallback={null}>{compare && active && <VersionCompare record={active} mode={compare} copies={conflictCopies} close={() => setCompare(null)}
+        resolve={request => session.resolveConflict(active.id, request)} notify={session.setMessage} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

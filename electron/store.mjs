@@ -1,3 +1,4 @@
+import { conflictCopy, conflictName } from "../shared/sync-conflicts.mjs";
 import {
   readFile,
   writeFile,
@@ -280,10 +281,105 @@ export class DocumentStore {
             diskHash: hash,
           };
     } catch (e) {
+      if (e.code === "ENOENT") { const moved = await this.follow(record).catch(() => null); if (moved) return moved; }
       return { missing: e.code === "ENOENT", error: t("磁盘文件暂时无法读取。") };
     }
   }
   hasBOM(bytes) { return bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf || bytes[0] === 0xff && bytes[1] === 0xfe || bytes[0] === 0xfe && bytes[1] === 0xff; }
+  // A sync app renamed or moved the note: the same bytes now sit at one other path inside the vault.
+  async follow(record) {
+    if (!this.folder || !record.diskHash || !within(this.folder, record.path)) return null;
+    let size;
+    try { size = encodeText(record.savedContent, record.encoding || "utf-8", !!record.bom && (record.encoding || "utf-8").startsWith("utf-")).length; }
+    catch { return null; }
+    const { files } = await this.scan(this.folder), open = new Set([...this.records.values()].map(item => item.path));
+    let found = null;
+    for (const file of files) {
+      if (file.isDirectory === "true" || open.has(file.path)) continue;
+      try { if ((await stat(file.path)).size !== size || digest(await readFile(file.path)) !== record.diskHash) continue; }
+      catch { continue; }
+      if (found) return null;
+      found = file.path;
+    }
+    if (!found) return null;
+    const updated = { ...this.require(record.id), path: found, name: path.basename(found) };
+    this.records.set(record.id, updated);
+    return { moved: true, path: updated.path, name: updated.name };
+  }
+  // Read another version (a conflict copy) without opening it as a document.
+  async peek(token) {
+    const file = this.fileTokens.get(token);
+    if (!file) throw new Error(t("目录已更新，请刷新后重试。"));
+    const bytes = await readFile(file);
+    if (bytes.length > 20 * 1024 * 1024) throw new Error(t("文件超过首版支持的 20 MB。"));
+    return { ...decodeText(bytes), diskHash: digest(bytes), path: file, name: path.basename(file) };
+  }
+  async writeCopy(file, bytes, origin) {
+    const mode = await stat(file).then(info => info.mode & 0o777, () => 0o600), now = Date.now();
+    for (let offset = 0; offset < 60; offset++) {
+      const target = path.join(path.dirname(file), conflictName(path.basename(file), origin, new Date(now + offset * 1000)));
+      let handle;
+      try { handle = await open(target, "wx", mode); }
+      catch (error) { if (error.code === "EEXIST") continue; throw error; }
+      try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+      return target;
+    }
+    throw new Error(t("目标已存在，未覆盖任何文件。"));
+  }
+  // Settle a disk conflict without losing either side: the version not kept stays beside the note
+  // as a conflict copy, or goes to the Trash when it already was one.
+  async resolve(id, request, trash, move) {
+    const prior = this.queues.get(id) ?? Promise.resolve();
+    const operation = prior.catch(() => {}).then(() => this.resolveNow(id, request ?? {}, trash, move));
+    this.queues.set(id, operation);
+    try { return await operation; }
+    finally { if (this.queues.get(id) === operation) this.queues.delete(id); }
+  }
+  async resolveNow(id, request, trash, move) {
+    const record = this.require(id), file = record.path, action = request.action;
+    if (!file) throw new Error(t("请先为草稿选择保存位置。"));
+    const encoding = record.encoding || "utf-8", bom = !!record.bom && encoding.startsWith("utf-");
+    const changedAgain = () => Object.assign(new Error(t("The file changed again on disk. Compare the versions once more.")), { code: "EXTERNAL_CHANGE" });
+    const settle = (text, bytes) => {
+      const updated = { ...record, content: text, savedContent: text, diskHash: digest(bytes), lineEnding: text.includes("\r\n") ? "\r\n" : "\n", conflict: false };
+      this.records.set(id, updated);
+      return { ...updated };
+    };
+    if (action === "keep-draft" || action === "keep-disk") {
+      if (typeof request.text !== "string" || typeof request.diskHash !== "string") throw new Error(t("草稿内容无效。"));
+      const disk = await readFile(file);
+      if (digest(disk) !== request.diskHash) throw changedAgain();
+      if (action === "keep-disk") {
+        const copy = await this.writeCopy(file, encodeText(request.text, encoding, bom), "draft");
+        return { record: { ...await this.reload(id), conflict: false }, copy };
+      }
+      const draft = encodeText(request.text, encoding, bom), copy = await this.writeCopy(file, disk, "disk");
+      await atomicWrite(file, draft, async () => { if (digest(await readFile(file)) !== request.diskHash) throw changedAgain(); });
+      return { record: settle(request.text, draft), copy };
+    }
+    if (action === "restore") {
+      if (typeof request.text !== "string") throw new Error(t("草稿内容无效。"));
+      const bytes = encodeText(request.text, encoding, bom);
+      await mkdir(path.dirname(file), { recursive: true });
+      let handle;
+      try { handle = await open(file, "wx", 0o600); }
+      catch (error) { if (error.code === "EEXIST") throw changedAgain(); throw error; }
+      try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
+      return { record: settle(request.text, bytes) };
+    }
+    if (action !== "drop-copy" && action !== "use-copy") throw new Error(t("文件操作无效。"));
+    const copy = this.fileTokens.get(request.token), info = copy && conflictCopy(path.basename(copy));
+    if (!info || path.dirname(copy) !== path.dirname(file) || info.base !== path.basename(file)) throw new Error(t("This conflict copy no longer belongs to the note."));
+    if ([...this.records.values()].some(item => item.path === copy)) throw new Error(t("Close the other version's tab first."));
+    if (!trash) throw new Error(t("当前宿主未提供废纸篓。"));
+    if (action === "drop-copy") { await trash(copy); return { record: { ...record }, removedPath: copy }; }
+    let current;
+    try { current = await readFile(file); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (current && digest(current) !== record.diskHash) throw changedAgain();
+    if (current) await trash(file);
+    await move(copy, file);
+    return { record: { ...await this.reload(id), conflict: false }, removedPath: copy };
+  }
   acceptDisk(id, content, diskHash, bom = this.require(id).bom, encoding = this.require(id).encoding) {
     const record = this.require(id);
     const updated = {
@@ -350,16 +446,18 @@ export class DocumentStore {
           continue;
         if (record.path) {
           record.path = await realpath(record.path).catch(() => record.path);
+          delete record.conflict; delete record.missing;
           this.records.set(record.id, record);
           const changed = await this.check(record.id);
-          if (changed && !changed.error) {
+          if (changed?.moved) Object.assign(record, { path: changed.path, name: changed.name });
+          else if (changed && !changed.error) {
             if (record.content === record.savedContent) {
               record.content = changed.content;
               record.savedContent = changed.content;
               record.diskHash = changed.diskHash;
               record.encoding = changed.encoding; record.bom = changed.bom; record.lineEnding = changed.content.includes("\r\n") ? "\r\n" : "\n";
             } else record.conflict = true;
-          } else if (changed?.error) record.conflict = true;
+          } else if (changed?.error) Object.assign(record, { conflict: true, missing: !!changed.missing });
         } else this.registerDraft(record);
         this.records.set(record.id, record);
         documents.push(record);
