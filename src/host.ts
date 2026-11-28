@@ -261,7 +261,7 @@ export const host: Host = window.desktop
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
         if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage" || name === "sync") && !window.desktop![name]) return undefined;
-        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch" || name === "peek" || name === "resolveConflict") && !window.desktop?.[name]) return undefined;
+        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch" || name === "peek" || name === "resolveConflict" || name === "canvas") && !window.desktop?.[name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {

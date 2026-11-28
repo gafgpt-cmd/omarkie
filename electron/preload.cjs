@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld("desktop", {
   },
   learningSearch: (id, query) => call("learningSearch", id, query),
   glass: request => call("glass", request),
+  canvas: request => call("canvas", request),
   glassConsent: request => call("glassConsent", request),
   sync: request => call("sync", request),
   captureRegion: rect => call("captureRegion", rect),

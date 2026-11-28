@@ -442,6 +442,7 @@ const handlers = {
     }
     throw new Error("Sync action must be status, configure, token, clear-token or now.");
   },
+  canvas: async (_, request) => (await import("./canvas-store.mjs")).canvasRequest(store.folder, request),
   glass: async (_, request) => {
     if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
     if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }

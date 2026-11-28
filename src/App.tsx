@@ -28,6 +28,8 @@ import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
 import type { FileOperation } from "./types";
+import type { CanvasRequest } from "./components/CanvasView";
+import type { CanvasNode } from "../shared/json-canvas.mjs";
 import type { Command, ConversionOptions } from "./types";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
@@ -54,6 +56,7 @@ const LearningMode = lazy(() => import("./components/LearningMode"));
 const SyncDialog = lazy(() => import("./components/SyncDialog"));
 const VersionCompare = lazy(() => import("./components/VersionCompare"));
 const CompanionDialog = lazy(() => import("./components/CompanionDialog"));
+const CanvasView = lazy(() => import("./components/CanvasView"));
 
 function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
   if (!folder || !file) return;
@@ -131,6 +134,8 @@ export default function App() {
     return session.openToken(token);
   }
   const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
+  const [canvasRequest, setCanvasRequest] = useState<CanvasRequest | null>(null);
+  const [tutorRequest, setTutorRequest] = useState<{ text: string; at: number }>();
   const glassDismissed = useRef(false);
   useEffect(() => {
     glassDismissed.current = false;
@@ -274,6 +279,17 @@ export default function App() {
     if (halfTile) setDrawer(false);
   }
   function closeTutor() { setTutor(null); editor()?.focus(); }
+  function openCanvas(clips?: CanvasNode[], last = false) {
+    if (!host.canvas || !session.folder) { session.setMessage(t("Open a notes folder to use canvas boards.")); return; }
+    setCanvasRequest({ last, clips, at: Date.now() });
+  }
+  async function openCanvasNote(file: string, line: number) {
+    setCanvasRequest(null);
+    const item = session.files.find(entry => entry.isDirectory !== "true" && entry.relative.replaceAll("\\", "/") === file);
+    const record = item && await session.openToken(item.token);
+    if (!record) { session.setMessage(t("The file no longer exists.")); return; }
+    jumpTo(record.id, line);
+  }
   function openFilesRail() {
     setShowFiles(true);
     openSidebar();
@@ -564,6 +580,7 @@ export default function App() {
     else if (action === "shared-glass") toggleSharedGlass();
     else if (action === "glass-export" && active) setDialog("glass-export");
     else if (action === "sync") setSyncOpen(true);
+    else if (action === "canvas-boards") openCanvas();
     else if (action === "open-board") {
       if (!boardNote || !boardMagnet) return;
       if (!preferences.boardEnabled) { session.setMessage(t("Enable the Board add-on in Settings first.")); return; }
@@ -859,6 +876,7 @@ export default function App() {
               note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
+              openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}
               reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
@@ -939,6 +957,9 @@ export default function App() {
         : <CompanionDialog close={() => setSyncOpen(false)} notify={session.setMessage} mounted={session.refresh} />)}</Suspense>
       <Suspense fallback={null}>{compare && active && <VersionCompare record={active} mode={compare} copies={conflictCopies} close={() => setCompare(null)}
         resolve={request => session.resolveConflict(active.id, request)} notify={session.setMessage} />}</Suspense>
+      <Suspense fallback={null}>{canvasRequest && session.folder && host.canvas && <CanvasView key={session.folder} vault={session.folder} request={canvasRequest}
+        close={() => { setCanvasRequest(null); editor()?.focus(); }} openNote={(file, line) => void openCanvasNote(file, line)}
+        askTutor={tutorKey ? text => { setCanvasRequest(null); setTutorRequest({ text, at: Date.now() }); } : undefined} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

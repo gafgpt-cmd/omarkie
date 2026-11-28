@@ -125,6 +125,7 @@
     {"label":"Reset text size","action":"text-reset","key":"Mod-0","context":"document"},
     {"label":"源码模式","action":"source","key":"Mod-/","context":"document"},
     {"label":"Learning mode","action":"reading-layers","key":"Mod-Shift-Y"},
+    {"label":"Canvas boards…","action":"canvas-boards"},
     {"label":"Glass overlay","action":"glass","key":"G"},
     {"label":"显示他人的玻璃","action":"shared-glass"},
     {"label":"专注模式","action":"focus","key":"F8","context":"document"},

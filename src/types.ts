@@ -25,6 +25,10 @@ export interface FileEntry {
   modified?: string;
   created?: string;
 }
+export type CanvasRequest = { action: "list" } | { action: "read"; file: string } | { action: "note"; file: string }
+  | { action: "save"; file: string; text: string; base: string | null } | { action: "create"; folder?: string; name?: string };
+export interface CanvasBoard { file: string; name: string; text: string; hash: string }
+export interface CanvasNote { file: string; text?: string; hash?: string; missing?: boolean }
 export interface RecentEntry { path: string; name: string; folder: boolean; pinned: boolean }
 export interface FileOperation { action: "new-file" | "new-folder" | "duplicate" | "rename" | "move" | "trash" | "undo"; path?: string; name?: string; target?: string }
 export interface PathChange { fromPath?: string; toPath?: string; removedPath?: string; newPath?: string }
@@ -187,6 +191,7 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   glass?(request: Record<string, unknown>): Promise<any>;
+  canvas?(request: CanvasRequest): Promise<any>;
   ocrAvailable?(): Promise<{ ok?: boolean; value?: { available: boolean } } | { available: boolean } | null>;
   glassOcr?(request: { png: string }): Promise<{ ok?: boolean; value?: { text: string }; error?: string } | null>;
   exportGlass?(request: { note: string; mode: string; target?: string; order?: string[] }): Promise<{ out: string; files: string[]; note: string } | null>;

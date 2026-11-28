@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, readdir, realpath, rename, stat, utimes, writeFile, copyFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { canvasRequest } from "../electron/canvas-store.mjs";
 import { DocumentStore } from "../electron/store.mjs";
 import { moveExclusive } from "../electron/move-exclusive.mjs";
 import { Workspace } from "../electron/workspace.mjs";
@@ -138,6 +139,9 @@ test("two offline vaults reconnect through a Syncthing-style sync with no silent
   assert.ok(!left.has("notes/old-name.md"));
   assert.match(left.get("views/tasks.base").bytes.toString(), /type: cards/);
   assert.ok(left.has("archive/map.canvas") && !left.has("boards/map.canvas"));
+  const boards = await canvasRequest(deskRoot, { action: "list" });
+  assert.deepEqual(boards.files.map(board => board.file), ["archive/map.canvas"]);
+  assert.match((await canvasRequest(deskRoot, { action: "read", file: "archive/map.canvas" })).text, /"Map"/);
   assert.equal(left.get("photos/cat copy.png").hash, sha(seed["photos/cat.png"]));
   assert.equal(left.get("notes/delete-me.md").bytes.toString(), seed["notes/delete-me.md"]);
   assert.match(left.get("shared.md").bytes.toString(), /Laptop paragraph/);
