@@ -21,6 +21,16 @@
 .dialog-note{color:var(--muted);font-size:12px;line-height:1.7;margin:12px 0 0}
 .field-error{font-size:13px;color:#b3261e;margin:0}
 [data-appearance=dark] .field-error{color:#ffb4ab}
+.fold-slot{border:1px solid var(--border);border-radius:6px;padding:12px 14px 4px;margin:12px 0}
+.fold-slot-head{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:12px;font-weight:600}
+.fold-egress{max-width:100%;padding:2px 8px;border:1px solid currentColor;border-radius:4px;font-size:12px;font-weight:500;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+.fold-slot code{padding:1px 4px;border-radius:3px;background:var(--code);color:var(--ink);font-size:11px}
+.fold-egress[data-egress=loopback]{color:#2b6ca3}
+.fold-egress[data-egress=remote]{color:#9a5b00}
+.fold-egress[data-egress=blocked]{color:#b3261e}
+[data-appearance=dark] .fold-egress[data-egress=loopback]{color:#8ab3d7}
+[data-appearance=dark] .fold-egress[data-egress=remote]{color:#f0b35e}
+[data-appearance=dark] .fold-egress[data-egress=blocked]{color:#ffb4ab}
 .quick-open-results{max-height:360px;overflow:auto;margin-top:12px;padding:2px}
 .quick-open-results button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;padding:9px 11px;background:none;border:0;border-radius:3px;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
 .quick-open-results button[aria-selected=true]{background:var(--selected)}

@@ -1,6 +1,7 @@
 import { language } from "./i18n.ts";
 import { backgroundDefaults } from "./background.ts";
 import { defaultFonts, fontIds, type FontPreferences } from "./fonts.ts";
+import { defaultFoldSlots, foldSlotsFrom, type FoldSlots } from "../shared/fold-route.mjs";
 export const standaloneImageScales = [1, 1.5, 2] as const;
 export interface Preferences extends FontPreferences {
   imageUploader: string; imageAutoUpload: boolean;
@@ -10,6 +11,8 @@ export interface Preferences extends FontPreferences {
   readingSpeed: number;
   payloadEnabled: boolean; payloadBaseUrl: string; payloadModel: string;
   payloadAllowedOrigins: string[]; payloadModernLimit: boolean;
+  /** Fold model route per slot; local by default (no model call). */
+  foldSlots: FoldSlots;
   lineHeight: number; editorColumns: number; sourceLineNumbers: boolean; codeLineNumbers: boolean;
   fontSize: number; tabSize: number; spellcheck: boolean; spellcheckLanguages: string[]; autoPair: boolean;
   grammarEnabled?: boolean; grammarUrl?: string; grammarOrigin?: string;
@@ -21,11 +24,11 @@ export interface Preferences extends FontPreferences {
 }
 export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true, boardEnabled: false,
   standaloneImageScale: 2,
-  payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false };
+  payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false, foldSlots: defaultFoldSlots() };
 export function loadPreferences(): Preferences {
   try {
     const saved = JSON.parse(globalThis.window?.desktop?.loadPreferences?.() ?? localStorage.getItem("omarkie-preferences") ?? "{}");
-    const next = { ...defaultPreferences };
+    const next = { ...defaultPreferences, foldSlots: foldSlotsFrom(saved.foldSlots) };
     if (Number.isFinite(saved.backgroundOpacity)) next.backgroundOpacity = Math.max(0,Math.min(100,saved.backgroundOpacity));
     if (Number.isFinite(saved.backgroundBlur)) next.backgroundBlur = Math.max(0,Math.min(30,saved.backgroundBlur));
     if (["center","top","bottom","left","right"].includes(saved.backgroundPosition)) next.backgroundPosition = saved.backgroundPosition;

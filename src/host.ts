@@ -184,14 +184,15 @@ export const host: Host = window.desktop
         if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage" || name === "sync") && !window.desktop![name]) return undefined;
         if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
-        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "closeWindow")
+        if ((name === "foldGet" || name === "foldRun" || name === "foldCancel" || name === "onFoldProgress") && !window.desktop?.[name]) return undefined;
+        if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "onFoldProgress" || name === "closeWindow")
           return window.desktop![name];
         return async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
             const error = new Error(response.code === "LEARNING_ERROR" ? t(response.error) : response.error);
-            Object.assign(error, { code: response.code });
+            Object.assign(error, { code: response.code, ...(response.route ? { route: response.route } : {}) });
             throw error;
           }
           return response.value;
