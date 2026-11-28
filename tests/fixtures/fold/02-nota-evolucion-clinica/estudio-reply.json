@@ -1,0 +1,331 @@
+{
+ "oneLiner": {
+  "text": "Insuficiencia cardiaca aguda descompensada con fracción de eyección preservada y lesión renal aguda sobre enfermedad renal crónica.",
+  "stars": 2,
+  "evidence": [
+   {
+    "quote": "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada"
+   },
+   {
+    "quote": "Lesión renal aguda sobre enfermedad renal crónica"
+   }
+  ]
+ },
+ "caso": [
+  {
+   "entity": "IC aguda",
+   "text": "IC aguda descompensada con fracción de eyección preservada 55 %, NYHA III-IV; creatinina 1,4 mg/dL desde 1,1 mg/dL, filtrado 42 mL/min/1,73 m²",
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de la NYHA"
+    },
+    {
+     "quote": "fracción de eyección del ventrículo izquierdo 55 %"
+    },
+    {
+     "quote": "Creatinina 1,4 mg/dL (previa 1,1 mg/dL), filtrado glomerular estimado 42 mL/min/1,73 m²"
+    }
+   ]
+  },
+  {
+   "entity": "FA",
+   "text": "Fibrilación auricular permanente anticoagulada, sin datos de sangrado",
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "Fibrilación auricular permanente anticoagulada, sin datos de sangrado"
+    }
+   ]
+  }
+ ],
+ "vs": [],
+ "numeros": [
+  {
+   "label": "Tensión arterial",
+   "value": "152/88",
+   "unit": "mmHg",
+   "consequence": "al ingreso",
+   "decisive": false,
+   "stars": 0,
+   "evidence": [
+    {
+     "quote": "Tensión arterial 152/88 mmHg"
+    }
+   ]
+  },
+  {
+   "label": "Saturación de oxígeno",
+   "value": "91",
+   "unit": "%",
+   "consequence": "con aire ambiente",
+   "decisive": true,
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "saturación de oxígeno 91 % con aire ambiente"
+    }
+   ]
+  },
+  {
+   "label": "Creatinina",
+   "value": "1,4",
+   "unit": "mg/dL",
+   "consequence": "previa 1,1 mg/dL; filtrado glomerular estimado 42 mL/min/1,73 m²",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "Creatinina 1,4 mg/dL (previa 1,1 mg/dL), filtrado glomerular estimado 42 mL/min/1,73 m²"
+    }
+   ]
+  },
+  {
+   "label": "Filtrado glomerular estimado",
+   "value": "42",
+   "unit": "mL/min/1,73 m²",
+   "consequence": "filtrado glomerular estimado",
+   "decisive": true,
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "filtrado glomerular estimado 42 mL/min/1,73 m²"
+    }
+   ]
+  },
+  {
+   "label": "NT-proBNP",
+   "value": "4.800",
+   "unit": "pg/mL",
+   "consequence": "troponina ultrasensible negativa en dos determinaciones; ECG fibrilación auricular a 95 lpm, sin cambios isquémicos agudos",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "NT-proBNP 4.800 pg/mL"
+    },
+    {
+     "quote": "Troponina ultrasensible negativa en dos determinaciones"
+    },
+    {
+     "quote": "fibrilación auricular a 95 lpm, sin cambios isquémicos agudos"
+    }
+   ]
+  },
+  {
+   "label": "Fracción de eyección",
+   "value": "55",
+   "unit": "%",
+   "consequence": "fracción de eyección del ventrículo izquierdo",
+   "decisive": true,
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "fracción de eyección del ventrículo izquierdo 55 %"
+    }
+   ]
+  }
+ ],
+ "flujo": [
+  {
+   "title": "Diurético",
+   "nodes": [
+    {
+     "id": "iv",
+     "text": "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal",
+     "evidence": [
+      {
+       "quote": "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal"
+      }
+     ]
+    },
+    {
+     "id": "evo",
+     "text": "A las 48 horas: diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg",
+     "evidence": [
+      {
+       "quote": "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg"
+      }
+     ]
+    },
+    {
+     "id": "vo",
+     "text": "Se reduce furosemida a 20 mg cada 12 horas por vía oral",
+     "evidence": [
+      {
+       "quote": "Se reduce furosemida a 20 mg cada 12 horas por vía oral"
+      }
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "from": "iv",
+     "to": "evo"
+    },
+    {
+     "from": "evo",
+     "to": "vo"
+    }
+   ]
+  }
+ ],
+ "bloques": [
+  {
+   "kind": "dx",
+   "bullets": [
+    {
+     "text": "Electrocardiograma: fibrilación auricular a 95 lpm, sin cambios isquémicos agudos",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "Electrocardiograma: fibrilación auricular a 95 lpm, sin cambios isquémicos agudos"
+      }
+     ]
+    },
+    {
+     "text": "No alergias medicamentosas conocidas",
+     "stars": 0,
+     "evidence": [
+      {
+       "quote": "No alergias medicamentosas conocidas"
+      }
+     ]
+    },
+    {
+     "text": "No dolor torácico, no palpitaciones, no fiebre",
+     "stars": 0,
+     "evidence": [
+      {
+       "quote": "No dolor torácico, no palpitaciones, no fiebre"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "tx",
+   "bullets": [
+    {
+     "text": "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal; restricción de sodio a 2 g al día y líquidos a 1,5 litros",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal"
+      },
+      {
+       "quote": "Restricción de sodio a 2 g al día y líquidos a 1,5 litros"
+      }
+     ]
+    },
+    {
+     "text": "Suspensión transitoria de metformina por insuficiencia renal; continuar apixabán sin cambios; mantener enalapril con vigilancia de creatinina y potasio",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "Suspensión transitoria de metformina por insuficiencia renal"
+      },
+      {
+       "quote": "Continuar apixabán sin cambios"
+      },
+      {
+       "quote": "Mantener enalapril con vigilancia de creatinina y potasio"
+      }
+     ]
+    },
+    {
+     "text": "Valorar sacubitrilo-valsartán al estabilizar",
+     "stars": 1,
+     "evidence": [
+      {
+       "quote": "valorar sacubitrilo-valsartán al estabilizar"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "monitoring",
+   "bullets": [
+    {
+     "text": "48 horas: diuresis 2.800 mL en 24 horas, pérdida 1,8 kg; creatinina 1,2 mg/dL; sodio 137 mEq/L; furosemida 20 mg cada 12 horas vía oral",
+     "stars": 1,
+     "evidence": [
+      {
+       "quote": "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg"
+      },
+      {
+       "quote": "Creatinina desciende a 1,2 mg/dL"
+      },
+      {
+       "quote": "Sodio 137 mEq/L"
+      },
+      {
+       "quote": "Se reduce furosemida a 20 mg cada 12 horas por vía oral"
+      }
+     ]
+    },
+    {
+     "text": "Estable, sin episodios de hipotensión ni arritmias nuevas",
+     "stars": 0,
+     "evidence": [
+      {
+       "quote": "sin episodios de hipotensión ni arritmias nuevas"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "nunca": [],
+ "buzzwords": [],
+ "mnemonics": [],
+ "cards": [
+  {
+   "q": "Dosis inicial de furosemida?",
+   "a": "Intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal",
+   "evidence": [
+    {
+     "quote": "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal"
+    }
+   ]
+  },
+  {
+   "q": "Restricciones?",
+   "a": "Sodio a 2 g al día y líquidos a 1,5 litros",
+   "evidence": [
+    {
+     "quote": "Restricción de sodio a 2 g al día y líquidos a 1,5 litros"
+    }
+   ]
+  },
+  {
+   "q": "Metformina?",
+   "a": "Suspensión transitoria por insuficiencia renal",
+   "evidence": [
+    {
+     "quote": "Suspensión transitoria de metformina por insuficiencia renal"
+    }
+   ]
+  },
+  {
+   "q": "Apixabán?",
+   "a": "Continuar sin cambios",
+   "evidence": [
+    {
+     "quote": "Continuar apixabán sin cambios"
+    }
+   ]
+  },
+  {
+   "q": "NT-proBNP al ingreso?",
+   "a": "4.800 pg/mL",
+   "evidence": [
+    {
+     "quote": "NT-proBNP 4.800 pg/mL"
+    }
+   ]
+  }
+ ],
+ "gaps": []
+}

@@ -1657,7 +1657,6 @@
   "This vault never goes online; only a loopback route can fold.": "Acest seif nu se conectează niciodată; doar o rută de buclă locală poate plia.",
   "Name a model for this fold slot in Preferences → Fold.": "Indică un model pentru acest slot în Preferințe → Pliere.",
   "Allow this slot to send note text to {{destination}} in Preferences → Fold first.": "Mai întâi permite acestui slot să trimită textul notei către {{destination}} în Preferințe → Pliere.",
-  "Only the Ladder slot can run a fold.": "Doar slotul Scară poate plia.",
   "Open a note folder before folding.": "Deschide un dosar de note înainte de pliere.",
   "Unknown fold slot.": "Slot de pliere necunoscut.",
   "Canvas boards…": "Planșe Canvas…",

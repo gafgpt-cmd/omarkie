@@ -1,0 +1,65 @@
+{
+  "oneLiner": { "text": "Normal ABG: pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, HCO3- 22 to 26 mEq/L.", "stars": 2, "evidence": [{ "quote": "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L" }] },
+  "caso": [],
+  "vs": [
+    {
+      "title": "Renal HCO3- compensation depends on chronicity",
+      "columns": ["Acute", "Chronic"],
+      "rows": [
+        { "label": "Respiratory acidosis (PaCO2 ↑)", "stars": 2, "cells": [
+          { "text": "↑ 1 mEq/L", "evidence": [{ "quote": "↑ 1 mEq/L" }] },
+          { "text": "↑ 3.5 to 4 mEq/L", "evidence": [{ "quote": "↑ 3.5 to 4 mEq/L" }] }
+        ] },
+        { "label": "Respiratory alkalosis (PaCO2 ↓)", "stars": 2, "cells": [
+          { "text": "↓ 2 mEq/L", "evidence": [{ "quote": "↓ 2 mEq/L" }] },
+          { "text": "↓ 4 to 5 mEq/L", "evidence": [{ "quote": "↓ 4 to 5 mEq/L" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "Normal ABG", "value": "7.35 to 7.45", "unit": "pH", "consequence": "PaCO2 35 to 45 mmHg, HCO3- 22 to 26 mEq/L", "decisive": true, "stars": 2, "evidence": [{ "quote": "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L" }] },
+    { "label": "Normal anion gap AG", "value": "8 to 12", "unit": "mEq/L", "consequence": "normal anion gap", "decisive": true, "stars": 2, "evidence": [{ "quote": "The normal anion gap is 8 to 12 mEq/L" }] },
+    { "label": "Albumin correction", "value": "2.5", "unit": "mEq/L", "consequence": "add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL", "decisive": true, "stars": 2, "evidence": [{ "quote": "add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL" }] },
+    { "label": "Metabolic alkalosis PaCO2 rise", "value": "0.7", "unit": "mmHg", "consequence": "0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L", "decisive": true, "stars": 1, "evidence": [{ "quote": "0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L" }] }
+  ],
+  "flujo": [
+    {
+      "title": "Metabolic acidosis: check respiratory compensation",
+      "nodes": [
+        { "id": "winter", "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+        { "id": "high", "text": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present", "evidence": [{ "quote": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present" }] },
+        { "id": "low", "text": "If lower than the lower limit, a concomitant respiratory alkalosis is present", "evidence": [{ "quote": "if lower than the lower limit, a concomitant respiratory alkalosis is present" }] }
+      ],
+      "edges": [
+        { "from": "winter", "to": "high" },
+        { "from": "winter", "to": "low" }
+      ]
+    }
+  ],
+  "bloques": [
+    { "kind": "dx", "bullets": [
+      { "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "stars": 2, "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+      { "text": "Delta-delta ratio (AG corrected - 12)/(24 - HCO3-): <1 concurrent non-anion-gap metabolic acidosis; 1 to 2 pure high anion gap metabolic acidosis; >2 concurrent metabolic alkalosis or chronic respiratory acidosis", "stars": 2, "evidence": [{ "quote": "\\frac{\\text{AG}_{\\text{corrected}} - 12}{24 - [\\text{HCO}_3^-]}" }, { "quote": "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis" }] }
+    ] },
+    { "kind": "pitfall", "bullets": [
+      { "text": "Compensation never fully normalises pH except possibly in mild chronic respiratory alkalosis", "stars": 1, "evidence": [{ "quote": "compensation never fully normalises pH except possibly in mild chronic respiratory alkalosis" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "Do not assume a normal pH excludes an acid-base disorder: normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder", "why": "", "stars": 2, "evidence": [{ "quote": "Do not assume a normal pH excludes an acid-base disorder: a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder" }] },
+    { "text": "Do not rapidly overcorrect chronic respiratory acidosis with aggressive mechanical ventilation", "why": "post-hypercapnic metabolic alkalosis can precipitate arrhythmias and seizures", "stars": 2, "evidence": [{ "quote": "Do not rapidly overcorrect chronic respiratory acidosis with aggressive mechanical ventilation, because post-hypercapnic metabolic alkalosis can precipitate arrhythmias and seizures" }] }
+  ],
+  "buzzwords": [
+    { "term": "Hypoalbuminaemia", "concept": "hides an elevated anion gap", "evidence": [{ "quote": "hypoalbuminaemia hides an elevated anion gap" }] }
+  ],
+  "mnemonics": [],
+  "cards": [
+    { "q": "Normal anion gap?", "a": "8 to 12 mEq/L", "evidence": [{ "quote": "The normal anion gap is 8 to 12 mEq/L" }] },
+    { "q": "Albumin correction of the anion gap?", "a": "Add 2.5 mEq/L for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL", "evidence": [{ "quote": "add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL" }] },
+    { "q": "Winter's formula?", "a": "Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "evidence": [{ "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+    { "q": "Normal pH with abnormal PaCO2 and HCO3-?", "a": "Proves a mixed disorder", "evidence": [{ "quote": "a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder" }] },
+    { "q": "Delta-delta ratio >2?", "a": "Concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis", "evidence": [{ "quote": "a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis" }] }
+  ],
+  "gaps": []
+}

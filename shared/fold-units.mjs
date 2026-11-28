@@ -485,6 +485,7 @@ export function extractUnits(markdown, options = {}) {
   if (typeof markdown !== "string" || !markdown) return [];
   const elements = markdownElements(markdown, options);
   const inlineMediaByParent = new Map();
+  const cellsByTable = new Map();
   const mediaOrdinals = new Map();
   const candidates = [];
 
@@ -507,6 +508,12 @@ export function extractUnits(markdown, options = {}) {
           from: element.from,
           to: element.to,
         });
+      }
+      // A table cell is quotable on its own (Estudio evidence), never a unit.
+      if (element.kind === "table-cell") {
+        const cells = cellsByTable.get(element.parent) ?? [];
+        cells.push({ elementId: element.id, row: element.row, column: element.column, text: element.text });
+        cellsByTable.set(element.parent, cells);
       }
       continue;
     }
@@ -556,6 +563,7 @@ export function extractUnits(markdown, options = {}) {
     if (element.level !== undefined) unit.level = element.level;
     if (element.language !== undefined) unit.language = element.language;
     if (element.ordered !== undefined) unit.ordered = element.ordered;
+    if (cellsByTable.has(element.id)) unit.cells = cellsByTable.get(element.id);
     return unit;
   });
 }

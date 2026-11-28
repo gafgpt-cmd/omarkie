@@ -3,7 +3,9 @@
 // passes through here. A cancelled job leaves at once, so its call slot is free for the next chunk.
 
 import { randomBytes } from "node:crypto";
-import { FOLD_REPLY_BYTES, foldInstruction, foldJob, foldReplyObject, ladderReplyProblems } from "../shared/fold-prompt.mjs";
+import {
+  FOLD_REPLY_BYTES, estudioInstruction, estudioJob, estudioReplyProblems, foldInstruction, foldJob, foldReplyObject, ladderReplyProblems,
+} from "../shared/fold-prompt.mjs";
 
 const abortError = () => Object.assign(new Error("Fold run cancelled."), { name: "AbortError", code: "FOLD_CANCELLED" });
 const idPattern = /^[a-f0-9]{12}$/;
@@ -63,12 +65,13 @@ export class FoldBridge {
     if (JSON.stringify(request.reply ?? null).length > FOLD_REPLY_BYTES) return send({ error: "The fold reply is larger than 512 KB.", code: "FOLD_REPLY_INVALID" });
     // A reply outside the contract goes back to the agent, which can fix it: the job stays claimed until a valid
     // reply or its reply timeout.
-    const problems = ladderReplyProblems(request.reply, job.request.chunk.units);
+    const estudio = job.request.slot === "estudio";
+    const problems = (estudio ? estudioReplyProblems : ladderReplyProblems)(request.reply, job.request.chunk.units);
     if (problems.length) {
       const more = problems.length > 5 ? `; and ${problems.length - 5} more` : "";
       return send({ error: `The fold reply breaks its contract: ${problems.slice(0, 5).join("; ")}${more}`, code: "FOLD_REPLY_INVALID", problems: problems.slice(0, 50) });
     }
-    job.finish(null, foldReplyObject(request.reply));
+    job.finish(null, foldReplyObject(request.reply, job.request.slot));
     send({ id: job.id, status: "done" });
   }
 
@@ -116,6 +119,7 @@ function summary(job) {
 
 function wire(job) {
   const { request } = job;
+  const estudio = request.slot === "estudio";
   return { id: job.id, slot: request.slot, agent: job.agent, model: request.model, outLang: request.outLang, state: job.state,
-    instruction: foldInstruction(request), ...foldJob(request) };
+    instruction: (estudio ? estudioInstruction : foldInstruction)(request), ...(estudio ? estudioJob : foldJob)(request) };
 }

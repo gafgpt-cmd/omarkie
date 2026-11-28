@@ -92,5 +92,5 @@ export async function requestFoldPayload({ connection, model, request, signal },
     if (signal?.aborted) throw Object.assign(new Error("Fold run cancelled."), { name: "AbortError", code: "FOLD_CANCELLED" });
     throw Object.assign(new Error(t("Payload failed. Check the endpoint, model, and API key.")), { code: "FOLD_ROUTE_DOWN", cause: error });
   }
-  return parseFoldReply(text);
+  return parseFoldReply(text, request.slot);
 }

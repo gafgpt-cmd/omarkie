@@ -65,14 +65,15 @@ export class FoldHost {
   /** `fold:get {note, slot?}`: cached fold, chunk states and the slot's route. */
   async get(request) {
     const { glass, markdown, noteId, title } = await this.#note(request?.note, false);
-    const route = await this.#route(glass, request?.slot ?? "ladder");
-    return { ...await this.service.get({ noteId, title, markdown }), route: routeView(route) };
+    const slot = request?.slot ?? "ladder";
+    const route = await this.#route(glass, slot);
+    return { ...await this.service.get({ noteId, title, markdown, slot }), route: routeView(route) };
   }
 
   /** `fold:run {note, slot, sections?, visible?, outLang?}`: starts a run; chunks stream as `fold:progress`. */
   async run(request) {
     const slot = request?.slot ?? "ladder";
-    if (slot !== "ladder") throw fail(t("Only the Ladder slot can run a fold."), "FOLD_SLOT_UNAVAILABLE");
+    if (!SLOTS.includes(slot)) throw fail(t("Unknown fold slot."), "VALIDATION_ERROR");
     const sections = request?.sections ?? null, visible = request?.visible ?? null;
     if (sections !== null && (!Array.isArray(sections) || sections.length > 1000 || !sections.every(id => typeof id === "string" && id.length <= 64))) throw fail("Invalid fold sections.", "VALIDATION_ERROR");
     if (visible !== null && (typeof visible !== "string" || visible.length > 64)) throw fail("Invalid visible chunk.", "VALIDATION_ERROR");
@@ -84,16 +85,18 @@ export class FoldHost {
     if (!route.ready) throw Object.assign(fail(foldRouteMessage(route), route.code), { route: routeView(route) });
     const { markdown, noteId, title } = await this.#note(request.note, true);
     const outLang = request.outLang ?? noteLanguage(markdown) ?? this.language();
-    const { runId, done } = this.service.run({ noteId, title, markdown, route: route.route, agent: route.agent, model: route.model, outLang,
+    const { runId, done } = this.service.run({ noteId, title, markdown, slot, route: route.route, agent: route.agent, model: route.model, outLang,
       sections, visible, connection: route.connection ?? null });
-    done.catch(error => this.send({ runId, noteId, phase: "error", error: { message: error?.message ?? String(error), code: error?.code ?? "FOLD_FAILED" } }));
+    done.catch(error => this.send({ runId, noteId, slot, phase: "error", error: { message: error?.message ?? String(error), code: error?.code ?? "FOLD_FAILED" } }));
     return { runId, noteId, outLang, route: routeView(route) };
   }
 
-  /** `fold:cancel {noteId}`: finished chunks stay; the rest stay local. */
+  /** `fold:cancel {noteId, slot?}`: stops that slot's run, or every slot's; finished chunks stay, the rest stay local. */
   cancel(request) {
     if (!noteIdPattern.test(String(request?.noteId))) throw fail("Invalid fold note id.", "VALIDATION_ERROR");
-    return { cancelled: this.service.cancel({ noteId: request.noteId }) };
+    const slot = request?.slot ?? null;
+    if (slot !== null && !SLOTS.includes(slot)) throw fail(t("Unknown fold slot."), "VALIDATION_ERROR");
+    return { cancelled: this.service.cancel({ noteId: request.noteId, slot }) };
   }
 
   async close() {

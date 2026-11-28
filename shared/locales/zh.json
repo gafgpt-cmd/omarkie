@@ -798,7 +798,6 @@
   "This vault never goes online; only a loopback route can fold.": "此库从不联网；只有本机回环路线可以折叠。",
   "Name a model for this fold slot in Preferences → Fold.": "请在“偏好设置 → 折叠”中为此槽位指定模型。",
   "Allow this slot to send note text to {{destination}} in Preferences → Fold first.": "请先在“偏好设置 → 折叠”中允许此槽位将笔记文本发送到 {{destination}}。",
-  "Only the Ladder slot can run a fold.": "只有层级槽位可以折叠。",
   "Open a note folder before folding.": "折叠前请先打开笔记文件夹。",
   "Unknown fold slot.": "未知的折叠槽位。",
   "Canvas boards…": "画布白板…",

@@ -1,0 +1,84 @@
+{
+  "oneLiner": { "text": "Crisis hipermetabólica farmacogenética desencadenada por volátiles halogenados y succinilcolina.", "stars": 2, "evidence": [{ "quote": "crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina" }] },
+  "caso": [
+    { "entity": "Hipertermia maligna", "text": "Primer signo: aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto", "stars": 2, "evidence": [{ "quote": "aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto" }] }
+  ],
+  "vs": [
+    {
+      "title": "Desencadenantes frente a fármacos que no la desencadenan",
+      "columns": ["Fármacos", "Efecto"],
+      "rows": [
+        { "label": "Desencadenantes", "stars": 2, "cells": [
+          { "text": "Volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina", "evidence": [{ "quote": "anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina" }] },
+          { "text": "Desencadenada por volátiles halogenados y succinilcolina", "evidence": [{ "quote": "desencadenada por anestésicos volátiles halogenados" }] }
+        ] },
+        { "label": "N2O y propofol", "stars": 2, "cells": [
+          { "text": "Óxido nitroso y propofol", "evidence": [{ "quote": "El óxido nitroso y el propofol" }] },
+          { "text": "El óxido nitroso y el propofol no la desencadenan", "evidence": [{ "quote": "El óxido nitroso y el propofol no la desencadenan" }] }
+        ] },
+        { "label": "Otros", "stars": 2, "cells": [
+          { "text": "Opioides, benzodiacepinas, anestésicos locales ni bloqueantes neuromusculares no despolarizantes", "evidence": [{ "quote": "los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes" }] },
+          { "text": "Tampoco lo hacen los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes", "evidence": [{ "quote": "tampoco lo hacen los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "Hipertermia elevada", "value": ">40", "unit": "°C", "consequence": "signo tardío", "decisive": false, "stars": 2, "evidence": [{ "quote": "La hipertermia elevada (>40 °C) es un signo tardío" }] },
+    { "label": "Oxígeno", "value": "100", "unit": "%", "consequence": "hiperventilar con oxígeno al 100 % a alto flujo", "decisive": true, "stars": 1, "evidence": [{ "quote": "Hiperventilar con oxígeno al 100 % a alto flujo" }] },
+    { "label": "Alto flujo", "value": "≥10", "unit": "L/min", "consequence": "flujo alto de gas", "decisive": true, "stars": 1, "evidence": [{ "quote": "a alto flujo (≥10 L/min)" }] },
+    { "label": "Dantroleno sódico", "value": "2,5", "unit": "mg/kg", "consequence": "IV en bolo rápido, repetible cada 5-10 minutos", "decisive": true, "stars": 2, "evidence": [{ "quote": "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos" }] },
+    { "label": "Dantroleno acumulado habitual", "value": "10", "unit": "mg/kg", "consequence": "puede requerirse más si los signos persisten", "decisive": true, "stars": 2, "evidence": [{ "quote": "dosis acumulada habitual de 10 mg/kg (puede requerirse más si los signos persisten)" }] },
+    { "label": "Enfriamiento activo", "value": "39", "unit": "°C", "consequence": "iniciar enfriamiento activo si la temperatura supera 39 °C", "decisive": true, "stars": 1, "evidence": [{ "quote": "Iniciar enfriamiento activo si la temperatura supera 39 °C" }] },
+    { "label": "Detener enfriamiento", "value": "38", "unit": "°C", "consequence": "enfriar si la temperatura supera 39 °C, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia", "decisive": true, "stars": 1, "evidence": [{ "quote": "si la temperatura supera 39 °C con suero salino frío IV y lavado de cavidades, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia" }] },
+    { "label": "Diuresis forzada", "value": "≥1-2", "unit": "mL/kg/h", "consequence": "proteger el riñón de la mioglobinuria", "decisive": true, "stars": 1, "evidence": [{ "quote": "forzar diuresis ≥1-2 mL/kg/h para proteger el riñón de la mioglobinuria" }] }
+  ],
+  "flujo": [
+    {
+      "title": "Manejo inmediato",
+      "nodes": [
+        { "id": "ayuda", "text": "Pedir ayuda y suspender de inmediato todos los anestésicos volátiles y la succinilcolina", "evidence": [{ "quote": "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los anestésicos volátiles y la succinilcolina" }] },
+        { "id": "o2", "text": "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min)", "evidence": [{ "quote": "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min)" }] },
+        { "id": "dantro", "text": "Dantroleno sódico 2,5 mg/kg IV en bolo rápido", "evidence": [{ "quote": "dantroleno sódico 2,5 mg/kg IV en bolo rápido" }] },
+        { "id": "frio", "text": "Enfriamiento activo si la temperatura supera 39 °C", "evidence": [{ "quote": "Iniciar enfriamiento activo si la temperatura supera 39 °C" }] }
+      ],
+      "edges": [
+        { "from": "ayuda", "to": "o2" },
+        { "from": "o2", "to": "dantro" },
+        { "from": "dantro", "to": "frio" }
+      ]
+    }
+  ],
+  "bloques": [
+    { "kind": "mechanism", "bullets": [
+      { "text": "Habitualmente mutación autosómica dominante en el receptor de rianodina RYR1", "stars": 2, "evidence": [{ "quote": "habitualmente portadores de una mutación autosómica dominante en el receptor de rianodina RYR1" }] },
+      { "text": "Liberación descontrolada de calcio desde el retículo sarcoplásmico: contracción sostenida, consumo de ATP y rabdomiólisis", "stars": 1, "evidence": [{ "quote": "La liberación descontrolada de calcio desde el retículo sarcoplásmico provoca contracción muscular sostenida, consumo extremo de ATP y rabdomiólisis" }] }
+    ] },
+    { "kind": "dx", "bullets": [
+      { "text": "Primer signo: aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto", "stars": 2, "evidence": [{ "quote": "aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto" }] },
+      { "text": "Taquicardia sinusal inexplicable y rigidez del masetero tras succinilcolina", "stars": 1, "evidence": [{ "quote": "taquicardia sinusal inexplicable y rigidez del músculo masetero tras succinilcolina" }] }
+    ] },
+    { "kind": "monitoring", "bullets": [
+      { "text": "Vigilar en UCI durante al menos 24 horas por riesgo de recrudescencia (hasta 25 % de los casos)", "stars": 1, "evidence": [{ "quote": "vigilar en UCI durante al menos 24 horas por riesgo de recrudescencia (hasta 25 % de los casos)" }] },
+      { "text": "Dantroleno 1 mg/kg IV cada 6 horas si reaparecen signos de hipermetabolismo", "stars": 1, "evidence": [{ "quote": "manteniendo dantroleno 1 mg/kg IV cada 6 horas si reaparecen signos de hipermetabolismo" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "Nunca esperes a la fiebre para iniciar el tratamiento", "why": "", "stars": 2, "evidence": [{ "quote": "nunca esperes a la fiebre para iniciar el tratamiento" }] },
+    { "text": "No perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno", "why": "", "stars": 2, "evidence": [{ "quote": "no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno" }] },
+    { "text": "No administrar bloqueantes de los canales de calcio (verapamilo, diltiazem) con dantroleno: pueden precipitar hiperpotasemia grave y colapso cardiovascular", "why": "", "stars": 2, "evidence": [{ "quote": "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con dantroleno porque pueden precipitar hiperpotasemia grave y colapso cardiovascular" }] }
+  ],
+  "buzzwords": [
+    { "term": "RYR1", "concept": "receptor de rianodina mutado", "evidence": [{ "quote": "receptor de rianodina RYR1" }] }
+  ],
+  "mnemonics": [],
+  "cards": [
+    { "q": "¿Primer signo más sensible?", "a": "Aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto", "evidence": [{ "quote": "aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto" }] },
+    { "q": "¿Dosis inicial de dantroleno?", "a": "2,5 mg/kg IV en bolo rápido", "evidence": [{ "quote": "dantroleno sódico 2,5 mg/kg IV en bolo rápido" }] },
+    { "q": "¿El propofol la desencadena?", "a": "El óxido nitroso y el propofol no la desencadenan", "evidence": [{ "quote": "El óxido nitroso y el propofol no la desencadenan" }] },
+    { "q": "¿Cuándo detener el enfriamiento?", "a": "Al alcanzar 38 °C para evitar hipotermia", "evidence": [{ "quote": "detener el enfriamiento al alcanzar 38 °C para evitar hipotermia" }] },
+    { "q": "¿Cuánto vigilar en UCI?", "a": "Al menos 24 horas por riesgo de recrudescencia", "evidence": [{ "quote": "vigilar en UCI durante al menos 24 horas por riesgo de recrudescencia" }] },
+    { "q": "¿Cómo confirmar la susceptibilidad?", "a": "Prueba de contractura cafeína-halotano en biopsia muscular o estudio genético de RYR1", "evidence": [{ "quote": "prueba de contractura cafeína-halotano en biopsia muscular o estudio genético de RYR1" }] }
+  ],
+  "gaps": []
+}

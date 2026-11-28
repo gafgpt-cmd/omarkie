@@ -1655,7 +1655,6 @@
   "This vault never goes online; only a loopback route can fold.": "Esta bóveda nunca se conecta; solo una ruta de bucle local puede plegar.",
   "Name a model for this fold slot in Preferences → Fold.": "Indica un modelo para esta franja en Preferencias → Pliegue.",
   "Allow this slot to send note text to {{destination}} in Preferences → Fold first.": "Primero permite que esta franja envíe texto de la nota a {{destination}} en Preferencias → Pliegue.",
-  "Only the Ladder slot can run a fold.": "Solo la franja Escalera puede plegar.",
   "Open a note folder before folding.": "Abre una carpeta de notas antes de plegar.",
   "Unknown fold slot.": "Franja de pliegue desconocida.",
   "Canvas boards…": "Tableros Canvas…",

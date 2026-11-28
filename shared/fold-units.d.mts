@@ -45,6 +45,8 @@ export interface DocumentUnit extends FoldUnit {
   level?: number;
   language?: string;
   ordered?: boolean;
+  /** A table unit's cells, each quotable as Estudio evidence. */
+  cells?: { elementId: string; row: number; column: number; text: string }[];
 }
 
 export interface FoldUnitContext {
