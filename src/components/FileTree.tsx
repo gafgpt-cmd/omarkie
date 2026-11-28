@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
-import { ChevronRight, FileText, Folder } from "lucide-react";
+import { ChevronRight, FileText, Files, Folder } from "lucide-react";
+import { conflictCopy } from "../../shared/sync-conflicts.mjs";
 import type { FileEntry } from "../types";
 import { t } from "../i18n";
 export type FileSort = "natural" | "name" | "modified" | "created";
@@ -26,7 +27,7 @@ export function FileTree({ files, folder, activePath, open, context, move, sort,
         if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : Math.max(0, Math.min(buttons.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus(); }
         if (event.key === "ArrowRight" && directory) { event.preventDefault(); expanded ? buttons[index + 1]?.focus() : toggle(file.path, false); }
         if (event.key === "ArrowLeft") { event.preventDefault(); if (directory && expanded) toggle(file.path, true); else { const parent = event.currentTarget.dataset.parent; buttons.find(button => button.dataset.path === parent)?.focus(); } }
-      }}>{directory ? <><ChevronRight size={12} className={expanded ? "tree-chevron-open" : ""} /><Folder size={16} /></> : <><span style={{ width: 12 }} /><FileText size={16} /></>}<span>{file.name}</span></button>
+      }}>{directory ? <><ChevronRight size={12} className={expanded ? "tree-chevron-open" : ""} /><Folder size={16} /></> : <><span style={{ width: 12 }} />{conflictCopy(file.name) ? <Files size={16} className="tree-conflict-copy" aria-label={t("Another version")} /> : <FileText size={16} />}</>}<span>{file.name}</span></button>
       {directory && expanded && <div role="group">{children.get(file.relative)?.map(child => node(child, depth + 1))}</div>}
     </div>;
   }
