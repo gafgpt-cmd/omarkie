@@ -1753,5 +1753,21 @@
   "That connection is not valid JSON Canvas.": "Această conexiune nu este JSON Canvas valid.",
   "The board has too many cards or connections.": "Planșa are prea multe carduri sau conexiuni.",
   "The board is not text.": "Planșa nu este text.",
-  "The board is not valid JSON.": "Planșa nu este JSON valid."
+  "The board is not valid JSON.": "Planșa nu este JSON valid.",
+  "Fold view": "Vizualizare pliată",
+  "Fold_rail": "Pliere",
+  "Full": "Complet",
+  "Brief": "Scurt",
+  "Key": "Esențial",
+  "Takeaway": "Concluzie",
+  "Topic": "Temă",
+  "Estudio": "Studiu",
+  "local": "local",
+  "now": "acum",
+  "off": "oprit",
+  "Fold level": "Nivel de pliere",
+  "Too short to fold": "Prea scurtă pentru pliere",
+  "Local fold · model lines when you choose": "Pliere locală · rânduri de model când alegi tu",
+  "{{level}}, {{percent}}% of words": "{{level}}, {{percent}}% din cuvinte",
+  "Estudio needs a model; local stops only for now": "Studiul are nevoie de un model; deocamdată doar niveluri locale"
 }

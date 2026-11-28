@@ -1753,5 +1753,21 @@
   "That connection is not valid JSON Canvas.": "Aquesta connexió no és JSON Canvas vàlid.",
   "The board has too many cards or connections.": "El tauler té massa targetes o connexions.",
   "The board is not text.": "El tauler no és text.",
-  "The board is not valid JSON.": "El tauler no és JSON vàlid."
+  "The board is not valid JSON.": "El tauler no és JSON vàlid.",
+  "Fold view": "Vista plegada",
+  "Fold_rail": "Plec",
+  "Full": "Complet",
+  "Brief": "Breu",
+  "Key": "Clau",
+  "Takeaway": "Idea final",
+  "Topic": "Tema",
+  "Estudio": "Estudi",
+  "local": "local",
+  "now": "ara",
+  "off": "desactivat",
+  "Fold level": "Nivell de plec",
+  "Too short to fold": "Massa curta per plegar",
+  "Local fold · model lines when you choose": "Plec local · línies del model quan triïs",
+  "{{level}}, {{percent}}% of words": "{{level}}, {{percent}} % de les paraules",
+  "Estudio needs a model; local stops only for now": "Estudi necessita un model; de moment només nivells locals"
 }

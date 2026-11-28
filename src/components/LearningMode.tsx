@@ -27,6 +27,7 @@ import type { FlashcardPanel } from "./Flashcards";
 import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
 import type { CanvasNode } from "../../shared/json-canvas.mjs";
 import { headingNode, snapshotNode } from "../../shared/papercut.mjs";
+import { stopLabel, type Stop } from "./fold/stops";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
@@ -49,12 +50,12 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest, openBoard, tutorRequest }: {
+export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, fold, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest, openBoard, tutorRequest }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
   openBoard?(clips?: CanvasNode[]): void; tutorRequest?: { text: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
@@ -546,6 +547,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
   for (const [sheet, count] of counts) { const layer = studySheetLayer(sheet); studyCounts[layer] = (studyCounts[layer] ?? 0) + count; }
   const previewButton = <button type="button" aria-pressed={preview} onClick={togglePreview}>{t("即时渲染")}</button>;
   const cleanButton = <button type="button" aria-pressed={cleanVisible} onClick={toggleClean}>{t("清理转换文本…")}</button>;
+  const foldButton = <button type="button" className="fold-toggle" aria-pressed={fold.open} onClick={fold.toggle}
+    aria-label={`${t("Fold view")}: ${stopLabel(fold.stop)}`}>{stopLabel(fold.stop)}<small className="fold-route">{t("local")}</small><small className="fold-age">{t("now")}</small></button>;
   const baseLayer = <span className="layers-canvas"><LockKeyhole size={14} /><small>L0</small>{t("源文档")}</span>;
   async function activateSheet(sheet: Sheet) {
     if (!sheet.visible && !await write({ ...sheet, visible: true }, sheet)) return;
@@ -583,6 +586,11 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       <header><h2><Layers size={15} />{t("Layers")}</h2><button type="button" aria-label={t("文件", { context: "sidebar" })} title={t("文件", { context: "sidebar" })} onClick={openFiles}><FolderOpen size={16} /></button></header>
       <GlassLayers note={note} glassOn={glass} saved={saved} compact={false} studyCounts={studyCounts} onNotice={setError} />
       {baseLayer}{previewButton}{cleanButton}
+      <section className="fold-rail" aria-label={t("Fold", { context: "rail" })}>
+        <h3 className="study-sheet-heading">{t("Fold", { context: "rail" })}</h3>
+        {foldButton}
+        <p className="fold-hint">{t("Local fold · model lines when you choose")}</p>
+      </section>
       <h3 className="study-sheet-heading">{t("Study sheets")}</h3>
       {saved ? <><ul>{sheetButtons}</ul>{tools}{understanding}
         {picking && <div className="study-move" role="status"><p>{t("Choose a paragraph, another scrap, or the loose tray.")}</p><button type="button" onClick={() => setPicking(undefined)}>{t("取消")}</button></div>}
@@ -590,7 +598,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       {error && !tutorOpen && <p role="alert">{error}</p>}
     </aside>, sheetsRoot)}
     <div className="study-chips" role="group" aria-label={t("Layers")}>
-      <div className="study-chip-row">{baseLayer}{previewButton}{cleanButton}{saved && <ul>{sheetButtons}</ul>}</div>
+      <div className="study-chip-row">{baseLayer}{previewButton}{cleanButton}{foldButton}{saved && <ul>{sheetButtons}</ul>}</div>
       <GlassLayers note={note} glassOn={glass} saved={saved} compact studyCounts={studyCounts} onNotice={setError} />
       {saved && <>{tools}{understanding}</>}
       {error && !tutorOpen && <p role="alert">{error}</p>}

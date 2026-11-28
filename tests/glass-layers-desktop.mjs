@@ -124,7 +124,7 @@ try {
     await expect(row).toContainText(name);
     await expect(row.locator("small")).toHaveText(count);
   }
-  await expect(rail.locator(".study-sheet-heading")).toHaveText("Study sheets");
+  await expect(rail.getByRole("heading", { name: "Study sheets", exact: true })).toBeVisible();
 
   // Eye: the notes layer disappears, then comes back.
   const note = page.locator(".glass-note").first();

@@ -66,7 +66,7 @@ protocol.registerSchemesAsPrivileged([
 ]);
 let languageChoice = "auto", language = "zh", buildMenu = () => {}, remoteImages = false;
 let viewChecked = {};
-const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers", "glass", "shared-glass"];
+const checkedActions = ["source", "focus", "typewriter", "sidebar", "outline", "files", "file-tree", "reading-layers", "fold", "glass", "shared-glass"];
 let menuDefinitions = [], viewDisabled = true, viewContext = "";
 const commandEnabled = item => !item.context || !viewDisabled && (!["rich", "table"].includes(item.context) || !viewChecked.source) && (item.context !== "table" || viewContext === "table_open");
 function applyLanguage(choice) {
@@ -164,7 +164,7 @@ async function glassOcrRegion(payload) {
   return runOcr(bytes);
 }
 
-let glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
+let glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null, bridgeState: null, started: Promise.resolve() };
 let syncTokens;
 // Fold of the open vault: loads on first use and closes with the vault's Glass storage.
 let foldRuntime = null, readPreferences = () => null;
@@ -209,17 +209,17 @@ function scheduleGlassRetry(folder) {
   glassRetries += 1;
   glassRetry = setTimeout(() => {
     glassRetry = null;
-    if (glassRuntime.service && glassRuntime.close) return;
-    if (glassRuntime.folder && glassRuntime.folder !== folder) return;
-    // Open storage is serving writes: rebind only the bridge, never close the service under them.
-    if (glassRuntime.service) {
-      const run = glassQueue.then(() => glassRuntime.folder === folder && glassRuntime.service && !glassRuntime.close ? bindGlassBridge(folder) : null);
-      glassQueue = run.catch(() => {});
-      return;
-    }
-    glassRuntime.folder = null;
-    glassRuntime.error = null;
-    void syncGlass(folder).catch(() => {});
+    // Decided inside the queue: a startup still opening storage finishes before the retry looks at it.
+    const run = glassQueue.then(() => {
+      if (glassRuntime.service && glassRuntime.close) return;
+      if (glassRuntime.folder && glassRuntime.folder !== folder) return;
+      // Open storage is serving writes: rebind only the bridge, never close the service under them.
+      if (glassRuntime.service) return glassRuntime.folder === folder ? bindGlassBridge(folder) : null;
+      glassRuntime.folder = null;
+      glassRuntime.error = null;
+      return syncGlassNow(folder);
+    });
+    glassQueue = run.catch(() => {});
   }, 1_000);
   glassRetry.unref?.();
 }
@@ -229,7 +229,7 @@ async function closeGlassRuntime() {
   const current = glassRuntime, fold = foldRuntime;
   foldRuntime = null;
   await fold?.then(host => host.close()).catch(() => {});
-  glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null };
+  glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null, bridgeState: null, started: Promise.resolve() };
   await current.close?.().catch(() => {});
   await current.sync?.close().catch(() => {});
   await current.service?.close().catch(() => {});
@@ -242,14 +242,21 @@ async function syncGlassNow(folder) {
   await closeGlassRuntime();
   if (!folder) return;
   glassRuntime.folder = folder;
+  let started;
+  glassRuntime.started = new Promise(resolve => { started = resolve; });
   try {
     const root = await realpath(folder);
+    if (glassRuntime.folder !== folder) return;
+    // The bridge listens before storage and the index open (index and watcher startup can outlast first paint);
+    // its requests wait for them, so an agent's first CLI call never races a cold start.
+    await bindGlassBridge(folder, root);
     const { GlassService } = await import("./glass-service.mjs");
     if (glassRuntime.folder !== folder) return;
     const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
     if (glassRuntime.folder !== folder) { await service.close(); return; }
     glassRuntime.root = root;
     glassRuntime.service = service;
+    service.bridgeState = glassRuntime.bridgeState;
     service.subscribe(status => window?.webContents.send("glass:storage", status));
     let sync = null;
     try {
@@ -263,60 +270,66 @@ async function syncGlassNow(folder) {
       glassRuntime.sync = null;
       console.warn("Glass index:", error.message);
     }
-    await bindGlassBridge(folder);
   } catch (error) {
     glassRuntime.error = error;
     scheduleGlassRetry(folder);
     throw error;
-  }
+  } finally { started(); }
 }
-async function bindGlassBridge(folder) {
-  const { root, service } = glassRuntime;
+function serveGlassBridge(request, send) {
+  if (request?.op === "sync") {
+    if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
+    syncEngine().then(engine => request.action === "status" ? engine.status() : engine.syncNow()).then(async result => {
+      if (request.action === "now" && (result.pulled || result.journals?.length)) {
+        await glassRuntime.service?.reloadStore().catch(() => {});
+        void glassRuntime.sync?.scan("sync").catch(() => {});
+      }
+      send(result);
+    }, error => send({ error: error.message, code: error.code }));
+    return;
+  }
+  if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
+    if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
+    if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
+    send({ opened: true, note: request.note, magnet: request.magnet });
+    window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
+    return;
+  }
+  if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
+  const { op: _, token: __, ...payload } = request;
+  if (payload.action === "ocr") {
+    glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
+    return;
+  }
+  if (!glassRuntime.service) return send({ error: glassRuntime.error?.message ?? "Glass storage is not open." });
+  Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
+}
+async function bindGlassBridge(folder, root = glassRuntime.root) {
+  const ready = glassRuntime.started;
+  let state = "listening";
   try {
     glassRuntime.close = await listenBridge(root, {
+      // Fold frames reach the agent queue at once; the rest wait for storage and the index to finish opening
+      // (a bridge bound by a retry finds them open).
       client(request, send, waitId) {
         if (request?.op === "fold") {
           foldHost().then(host => host.bridge.client(request, send, waitId), error => send({ error: error.message }));
           return;
         }
-        if (request?.op === "sync") {
-          if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
-          syncEngine().then(engine => request.action === "status" ? engine.status() : engine.syncNow()).then(async result => {
-            if (request.action === "now" && (result.pulled || result.journals?.length)) {
-              await glassRuntime.service?.reloadStore().catch(() => {});
-              void glassRuntime.sync?.scan("sync").catch(() => {});
-            }
-            send(result);
-          }, error => send({ error: error.message, code: error.code }));
-          return;
-        }
-        if (request?.op === "glass" && request.action === "board" && request.mode === "open") {
-          if (typeof request.note !== "string" || typeof request.magnet !== "string") return send({ error: "board open needs note and magnet." });
-          if (!window || !rendererReady) return send({ error: "Open Omarkie to open a board." });
-          send({ opened: true, note: request.note, magnet: request.magnet });
-          window.webContents.send("app:command", { action: "open-board", note: request.note, magnet: request.magnet });
-          return;
-        }
-        if (!request || request.op !== "glass") return send({ error: "Unknown Glass bridge request." });
-        const { op: _, token: __, ...payload } = request;
-        if (payload.action === "ocr") {
-          glassOcrRegion(payload).then(result => send({ ...result, note: payload.note, region: payload.magnet }), error => send({ error: error.message }));
-          return;
-        }
-        if (!glassRuntime.service) return send({ error: "Glass storage is not open." });
-        Promise.resolve(glassRuntime.service.request(payload)).then(result => { announceGlass(payload); send(result); }, error => send({ error: error.message }));
+        void ready.then(() => serveGlassBridge(request, send));
       },
       stopWait(waitId, timedOut) { void foldRuntime?.then(host => host.bridge.stopWait(waitId, timedOut)).catch(() => {}); },
       bind() { return {}; }, unbind() { return 0; },
     }, "glass");
-    service.bridgeState = "listening";
   } catch (error) {
-    service.bridgeState = "unavailable";
+    state = "unavailable";
     console.warn("Glass bridge:", error.message);
     scheduleGlassRetry(folder);
-    return;
+  } finally {
+    glassRuntime.bridgeState = state;
+    if (glassRuntime.service) glassRuntime.service.bridgeState = state;
   }
-  glassRetries = 0;
+  if (state === "listening") glassRetries = 0;
 }
 let glassWatch = { folder: null, root: null, close: null };
 let voiceRuntime, voiceRuns = new Map();
