@@ -52,6 +52,8 @@ On Linux, `electron/omarchy.mjs` reads `~/.local/state/omarchy/current/theme/col
 
 Each window has its own web view, document store, model and session file. Opening a file that is already open focuses its window. The front end only passes document IDs; the host tracks which files each record may touch. Saves write a sibling temporary file, flush it, compare the on-disk hash again and rename atomically; an external change keeps the draft and reports a conflict. The document resource protocol serves relative and absolute media for document IDs the host still holds open. It honours a YAML root and refuses symbolic links and oversized resources.
 
+Folder sync ([details](folder-sync.md)): `check()` follows a vanished note to the one unopened file with the same hash, reports a delete as `missing`, and never compares timestamps. On Electron, `resolveConflict` writes the losing side as a sibling `.omarkie-conflict-` copy or moves it to the OS Trash; `shared/sync-conflicts.mjs` parses Syncthing and Omarkie copy names for the tree and the compare dialog. Hosts without `resolveConflict` (macOS) keep Reload / Overwrite. The browser host doubles as the phone companion: one vault in IndexedDB (`src/companion.ts`), search in a worker, a build-time service worker for offline use, import and export only on request.
+
 macOS local media grants:
 
 - Successful saved-note opens mark the grant pending in the window store. Drafts are not marked pending.

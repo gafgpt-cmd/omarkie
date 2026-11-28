@@ -169,3 +169,106 @@ extension CGRect {
     return Data(bytes: &rect, count: MemoryLayout<CGRect>.size)
   }
 }
+
+// PNG export: the same print HTML at a fixed width, scripts off, network blocked, one snapshot.
+final class ImageExporter: NSObject, WKNavigationDelegate {
+  static let width = 800.0
+  static let maxSide = 16384.0
+  static let maxPixels = 48.0 * 1024 * 1024
+  static let tooLarge = "This note is too long for one image. Export PDF instead, or select fewer lines."
+  private let view: WKWebView
+  private let window: NSWindow
+  private let scale: Double
+  private var loaded = false
+  private var completion: ((Result<Data, Error>) -> Void)?
+  init(resources: URL, store: DocumentStore, scale: Double) {
+    self.scale = scale == 2 ? 2 : 1
+    let configuration = WKWebViewConfiguration()
+    let handler = Resources(resources, store: store)
+    configuration.setURLSchemeHandler(handler, forURLScheme: "omarkie")
+    configuration.setURLSchemeHandler(handler, forURLScheme: "omarkie-asset")
+    configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+    view = WKWebView(frame: NSRect(x: 0, y: 0, width: Self.width, height: 600), configuration: configuration)
+    window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)
+    window.contentView = view
+    window.isReleasedWhenClosed = false
+    super.init()
+    view.navigationDelegate = self
+  }
+  static func fits(height: Double, scale: Double) -> Bool {
+    let pixels = (height * scale).rounded(.up)
+    return height > 0 && pixels <= maxSide && width * scale * pixels <= maxPixels
+  }
+  func export(_ html: String, completion: @escaping (Result<Data, Error>) -> Void) {
+    self.completion = completion
+    WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "omarkie-offline-export", encodedContentRuleList: PDFExporter.offlinePolicy) { [weak self] list, error in
+      guard let self, self.completion != nil else { return }
+      guard let list else { self.finish(.failure(error ?? NativeFailure("无法限制导出资源。"))); return }
+      self.view.configuration.userContentController.add(list)
+      self.view.loadHTMLString(html, baseURL: URL(string: "omarkie://app/"))
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+      self?.finish(.failure(NativeFailure(Self.tooLarge)))
+    }
+  }
+  private func finish(_ result: Result<Data, Error>) {
+    let callback = completion
+    completion = nil
+    window.close()
+    callback?(result)
+  }
+  func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    decisionHandler(loaded ? .cancel : .allow)
+  }
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    finish(.failure(error))
+  }
+  func webView(
+    _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+    withError error: Error
+  ) { finish(.failure(error)) }
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    loaded = true
+    // App-injected script: runs although page scripts are off.
+    let settle = """
+      await document.fonts.ready;
+      let deadline;
+      await Promise.race([
+        Promise.all([...document.images].map(image => image.decode().catch(() => {}))),
+        new Promise(resolve => { deadline = setTimeout(resolve, 5000); }),
+      ]);
+      clearTimeout(deadline);
+      return Math.ceil(document.documentElement.scrollHeight);
+      """
+    view.callAsyncJavaScript(settle, arguments: [:], in: nil, in: .defaultClient) { result in
+      guard let height = (try? result.get() as? NSNumber)?.doubleValue, Self.fits(height: height, scale: self.scale) else {
+        self.finish(.failure(NativeFailure(Self.tooLarge)))
+        return
+      }
+      self.view.frame.size = NSSize(width: Self.width, height: height)
+      self.window.setContentSize(self.view.frame.size)
+      let snapshot = WKSnapshotConfiguration()
+      snapshot.rect = CGRect(x: 0, y: 0, width: Self.width, height: height)
+      snapshot.snapshotWidth = NSNumber(value: Self.width * self.scale)
+      snapshot.afterScreenUpdates = true
+      self.view.takeSnapshot(with: snapshot) { image, error in
+        guard self.completion != nil else { return }
+        do { self.finish(.success(try Self.png(image, error: error, width: Self.width, height: height, scale: self.scale))) }
+        catch { self.finish(.failure(error)) }
+      }
+    }
+  }
+  // Exact pixel size whatever the screen's backing scale.
+  static func png(_ image: NSImage?, error: Error?, width: Double, height: Double, scale: Double) throws -> Data {
+    guard let image else { throw error ?? NativeFailure(tooLarge) }
+    let pixelsWide = Int(width * scale), pixelsHigh = Int((height * scale).rounded(.up))
+    guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixelsWide, pixelsHigh: pixelsHigh, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0) else { throw NativeFailure(tooLarge) }
+    rep.size = NSSize(width: pixelsWide, height: pixelsHigh)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+    image.draw(in: NSRect(x: 0, y: 0, width: pixelsWide, height: pixelsHigh))
+    NSGraphicsContext.restoreGraphicsState()
+    guard let data = rep.representation(using: .png, properties: [:]) else { throw NativeFailure(tooLarge) }
+    return data
+  }
+}

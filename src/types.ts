@@ -11,6 +11,7 @@ export interface DocumentRecord {
   diskHash: string | null;
   lineEnding: string;
   conflict?: boolean;
+  missing?: boolean;
   bom?: boolean;
   encoding?: string;
   controlCharacters?: number;
@@ -24,6 +25,10 @@ export interface FileEntry {
   modified?: string;
   created?: string;
 }
+export type CanvasRequest = { action: "list" } | { action: "read"; file: string } | { action: "note"; file: string }
+  | { action: "save"; file: string; text: string; base: string | null } | { action: "create"; folder?: string; name?: string };
+export interface CanvasBoard { file: string; name: string; text: string; hash: string }
+export interface CanvasNote { file: string; text?: string; hash?: string; missing?: boolean }
 export interface RecentEntry { path: string; name: string; folder: boolean; pinned: boolean }
 export interface FileOperation { action: "new-file" | "new-folder" | "duplicate" | "rename" | "move" | "trash" | "undo"; path?: string; name?: string; target?: string }
 export interface PathChange { fromPath?: string; toPath?: string; removedPath?: string; newPath?: string }
@@ -48,7 +53,18 @@ export interface DiskChange {
   diskHash?: string;
   error?: string;
   missing?: boolean;
+  moved?: boolean;
+  path?: string;
+  name?: string;
+  encoding?: string;
+  bom?: boolean;
 }
+export interface DiskVersion { content: string; diskHash: string; path: string; name: string; encoding: string; bom: boolean }
+export type ConflictRequest =
+  { action: "keep-draft" | "keep-disk"; text: string; diskHash: string } |
+  { action: "restore"; text: string } |
+  { action: "drop-copy" | "use-copy"; token: string };
+export interface ConflictResult { record: DocumentRecord; copy?: string; removedPath?: string }
 export interface SessionSnapshot {
   documents: DocumentRecord[];
   activeId: string;
@@ -110,6 +126,8 @@ export interface Host {
   exportBundle(payload: BundlePayload): Promise<string | null>;
   cleanConverted?(body: string): Promise<string | null>;
   native: boolean;
+  peek?(token: string): Promise<DiskVersion>;
+  resolveConflict?(id: string, request: ConflictRequest): Promise<ConflictResult>;
   cancelClose(): Promise<unknown>;
   windowAction(action: string): Promise<unknown>;
   imageAction(id: string, sources: string[], action: string, options?: Record<string, unknown>): Promise<Record<string, string> | null>;
@@ -163,6 +181,7 @@ export interface Host {
   importImage(id: string, bytes: Uint8Array, name: string, options?: Record<string, unknown>): Promise<string>;
   exportPdf(html?: string, options?: Record<string, unknown>): Promise<string | null>;
   exportHtml(name: string, html: string): Promise<string | null>;
+  exportImage?(name: string, html: string, options: { scale: 1 | 2 }): Promise<string | null>;
   writeClipboard(text: string): Promise<unknown>;
   readClipboard(): Promise<string>;
   readAloud?(text: string | null): Promise<void>;
@@ -173,6 +192,7 @@ export interface Host {
   setDirty(dirty: boolean): Promise<unknown>;
   closeWindow(): Promise<unknown>;
   glass?(request: Record<string, unknown>): Promise<any>;
+  canvas?(request: CanvasRequest): Promise<any>;
   ocrAvailable?(): Promise<{ ok?: boolean; value?: { available: boolean } } | { available: boolean } | null>;
   glassOcr?(request: { png: string }): Promise<{ ok?: boolean; value?: { text: string }; error?: string } | null>;
   exportGlass?(request: { note: string; mode: string; target?: string; order?: string[] }): Promise<{ out: string; files: string[]; note: string } | null>;

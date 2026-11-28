@@ -1,0 +1,17 @@
+{
+	"nodes":[
+		{"id":"g-anatomy","type":"group","x":-40,"y":-80,"width":760,"height":420,"label":"Brachial plexus","color":"5","background":"Attachments/plexus.png","backgroundStyle":"ratio"},
+		{"id":"t-roots","type":"text","text":"## Roots\n\nC5 to T1. *Synthetic study card.*","x":0,"y":0,"width":300,"height":180,"color":"#2f6fb5","x-omarkie-test":{"kept":true}},
+		{"id":"f-section","type":"file","file":"Notes/Plexus.md","subpath":"#Blocks#Interscalene","x":360,"y":0,"width":320,"height":260,"color":"4"},
+		{"id":"f-block","type":"file","file":"Notes/Plexus.md","subpath":"#^cords","x":360,"y":300,"width":320,"height":120},
+		{"id":"f-missing","type":"file","file":"Notes/Gone.md","x":800,"y":300,"width":240,"height":120},
+		{"id":"l-ref","type":"link","url":"https://example.org/plexus","x":800,"y":0,"width":240,"height":100,"color":"2"},
+		{"id":"t-plain","type":"text","text":"Trunks: superior, middle, inferior.","x":0,"y":220,"width":300,"height":80}
+	],
+	"edges":[
+		{"id":"e-1","fromNode":"t-roots","fromSide":"right","toNode":"f-section","toSide":"left","label":"leads to","color":"6","toEnd":"arrow"},
+		{"id":"e-2","fromNode":"t-roots","toNode":"t-plain","fromEnd":"arrow","toEnd":"none"},
+		{"id":"e-3","fromNode":"f-section","fromSide":"bottom","toNode":"f-block","toSide":"top","x-omarkie-route":"straight"}
+	],
+	"x-omarkie-fixture":"synthetic, no patient data"
+}

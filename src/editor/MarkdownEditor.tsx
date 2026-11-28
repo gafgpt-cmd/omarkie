@@ -104,6 +104,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       requested = useRef(rendered),
       activeMode = useRef(rendered);
     const starting = useRef(true);
+    const keepFocus = useRef(false);
     const [visibleMode, setVisibleMode] = useState(
       rendered && record.content.length <= richTextLimit,
     );
@@ -175,7 +176,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const richViewOptions = useRef<{ preferences?: Preferences; remoteImages?: boolean; typewriter: boolean; readOnly: boolean } | null>(null);
     function richOptions() {
       const { preferences, typewriter, readOnly } = viewOptions.current;
-      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly };
+      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly, smartPunctuation: preferences?.smartPunctuation ?? "off" };
     }
     function applyViewOptions() {
       if (isComposing()) { pendingOptions.current = true; return; }
@@ -473,11 +474,11 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
       });
       source.current.contentDOM.spellcheck = viewOptions.current.preferences?.spellcheck ?? false;
     }
-    function setMode(value: boolean) {
+    function setMode(value: boolean, focusOwner?: Element | null) {
       const doc = model.current;
       if (!doc) return;
       if (value && !richAllowed(doc)) { value = false; callbacks.current.onSourceFallback?.(); }
-      if (!value && !codeMirror) { setReadyMode(null); void loadCodeMirror().then(() => { if (model.current) setMode(requested.current); }).catch(error => callbacks.current.onError(error.message)); return; }
+      if (!value && !codeMirror) { const owner = document.activeElement; setReadyMode(null); void loadCodeMirror().then(() => { if (model.current) setMode(requested.current, owner); }).catch(error => callbacks.current.onError(error.message)); return; }
       if (isComposing()) return;
       if (value === activeMode.current && (value ? rich.current : source.current)) { setReadyMode(value ? "rich" : "source"); return; }
       doc.closeGroup();
@@ -506,6 +507,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
         ensureSource();
         syncSource();
       }
+      // A source view that loads late must not take focus the person has since moved elsewhere (a menu, a dialog).
+      const focused = document.activeElement;
+      keepFocus.current = focusOwner !== undefined && value !== activeMode.current && !!focused && focused !== focusOwner && focused !== document.body && !root.current?.contains(focused);
       activeMode.current = value;
       setVisibleMode(value);
       if (value ? rich.current : source.current) setReadyMode(value ? "rich" : "source");
@@ -720,7 +724,9 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     useLayoutEffect(() => {
       // Focus once after the mode's DOM is visible, before keyboard input.
       // A delayed frame can restore an older caret after a navigation key.
-      if (!root.current?.closest(".document-editor")?.hasAttribute("hidden"))
+      const keep = keepFocus.current;
+      keepFocus.current = false;
+      if (!keep && !root.current?.closest(".document-editor")?.hasAttribute("hidden"))
         focusEditor();
     }, [visibleMode]);
     useLayoutEffect(() => {

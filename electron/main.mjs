@@ -20,6 +20,7 @@ import { Workspace } from "./workspace.mjs";
 import { vaultSnapshot, readNotes, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
+import { moveExclusive } from "./move-exclusive.mjs";
 import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
@@ -32,6 +33,7 @@ import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
+import { captureImage, imageScale } from "./image-export.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
 import { listenBridge } from "./tutor-transport.mjs";
 import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
@@ -441,6 +443,7 @@ const handlers = {
     }
     throw new Error("Sync action must be status, configure, token, clear-token or now.");
   },
+  canvas: async (_, request) => (await import("./canvas-store.mjs")).canvasRequest(store.folder, request),
   glass: async (_, request) => {
     if (request?.image?.path !== undefined) throw new Error("Desktop image magnets require image bytes.");
     if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
@@ -716,6 +719,13 @@ const handlers = {
     if (result.canceled) return null;
     await atomicWrite(result.filePath, String(html)); return result.filePath;
   },
+  png: async (_, name, html, options = {}) => {
+    if (typeof html !== "string" || html.length > 150 * 1024 * 1024) throw new Error(t("资源过大。"));
+    const result = await dialog.showSaveDialog(window, { title: t("Export image"), defaultPath: String(name).replace(/\.(?:md|markdown|mdown)$/i, "") + ".png", filters: [{ name: "PNG", extensions: ["png"] }] });
+    if (result.canceled) return null;
+    await atomicWrite(result.filePath, await captureImage(html, imageScale(options?.scale), t("This note is too long for one image. Export PDF instead, or select fewer lines.")));
+    return result.filePath;
+  },
   confirmClose: async (_, name) => {
     const result = await dialog.showMessageBox(window, { type: "question", message: t("保存对“{{name}}”所做的修改？", { name: String(name).slice(0,150) }), buttons: [t("保存"), t("取消"), t("不保存")], defaultId: 0, cancelId: 1 });
     return ["save", "cancel", "discard"][result.response];
@@ -754,6 +764,8 @@ const handlers = {
       throw new Error(t("磁盘内容已再次变化。"));
     return store.acceptDisk(id, content, hash, disk.bom, disk.encoding);
   },
+  peek: (_, token) => store.peek(token),
+  resolveConflict: (_, id, request) => store.resolve(id, request, file => shell.trashItem(file), moveExclusive),
   image: (_, id, bytes, name, options) => store.importImage(id, bytes, name, options),
   pdf: async (_, options = {}) => {
     const title = typeof options.title === "string" && options.title ? options.title : t("文档");

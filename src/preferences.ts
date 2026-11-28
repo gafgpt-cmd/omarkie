@@ -1,6 +1,7 @@
 import { language } from "./i18n.ts";
 import { backgroundDefaults } from "./background.ts";
 import { defaultFonts, fontIds, type FontPreferences } from "./fonts.ts";
+import { smartStyles, type SmartStyle } from "./editor/smartPunctuation.ts";
 export const standaloneImageScales = [1, 1.5, 2] as const;
 export interface Preferences extends FontPreferences {
   imageUploader: string; imageAutoUpload: boolean;
@@ -18,8 +19,9 @@ export interface Preferences extends FontPreferences {
   backgroundSize: "cover" | "contain" | "repeat";
   highlight: boolean; subscript: boolean; superscript: boolean; emoji: boolean; inlineMath: boolean;
   boardEnabled: boolean;
+  smartPunctuation: SmartStyle;
 }
-export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true, boardEnabled: false,
+export const defaultPreferences: Preferences = { ...backgroundDefaults, ...defaultFonts, imageUploader: "http://127.0.0.1:36677/upload", imageAutoUpload: false, remoteImages: false, imageFolder: ".assets", imagePrefix: false, imageEscape: true, pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", readingSpeed: 200, fontSize: 16, lineHeight: 1.6, editorColumns: 80, sourceLineNumbers: false, codeLineNumbers: false, tabSize: 2, spellcheck: true, spellcheckLanguages: [...new Set([({ en: "en-US", es: "es-ES", ca: "ca", ro: "ro-RO", zh: "zh-CN" } as Record<string,string>)[language] || "en-US", "en-US"])], autoPair: true, highlight: true, subscript: true, superscript: true, emoji: true, inlineMath: true, boardEnabled: false, smartPunctuation: "off",
   standaloneImageScale: 2,
   payloadEnabled: false, payloadBaseUrl: "http://127.0.0.1:11434/v1", payloadModel: "", payloadAllowedOrigins: [], payloadModernLimit: false };
 export function loadPreferences(): Preferences {
@@ -43,6 +45,7 @@ export function loadPreferences(): Preferences {
     if (typeof saved.grammarUrl === "string" && saved.grammarUrl.length <= 500) next.grammarUrl = saved.grammarUrl;
     if (typeof saved.grammarOrigin === "string" && saved.grammarOrigin.length <= 500) next.grammarOrigin = saved.grammarOrigin;
     if (saved.pdfPaper === "letter") next.pdfPaper = "letter";
+    next.smartPunctuation = smartStyles.find(style => style === saved.smartPunctuation) ?? "off";
     if (Number.isFinite(saved.pdfMargin)) next.pdfMargin = Math.max(18, Math.min(100, saved.pdfMargin));
     if (Number.isFinite(saved.readingSpeed)) next.readingSpeed = Math.max(50, Math.min(1000, saved.readingSpeed));
     if (Number.isFinite(saved.fontSize)) next.fontSize = Math.max(12, Math.min(28, saved.fontSize));

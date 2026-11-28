@@ -25,7 +25,7 @@ const catalog: Omit<FontChoice, "name">[] = [
 export const fontIds = ["theme", ...catalog.map(font => font.id)];
 export const defaultFonts: FontPreferences = { documentFont: "theme", headingFont: "theme", codeFont: "theme", interfaceFont: "theme" };
 // Everything outside the document; themes set --chrome-font, the default replaces the platform UI font.
-export const chromeSelector = ".toolbar,.menu-bar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.file-context-menu,.rich-search,.cm-search,.table-tools,.toast,.leave-focus,.empty-document,.dialog-backdrop>*";
+export const chromeSelector = ".toolbar,.menu-bar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.file-context-menu,.rich-search,.cm-search,.table-tools,.table-size-picker,.toast,.leave-focus,.empty-document,.dialog-backdrop>*";
 export const defaultChromeFont = `"Open Sans","Helvetica Neue",Arial,${emoji},sans-serif`;
 export function fontChoices(omarchyFont: string | null): FontChoice[] {
   const names: Record<string, string> = {

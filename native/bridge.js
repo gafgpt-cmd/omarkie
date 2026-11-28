@@ -20,7 +20,7 @@
   const methods = [
     "background", "chooseBackground", "clearBackground",
     "cleanConverted", "readingStore", "payloadRequest", "payloadKey",
-    "checkGrammar", "readAloud", "bibliography", "imageSizes",
+    "checkGrammar", "readAloud", "bibliography", "imageSizes", "canvas",
     "restore", "imageAction", "importDocument", "exportConverted", "themes", "installTheme", "plugins", "installPlugin", "removePlugin", "conversionSettings", "ready", "fileOperation", "recent", "recentAction", "searchFiles", "reveal",
     "registerDraft", "setRemoteImages",
     "open",
@@ -44,6 +44,7 @@
     "viewState",
     "windowAction",
     "exportHtml",
+    "exportImage",
     "readClipboard",
     "writeClipboard",
     "chooseImage",

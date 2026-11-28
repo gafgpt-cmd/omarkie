@@ -429,7 +429,8 @@ async function auditFull() {
     for (const route of ["menu", "toolbar", "native"]) await audit(`Export ${kind}: ${route}`, async () => {
     await fixture("# Audit\n\nAudit text\n");
     const output = path.join(data, `export-${route}.` + kind);
-    const savedPreferences = await preferenceState();
+    // A run that never saved preferences uses the app defaults.
+    const savedPreferences = { pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", ...await preferenceState() };
     if (kind === "pdf") await application.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0].webContents, print = contents.printToPDF.bind(contents);
       contents.printToPDF = options => { globalThis.auditPrintOptions = options; return print(options); };
@@ -452,6 +453,17 @@ async function auditFull() {
     pass(`Export ${kind}: ${route}`, "Actual nonempty output with expected content or file signature");
     });
   }
+  for (const route of ["menu", "toolbar", "native"]) await audit(`Export image: ${route}`, async () => {
+    await fixture("# Audit\n\nAudit text\n");
+    const output = path.join(data, `export-${route}.png`);
+    await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, output);
+    await command("image-export", route);
+    const dialog = page.getByRole("dialog", { name: t("Export image"), exact: true });
+    await dialog.getByRole("button", { name: t("导出"), exact: true }).click();
+    await expect.poll(async () => { try { return (await readFile(output)).length; } catch { return 0; } }, { timeout: 60000 }).toBeGreaterThan(20);
+    assert.deepEqual([...(await readFile(output)).subarray(0, 4)], [137, 80, 78, 71]);
+    pass(`Export image: ${route}`, "Dialog export writes an actual PNG");
+  });
   for (const action of ["outline", "files", "file-tree"]) {
     for (const route of ["menu", "toolbar", "native", "shortcut"]) {
       await rich().focus(); await command(action, route);
@@ -481,11 +493,15 @@ async function auditFull() {
       const file = await fixture(tableText);
       await rich().locator("td").nth(4).click({ force: true });
       await command(definition.action, route);
+      if (definition.action === "table-size") {
+        await expect(page.locator(":focus")).toHaveClass("table-size-grid");
+        await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
+      }
       await expect.poll(() => readFile(file, "utf8")).not.toBe(tableText);
       const text = await sourceText();
       assert.notEqual(text, tableText, `${definition.action}: ${route} changes table`);
       if (definition.action === "table-deleteTable") assert.ok(!text.includes("|"));
-      else if (definition.action === "table-row") assert.equal(text.split("\n").filter(line => line.startsWith("|")).length, 6);
+      else if (definition.action === "table-row" || definition.action === "table-size") assert.equal(text.split("\n").filter(line => line.startsWith("|")).length, 6);
       else if (definition.action === "table-removeRow") assert.equal(text.split("\n").filter(line => line.startsWith("|")).length, 4);
       pass(`${definition.action}: ${route}`, "Table structure or alignment changes in Markdown");
     }
@@ -866,9 +882,10 @@ async function auditFull() {
     await expect(rich().locator("img")).toHaveCount(1);
     await rich().locator("img").evaluate(image => { image.loading = "eager"; });
     await expect.poll(() => rich().locator("img").evaluate(image => image.complete && image.naturalWidth)).toBe(16);
-    const settings = await preferenceState();
+    // A run that never saved preferences uses the app defaults.
+    const settings = { imageFolder: ".assets", imagePrefix: false, imageEscape: true, ...await preferenceState() };
     const folder = settings.imageEscape ? settings.imageFolder.split("/").map(encodeURIComponent).join("/") : settings.imageFolder;
-    assert.ok((await sourceText()).includes(`](${settings.imagePrefix ? "./" : ""}${folder}/`));
+    { const text = await sourceText(); assert.ok(text.includes(`](${settings.imagePrefix ? "./" : ""}${folder}/`), text); }
     pass(`Insert Image: ${route}`, "Selected file is copied and decoded in editor");
   }
   for (const action of ["copy-all-images", "move-all-images"]) {
@@ -938,6 +955,13 @@ async function auditFull() {
     await expect(learningToggle).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.study-rail')).toBeHidden();
     pass(`reading-layers: ${route}`, 'Learning opens and the toolbar toggle closes it');
+  }
+  for (const route of ['menu', 'native']) {
+    await command('canvas-boards', route);
+    const picker = page.getByRole('dialog', { name: t('Canvas boards'), exact: true });
+    await expect(picker).toBeVisible();
+    await page.keyboard.press('Escape'); await expect(picker).toBeHidden();
+    pass(`canvas-boards: ${route}`, 'Board picker for the open folder opens; Escape closes it');
   }
   for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
     await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
