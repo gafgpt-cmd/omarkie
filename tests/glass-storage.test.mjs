@@ -297,8 +297,9 @@ test("a read-only vault switches to outside mode and stays byte-for-byte", async
   const environment = await vault({ "notes/Protected.md": "# Protected\n\nRead only.\n" });
   const before = await checksums(environment.folder);
   await lockDirectory(environment.folder, 0o555);
-  const service = await open(environment);
+  let service;
   try {
+    service = await open(environment);
     assert.equal(service.mode, null);
     assert.ok((await service.request({ action: "add", note: "notes/Protected.md", text: "outside" })).saved);
     assert.equal(service.mode, "outside");
@@ -313,7 +314,7 @@ test("a read-only vault switches to outside mode and stays byte-for-byte", async
       assert.equal((await mirror.request({ action: "list", note: "notes/Protected.md" })).magnets.length, 1);
     } finally { await mirror.close(); }
   } finally {
-    await service.close();
+    await service?.close().catch(() => {});
     await unlockDirectory(environment.folder, 0o755);
   }
   const writableAgain = await open(environment);
