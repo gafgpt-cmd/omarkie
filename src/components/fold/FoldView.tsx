@@ -28,6 +28,10 @@ export default function FoldView({ id, content, stop, setStop, close, startLine,
   const [hint, setHint] = useState(true);
   const latest = useRef({ index, startLine, leave });
   latest.current = { index, startLine, leave };
+  useLayoutEffect(() => () => {
+    const view = engine.current;
+    if (view) latest.current.leave(view.topLine(), !!scroller.current?.closest(".fold-view")?.contains(document.activeElement));
+  }, []);
   useLayoutEffect(() => {
     const root = article.current!, view = new FoldEngine(scroller.current!, root, ladder, id);
     engine.current = view;
@@ -36,7 +40,6 @@ export default function FoldView({ id, content, stop, setStop, close, startLine,
     root.focus({ preventScroll: true });
     void renderMath(root).catch(() => {});
     return () => {
-      latest.current.leave(view.topLine(), !!root.closest(".fold-view")?.contains(document.activeElement));
       view.dispose();
       engine.current = null;
       root.replaceChildren();

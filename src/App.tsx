@@ -267,17 +267,23 @@ export default function App() {
     }
     return best;
   }
+  const activeIdRef = useRef(active?.id);
+  activeIdRef.current = active?.id;
+  useEffect(() => { if (!readingVisible && !(learningEnabled && !focus)) setFoldId(null); }, [readingVisible, learningEnabled, focus]);
+  useEffect(() => { setFoldId(null); }, [active?.id]);
   function toggleFold() {
     if (!active || editor()?.composing()) return;
     if (foldVisible) { setFoldId(null); return; }
     foldStart.current = editorTopLine();
     if (cleanVisible) setCleanId(null);
     if (!learningEnabled) toggleReading();
+    else if (focus) setFocus(false);
     setFoldId(active.id);
   }
   // Back on the page at the fold's top line. Learning mode keeps the page read-only, so focus returns to the fold toggle.
   function leaveFold(id: string, line: number, focused: boolean) {
     requestAnimationFrame(() => {
+      if (activeIdRef.current !== id) return;
       const handle = editors.current.get(id);
       const top = handle?.topOfLine(line), scroller = document.querySelector<HTMLElement>(foldScroller);
       if (scroller && top !== null && top !== undefined) scroller.scrollTop = top;
