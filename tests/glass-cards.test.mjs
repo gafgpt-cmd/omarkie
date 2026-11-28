@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cardFields, cardPageMarkdown, cardTitle, extractSection, normalizeChoices, parseCardLink } from "../shared/glass-cards.mjs";
+import { cardFields, cardPageMarkdown, cardTitle, extractSection, foldLineIsEvidence, normalizeChoices, parseCardLink } from "../shared/glass-cards.mjs";
 
 test("card links accept wiki, md and section forms and reject escapes", () => {
   assert.deepEqual(parseCardLink("[[Reference#Kerma]]"), { target: "Reference", section: "Kerma" });
@@ -49,4 +49,20 @@ test("open-as-page is its own note, never the source", () => {
   assert.match(page, /^# Kerma\n/);
   assert.match(page, /Embedded from \[\[Reference#Kerma\]\]/);
   assert.match(page, /Energy per unit mass\./);
+});
+
+test("a fold card shows its line once: heading, stop, evidence; at Full the evidence is the line", () => {
+  const values = cardFields({ kind: "card", card: "fold", question: "GFR falls as afferent tone rises.", answer: "Filtration falls when the afferent arteriole constricts.",
+    link: "[[Renal#Filtration]]", stop: "key", folded: false });
+  assert.equal(values.stop, "key");
+  assert.throws(() => cardFields({ card: "fold", stop: "summary" }), /fold level/);
+  assert.equal(cardTitle({ card: "fold", question: values.question }), "GFR falls as afferent tone rises.");
+  assert.equal(foldLineIsEvidence(values), false);
+  assert.equal(cardPageMarkdown({ card: "fold", ...values }),
+    "# GFR falls as afferent tone rises.\n\n> Filtration falls when the afferent arteriole constricts.\n\nSource: [[Renal#Filtration]]\n");
+  const long = `${"Afferent tone ".repeat(7)}rises.`;
+  assert.equal(cardPageMarkdown({ card: "fold", question: long, answer: "Evidence." }), `# ${long.slice(0, 80)}…\n\n${long}\n\n> Evidence.\n`);
+  const full = { card: "fold", question: "Filtration falls  when the afferent\narteriole constricts.", answer: "Filtration falls when the afferent arteriole constricts.", stop: "full" };
+  assert.equal(foldLineIsEvidence(full), true);
+  assert.equal(cardPageMarkdown(full), "# Filtration falls when the afferent\n\n> Filtration falls when the afferent arteriole constricts.\n");
 });

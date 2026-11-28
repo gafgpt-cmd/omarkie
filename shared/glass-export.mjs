@@ -97,7 +97,8 @@ function magnetMarkdown(magnet, { noteName, noteText, assets, target = "github" 
       const link = parseCardLink(String(fields.link ?? ""));
       return link?.section ?? "";
     })();
-    const embed = (fields.mode ?? (section ? "embed" : "plain")) === "embed";
+    // A fold card carries its own evidence: export it as written, never as a section embed.
+    const embed = fields.card !== "fold" && (fields.mode ?? (section ? "embed" : "plain")) === "embed";
     if (embed && section) {
       const extracted = extractSection(noteText, section);
       const quote = extracted.markdown ? bodyLines(extracted.markdown).filter(line => line.trim()).slice(0, 6) : [];

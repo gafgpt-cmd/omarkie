@@ -1811,5 +1811,21 @@
   "Arrow": "Flecha",
   "Label": "Etiqueta",
   "Voice memo": "Nota de voz",
-  "Magnet": "Imán"
+  "Magnet": "Imán",
+  "Send line to": "Enviar línea a",
+  "Copy linked excerpt": "Copiar extracto enlazado",
+  "Show on page": "Mostrar en la página",
+  "Linked excerpt copied": "Extracto enlazado copiado",
+  "Could not copy the line.": "No se pudo copiar la línea.",
+  "Could not keep the line.": "No se pudo guardar la línea.",
+  "Drag this line out · D": "Arrastra esta línea fuera · D",
+  "Fold line": "Línea plegada",
+  "Linked note is not in this folder.": "La nota enlazada no está en esta carpeta.",
+  "Open a saved note in Learning mode to keep this line.": "Abre una nota guardada en el modo de aprendizaje para conservar esta línea.",
+  "Scrap on the page": "Recorte en la página",
+  "Card on the page": "Tarjeta en la página",
+  "Added to loose scraps": "Añadido a recortes sueltos",
+  "Added to {{sheet}}": "Añadido a {{sheet}}",
+  "Card pinned beside line {{line}}": "Tarjeta fijada junto a la línea {{line}}",
+  "This line has no paragraph to pin to.": "Esta línea no tiene un párrafo al que fijarse."
 }

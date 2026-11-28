@@ -10,12 +10,14 @@ The page text never moves: cards live on the `ai-cards` glass layer, not in the 
 | `static` | A section from another note (`[[Note#Section]]`); resolves on demand, follows edits | The section text |
 | `ai` | One question and its cached Tutor answer; cue style | Question + answer |
 | `menu` | A list of `{label, body}` choices; quizzes reveal one answer | One section per choice |
+| `fold` | A Fold view line (`question`), its Full author words (`answer`), its stop and `[[Note#Heading]]` | The line + quoted evidence + source |
 
 - Only one card unfolds at a time. A popup must not bury its neighbours.
 - Folded cards mount only the pill; the body's state and link resolution start on unfold.
 - A static card polls while unfolded; a missing note or section states why.
 - AI answers stay in the journal. Offline, the cached answer still renders. Regenerate asks again.
 - Identifiers in a question or its paragraph block the ask until each one is marked not identifying.
+- A `fold` card comes from dragging a fold line onto the page (Glass on), or D → Card on the page. Open, it shows the line once, its stop, then the evidence (at Full the evidence is the line). It never merges into the note: its evidence is already there.
 
 ## Open as page
 

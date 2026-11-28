@@ -30,6 +30,7 @@ import { highlightCode, loadHighlighting, inlineTokens, markdownOptionsVersion }
 import { imeKey } from "./composition.ts";
 import { smartPunctuateElement, type SmartStyle } from "./smartPunctuation.ts";
 import { t } from "../i18n.ts";
+import { foldBlock, readFoldTransfer } from "../components/fold/drag.ts";
 export interface RichCallbacks {
   change(): void;
   cursor(line: number, column: number): void;
@@ -1093,6 +1094,7 @@ export class RichEditor {
     const html = event.clipboardData?.getData("text/html");
     const plain = event.clipboardData?.getData("text/plain") || "";
     const own = event.clipboardData?.getData("text/x-omarkie-markdown");
+    const fold = readFoldTransfer(event.clipboardData);
     const cell = window.getSelection()?.anchorNode?.parentElement?.closest("td,th");
     const selection = this.bookmark(), revision = this.model.text;
     event.preventDefault();
@@ -1104,7 +1106,8 @@ export class RichEditor {
       const grid = table ? [...table.rows].map(row => [...row.cells].map(cell => htmlToMarkdown(cell.innerHTML))) : plain.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n").map(line => line.split("\t"));
       if (this.pasteTable(grid, cell as HTMLTableCellElement)) { event.preventDefault(); return; }
     }
-    const text = own || (html ? htmlToMarkdown(html) : plain);
+    // A copied fold line pastes as a linked excerpt: the line, its evidence quoted, the link back.
+    const text = fold ? foldBlock(fold, this.model.text.slice(0, Math.min(selection.anchor, selection.head))) : own || (html ? htmlToMarkdown(html) : plain);
     if (text !== undefined) {
       event.preventDefault();
       this.insert(text, "paste");
@@ -1215,6 +1218,13 @@ export class RichEditor {
   private drop = (event: DragEvent) => {
     const droppedPath = event.dataTransfer?.getData("application/x-omarkie-file");
     if (droppedPath) { event.preventDefault(); const name = droppedPath.split("/").at(-1) || "文档"; this.insert(`[${name.replace(/[\[\]]/g, "")}](${encodeURI(droppedPath).replace(/[()]/g, c => "%" + c.charCodeAt(0).toString(16))})`, "drop"); return; }
+    const fold = readFoldTransfer(event.dataTransfer);
+    if (fold && !this.readOnly) {
+      event.preventDefault();
+      const selection = this.bookmark();
+      this.insert(foldBlock(fold, this.model.text.slice(0, Math.min(selection.anchor, selection.head))), "drop");
+      return;
+    }
     const images = [...(event.dataTransfer?.files || [])].filter(file => file.type.startsWith("image/"));
     if (images.length) {
       event.preventDefault();

@@ -950,5 +950,21 @@
   "Arrow": "箭头",
   "Label": "标签",
   "Voice memo": "语音备忘",
-  "Magnet": "磁贴"
+  "Magnet": "磁贴",
+  "Send line to": "将此行发送到",
+  "Copy linked excerpt": "复制带链接的摘录",
+  "Show on page": "在页面中显示",
+  "Linked excerpt copied": "已复制带链接的摘录",
+  "Could not copy the line.": "无法复制此行。",
+  "Could not keep the line.": "无法保留此行。",
+  "Drag this line out · D": "拖出此行 · D",
+  "Fold line": "折叠行",
+  "Linked note is not in this folder.": "链接的笔记不在此文件夹中。",
+  "Open a saved note in Learning mode to keep this line.": "在学习模式中打开已保存的笔记，才能保留此行。",
+  "Scrap on the page": "页面上的剪贴",
+  "Card on the page": "页面上的卡片",
+  "Added to loose scraps": "已加入散页托盘",
+  "Added to {{sheet}}": "已加入{{sheet}}",
+  "Card pinned beside line {{line}}": "卡片已固定在第 {{line}} 行旁",
+  "This line has no paragraph to pin to.": "此行没有可固定的段落。"
 }

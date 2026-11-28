@@ -79,6 +79,7 @@ export interface Command {
   line?: number;
   note?: string;
   magnet?: string;
+  stop?: string;
 }
 export interface VaultNote { token: string; relative: string; content: string; path?: string }
 export interface VaultSnapshot { notes: VaultNote[]; assets: { relative: string }[]; truncated: boolean; folder?: string }

@@ -94,6 +94,8 @@
 .study-scrap header { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .study-scrap q { display: block; color: var(--muted); overflow-wrap: anywhere; }
 .study-scrap p { margin: 4px 0 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.study-scrap .study-fold-line { margin: 4px 0 5px; color: var(--ink); font-weight: 600; }
+.study-scrap .study-fold-line + q { padding-inline-start: 8px; border-inline-start: 2px solid var(--accent); }
 .study-scrap .study-scrap, .study-tray .study-scrap { margin-top: 6px; }
 .study-snippet { overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important; }
 .study-scrap > header[draggable="true"], .study-tab[draggable="true"] { cursor: grab; }

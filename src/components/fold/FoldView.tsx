@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FocusEvent as ReactFocusEvent } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent as ReactDragEvent, type FocusEvent as ReactFocusEvent } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { GripVertical } from "lucide-react";
 import { worthFolding } from "../../../shared/fold-text.mjs";
 import { foldTopic } from "../../../shared/fold-topic.mjs";
 import { foldDocumentLadder, type FoldDocumentLadder } from "../../../shared/fold-units.mjs";
@@ -9,11 +10,13 @@ import { t } from "../../i18n";
 import CompareSlider from "../CompareSlider";
 import type { StudyMark } from "../learning-overlays";
 import { FoldBar } from "./FoldBar";
+import { foldDragType, foldPayload, readFoldTransfer, writeFoldTransfer, type FoldOut, type FoldPayload, type FoldTarget } from "./drag";
 import { FoldEvidence, FoldLens } from "./FoldEvidence";
 import type { FoldMark, FoldMarks } from "./fold-marks";
 import { FoldTopic, saveTopicView, savedTopicView, warmTopic, type TopicView } from "./FoldTopic";
 import { FoldEngine, type FoldUnitView, type WordUnit } from "./morph";
 import { FoldRails, markKind, quoteOf, visibleRun } from "./rails";
+import { FoldSendMenu, FoldSentNote, type FoldNotice } from "./FoldSend";
 import { STOPS, stopLabel, type FoldStart, type Stop } from "./stops";
 import "./fold.css";
 
@@ -23,15 +26,19 @@ const HOLD_MS = 450;
 const HOLD_SLOP = 8;
 const COLOURS: readonly SheetColour[] = ["amber", "blue", "rose", "green"];
 const TOAST_MS = 6000;
+const NOTICE_MS = 8000;
 
 interface Peek { unit: FoldUnitView; host: HTMLElement; y: number }
 interface Lens { unit: FoldUnitView; x: number; y: number }
 // Author words picked for a highlight, and where the colour choice opens.
 interface Pick { unit: WordUnit; quote: string; x: number; y: number }
 interface Deck { marks: readonly FoldMark[]; chip: HTMLElement; x: number; y: number }
+interface Grip { unit: FoldUnitView; top: number; left: number }
+interface Menu { unit: FoldUnitView; x: number; y: number; targets: FoldTarget[] }
+const failure = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 // Fold view: the note's own words at a chosen local stop, read-only, in place of the rendered page.
-export default function FoldView({ id, title, content, stop, setStop, close, start, leave, reveal, marks }: {
+export default function FoldView({ id, title, content, stop, setStop, close, start, leave, reveal, marks, note, out }: {
   id: string;
   /** Note name, the Topic title when the note has no single leading H1. */
   title: string;
@@ -45,6 +52,10 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
   reveal(line: number, y: number): void;
   // Study marks and Glass magnets, projected here, never copied; writes go through the publisher.
   marks: FoldMarks;
+  // Vault-relative path ("" while unsaved): the way back a dragged line carries, with the title.
+  note: string;
+  // Where a line can go: study sheets, the loose tray, a card on the page. Null while Learning mode is not ready.
+  out(): FoldOut | null;
 }) {
   const feed = useSyncExternalStore(marks.subscribe, marks.get);
   // Highlighted, magnet and circled sentences are pinned: they reach Takeaway in the author's words.
@@ -72,6 +83,8 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
   const [picking, setPicking] = useState<Pick | null>(null), [deck, setDeck] = useState<Deck | null>(null), [tray, setTray] = useState(false), [toast, setToast] = useState(false);
   const focusAfter = useRef<FoldMark | null>(null);
   cutRef.current = cutValue;
+  const [grip, setGrip] = useState<Grip | null>(null), [menu, setMenu] = useState<Menu | null>(null), [notice, setNotice] = useState<FoldNotice | null>(null);
+  const dragged = useRef<FoldUnitView | null>(null), copying = useRef<FoldPayload | null>(null);
   const [view, setView] = useState<TopicView>(savedTopicView);
   // Topic shows as cards or a map; while the reader scrubs, the morphing page shows through instead.
   const [scrubbing, setScrubbing] = useState(false);
@@ -105,7 +118,7 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
       view.dispose();
       engine.current = null; rails.current = null;
       root.replaceChildren();
-      setPeek(null); setLens(null); setCut(false); setPicking(null); setDeck(null);
+      setPeek(null); setLens(null); setCut(false); setPicking(null); setDeck(null); setGrip(null); setMenu(null);
     };
   }, [ladder, id]);
   useEffect(() => {
@@ -119,7 +132,7 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     const view = engine.current, target = landing.current, mark = focusAfter.current;
     landing.current = null; focusAfter.current = null;
     if (!view) return;
-    setDeck(null); setPicking(null);
+    setDeck(null); setPicking(null); setGrip(null);
     // A stop that hides the peeked line takes its peek with it.
     const dropHiddenPeek = () => {
       const open = peekRef.current;
@@ -266,6 +279,39 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
       element.removeEventListener("scroll", scroll);
     };
   }, []);
+  // One drag grip for the whole page, beside the hovered or focused line.
+  useEffect(() => {
+    const element = scroller.current!;
+    const at = (unit: FoldUnitView): Grip => {
+      const box = element.getBoundingClientRect(), rect = unit.root.getBoundingClientRect();
+      return { unit, top: Math.round(rect.top - box.top + element.scrollTop), left: Math.max(0, Math.round(rect.left - box.left + element.scrollLeft - 28)) };
+    };
+    const place = (target: EventTarget | null) => {
+      const unit = target instanceof Element ? engine.current?.unitOf(target) : undefined;
+      if (!unit || unit.root.classList.contains("fold-off")) return;
+      const next = at(unit);
+      setGrip(current => current?.unit === unit && current.top === next.top && current.left === next.left ? current : next);
+    };
+    // The column moves when a side panel opens (the tray shows on dragstart): the grip follows its line.
+    const resized = new ResizeObserver(() => setGrip(current => current?.unit.root.isConnected ? at(current.unit) : current));
+    resized.observe(element);
+    const over = (event: PointerEvent) => place(event.target);
+    const focus = (event: FocusEvent) => place(event.target);
+    element.addEventListener("pointerover", over);
+    element.addEventListener("focusin", focus);
+    return () => { element.removeEventListener("pointerover", over); element.removeEventListener("focusin", focus); resized.disconnect(); };
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (event: PointerEvent) => { if (!(event.target instanceof Element && event.target.closest(".fold-send"))) setMenu(null); };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [menu]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
   // Corte geometry follows the page width.
   useEffect(() => {
     if (!cut) return;
@@ -409,12 +455,109 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     unit.root.scrollIntoView({ block: "center" });
   }
   useEffect(() => { if (deck) section.current?.querySelector<HTMLElement>(".fold-deck-pop button")?.focus(); }, [deck]);
+  // The line as it reads at its stop, and the unit's Full author words behind it.
+  function payloadOf(unit: FoldUnitView) {
+    const view = engine.current!, entry = ladder.byUnit[view.units.indexOf(unit)], at = STOPS[view.stopOf(unit)];
+    return foldPayload({ note, title, stop: at, by: "author", line: unit.unit.line, endLine: unit.unit.endLine, headings: unit.unit.headings,
+      text: entry.stops[at] || entry.stops.full, quote: entry.stops.full });
+  }
+  async function send(unit: FoldUnitView, target: FoldTarget) {
+    const api = out();
+    if (!api) return;
+    try {
+      const sent = await api.send(payloadOf(unit), target);
+      const undo = sent.undo && (async () => { try { await sent.undo!(); } catch (error) { setNotice({ message: failure(error), error: true }); } });
+      const show = sent.line === undefined ? undefined : () => reveal(sent.line!, unit.root.isConnected ? unit.root.getBoundingClientRect().top : 0);
+      setNotice({ message: sent.message, undo, show });
+    } catch (error) { setNotice({ message: failure(error), error: true }); }
+  }
+  function openMenu(unit: FoldUnitView) {
+    const rect = unit.root.getBoundingClientRect(), box = section.current!.getBoundingClientRect();
+    setMenu({ unit, x: Math.round(Math.max(8, Math.min(rect.left - box.left, box.width - 268))), y: Math.round(rect.bottom - box.top + 4), targets: out()?.targets() ?? [] });
+  }
+  function closeMenu() {
+    const open = menu;
+    setMenu(null);
+    if (open?.unit.root.isConnected) open.unit.root.focus({ preventScroll: true });
+  }
+  function copyLine(unit: FoldUnitView) {
+    copying.current = payloadOf(unit);
+    const copied = document.execCommand("copy");
+    copying.current = null;
+    closeMenu();
+    setNotice(copied ? { message: t("Linked excerpt copied") } : { message: t("Could not copy the line."), error: true });
+  }
+  function dragStart(event: ReactDragEvent, unit: FoldUnitView) {
+    const payload = payloadOf(unit);
+    writeFoldTransfer(event.dataTransfer, payload);
+    event.dataTransfer.effectAllowed = "copy";
+    const ghost = document.createElement("div");
+    ghost.className = "fold-drag-ghost";
+    ghost.textContent = payload.text.length > 90 ? `${payload.text.slice(0, 89)}…` : payload.text;
+    document.body.append(ghost);
+    event.dataTransfer.setDragImage(ghost, 14, 14);
+    setTimeout(() => ghost.remove());
+    dragged.current = unit;
+    section.current!.dataset.dragging = "true";
+    setMenu(null);
+  }
+  function dragEnd() {
+    dragged.current = null;
+    delete section.current?.dataset.dragging;
+  }
+  // Dropped back on the page (not on its own line): a card pinned at the evidence.
+  const pageTarget = (event: ReactDragEvent) => {
+    const source = dragged.current;
+    return source && event.dataTransfer.types.includes(foldDragType) && engine.current?.unitOf(event.target as Element) !== source
+      && !(event.target as Element).closest(".fold-bar") ? source : null;
+  };
+  // Dropped on a study sheet row or the loose tray (Learning mode marks them data-fold-drop).
+  const zoneTarget = (event: DragEvent) => {
+    const zone = dragged.current && event.target instanceof Element ? event.target.closest<HTMLElement>("[data-fold-drop]") : null;
+    const kind = zone?.dataset.foldDrop, sheet = zone?.dataset.sheet;
+    return zone ? out()?.targets().find(target => target.kind === kind && (kind !== "sheet" || target.id === sheet)) ?? null : null;
+  };
+  const zoneOver = useEffectEvent((event: DragEvent) => {
+    if (!zoneTarget(event)) return;
+    event.preventDefault();
+    event.dataTransfer!.dropEffect = "copy";
+  });
+  const zoneDrop = useEffectEvent((event: DragEvent) => {
+    const target = zoneTarget(event), source = dragged.current;
+    if (!target || !source) return;
+    event.preventDefault(); event.stopPropagation();
+    dragEnd();
+    void send(source, target);
+  });
+  useEffect(() => {
+    const over = (event: DragEvent) => zoneOver(event), drop = (event: DragEvent) => zoneDrop(event);
+    document.addEventListener("dragover", over, true);
+    document.addEventListener("drop", drop, true);
+    return () => { document.removeEventListener("dragover", over, true); document.removeEventListener("drop", drop, true); };
+  }, []);
   const level = stopLabel(STOPS[index]);
   const orphans = rails.current?.projection?.orphans ?? [], checks = feed.marks.filter(mark => mark.check), trayCount = orphans.length + checks.length;
   const markLine = (mark: FoldMark) => <><span className="fold-pop-kind">{markKind(mark)}</span>{(mark.quote || mark.text) && <span className="fold-pop-text">{mark.quote || mark.text}</span>}</>;
   return <section ref={section} className="fold-view" aria-label={t("Fold view")} data-stop={STOPS[index]} data-cut={cut || undefined}
-    style={cut ? { "--cut-at": `${cutValue}%` } as React.CSSProperties : undefined} onKeyDown={event => {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
+    style={cut ? { "--cut-at": `${cutValue}%` } as React.CSSProperties : undefined}
+    onDragOver={event => { if (!pageTarget(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
+    onDrop={event => {
+      const source = pageTarget(event), page = source && readFoldTransfer(event.dataTransfer) && out()?.targets().find(target => target.kind === "page");
+      if (!source) return;
+      event.preventDefault(); event.stopPropagation();
+      dragEnd();
+      if (page) void send(source, page);
+      else setNotice({ message: t("Open a saved note in Learning mode to keep this line."), error: true });
+    }}
+    onCopy={event => {
+      const unit = engine.current?.unitOf(document.activeElement), selection = getSelection();
+      const payload = copying.current ?? (unit && document.activeElement === unit.root && (!selection || selection.isCollapsed) ? payloadOf(unit) : null);
+      if (!payload) return;
+      writeFoldTransfer(event.clipboardData, payload);
+      event.preventDefault();
+    }}
+    onKeyDown={event => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing || (event.target as Element).closest(".fold-send")) return;
     const key = event.key, target = event.target as HTMLElement, unit = engine.current?.unitOf(target), inPopup = !!target.closest(".fold-pop, .fold-pick");
     let handled = true;
     if (key === "Escape") {
@@ -432,6 +575,7 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     else if (key === "]") pick(Math.min(STOPS.length - 1, index + 1));
     else if (/^[1-5]$/.test(key)) pick(Number(key) - 1);
     else if (key === "6") setHint(true);
+    else if ((key === "d" || key === "D" || key === "ContextMenu" || (key === "F10" && event.shiftKey)) && unit && target === unit.root) openMenu(unit);
     else if ((key === "ArrowDown" || key === "ArrowUp") && !target.closest('[role="slider"],.fold-topic')) moveFocus(key === "ArrowDown" ? 1 : -1);
     else handled = false;
     if (handled) { event.preventDefault(); event.stopPropagation(); }
@@ -444,6 +588,9 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
         if (chip && article.current?.contains(chip)) railAction(chip); else setDeck(null);
       }}>
       <article ref={article} className="rich-document fold-document" tabIndex={0} aria-label={t("Fold view")} data-marks={feed.marks.length ? "" : undefined} />
+      {grip && grip.unit.root.isConnected && <button type="button" className="fold-grip" draggable tabIndex={-1} style={{ top: grip.top, left: grip.left }}
+        aria-label={t("Drag this line out · D")} title={t("Drag this line out · D")}
+        onDragStart={event => dragStart(event, grip.unit)} onDragEnd={dragEnd} onClick={() => openMenu(grip.unit)}><GripVertical size={14} aria-hidden="true" /></button>}
     </div>
     {peek && engine.current && createPortal(<FoldEvidence html={engine.current.source(peek.unit)} line={peek.unit.unit.line}
       open={() => reveal(peek.unit.unit.line, peek.unit.root.getBoundingClientRect().top)} />, peek.host)}
@@ -451,6 +598,9 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     {cut && <CompareSlider overlay value={cutValue} direction="horizontal" before={t("Full")} after={level}
       label={t("Divider between Full and {{level}}", { level })} valueText={value => t("{{percent}}% shows Full", { percent: value })}
       onChange={moveCut} onCommit={moveCut} />}
+    {menu && <FoldSendMenu x={menu.x} y={menu.y} targets={menu.targets} close={closeMenu} copy={() => copyLine(menu.unit)}
+      pick={target => { const unit = menu.unit; closeMenu(); void send(unit, target); }} />}
+    {notice && <FoldSentNote notice={notice} dismiss={() => setNotice(null)} />}
     {picking && <div className="fold-pick" role="group" aria-label={t("选区操作")} style={{ left: picking.x, top: picking.y }}>
       <div role="group" aria-label={t("高亮")}>{COLOURS.map(colour => {
         const label = t("Highlight: {{colour}}", { colour: t(colour) });

@@ -1813,5 +1813,21 @@
   "Arrow": "Săgeată",
   "Label": "Etichetă",
   "Voice memo": "Notă vocală",
-  "Magnet": "Magnet"
+  "Magnet": "Magnet",
+  "Send line to": "Trimite rândul la",
+  "Copy linked excerpt": "Copiază extrasul cu legătură",
+  "Show on page": "Arată în pagină",
+  "Linked excerpt copied": "Extras cu legătură copiat",
+  "Could not copy the line.": "Rândul nu a putut fi copiat.",
+  "Could not keep the line.": "Rândul nu a putut fi păstrat.",
+  "Drag this line out · D": "Trage rândul afară · D",
+  "Fold line": "Rând pliat",
+  "Linked note is not in this folder.": "Notița legată nu este în acest dosar.",
+  "Open a saved note in Learning mode to keep this line.": "Deschide o notiță salvată în modul de învățare pentru a păstra acest rând.",
+  "Scrap on the page": "Decupaj în pagină",
+  "Card on the page": "Card în pagină",
+  "Added to loose scraps": "Adăugat la decupajele libere",
+  "Added to {{sheet}}": "Adăugat la {{sheet}}",
+  "Card pinned beside line {{line}}": "Card fixat lângă rândul {{line}}",
+  "This line has no paragraph to pin to.": "Acest rând nu are un paragraf de care să fie fixat."
 }

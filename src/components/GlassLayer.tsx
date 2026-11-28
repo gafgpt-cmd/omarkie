@@ -1565,7 +1565,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     }));
     for (const card of cards) {
       const answer = card.card === "menu" ? card.choices.map(choice => `${choice.label}: ${choice.body}`.trim()).join(" · ")
-        : card.card === "ai" ? card.answer : card.link;
+        : card.card === "ai" || card.card === "fold" ? card.answer : card.link;
       items.push({ id: card.id, kind: "card", cue: card.title || card.question || "Card", answer, marked: card.marked });
     }
     for (const magnet of comments) {

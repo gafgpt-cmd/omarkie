@@ -296,5 +296,80 @@
   .fold-bar { bottom: 10px; }
   .fold-topic .fold-cards { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
+/* Drag-out (D8): one grip beside the hovered or focused line; D opens the same targets as a menu. */
+.fold-grip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  cursor: grab;
+  opacity: 0.55;
+}
+.fold-grip:hover, .fold-scroller:focus-within .fold-grip { border-color: var(--border); background: var(--sidebar); color: var(--ink); opacity: 1; }
+.fold-grip:active { cursor: grabbing; }
+.fold-view[data-dragging] .fold-document { outline: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 6px; border-radius: 6px; }
+.fold-drag-ghost {
+  position: fixed;
+  top: -200px;
+  left: 0;
+  max-width: 320px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-inline-start: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--sidebar);
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fold-send {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  width: 260px;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--sidebar);
+  box-shadow: 0 8px 26px rgb(0 0 0 / 18%);
+}
+.fold-send [role="menuitem"] { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 5px; background: none; color: var(--ink); font: inherit; font-size: 13px; text-align: start; cursor: pointer; }
+.fold-send [role="menuitem"] svg { flex: none; color: var(--muted); }
+.fold-send [role="menuitem"]:hover, .fold-send [role="menuitem"]:focus-visible { outline: none; background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.fold-send [role="separator"] { margin: 4px 6px; border-top: 1px solid var(--border); }
+.fold-send-heading { margin: 2px 8px; color: var(--muted); font-size: 11px; }
+.fold-sent {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 84px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--sidebar);
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 6px 22px rgb(0 0 0 / 14%);
+}
+.fold-sent[data-error] { border-color: color-mix(in srgb, var(--error) 55%, var(--border)); }
+.fold-sent button { padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--ink); font: inherit; cursor: pointer; }
+.fold-sent button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (prefers-reduced-motion: reduce) { .fold-unit.fold-landed { animation-duration: 0.6s; } }
-@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare, .fold-rail, .fold-pick, .fold-pop, .fold-tray, .fold-toast { display: none; } }
+@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare, .fold-rail, .fold-pick, .fold-pop, .fold-tray, .fold-toast, .fold-grip, .fold-send, .fold-sent { display: none; } }

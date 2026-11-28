@@ -1794,5 +1794,21 @@
   "Arrow": "Arrow",
   "Label": "Label",
   "Voice memo": "Voice memo",
-  "Magnet": "Magnet"
+  "Magnet": "Magnet",
+  "Send line to": "Send line to",
+  "Copy linked excerpt": "Copy linked excerpt",
+  "Show on page": "Show on page",
+  "Linked excerpt copied": "Linked excerpt copied",
+  "Could not copy the line.": "Could not copy the line.",
+  "Could not keep the line.": "Could not keep the line.",
+  "Drag this line out · D": "Drag this line out · D",
+  "Fold line": "Fold line",
+  "Linked note is not in this folder.": "Linked note is not in this folder.",
+  "Open a saved note in Learning mode to keep this line.": "Open a saved note in Learning mode to keep this line.",
+  "Scrap on the page": "Scrap on the page",
+  "Card on the page": "Card on the page",
+  "Added to loose scraps": "Added to loose scraps",
+  "Added to {{sheet}}": "Added to {{sheet}}",
+  "Card pinned beside line {{line}}": "Card pinned beside line {{line}}",
+  "This line has no paragraph to pin to.": "This line has no paragraph to pin to."
 }

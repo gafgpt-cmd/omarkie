@@ -4,6 +4,7 @@ import { codeMirror, loadCodeMirror } from "./loadCodeMirror.ts";
 import { codeSelectionCommand, selectionActions } from "./selectionCommands";
 import { ImageDialog } from "../components/ImageDialog";
 import { imageReferences } from "./images";
+import { foldBlock, readFoldTransfer } from "../components/fold/drag";
 import type { ImageReference } from "./images";
 import { textMatches, replaceTextMatches } from "./search";
 import {
@@ -432,7 +433,14 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
               }
             }),
             codeMirror!.EditorView.domEventHandlers({
-              paste(event) {
+              paste(event, view) {
+                const fold = readFoldTransfer(event.clipboardData);
+                if (fold) {
+                  event.preventDefault();
+                  const { from } = view.state.selection.main;
+                  view.dispatch(view.state.replaceSelection(foldBlock(fold, view.state.sliceDoc(0, from))), { userEvent: "input.paste", scrollIntoView: true });
+                  return true;
+                }
                 const images = [...(event.clipboardData?.files || [])].filter(
                   (file) => file.type.startsWith("image/"),
                 );
@@ -441,7 +449,16 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
                 for (const image of images) void insertImage(image);
                 return true;
               },
-              drop(event) {
+              drop(event, view) {
+                const fold = readFoldTransfer(event.dataTransfer);
+                if (fold) {
+                  event.preventDefault();
+                  const at = view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head;
+                  const insert = foldBlock(fold, view.state.sliceDoc(0, at));
+                  view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length }, userEvent: "input.drop", scrollIntoView: true });
+                  view.focus();
+                  return true;
+                }
                 const images = [...(event.dataTransfer?.files || [])].filter(
                   (file) => file.type.startsWith("image/"),
                 );

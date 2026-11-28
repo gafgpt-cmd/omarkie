@@ -1,4 +1,5 @@
 import { cardDefaults, cardKinds, cardTitle, parseCardLink, type CardChoice, type CardKind } from "../../shared/glass-cards.mjs";
+import { isLevelId, type LevelId } from "../../shared/fold-format.mjs";
 import { calcLimits, normalizeCalcInputs, normalizePrecision, type CalcInput } from "../../shared/calc-model.mjs";
 import { normalizeFlow, type FlowNode } from "../../shared/flow-model.mjs";
 import { anchorFrom } from "./glass-state";
@@ -22,6 +23,8 @@ export interface GlassCard {
   citation: string;
   precision: number;
   flow?: FlowNode;
+  // Fold card: the stop the line was read at (question = the line, answer = its evidence).
+  stop?: LevelId;
   proposed: boolean;
   anchor: GlassAnchor;
   x: number;
@@ -70,9 +73,11 @@ export function cardFromMagnet(magnet: GlassMagnet): GlassCard | undefined {
     citation: text(fields.citation, cardDefaults.citationLimit),
     flow,
     proposed: fields.proposed === true,
+    stop: isLevelId(fields.stop) ? fields.stop : undefined,
   };
   if (kind === "calc" && (!card.formula || !card.unit || !card.citation || !card.inputs.length)) return;
   if (kind === "flow" && (!card.flow || !card.citation)) return;
+  if (kind === "fold" && (!card.question || !card.answer || !card.stop)) return;
   return {
     id: magnet.id,
     ...card,
@@ -96,6 +101,7 @@ export function cardFieldsOf(card: GlassCard): Record<string, unknown> {
     ...(card.card === "menu" ? { choices: card.choices } : {}),
     ...(card.card === "calc" ? { formula: card.formula, inputs: card.inputs, unit: card.unit, citation: card.citation, precision: card.precision } : {}),
     ...(card.card === "flow" ? { flow: card.flow, citation: card.citation } : {}),
+    ...(card.card === "fold" ? { question: card.question, answer: card.answer, link: card.link, stop: card.stop } : {}),
     proposed: card.proposed,
     anchor: card.anchor, x: card.x, y: card.y, w: card.w, folded: card.folded,
   };

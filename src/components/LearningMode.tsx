@@ -32,6 +32,8 @@ import type { FoldMark, FoldMarks } from "./fold/fold-marks";
 import { glassMarks } from "./fold/glass-marks";
 import type { GlassMagnet } from "../glass/glass-model";
 import { squash } from "../../shared/fold-project.mjs";
+import { foldDragType, foldWikiLink, type FoldOut, type FoldPayload, type FoldSent, type FoldTarget } from "./fold/drag";
+import { cardAnchor, newCardId } from "../glass/card-model";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
@@ -59,7 +61,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: FoldMarks }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: FoldMarks; out: RefObject<FoldOut | null> }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
   openBoard?(clips?: CanvasNode[]): void; tutorRequest?: { text: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
@@ -325,11 +327,14 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     const drop = (event: DragEvent) => { if (event.dataTransfer) transfer(event, event.dataTransfer); };
     const paste = (event: ClipboardEvent) => { if (event.clipboardData) transfer(event, event.clipboardData); };
     const dragEnd = () => setDragging(undefined);
+    // A fold line on the move opens the loose tray as a drop target; Fold view handles the drop.
+    const dragStart = (event: DragEvent) => { if (event.dataTransfer?.types.includes(foldDragType)) setDragging(foldDragType); };
     if (saved) {
       document.addEventListener("dragover", dragOver, true);
       document.addEventListener("drop", drop, true);
       document.addEventListener("paste", paste, true);
       document.addEventListener("dragend", dragEnd);
+      document.addEventListener("dragstart", dragStart);
     }
     document.addEventListener("pointerup", point);
     document.addEventListener("pointerdown", dismiss, true);
@@ -344,7 +349,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       document.removeEventListener("keyup", up); document.removeEventListener("keydown", down);
       window.removeEventListener("blur", blur);
       document.removeEventListener("dragover", dragOver, true); document.removeEventListener("drop", drop, true);
-      document.removeEventListener("paste", paste, true); document.removeEventListener("dragend", dragEnd);
+      document.removeEventListener("paste", paste, true); document.removeEventListener("dragend", dragEnd); document.removeEventListener("dragstart", dragStart);
     };
   }, [saved, ready, !!askPayload]);
   useEffect(() => {
@@ -433,6 +438,16 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     return write(item, { ...item, deleted: true });
   }
   function undoLast() { return undo ? write(undo) : Promise.resolve(false); }
+  // Where Fold view can send a line: a card (or scrap) at its evidence, a study sheet, the loose tray.
+  useEffect(() => {
+    const out = fold.out;
+    out.current = { send: sendFold, targets: () => saved ? [
+      { kind: "page", id: "page", label: glass ? t("Card on the page") : t("Scrap on the page") },
+      ...sheets.map(sheet => ({ kind: "sheet" as const, id: sheet.id, label: t(sheet.name) })),
+      { kind: "tray", id: "tray", label: t("Loose scraps") },
+    ] : [] };
+    return () => { out.current = null; };
+  });
   const ink = new Map<number, Ink[]>(), looseInk: Ink[] = [];
   const confidence = new Map<number, Confidence & { at: string }>();
   for (const item of study.entries) {
@@ -445,6 +460,40 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       else { const notes = ink.get(line); if (notes) notes.push(item); else ink.set(line, [item]); atLine(line); }
     }
   }
+  // The evidence block the line was cut from, as the page reads it now.
+  function foldAnchor(payload: FoldPayload): ReadingTarget | null {
+    const context = editor()?.readingContext();
+    if (!context) return null;
+    const blocks = readingBlocks(context);
+    const block = blocks.find(item => item.line === payload.line) ?? blocks.find(item => item.line > payload.line && item.line <= payload.endLine)
+      ?? blocks.findLast(item => item.line < payload.line);
+    return block ? { ...block, quote: block.block.trim().slice(0, 240) } : null;
+  }
+  const sendFold = useEffectEvent(async (payload: FoldPayload, target: FoldTarget): Promise<FoldSent> => {
+    if (!saved || payload.note !== (note ?? "")) throw new Error(t("Open a saved note in Learning mode to keep this line."));
+    const anchor = foldAnchor(payload);
+    if (target.kind !== "tray" && !anchor) throw new Error(t("This line has no paragraph to pin to."));
+    const api = window.desktop?.glass;
+    if (target.kind === "page" && glass && api && note && anchor) {
+      const magnet = newCardId();
+      const reply = await api({ note, action: "add", magnet, fields: {
+        kind: "card", card: "fold", layer: "ai-cards", title: "", question: payload.text, answer: payload.quote, link: foldWikiLink(payload), stop: payload.stop,
+        anchor: cardAnchor(anchor), x: 0, y: 0, w: 300, folded: false,
+      } });
+      if (!reply?.ok) throw new Error(reply?.error ?? t("Could not keep the line."));
+      return { message: t("Card pinned beside line {{line}}", { line: anchor.line }), line: anchor.line, undo: async () => {
+        const undone = await api({ note, action: "delete", magnet });
+        if (!undone?.ok) throw new Error(undone?.error ?? t("Could not keep the line."));
+      } };
+    }
+    const sheet = target.kind === "sheet" ? target.id : activeSheet ?? "notes";
+    const item = { type: "scrap", id: crypto.randomUUID(), sheet, kind: "evidence", anchor: target.kind === "tray" ? null : anchor,
+      body: payload.text, question: payload.quote.length > 1000 ? `${payload.quote.slice(0, 999).toWellFormed()}…` : payload.quote, stackOf: null, folded: false } as const;
+    if (!await write(item, { ...item, deleted: true })) throw new Error(t("Could not keep the line."));
+    const name = t(sheetById.get(sheet)?.name ?? "Notes");
+    return { message: target.kind === "tray" ? t("Added to loose scraps") : t("Added to {{sheet}}", { sheet: name }),
+      line: item.anchor?.line, undo: async () => { if (!await write({ ...item, deleted: true })) throw new Error(t("Could not keep the line.")); } };
+  });
   function setConfidence(anchor: ReadingTarget, level: ConfidenceLevel) {
     const previous = confidence.get(anchor.line);
     const item = { id: previous?.id ?? crypto.randomUUID(), type: "confidence", anchor, level } as const;
@@ -541,9 +590,11 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
       onKeyDown={event => { if (!busy && event.key === "Backspace" && event.target === event.currentTarget) { event.preventDefault(); void write({ ...scrap, deleted: true }, scrap); } }} tabIndex={0}>
       <header draggable={!busy} onDragStart={event => drag(event, scrap)}><strong>{t(sheetById.get(scrap.sheet)?.name ?? "Notes")}</strong>{!nested && <button type="button" onClick={() => void write({ ...scrap, folded: !scrap.folded }, scrap)} disabled={busy}>{t(scrap.folded ? "Unfold" : "Fold")}</button>}</header>
       {(!scrap.folded || nested) && <>
-        {scrap.anchor && <q>{scrap.anchor.quote}</q>}
-        {scrap.question && <p><strong>{scrap.question}</strong></p>}
-        <p>{scrap.body}</p>
+        {scrap.kind === "evidence" ? <><p className="study-fold-line">{scrap.body}</p><q>{scrap.question ?? scrap.anchor?.quote}</q></> : <>
+          {scrap.anchor && <q>{scrap.anchor.quote}</q>}
+          {scrap.question && <p><strong>{scrap.question}</strong></p>}
+          <p>{scrap.body}</p>
+        </>}
         {scrap.anchor && tutor && (scrap.kind === "doubt" || scrap.kind === "answer") && <div className="study-actions">
           <button type="button" disabled={busy} onClick={() => tutorAt(scrap.anchor!, "simplify", scrap.body.slice(0, 760), scrap.stackOf ?? scrap.id)}>{t("Still lost")}</button>
           <button type="button" disabled={busy} onClick={() => void setConfidence(scrap.anchor!, 3)}>{t("Got it")}</button>
@@ -603,7 +654,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     setSolo(undefined);
     setActiveSheet(sheet.id);
   }
-  const sheetButtons = sheets.map(sheet => <li key={sheet.id} className="study-sheet-row"><button type="button" className="study-sheet" data-colour={sheet.colour}
+  const sheetButtons = sheets.map(sheet => <li key={sheet.id} className="study-sheet-row" data-fold-drop="sheet" data-sheet={sheet.id}><button type="button" className="study-sheet" data-colour={sheet.colour}
     aria-pressed={visibleSheet(sheet.id)} data-solo={solo === sheet.id || undefined} disabled={busy} onClick={event => {
       if (event.altKey) { setSolo(value => value === sheet.id ? undefined : sheet.id); return; }
       setSolo(undefined); void write({ ...sheet, visible: !sheet.visible }, sheet);
@@ -661,7 +712,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     {root && floats.length > 0 && <FloatImages root={root} images={floats} />}
     {tutorView}
     {saved && !peek && !tutor?.open && (loose.length > 0 || looseInk.length > 0 || picking || dragging || cards) && <div className="layers-right study-right" data-drop-only={!!dragging && !loose.length && !looseInk.length && !cards || undefined}>
-      {(loose.length > 0 || looseInk.length > 0 || picking || dragging) && <aside className="study-tray" aria-label={t("Loose scraps")} data-dragging={!!dragging || undefined}>
+      {(loose.length > 0 || looseInk.length > 0 || picking || dragging) && <aside className="study-tray" aria-label={t("Loose scraps")} data-dragging={!!dragging || undefined} data-fold-drop="tray">
         <h2>{t("Loose scraps")} <small>{loose.length + looseInk.length}</small></h2>
         {picking && <button type="button" disabled={busy} onClick={() => move(picking, null)}>{t("Move to tray")}</button>}
         {loose.map(scrap => scrap.image ? imageCard(scrap) : scrapCard(scrap))}

@@ -816,6 +816,9 @@
 .glass-card-broken { margin: 8px 0 0; padding: 6px 8px; border-radius: 5px; background: color-mix(in srgb, var(--error, #b3261e) 9%, transparent); color: var(--error, #b3261e); font-size: 11px; }
 .glass-card-question { margin: 6px 0 0; font-style: italic; }
 .glass-card-question::before { content: "? "; color: var(--accent, #326eaa); font-style: normal; }
+.glass-card-fold-line { margin: 6px 0 0; font-weight: 600; }
+.glass-card-stop { display: inline-block; margin-inline-end: 6px; padding: 0 6px; border: 1px solid var(--border, #ddd); border-radius: 999px; color: var(--muted, #777); font-size: 10px; font-weight: 400; vertical-align: 1px; }
+.glass-card-panel .glass-card-evidence { margin: 6px 0 0; padding-inline-start: 9px; border-inline-start: 3px solid var(--accent, #326eaa); color: var(--ink, #333); }
 .glass-card-empty { margin: 8px 0 0; color: var(--muted, #777); }
 .glass-card-flags { margin-top: 8px; padding: 6px 8px; border: 1px dashed color-mix(in srgb, var(--warning, #9a6700) 55%, transparent); border-radius: 5px; background: color-mix(in srgb, var(--warning, #9a6700) 7%, transparent); font-size: 11px; }
 .glass-card-flags p { margin: 0 0 4px; }

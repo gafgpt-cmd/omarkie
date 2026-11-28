@@ -121,7 +121,7 @@ module.exports = function readingCore(digest, translate = message => message) {
         const anchor = item.anchor === null ? null : target(item.anchor);
         const before = item.kind === "proposal" ? text(item.before, 24_000) : undefined;
         if (before !== undefined && (item.sheet !== "proposals" || item.stackOf !== null || anchor?.block !== normalize(before))) throw invalid();
-        const question = ["answer", "proposal", "exam", "gloss"].includes(item.kind) && item.question !== undefined ? text(item.question, 1_000) : undefined;
+        const question = ["answer", "proposal", "exam", "gloss", "evidence"].includes(item.kind) && item.question !== undefined ? text(item.question, 1_000) : undefined;
         return { ...base, sheet: identifier(item.sheet), kind: item.kind, anchor,
           body: text(item.body), stackOf: item.stackOf === null ? null : identifier(item.stackOf), folded: boolean(item.folded),
           deleted: boolean(item.deleted ?? false), ...(image ? { image } : {}), ...(before === undefined ? {} : { before }), ...(question === undefined ? {} : { question }) };
