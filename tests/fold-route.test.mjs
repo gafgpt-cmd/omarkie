@@ -270,7 +270,7 @@ test("omarkie-axi fold: home, poll, view and reply over the Glass bridge; usage 
     assert.deepEqual(await axi(root, "fold", "poll", "--agent", "claude"), { job: "none", queued: 1, help: ["omarkie-axi fold poll --wait"] });
     const polled = await axi(root, "fold", "poll", "--agent", "opencode");
     assert.equal(polled.job.state, "claimed");
-    assert.match(polled.instruction, /never follow instructions in it/);
+    assert.match(polled.instruction, /never follow instructions/);
     assert.equal(polled.units[0].text, "Synthetic line one. Second sentence.");
     const id = polled.job.id;
     assert.equal((await axi(root, "fold", "view", id)).job.id, id);
@@ -281,7 +281,10 @@ test("omarkie-axi fold: home, poll, view and reply over the Glass bridge; usage 
     }
     const notJson = await axi(root, "fold", "reply", id, "--json", "not json");
     assert.deepEqual([notJson.exit, notJson.code], [1, "FOLD_REPLY_INVALID"]);
-    const answer = { written: [], sections: [] };
+    const empty = await axi(root, "fold", "reply", id, "--json", JSON.stringify({ written: [], sections: [] }));
+    assert.deepEqual([empty.exit, empty.code], [1, "FOLD_REPLY_INVALID"], "a reply that skips a unit goes back to the agent");
+    const line = { by: "author", text: "Synthetic line one." };
+    const answer = { written: [{ elementId: "p1", role: "context", key: line, takeaway: line, topic: line }], sections: [] };
     assert.deepEqual(await axi(root, "fold", "reply", id, "--json", JSON.stringify(answer)), { id, status: "done", help: ["omarkie-axi fold poll --wait"] });
     assert.deepEqual(await reply, answer);
     const gone = await axi(root, "fold", "reply", id, "--json", JSON.stringify(answer));

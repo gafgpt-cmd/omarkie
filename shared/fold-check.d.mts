@@ -1,4 +1,4 @@
-import type { AuthorText, CheckClass, Evidence, FoldLine, WrittenUnit } from "./fold-format.d.mts";
+import type { AuthorText, CheckClass, Evidence, FoldLine, WrittenSection, WrittenUnit } from "./fold-format.d.mts";
 
 export type PayloadClass =
   | "negation"
@@ -153,3 +153,23 @@ export declare function checkLine(
   options?: CheckLineOptions,
 ): LineCheckResult;
 export declare function checkWrittenUnit(unit: WrittenUnit, options?: CheckWrittenUnitOptions): WrittenUnitCheckResult;
+
+export interface LadderChunkUnit { elementId: string; kind: string; raw: string | null; sectionId?: string | null; text: string; markdown?: string }
+export interface LadderLocalStops { full?: string; brief?: string; key?: string; takeaway?: string; topic?: string }
+export interface LadderChunkContext {
+  units: readonly LadderChunkUnit[];
+  stops: ReadonlyMap<string, LadderLocalStops>;
+  pins?: readonly { elementId: string; quote: string }[];
+  sectionIds?: readonly string[];
+}
+export interface LadderChunkResult {
+  written: WrittenUnit[];
+  sections: WrittenSection[];
+  warnings: number;
+  /** Units the retry call named. */
+  retried: string[];
+}
+export declare function checkLadderChunk(
+  ask: (retry: Record<string, string[]> | null) => Promise<unknown>,
+  context: LadderChunkContext,
+): Promise<LadderChunkResult>;

@@ -115,7 +115,7 @@ const specs = {
   fold: ["[--vault <dir>]", "Show Fold jobs waiting for an agent in the open vault."],
   "fold poll": ["[--vault <dir>] [--agent <claude|codex|opencode>] [--owner <name>] [--wait]", "Claim one Fold job: its units, instruction and reply shape. --wait holds for up to 80 seconds."],
   "fold view": ["<id> [--vault <dir>] [--full]", "Read a live Fold job again."],
-  "fold reply": ["<id> [--vault <dir>] (--file <reply.json> | --json <text>)", "Answer a claimed Fold job with its JSON reply; Omarkie checks every line before it shows."],
+  "fold reply": ["<id> [--vault <dir>] (--file <reply.json> | --json <text>)", "Answer a claimed Fold job with a JSON reply matching the schema in its instruction; a reply outside it comes back with its problems and the job stays yours. Omarkie checks every line before it shows."],
   skill: ["[--check]", "Print the skill, or fail if the checked-in skill differs."],
   context: ["[--agent <claude|codex|opencode>]", "Nonblocking project hook. No ask text or credentials in context."],
 };
@@ -1059,7 +1059,7 @@ async function foldCommand(command, root, opts, id) {
 
 function foldJobView(job, full) {
   const units = job.units.map(unit => ({ elementId: unit.elementId, kind: unit.kind, raw: unit.raw ? "yes" : "no", sectionId: unit.sectionId,
-    text: preview(unit.text, full), brief: preview(unit.brief, full) }));
+    text: preview(unit.text, full), brief: preview(unit.brief, full), briefWords: unit.briefWords }));
   return {
     job: { id: job.id, slot: job.slot, agent: job.agent, model: job.model, outLang: job.outLang, state: job.state },
     instruction: job.instruction,
