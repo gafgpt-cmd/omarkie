@@ -26,7 +26,7 @@
     "open",
     "openFolder",
     "showcase",
-    "scan", "vaultSnapshot", "exportBundle",
+    "scan", "vaultSnapshot", "readNotes", "exportBundle",
     "openToken",
     "save",
     "persist",

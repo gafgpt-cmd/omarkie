@@ -4,6 +4,7 @@
 import { sanitizeTitle, validAnchor } from "./glass-core.mjs";
 import { calcLimits, normalizeCalcInputs, normalizePrecision } from "./calc-model.mjs";
 import { flowOutline, normalizeFlow } from "./flow-model.mjs";
+import { headingSlug } from "./wiki-syntax.mjs";
 
 export const cardKinds = ["static", "ai", "menu", "calc", "flow"];
 export const cardLayer = "ai-cards";
@@ -46,15 +47,14 @@ export function cardLink(target, section = "") {
 const plain = value => String(value ?? "").normalize("NFC").replace(/[*_`~]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
 const atx = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/;
 
-// A heading's section: its own line stays out, every line until the next heading of the same or a higher level comes in.
-export function extractSection(markdown, section = "") {
-  const source = typeof markdown === "string" ? markdown : "";
-  if (!source.trim()) return { status: "empty", heading: null, level: 0, markdown: "" };
-  const wanted = plain(section);
-  if (!wanted) return { status: "ok", heading: null, level: 0, markdown: source.trim() };
-  const lines = source.split(/\r?\n/);
-  let fence = null, start = -1, level = 0, heading = null, end = lines.length;
-  for (let index = 0; index < lines.length; index += 1) {
+function headingLines(lines) {
+  const found = [];
+  let fence = null, index = 0;
+  if (lines[0] === "---") {
+    const close = lines.findIndex((line, at) => at > 0 && (line === "---" || line === "..."));
+    if (close > 0) index = close + 1;
+  }
+  for (; index < lines.length; index += 1) {
     const line = lines[index];
     const marker = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(line);
     if (marker) {
@@ -64,16 +64,48 @@ export function extractSection(markdown, section = "") {
     }
     if (fence) continue;
     const match = atx.exec(line);
-    if (!match) continue;
-    if (start < 0) {
-      if (plain(match[2]) === wanted) { start = index; level = match[1].length; heading = match[2].trim(); }
-      continue;
-    }
-    if (match[1].length <= level) { end = index; break; }
+    if (match) found.push({ index, level: match[1].length, text: match[2].trim() });
   }
-  if (start < 0) return { status: "section-missing", heading: null, level: 0, markdown: "" };
-  const body = lines.slice(start + 1, end).join("\n").trim();
-  return { status: body ? "ok" : "empty", heading, level, markdown: body };
+  return found;
+}
+
+// Finds `path` (["Parent", "Child"]: each later heading sits inside the previous one's section).
+// Exact heading text wins over its slug; `matches` counts same-named candidates at the last step.
+export function sectionRange(markdown, path) {
+  const lines = String(markdown ?? "").split(/\r?\n/), list = headingLines(lines);
+  let from = 0, to = list.length, at = -1, matches = 0;
+  for (const wanted of path) {
+    const exact = [], slugged = [];
+    for (let index = from; index < to; index += 1) {
+      if (plain(list[index].text) === plain(wanted)) exact.push(index);
+      else if (headingSlug(list[index].text) === headingSlug(String(wanted))) slugged.push(index);
+    }
+    let hits = exact.length ? exact : slugged;
+    // `name-2` is the rendered heading id of the third `name` heading in the note.
+    const numbered = !hits.length && from === 0 ? /^(.*)-(\d+)$/.exec(headingSlug(String(wanted))) : null;
+    if (numbered) {
+      const same = list.flatMap((heading, index) => headingSlug(heading.text) === numbered[1] ? [index] : []);
+      hits = same[Number(numbered[2])] === undefined ? [] : [same[Number(numbered[2])]];
+    }
+    if (!hits.length) return null;
+    at = hits[0]; matches = hits.length;
+    let next = at + 1;
+    while (next < list.length && list[next].level > list[at].level) next += 1;
+    from = at + 1; to = next;
+  }
+  if (at < 0) return null;
+  return { start: list[at].index, end: to < list.length ? list[to].index : lines.length, level: list[at].level, heading: list[at].text, matches, lines };
+}
+
+// A heading's section: its own line stays out, every line until the next heading of the same or a higher level comes in.
+export function extractSection(markdown, section = "") {
+  const source = typeof markdown === "string" ? markdown : "";
+  if (!source.trim()) return { status: "empty", heading: null, level: 0, markdown: "" };
+  if (!plain(section)) return { status: "ok", heading: null, level: 0, markdown: source.trim() };
+  const range = sectionRange(source, [section]);
+  if (!range) return { status: "section-missing", heading: null, level: 0, markdown: "" };
+  const body = range.lines.slice(range.start + 1, range.end).join("\n").trim();
+  return { status: body ? "ok" : "empty", heading: range.heading, level: range.level, markdown: body };
 }
 
 export function normalizeChoices(value) {

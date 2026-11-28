@@ -8,6 +8,58 @@
 - Open a folder before vault search, linked mentions or graph.
 - Graph loads only when opened. First 200 notes; reports use the bounded inventory below.
 
+## Section embeds
+
+| Syntax | Shows |
+| --- | --- |
+| `![[Note]]` | whole note, no frontmatter |
+| `![[Note#Heading]]` | heading + its section, to next heading of same or higher level |
+| `![[#Heading]]` | section of this note |
+| `![[Note#Parent#Heading]]` | nested heading path |
+| `![[Note#Heading-1]]` | 2nd duplicate heading (`-1`, `-2`: same ids as heading links) |
+| `![[Note#^block-id]]` | not supported yet: visible notice |
+
+- Read-only preview in rich mode and reading layer. Source stays the line you wrote.
+- Click the title, or Ctrl/Cmd+Enter on the line: opens the source note at the heading. Arrow keys stop on embed lines.
+- Headings in fences and frontmatter never match. Exact heading text wins over slug match.
+- Paths and images inside the section resolve from the embedded note's folder.
+- Unsaved drafts win over disk. Every open note embedding a changed note refreshes, no save needed.
+- Visible states: missing note, several notes (write the folder), missing heading, duplicate heading, self/cycle, too deep (4 levels), too long (512 KiB total).
+- Vault notes only. No remote loads. Local reads: 64 notes per batch, 8 MiB per note, inside the vault.
+- HTML/PDF export: section text frozen in, title links to the source note.
+- Saved Markdown keeps `![[...]]`. Vault bundle: embed becomes a link to its note; an unresolved embed stops the export at `note:line`.
+
+## Bases
+
+Obsidian `.base` files: read-only table or cards of vault notes.
+
+- Open from the file list or Quick Open. View tabs on top.
+- Keyboard: Left/Right/Home/End switch views; Tab into rows or cards; Up/Down/Left/Right/Home/End move; Enter or Space opens the note.
+- Embed in a note: `![[file.base]]` (first view) or `![[file.base#View]]`.
+  - Read-only, live, click a row or card to open its note.
+  - Ctrl/Cmd+Enter on the embed line opens the full base.
+  - Unknown view: notice, first view shown. Missing or ambiguous file: notice.
+  - HTML export keeps the rows as drawn.
+- Live: drafts, external edits, renames and deletes update rows. No reindex, no save needed.
+- Never writes the `.base` file. No network. No JS, DataviewJS, remote data or executable formulas.
+
+| Part | Supported |
+| --- | --- |
+| `filters` (global + per view) | `and` / `or` / `not`, comparisons, `&&` `\|\|` `!`, `+ -` dates and durations (`"1 week"`, `"3M"`) |
+| Functions | `file.hasTag`, `file.inFolder`, `file.hasProperty`, `date()`, `now()`, `today()`, `number()`, `list()`, `if()` |
+| Methods | `contains`, `containsAll`, `containsAny`, `startsWith`, `endsWith`, `lower`, `upper`, `trim`, `isEmpty`, `isTruthy`, `toString`, `.length` |
+| Columns (`order`) | `file.name/basename/path/folder/ext/size/ctime/mtime/tags`, note properties (`author`, `note.author`, `note["x y"]`) |
+| `properties.*.displayName` | column titles |
+| `sort`, `limit` | yes; empties last, then path order |
+| View types | `table`, `cards` (title + property list); others shown as a table |
+
+Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknown keys, unknown functions or fields (e.g. `file.backlinks`).
+
+- Unsupported filter part: not applied, never hides rows. View flagged "may list extra notes".
+- `limit` cut: count shows "Showing N of M".
+- Bounds: 256 KiB `.base`, 4096-char expression, depth 48, 500 filter conditions, 64 views, 1000 rows drawn.
+- Notes that fail to read are counted, not guessed.
+
 ## Reading summary
 
 - File → Collect highlights and callouts.

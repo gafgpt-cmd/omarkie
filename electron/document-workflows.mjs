@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { decodeText } from "./store.mjs";
 import { t } from "./i18n.mjs";
-const asset = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|ogg|mp3|wav|m4a)$/i;
+const asset = /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|ogg|mp3|wav|m4a)$/i, note = /\.(md|markdown|mdown)$/i;
 const inside = (root, file) => { const relative = path.relative(root, file); return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative); };
 async function owned(root, relative) {
   if (typeof relative !== "string" || !relative || path.isAbsolute(relative) || relative.split(/[\\/]/).some(part => part.startsWith(".") && part !== ".assets") || /[:\0]/.test(relative)) throw new Error(t("知识库路径无效"));
@@ -17,7 +17,7 @@ export async function vaultSnapshot(store, chaptersOnly = false) {
   const encodings = new Map([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding]));
   let truncated = inventory.truncated || inventory.skipped > 0, total = 0, entries = 0;
   const deadline = Date.now() + 5000;
-  for (const entry of inventory.files.filter(entry => entry.isDirectory !== "true")) {
+  for (const entry of inventory.files.filter(entry => entry.isDirectory !== "true" && note.test(entry.name))) {
     if (Date.now() > deadline) { truncated = true; break; }
     const file = await owned(root, entry.relative), info = await lstat(file);
     if (!info.isFile() || info.size > 8 * 1024 * 1024 || total + info.size > 64 * 1024 * 1024) { truncated = true; continue; }
@@ -37,6 +37,24 @@ export async function vaultSnapshot(store, chaptersOnly = false) {
   }
   await walk(root, 0);
   return { notes, assets, truncated };
+}
+
+// Note embeds and Bases read vault text by vault-relative path: Markdown and `.base` only, inside the open folder, 8 MiB each, 16 MiB per call.
+export async function readNotes(store, relatives) {
+  if (!store.folder) throw new Error(t("请先打开文件夹"));
+  if (!Array.isArray(relatives) || relatives.length > 64 || relatives.some(relative => typeof relative !== "string" || !/\.(?:md|markdown|mdown|base)$/i.test(relative))) throw new Error(t("知识库路径无效"));
+  const root = await realpath(store.folder), notes = [];
+  const encodings = new Map([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding]));
+  let total = 0;
+  for (const relative of relatives) {
+    try {
+      const file = await owned(root, relative), info = await lstat(file);
+      if (!info.isFile() || info.size > 8 * 1024 * 1024 || total + info.size > 16 * 1024 * 1024) continue;
+      const bytes = await readFile(file); total += bytes.length;
+      notes.push({ relative, content: decodeText(bytes, store.hasBOM(bytes) ? undefined : encodings.get(file)).content });
+    } catch {}
+  }
+  return notes;
 }
 
 export async function projectDestination(root, selected, format) {

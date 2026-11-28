@@ -13,7 +13,8 @@ export function Dialog({ title, close, children }: { title: string; close(): voi
     const keyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closing.current(); return; }
       if (event.key !== "Tab") return;
-      const controls = [...root.current!.querySelectorAll<HTMLElement>('input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled]),summary,a[href]')].filter(visibleControl);
+      // Tab order, not just form controls: roving rows and tabs (tabindex 0 or -1) count only when reachable.
+      const controls = [...root.current!.querySelectorAll<HTMLElement>('input:not([disabled]),textarea:not([disabled]),select:not([disabled]),button:not([disabled]),summary,a[href],[tabindex]')].filter(control => control.tabIndex >= 0 && visibleControl(control));
       const first = controls[0], last = controls.at(-1), outside = !root.current!.contains(document.activeElement);
       if (event.shiftKey && (outside || document.activeElement === first)) { event.preventDefault(); last?.focus(); }
       if (!event.shiftKey && (outside || document.activeElement === last)) { event.preventDefault(); first?.focus(); }

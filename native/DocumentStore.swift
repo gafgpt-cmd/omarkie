@@ -251,7 +251,8 @@ final class DocumentStore {
         if file.lastPathComponent == "node_modules" { continue }
         guard let values = try? file.resourceValues(forKeys: typeKeys) else { skipped += 1; continue }
         if values.isSymbolicLink == true { continue }
-        guard values.isDirectory == true || values.isRegularFile == true && ["md", "markdown", "mdown"].contains(file.pathExtension.lowercased()) else { continue }
+        // Bases (`.base`) are listed too; they open as read-only views, never as documents.
+        guard values.isDirectory == true || values.isRegularFile == true && ["md", "markdown", "mdown", "base"].contains(file.pathExtension.lowercased()) else { continue }
         if files.count >= 1000 {
           truncated = true
           return

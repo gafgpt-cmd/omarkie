@@ -79,7 +79,7 @@ test("raw-space paths, Obsidian embeds, size attributes and file URLs render as 
     ["a.png", "300", null, "w"], ["a.png", "50%", null, "p"],
     ["file:///tmp/x.png", null, null, "f"],
   ]);
-  assert.match(html, /<span class="wiki-embed">Some note<\/span>/); assert.match(html, /<audio controls[^>]*talk\.mp3/);
+  assert.match(html, /<span class="note-embed" data-embed="Some note">Some note<\/span>/); assert.match(html, /<audio controls[^>]*talk\.mp3/);
   assert.match(html, /!\[not a path\]\(just some words\)/); assert.doesNotMatch(html, /\{width=/);
 });
 
