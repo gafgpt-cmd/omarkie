@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { encodeVoiceWav, validVoiceLanguage, validVoiceWav, voiceKeyMatches, wavInfo } from "../shared/voice.mjs";
+import { archiveLag, clockLabel, encodeVoiceWav, energyFrames, lectureNote, transcriptStamp, UtteranceSegmenter, validVoiceLanguage, validVoiceWav, voiceKeyMatches, wavInfo } from "../shared/voice.mjs";
 import { runStt, sttArgv, sttConfigured } from "../electron/stt.mjs";
 import { Voice } from "../electron/voice.mjs";
-import { voiceFields } from "../electron/glass-service.mjs";
+import { GlassService, voiceFields } from "../electron/glass-service.mjs";
 import { voiceFromMagnet } from "../src/glass/voice-model.ts";
 
 const scratch = [];
@@ -185,4 +185,115 @@ test("the renderer drops a memo magnet without audio or anchor", () => {
   assert.equal(memo.duration, 900);
   assert.equal(voiceFromMagnet({ id: "v-2", kind: "voice", fields: { ...fields, audio: "" } }), undefined);
   assert.equal(voiceFromMagnet({ id: "v-3", kind: "voice", fields: { ...fields, anchor: { landmarks: [] } } }), undefined);
+});
+
+// Synthetic lecture audio: a faint noise floor with 220 Hz tone bursts standing in for speech.
+function lectureSignal(seconds, bursts, rate = 16_000) {
+  const samples = new Float32Array(rate * seconds);
+  let seed = 7;
+  for (let index = 0; index < samples.length; index += 1) { seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31; samples[index] = (seed / 2 ** 31 - 0.5) * 0.001; }
+  for (const [fromMs, toMs] of bursts)
+    for (let index = Math.round(fromMs * rate / 1000); index < Math.round(toMs * rate / 1000); index += 1) samples[index] += 0.2 * Math.sin(2 * Math.PI * 220 * index / rate);
+  return samples;
+}
+
+test("lecture utterances start within one frame of the speech, split at pauses, drop blips and cut long runs", () => {
+  const bursts = [[1_010, 2_000], [3_005, 3_300], [3_600, 4_200], [6_000, 6_040], [8_013, 40_000]];
+  const signal = lectureSignal(42, bursts), segmenter = new UtteranceSegmenter(16_000), utterances = [];
+  for (let at = 0; at < signal.length; at += 1024) utterances.push(...segmenter.push(signal.subarray(at, at + 1024)));
+  utterances.push(...segmenter.flush());
+  const near = (actual, expected, slack, label) => assert.ok(Math.abs(actual - expected) <= slack, `${label}: ${actual} vs ${expected}`);
+  assert.equal(utterances.length, 4, JSON.stringify(utterances.map(({ startMs, endMs }) => [startMs, endMs])));
+  // A 300 ms pause stays inside one utterance; the 40 ms blip is no speech at all.
+  [[1_010, 2_000], [3_005, 4_200], [8_013, null]].forEach(([start, end], index) => {
+    near(utterances[index].startMs, start, 20, `start ${index}`);
+    if (end !== null) near(utterances[index].endMs, end, 20, `end ${index}`);
+  });
+  // The 32 s burst is cut once it reaches 25 s, at the quietest frame of the last 5 s, and carries on from there.
+  assert.ok(utterances[2].endMs - utterances[2].startMs <= 25_000);
+  assert.equal(utterances[3].startMs, utterances[2].endMs);
+  near(utterances[3].endMs, 40_000, 20, "end of the cut run");
+  // Each utterance keeps 200 ms of padding either side for the STT hook.
+  near(utterances[0].samples.length / 16, utterances[0].endMs - utterances[0].startMs + 400, 1, "padded samples");
+});
+
+test("clock labels floor, and transcript stamps read the same grammar the timeline uses", () => {
+  assert.equal(clockLabel(0), "00:00");
+  assert.equal(clockLabel(61_999), "01:01");
+  assert.equal(clockLabel(61_999, true), "01:01.9");
+  assert.equal(clockLabel(3_723_500, true), "1:02:03.5");
+  assert.equal(clockLabel(-5), "00:00");
+  assert.deepEqual(transcriptStamp("00:12 Spaced practice"), { seconds: 12, length: 6 });
+  assert.equal(transcriptStamp("[1:02:03.5] - Retrieval").seconds, 3723.5);
+  assert.equal(transcriptStamp("05:10.4 Text").seconds, 310.4);
+  assert.equal(transcriptStamp("12:61 Too many seconds"), null);
+  assert.equal(transcriptStamp("00:12"), null);
+  assert.equal(transcriptStamp("Dose at 00:12"), null);
+});
+
+const LECTURE_SEGMENTS = [
+  { startMs: 400, endMs: 2_000, text: "Spaced practice fights forgetting." },
+  { startMs: 2_400, endMs: 4_000, text: "It needs  gaps." },
+  { startMs: 6_000, endMs: 7_000, text: "Retrieval beats rereading." },
+  { startMs: 7_200, endMs: 7_900, text: "   " },
+  { startMs: 310_050, endMs: 312_000, text: "Sleep keeps what you learned." },
+];
+
+test("the archive's start is found on the tap's clock by matching their first seconds", () => {
+  const rate = 16_000, tap = new Float32Array(rate * 6);
+  let seed = 3;
+  const noise = () => { seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31; return (seed / 2 ** 31 - 0.5) * 0.004; };
+  for (let index = 0; index < tap.length; index += 1) tap[index] = noise();
+  for (const [from, to] of [[0.5, 1.4], [2.2, 2.6], [3.1, 4.4], [5.0, 5.3]])
+    for (let index = from * rate; index < to * rate; index += 1) tap[index] += 0.3 * Math.sin(2 * Math.PI * 180 * index / rate);
+  // The recorder started 170 ms into the tap and its codec adds a little noise of its own.
+  const archive = tap.slice(Math.round(0.17 * rate)).map(sample => sample + noise() / 4);
+  assert.equal(archiveLag(energyFrames(tap, rate), energyFrames(archive, rate)), 17);
+  assert.equal(archiveLag(energyFrames(tap, rate), energyFrames(tap, rate)), 0);
+  // A silent room has nothing to match: the caller keeps its fallback.
+  assert.equal(archiveLag(energyFrames(new Float32Array(rate * 6), rate), energyFrames(new Float32Array(rate * 6), rate)), null);
+  assert.equal(archiveLag(energyFrames(tap.slice(0, rate / 2), rate), energyFrames(archive, rate)), null, "too short to compare");
+});
+
+test("a lecture note has its audio, a section at the start, each mark and every five minutes, and stamped paragraphs", () => {
+  const note = lectureNote({ title: "Lecture 2026-01-05 0900", audio: "Lecture 2026-01-05 0900.m4a", segments: LECTURE_SEGMENTS,
+    marks: [{ atMs: 6_500 }, { atMs: "x" }, null], at: "2026-01-05T09:00:00.000Z" });
+  assert.equal(note, [
+    "---", "type: Reference", 'title: "Lecture 2026-01-05 0900"', "tags: [lecture]",
+    'generated: { by: "process:voice", at: "2026-01-05T09:00:00.000Z" }', "---", "",
+    "# Lecture 2026-01-05 0900", "", "![[Lecture 2026-01-05 0900.m4a]]", "",
+    "## 00:00", "", "00:00.4 Spaced practice fights forgetting. It needs gaps.", "",
+    "## 00:06", "", "00:06.0 Retrieval beats rereading.", "",
+    "## 05:10", "", "05:10.0 Sleep keeps what you learned.", "",
+  ].join("\n"));
+  assert.doesNotMatch(lectureNote({ title: "T", segments: LECTURE_SEGMENTS.slice(0, 1), at: "x" }), /!\[\[/);
+});
+
+test("Save writes one lecture note and its audio beside the source note, never over an existing page", async () => {
+  const root = await area(), vault = path.join(root, "vault");
+  await mkdir(path.join(vault, "class"), { recursive: true });
+  await writeFile(path.join(vault, "class", "source.md"), "# Source\n\nNotes.\n");
+  const service = await new GlassService({ root: vault, appData: path.join(root, "app") }).open({ passive: false });
+  try {
+    const audio = Buffer.from("synthetic m4a bytes");
+    const request = { action: "voice-lecture", note: "class/source.md", transcript: LECTURE_SEGMENTS, marks: [], audio: { mime: "audio/mp4", base64: audio.toString("base64") } };
+    const first = await service.request(request), second = await service.request(request);
+    assert.match(first.title, /^Lecture \d{4}-\d{2}-\d{2} \d{4}$/);
+    assert.equal(first.note, `class/${first.title}.md`);
+    assert.equal(first.audio, `${first.title}.m4a`);
+    assert.equal(first.segments, LECTURE_SEGMENTS.length);
+    assert.deepEqual(await readFile(path.join(vault, "class", first.audio)), audio);
+    const markdown = await readFile(path.join(vault, first.note), "utf8");
+    assert.ok(markdown.includes(`![[${first.title}.m4a]]`));
+    assert.match(markdown, /^00:00\.4 Spaced practice/m);
+    // A second Save in the same minute: the note and its audio take the next free title together.
+    assert.notEqual(second.note, first.note);
+    assert.equal(second.audio, `${second.title}.m4a`);
+    assert.ok((await readFile(path.join(vault, second.note), "utf8")).includes(`![[${second.title}.m4a]]`));
+    await assert.rejects(service.request({ ...request, audio: { mime: "audio/webm", base64: "AAAA" } }), /MP4/);
+    await assert.rejects(service.request({ ...request, transcript: [] }), /at least one/);
+    const bare = await service.request({ ...request, audio: null });
+    assert.equal(bare.audio, null);
+    assert.doesNotMatch(await readFile(path.join(vault, bare.note), "utf8"), /!\[\[/);
+  } finally { await service.close(); }
 });

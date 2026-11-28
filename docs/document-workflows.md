@@ -110,6 +110,7 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
   - Keys: `[` `]` step, `1`-`5` jump, `↑` `↓` move between lines, `Esc` leaves to the fold's top line.
   - Drag the level bar or `Ctrl`+wheel to scrub between stops; release settles on the nearest. `Ctrl`+wheel over one unit folds only that unit.
   - Topic shows **Cards** or **Map** (toggle remembered): each section's lead line, author words only; tables, code, formulas and images as chips. Click or `Enter` opens that line at Key, at the same height. Cards: arrows move by card and row. Map: `↑` `↓` walk, `←` parent, `→` first child.
+  - Lecture notes (a `![[x.m4a]]` embed plus `mm:ss.t` paragraphs): Topic lines and cards show `▶ mm:ss`; click or `Enter` opens at Key and plays from that second. The bar gets a play/pause button (`Tab` to it; `Space`/`Enter`). The playing paragraph is marked as it goes.
   - Estudio is disabled: it needs a model; local stops only for now. Short notes show **Too short to fold**.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
 - **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.

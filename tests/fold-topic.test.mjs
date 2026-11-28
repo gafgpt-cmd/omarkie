@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { checkLine } from "../shared/fold-check.mjs";
-import { foldTopic, headingMarkdown, OPENING, topicCardAt, topicCards } from "../shared/fold-topic.mjs";
+import { foldLecture, foldTopic, headingMarkdown, OPENING, topicCardAt, topicCards } from "../shared/fold-topic.mjs";
 import { foldDocumentLadder } from "../shared/fold-units.mjs";
+import { lectureNote } from "../shared/voice.mjs";
 
 const fixtures = new URL("./fixtures/fold/", import.meta.url);
 const fixtureNames = readdirSync(fixtures).filter(name => !name.endsWith(".json"));
@@ -86,6 +87,37 @@ test("cards skip branch-only headings and name the parent; the reading line pick
   assert.equal(topicCardAt(topic, 1).heading, "Child A");
   assert.equal(topicCardAt(topic, 11).heading, "Child B");
   assert.equal(topicCardAt(topic, 99).heading, "Empty");
+});
+
+test("a lecture note's cards carry the second each line starts at, its audio is the player, and lines stay the speaker's words", () => {
+  const segments = [
+    { startMs: 400, endMs: 2_000, text: "Spaced practice fights forgetting across long courses." },
+    { startMs: 2_400, endMs: 4_000, text: "It needs gaps of days, not minutes." },
+    { startMs: 6_000, endMs: 7_000, text: "Retrieval beats rereading for 120 students." },
+    { startMs: 9_300, endMs: 11_000, text: "Write the answer before you check it." },
+    { startMs: 310_050, endMs: 312_000, text: "Sleep keeps what you learned." },
+  ];
+  const markdown = lectureNote({ title: "Lecture A", audio: "Lecture A.m4a", segments, marks: [{ atMs: 6_200 }], at: "2026-01-05T09:00:00.000Z" });
+  const ladder = foldDocumentLadder(markdown), topic = foldTopic(ladder);
+  assert.equal(topic.audio.target, "Lecture A.m4a");
+  assert.deepEqual(topic.audio.times.map(item => item.time), [0.4, 6, 9.3, 310]);
+  assert.equal(topic.title.markdown, "Lecture A");
+  // The audio embed is the player, never a card chip, so the opening disappears with it.
+  assert.deepEqual(topic.sections.map(section => [section.heading, section.time]), [["00:00", 0.4], ["00:06", 6], ["05:10", 310]]);
+  const units = new Map(ladder.byUnit.map(({ unit }) => [unit.elementId, unit]));
+  for (const section of topic.sections) for (const item of section.items) {
+    assert.equal(item.kind, "line");
+    assert.equal(item.time, topic.audio.times.find(time => time.unitId === item.unitId).time);
+    assert.doesNotMatch(item.markdown, /^\s*\[?\d/, item.markdown);
+    const invented = checkLine(item.markdown, units.get(item.unitId).markdown).findings.filter(finding => finding.code.startsWith("invented"));
+    assert.deepEqual(invented, [], item.markdown);
+  }
+  // Without an audio embed, a clock at the start of a line is just words.
+  const plain = topicOf("# Plan\n\n12:30 Round on bed four before the scan.\n");
+  assert.equal(plain.audio, null);
+  assert.equal(foldLecture(foldDocumentLadder("# Plan\n\n![[scan.png]]\n\n00:01 Text here.\n")), null);
+  assert.equal(plain.sections[0].items[0].time, null);
+  assert.match(plain.sections[0].items[0].markdown, /^12:30 Round/);
 });
 
 test("heading words lose ATX hashes and setext underlines only", () => {

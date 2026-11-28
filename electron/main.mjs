@@ -12,6 +12,9 @@ import {
   safeStorage,
 } from "electron";
 import path from "node:path";
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
+import { byteRange } from "./byte-range.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.mjs";
 import { imageAction, imageName } from "./image-actions.mjs";
@@ -998,6 +1001,18 @@ app
           return new Response(body, { headers: { "Content-Type": "image/jpeg", "Content-Length": String(size), "Cache-Control": "no-store" } });
         }
         const response = await net.fetch(source);
+        // Audio and video seek by byte range; without a 206 Chromium sees only the first fragment of a recording.
+        const range = served === file ? request.headers.get("Range") : null;
+        if (range) {
+          const { size } = await stat(file), span = byteRange(range, size);
+          if (span !== undefined) {
+            void response.body?.cancel();
+            if (!span) return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${size}` } });
+            return new Response(Readable.toWeb(createReadStream(file, span)), { status: 206, headers: {
+              "Content-Type": response.headers.get("Content-Type") ?? "application/octet-stream", "Accept-Ranges": "bytes",
+              "Content-Range": `bytes ${span.start}-${span.end}/${size}`, "Content-Length": String(span.end - span.start + 1) } });
+          }
+        }
         mark("photo-turn", { direct: true });
         if (!url.searchParams.has("preview") || served !== file) return response;
         // The original stands in until the preview exists; keep Chromium from reusing it for this preview URL.

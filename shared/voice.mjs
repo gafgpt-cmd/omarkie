@@ -5,10 +5,19 @@
 export const voiceDefaults = {
   rate: 16_000, channels: 1, bits: 16,
   textLimit: 20_000, memoBytes: 32 * 1024 * 1024, wavBytes: 120 * 1024 * 1024,
-  maxSeconds: 3_600, chunkMs: 60_000, segmentLimit: 4_000, markLimit: 400,
-  languageLimit: 16, keyLimit: 40, defaultKey: "Alt+V", minChapterMs: 10_000,
+  maxSeconds: 3_600, segmentLimit: 4_000, markLimit: 400,
+  languageLimit: 16, keyLimit: 40, defaultKey: "Alt+V",
   transcriptBytes: 4 * 1024 * 1024,
 };
+// Lecture: one archive file, utterances cut at pauses, paragraphs and sections built from them.
+export const lectureDefaults = {
+  seconds: 4 * 3_600, audioBytes: 64 * 1024 * 1024, segmentLimit: 12_000,
+  frameMs: 20, onsetFrames: 3, pauseMs: 700, minSpeechMs: 300, maxUtteranceMs: 25_000, cutSearchMs: 5_000, paddingMs: 200,
+  level: 0.004, snr: 3, floorRise: 1.001,
+  paragraphPauseMs: 1_500, paragraphMs: 45_000, sectionMs: 300_000,
+};
+// MP4/Opus (.m4a): an audio embed in Omarkie and Obsidian alike, with a real duration for seeking.
+export const lectureExtensions = { "audio/mp4": "m4a" };
 export const voiceModes = ["dictation", "memo", "lecture", "ask"];
 export const voiceMimes = ["audio/webm", "audio/ogg", "audio/wav", "audio/mpeg", "audio/mp4"];
 
@@ -116,7 +125,6 @@ export function voiceKeyMatches(event, value) {
   return key === spec.key;
 }
 
-// --- Lecture: 1-hour chunks, monotonic offsets, nothing renumbered back to zero. ---
 export function timestampLabel(ms) {
   const total = Math.max(0, Math.round(Number(ms) / 1000));
   const hours = Math.floor(total / 3600), minutes = Math.floor((total % 3600) / 60), seconds = total % 60;
@@ -124,21 +132,32 @@ export function timestampLabel(ms) {
   return hours ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
 
-export function lectureChunks(totalMs, chunkMs = voiceDefaults.chunkMs) {
-  const total = Math.max(0, Number(totalMs) || 0), size = Math.max(1000, Number(chunkMs) || voiceDefaults.chunkMs);
-  const chunks = [];
-  for (let start = 0; start < total; start += size) chunks.push({ startMs: start, endMs: Math.min(total, start + size) });
-  return chunks;
+// Floors, so a label never points after the moment it names; tenths keep a seek within 100 ms.
+export function clockLabel(ms, tenths = false) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 100));
+  const seconds = Math.floor(total / 10), hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
+  const pad = value => String(value).padStart(2, "0");
+  const base = hours ? `${hours}:${pad(minutes)}:${pad(seconds % 60)}` : `${pad(minutes)}:${pad(seconds % 60)}`;
+  return tenths ? `${base}.${total % 10}` : base;
 }
 
-export function validSpeakerSegments(value) {
-  if (!Array.isArray(value) || value.length > voiceDefaults.segmentLimit) return null;
+// Transcript stamp grammar shared by the Glass timeline and Fold: "[00:12] text", "1:02:03.5 text", "00:12 - text".
+const stampPattern = /^\s*\[?(?:(\d{1,2}):)?(\d{1,3}):([0-5]\d)(?:\.(\d{1,3}))?\]?\s*(?:[-–—:]\s*)?(?=\S)/u;
+export function transcriptStamp(text) {
+  const match = typeof text === "string" ? stampPattern.exec(text) : null;
+  if (!match) return null;
+  const seconds = Number(match[1] ?? 0) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(`0.${match[4] ?? 0}`);
+  return { seconds, length: match[0].length };
+}
+
+export function validSpeakerSegments(value, { maxMs = voiceDefaults.maxSeconds * 1000, limit = voiceDefaults.segmentLimit } = {}) {
+  if (!Array.isArray(value) || value.length > limit) return null;
   let previous = -1;
   const segments = [];
   for (const item of value) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return null;
     const { startMs, endMs, text } = item;
-    if (typeof startMs !== "number" || !Number.isFinite(startMs) || startMs < 0 || startMs > voiceDefaults.maxSeconds * 1000) return null;
+    if (typeof startMs !== "number" || !Number.isFinite(startMs) || startMs < 0 || startMs > maxMs) return null;
     if (typeof endMs !== "number" || !Number.isFinite(endMs) || endMs < startMs) return null;
     if (typeof text !== "string" || text.length > 4_000) return null;
     if (startMs < previous) return null;
@@ -148,19 +167,153 @@ export function validSpeakerSegments(value) {
   return segments;
 }
 
-// Chapter magnets need a 10 s gap and start at 00:00, as the timeline convention expects.
-export function chapterMarks(segments, marks = []) {
-  const labels = new Map();
-  if (segments?.length) labels.set(0, timestampLabel(0));
-  for (const segment of segments ?? []) {
-    const at = Math.floor(segment.startMs / 1000) * 1000;
-    if (at > 0 && [...labels.keys()].every(existing => Math.abs(existing - at) >= voiceDefaults.minChapterMs)) labels.set(at, timestampLabel(at));
+// Energy VAD over 20 ms frames with an adaptive noise floor. An utterance closes after a pause, or is cut
+// at its quietest frame once it runs long; each one carries padded samples for the STT hook.
+export class UtteranceSegmenter {
+  constructor(rate = voiceDefaults.rate, options = {}) {
+    const o = this.options = { ...lectureDefaults, ...options };
+    this.rate = rate;
+    this.frame = Math.max(1, Math.round(rate * o.frameMs / 1000));
+    this.pad = Math.round(rate * o.paddingMs / 1000);
+    this.samples = new Float32Array(rate * 4);
+    this.base = 0; this.length = 0; this.cursor = 0;
+    this.floor = o.level / o.snr;
+    this.recent = []; this.open = null; this.out = [];
   }
+
+  push(chunk) {
+    if (this.length + chunk.length > this.samples.length) {
+      const keep = Math.max(0, (this.open ? this.open.start : this.cursor - this.frame * this.options.onsetFrames) - this.pad - this.base);
+      this.samples.copyWithin(0, keep, this.length);
+      this.base += keep; this.length -= keep;
+      if (this.length + chunk.length > this.samples.length) {
+        const grown = new Float32Array(Math.max(this.samples.length * 2, this.length + chunk.length));
+        grown.set(this.samples.subarray(0, this.length));
+        this.samples = grown;
+      }
+    }
+    this.samples.set(chunk, this.length);
+    this.length += chunk.length;
+    while (this.cursor + this.frame <= this.base + this.length) this.analyse();
+    return this.take();
+  }
+
+  flush() {
+    if (this.open) this.emit(this.open.lastEnd);
+    this.open = null; this.recent = [];
+    return this.take();
+  }
+
+  take() { const out = this.out; this.out = []; return out; }
+
+  analyse() {
+    const o = this.options, at = this.cursor, from = at - this.base;
+    let sum = 0;
+    for (let index = from; index < from + this.frame; index += 1) sum += this.samples[index] * this.samples[index];
+    const level = Math.sqrt(sum / this.frame);
+    const speech = level > Math.max(o.level, this.floor * o.snr);
+    this.floor = level < this.floor ? Math.max(level, 1e-5) : this.floor * o.floorRise;
+    this.cursor += this.frame;
+    const record = { at, level, speech };
+    if (!this.open) {
+      this.recent = speech ? [...this.recent, record] : [];
+      if (this.recent.length >= o.onsetFrames) {
+        this.open = { start: this.recent[0].at, lastEnd: this.cursor, silence: 0, frames: this.recent };
+        this.recent = [];
+      }
+      return;
+    }
+    const open = this.open;
+    open.frames.push(record);
+    if (speech) { open.silence = 0; open.lastEnd = this.cursor; } else open.silence += 1;
+    if (open.silence * o.frameMs >= o.pauseMs) {
+      this.emit(open.lastEnd);
+      this.open = null;
+    } else if ((this.cursor - open.start) * 1000 / this.rate >= o.maxUtteranceMs) {
+      const after = this.cursor - Math.round(this.rate * o.cutSearchMs / 1000);
+      let best = null;
+      for (const frame of open.frames) if (frame.at >= after && (!best || frame.level < best.level)) best = frame;
+      const cut = best.at;
+      this.emit(cut);
+      const rest = open.frames.filter(frame => frame.at >= cut), spoken = rest.filter(frame => frame.speech);
+      if (!spoken.length) { this.open = null; return; }
+      let silence = 0;
+      for (let index = rest.length - 1; index >= 0 && !rest[index].speech; index -= 1) silence += 1;
+      this.open = { start: cut, lastEnd: spoken.at(-1).at + this.frame, silence, frames: rest };
+    }
+  }
+
+  emit(end) {
+    const open = this.open, o = this.options;
+    const speechMs = open.frames.filter(frame => frame.speech && frame.at < end).length * o.frameMs;
+    if (end <= open.start || speechMs < o.minSpeechMs) return;
+    const from = Math.max(this.base, open.start - this.pad), to = Math.min(this.base + this.length, end + this.pad);
+    this.out.push({
+      startMs: open.start * 1000 / this.rate, endMs: end * 1000 / this.rate,
+      samples: this.samples.slice(from - this.base, to - this.base),
+    });
+  }
+}
+
+// 10 ms frames of log energy, so a quiet room and loud speech weigh alike when two takes are compared.
+export function energyFrames(samples, rate) {
+  const size = Math.max(1, Math.round(rate / 100)), frames = new Float32Array(Math.floor(samples.length / size));
+  for (let frame = 0; frame < frames.length; frame += 1) {
+    let sum = 0;
+    for (let index = frame * size; index < (frame + 1) * size; index += 1) sum += samples[index] * samples[index];
+    frames[frame] = Math.log(Math.sqrt(sum / size) + 1e-4);
+  }
+  return frames;
+}
+
+// Where the archive starts on the PCM tap's clock, in 10 ms frames: archive[i] matches tap[i + lag].
+// The recorder starts a variable 0-250 ms after the tap; null when the takes do not clearly agree (silence).
+export function archiveLag(tap, archive, { min = -20, max = 50, overlap = 100, agree = 0.6 } = {}) {
+  let best = null, score = agree;
+  for (let lag = min; lag <= max; lag += 1) {
+    const from = Math.max(0, -lag), to = Math.min(archive.length, tap.length - lag), count = to - from;
+    if (count < overlap) continue;
+    let sa = 0, st = 0, saa = 0, stt = 0, sat = 0;
+    for (let index = from; index < to; index += 1) {
+      const a = archive[index], b = tap[index + lag];
+      sa += a; st += b; saa += a * a; stt += b * b; sat += a * b;
+    }
+    const r = (sat - sa * st / count) / Math.sqrt((saa - sa * sa / count) * (stt - st * st / count));
+    if (r > score) { score = r; best = lag; }
+  }
+  return best;
+}
+
+// One Markdown note per lecture: audio embed, a "## mm:ss" section at 0, at each mark and every ~5 minutes,
+// and "mm:ss.d text" paragraphs that the Glass timeline and Fold both read back as seek targets.
+export function lectureNote({ title, audio = null, segments, marks = [], at }) {
+  const o = lectureDefaults;
+  const spoken = segments.map(segment => ({ ...segment, text: cleanTranscript(segment.text).replace(/\s+/gu, " ") })).filter(segment => segment.text);
+  const cuts = new Set();
   for (const mark of marks) {
-    if (!mark || typeof mark !== "object") continue;
-    const at = Math.max(0, Math.round(Number(mark.atMs) || 0));
-    if ([...labels.keys()].some(existing => Math.abs(existing - at) < 1000)) continue;
-    labels.set(at, mark.label?.trim() ? `${timestampLabel(at)} ${cleanTranscript(mark.label).slice(0, 80)}` : timestampLabel(at));
+    const atMs = Number(mark?.atMs);
+    if (!Number.isFinite(atMs)) continue;
+    const index = spoken.findIndex(segment => segment.endMs >= atMs);
+    if (index >= 0) cuts.add(index);
   }
-  return [...labels.entries()].sort((a, b) => a[0] - b[0]).map(([atMs, label]) => ({ atMs, label }));
+  const blocks = [];
+  let sectionStart = -Infinity, paragraph = null;
+  const close = () => { if (paragraph) blocks.push(`${clockLabel(paragraph.startMs, true)} ${paragraph.texts.join(" ")}`); paragraph = null; };
+  spoken.forEach((segment, index) => {
+    if (index === 0 || cuts.has(index) || segment.startMs - sectionStart >= o.sectionMs) {
+      close();
+      sectionStart = segment.startMs;
+      blocks.push(`## ${clockLabel(segment.startMs)}`);
+    } else if (segment.startMs - paragraph.endMs >= o.paragraphPauseMs || segment.endMs - paragraph.startMs > o.paragraphMs) close();
+    if (!paragraph) paragraph = { startMs: segment.startMs, endMs: segment.endMs, texts: [] };
+    paragraph.texts.push(segment.text);
+    paragraph.endMs = segment.endMs;
+  });
+  close();
+  const head = [
+    "---", "type: Reference", `title: ${JSON.stringify(title)}`, "tags: [lecture]",
+    `generated: { by: "process:voice", at: ${JSON.stringify(at)} }`, "---", "", `# ${title}`, "",
+  ];
+  if (audio) head.push(`![[${audio}]]`, "");
+  return `${head.join("\n")}\n${blocks.join("\n\n")}\n`;
 }

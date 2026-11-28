@@ -46,7 +46,7 @@ import { searchOnline } from "./image-search.mjs";
 import { cleanHookResult, hookState, runImageHook, transcribe } from "./image-hooks.mjs";
 import { layerCounts, layerPatch, layerStates, validGlassLayer } from "../shared/glass-layers.mjs";
 import {
-  chapterMarks, cleanTranscript, timestampLabel, validSpeakerSegments, validVoiceLanguage, validVoiceWav,
+  cleanTranscript, lectureDefaults, lectureExtensions, lectureNote, validSpeakerSegments, validVoiceLanguage, validVoiceWav,
   voiceDefaults, voiceMimes,
 } from "../shared/voice.mjs";
 
@@ -2218,20 +2218,36 @@ export class GlassService {
     return { ...this.describe(note, file), magnet: magnet.id, card: fields.card, path: written.path, name: written.name, bytes: written.bytes };
   }
 
-  // The page is a new note; an existing file is never overwritten or appended to.
-  async writeCardPage(noteName, stem, markdown) {
+  // The page is a new note; an existing file is never overwritten or appended to. `markdown` may depend on the
+  // free title; an attachment is created first under that same name.
+  async writeCardPage(noteName, stem, markdown, attachment = null) {
     const folder = noteName.includes("/") ? noteName.slice(0, noteName.lastIndexOf("/")) : "";
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const title = attempt ? `${stem} (${attempt + 1})` : stem;
       const relativeName = folder ? `${folder}/${title}.md` : `${title}.md`;
       if (relativeName === noteName) continue;
       const file = path.join(this.root, ...relativeName.split("/"));
+      const extraName = attachment && `${title}.${attachment.extension}`;
+      const extra = extraName && path.join(this.root, ...(folder ? `${folder}/${extraName}` : extraName).split("/"));
+      if (extra) {
+        let handle;
+        try { handle = await open(extra, "wx", 0o600); }
+        catch (error) { if (error.code === "EEXIST") continue; throw error; }
+        try { await handle.writeFile(attachment.bytes); await handle.sync(); }
+        catch (error) { await handle.close(); await unlink(extra).catch(() => {}); throw error; }
+        await handle.close();
+      }
+      const body = typeof markdown === "function" ? markdown(title) : markdown;
       let handle;
       try { handle = await open(file, "wx", 0o600); }
-      catch (error) { if (error.code === "EEXIST") continue; throw error; }
-      try { await handle.writeFile(markdown, "utf8"); await handle.sync(); }
+      catch (error) {
+        if (extra) await unlink(extra).catch(() => {});
+        if (error.code === "EEXIST") continue;
+        throw error;
+      }
+      try { await handle.writeFile(body, "utf8"); await handle.sync(); }
       finally { await handle.close(); }
-      return { path: relativeName, name: title, bytes: Buffer.byteLength(markdown) };
+      return { path: relativeName, name: title, bytes: Buffer.byteLength(body), attachment: extraName ?? null };
     }
     throw new Error("Too many pages already use that title.");
   }
@@ -2300,41 +2316,30 @@ export class GlassService {
     return { ...stored, audio: name, mime: audio.mime, bytes: bytes.length };
   }
 
-  // Lecture mode writes exactly one new note, on Save, then pins its chapter timestamps.
+  // Lecture mode writes exactly one new note on Save, its audio beside it under the same name.
   async voiceLecture(request) {
     if (!this.initialized) await this.initialize();
     this.assertWritable();
     const { note: source } = await this.validateNote(request.note);
-    const segments = validSpeakerSegments(request.transcript);
+    const segments = validSpeakerSegments(request.transcript, { maxMs: lectureDefaults.seconds * 1000, limit: lectureDefaults.segmentLimit });
     if (!segments?.length) throw new Error("A lecture needs at least one transcribed segment.");
     const marks = Array.isArray(request.marks) ? request.marks.slice(0, voiceDefaults.markLimit) : [];
-    const chapters = chapterMarks(segments, marks);
+    let attachment = null;
+    if (request.audio != null) {
+      const extension = lectureExtensions[request.audio?.mime];
+      if (!extension || typeof request.audio.base64 !== "string" || !request.audio.base64) throw new Error("Lecture audio must be MP4 (Opus).");
+      const bytes = Buffer.from(request.audio.base64, "base64");
+      if (!bytes.length || bytes.length > lectureDefaults.audioBytes) throw new Error("That lecture recording is too large to store.");
+      attachment = { extension, bytes };
+    }
     const at = new Date();
     const stamp = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")} ${String(at.getHours()).padStart(2, "0")}${String(at.getMinutes()).padStart(2, "0")}`;
     const stem = sanitizeTitle(`Lecture ${stamp}`);
-    const paragraphs = segments.map(segment => `${timestampLabel(segment.startMs)} ${segment.text}`);
-    const body = `---\ntype: Reference\ntitle: ${JSON.stringify(stem)}\ntags: [lecture]\ngenerated: { by: "process:voice", at: ${JSON.stringify(at.toISOString())} }\n---\n\n# ${stem}\n\n## Transcript\n\n${paragraphs.join("\n\n")}\n`;
-    if (Buffer.byteLength(body) > voiceDefaults.transcriptBytes) throw new Error("That lecture transcript is too large for one note.");
-    const written = await this.writeCardPage(source, stem, body);
-    const note = await this.identify(written.path);
-    const file = this.journalFor(note);
-    const magnets = [];
-    for (const chapter of chapters) {
-      let index = 0;
-      for (let cursor = 0; cursor < segments.length; cursor += 1) if (segments[cursor].startMs <= chapter.atMs) index = cursor;
-      const paragraph = paragraphs[index];
-      if (!paragraph) continue;
-      const field = { kind: "sticky", text: chapter.label, color: "blue",
-        anchor: { landmarks: [{ kind: "block", block: paragraph, headings: ["Transcript"] }] },
-        x: 336 + (magnets.length % 3) * 24, y: 0, w: 232, h: 96, folded: false };
-      const values = validateMagnetFields("sticky", field, false);
-      const magnetId = newMagnetId();
-      for (const [name, value] of Object.entries(values))
-        await this.appendRecord(file, { op: "set", magnetId, field: name, value, hlc: this.clock.next(), device: this.deviceName });
-      magnets.push(magnetId);
-    }
+    const body = title => lectureNote({ title, audio: attachment && `${title}.${attachment.extension}`, segments, marks, at: at.toISOString() });
+    if (Buffer.byteLength(body(stem)) > voiceDefaults.transcriptBytes) throw new Error("That lecture transcript is too large for one note.");
+    const written = await this.writeCardPage(source, stem, body, attachment);
     this.notify();
-    return { note: written.path, title: stem, bytes: written.bytes, segments: segments.length, chapters: magnets.length, magnets };
+    return { note: written.path, title: written.name, bytes: written.bytes, segments: segments.length, audio: written.attachment };
   }
 
   status() {

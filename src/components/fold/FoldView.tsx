@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent 
 import { worthFolding } from "../../../shared/fold-text.mjs";
 import { foldTopic } from "../../../shared/fold-topic.mjs";
 import { foldDocumentLadder } from "../../../shared/fold-units.mjs";
+import { embedURL } from "../../editor/markdown";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
+import { FoldAudio } from "./FoldAudio";
 import { FoldBar } from "./FoldBar";
 import { FoldTopic, saveTopicView, savedTopicView, warmTopic, type TopicView } from "./FoldTopic";
 import { FoldEngine, type FoldUnitView } from "./morph";
@@ -30,6 +32,8 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
   const index = short ? 0 : STOPS.indexOf(stop);
   const percents = useMemo(() => STOPS.map(level => ladder.total ? Math.round(ladder.stops[level].shown / ladder.total * 100) : 100), [ladder]);
   const shell = useRef<HTMLElement>(null), scroller = useRef<HTMLDivElement>(null), article = useRef<HTMLElement>(null), engine = useRef<FoldEngine | null>(null);
+  const player = useRef<HTMLAudioElement>(null);
+  const lecture = topic.audio;
   const [hint, setHint] = useState(true);
   const [view, setView] = useState<TopicView>(savedTopicView);
   // Topic shows as cards or a map; while the reader scrubs, the morphing page shows through instead.
@@ -75,6 +79,26 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     landed.addEventListener("animationend", () => landed.classList.remove("fold-landed"), { once: true });
   }, [index]);
   useEffect(() => short ? undefined : warmTopic(topic, id), [topic, id, short]);
+  // Follow-along: the paragraph being heard carries data-speaking, found by its start second.
+  useEffect(() => {
+    const element = player.current;
+    if (!lecture || !element) return;
+    const times = [...lecture.times].sort((a, b) => a.time - b.time);
+    let speaking: HTMLElement | undefined;
+    const follow = () => {
+      let low = 0, high = times.length;
+      while (low < high) { const middle = (low + high) >> 1; if (times[middle].time <= element.currentTime + 0.05) low = middle + 1; else high = middle; }
+      const unit = low && (element.currentTime > 0 || !element.paused) ? times[low - 1].unitId : null;
+      const root = unit ? engine.current?.units.find(item => item.unit.elementId === unit)?.root : undefined;
+      if (root === speaking) return;
+      delete speaking?.dataset.speaking;
+      speaking = root;
+      if (root) root.dataset.speaking = "";
+    };
+    const events = ["timeupdate", "seeked", "play"] as const;
+    for (const name of events) element.addEventListener(name, follow);
+    return () => { for (const name of events) element.removeEventListener(name, follow); delete speaking?.dataset.speaking; };
+  }, [lecture, ladder]);
   // Leaving the Topic overlay by key or bar removes the focused card; focus returns to the page.
   useLayoutEffect(() => {
     if (!topicShown && (!document.activeElement || document.activeElement === document.body)) article.current?.focus({ preventScroll: true });
@@ -113,10 +137,14 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     if (next === index) engine.current?.switchTo(next);
     setStop(STOPS[next]);
   }
-  function openAt(unit: string, top: number) {
+  function openAt(unit: string, top: number, time: number | null) {
     landing.current = { unit, top };
     setHint(false);
     setStop("key");
+    const element = player.current;
+    if (time === null || !element) return;
+    element.currentTime = time;
+    void element.play().catch(() => {});
   }
   function chooseView(next: TopicView) {
     saveTopicView(next);
@@ -156,7 +184,7 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     <div ref={scroller} className="fold-scroller" aria-hidden={topicShown || undefined} onFocus={topicShown ? passPage : undefined}>
       <article ref={article} className="rich-document fold-document" tabIndex={0} aria-label={t("Fold view")} />
     </div>
-    <FoldBar index={index} percents={percents} disabled={short} hint={hint} pick={pick}
+    <FoldBar index={index} percents={percents} disabled={short} hint={hint} pick={pick} player={lecture && <FoldAudio audio={player} />}
       scrub={value => { setScrubbing(true); engine.current?.scrub(value); }}
       release={() => {
         const settled = engine.current?.release();
@@ -165,5 +193,6 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
         // The page committed in this task; Topic, if the slider settled there, mounts in one of its own.
         window.setTimeout(() => setScrubbing(false));
       }} />
+    {lecture && <audio ref={player} preload="metadata" src={embedURL(lecture.target, id)} />}
   </section>;
 }

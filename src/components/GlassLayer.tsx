@@ -61,9 +61,9 @@ import GlassCompareCard from "./GlassCompareCard";
 import GlassVoice from "./GlassVoice";
 import { newVoiceId, voiceFromMagnet, voiceMemoDefaults, type VoiceMemo } from "../glass/voice-model";
 import {
-  blobBase64, cancelTranscribe, transcribeCapture, VoiceRecorder, voiceInfo, type CapturePart,
+  blobBase64, blobBase64Async, cancelTranscribe, LectureRecorder, transcribeCapture, VoiceRecorder, voiceInfo,
 } from "../voice/voice-client";
-import { timestampLabel, voiceDefaults, voiceKeyMatches } from "../../shared/voice.mjs";
+import { encodeVoiceWav, lectureDefaults, timestampLabel, voiceDefaults, voiceKeyMatches, type Utterance } from "../../shared/voice.mjs";
 import GlassSwapPanel from "./GlassSwapPanel";
 import type { MeasureMode } from "./ImageVisuals";
 import "./glass.css";
@@ -112,7 +112,7 @@ interface VoiceRun {
   offset: { x: number; y: number };
   segments: { startMs: number; endMs: number; text: string }[];
   marks: { atMs: number; label?: string }[];
-  offsetMs: number;
+  pending: number;
 }
 interface MergePreview {
   note: string; magnet: string; kind: string; label: string; baseHash: string; baseSize: number; eol: string; bom: boolean;
@@ -342,7 +342,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const runRef = useRef<VoiceRun | undefined>(undefined);
   const recorder = useRef<VoiceRecorder | undefined>(undefined);
   const voiceTick = useRef<number | undefined>(undefined);
-  const lectureTimer = useRef<number | undefined>(undefined);
+  const lecture = useRef<{ recorder: LectureRecorder; chain: Promise<void> } | undefined>(undefined);
   const [sheetsOpen, setSheetsOpen] = useState<Record<string, boolean>>({});
   const [traceTool, setTraceTool] = useState<TraceTool>("pen");
   const [traceColor, setTraceColor] = useState(inkDefaults("pen").color);
@@ -1247,7 +1247,6 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const leaveVoiceTool = () => { if (["voice", "memo", "lecture"].includes(latest.current.tool)) setTool("select"); };
   const clearVoiceTimers = () => {
     if (voiceTick.current) { clearInterval(voiceTick.current); voiceTick.current = undefined; }
-    if (lectureTimer.current) { clearInterval(lectureTimer.current); lectureTimer.current = undefined; }
   };
   const beginVoice = async (mode: VoiceRun["mode"], point: { x: number; y: number }) => {
     if (runRef.current || !latest.current.note) return;
@@ -1257,34 +1256,37 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (mode === "memo" && lockedLayer("image")) { setNotice("Media layer is locked."); return; }
     if (mode === "dictation" && lockedLayer("sticky")) { setNotice("Notes & stickers layer is locked."); return; }
     const next: VoiceRun = { id: crypto.randomUUID(), mode, phase: "recording", startedAt: Date.now(), block,
-      offset: offsetIn(block, point, rtlNow()), segments: [], marks: [], offsetMs: 0 };
-    const capture = new VoiceRecorder();
+      offset: offsetIn(block, point, rtlNow()), segments: [], marks: [], pending: 0 };
+    const capture = mode === "lecture" ? new LectureRecorder(utterance => queueUtterance(next.id, utterance)) : new VoiceRecorder();
     try { await capture.start(); }
-    catch (failure) { setNotice((failure as Error).message); return; }
+    catch (failure) { capture.cancel(); setNotice((failure as Error).message); return; }
     if (!latest.current.note) { capture.cancel(); return; }
-    recorder.current = capture;
+    if (capture instanceof LectureRecorder) lecture.current = { recorder: capture, chain: Promise.resolve() };
+    else recorder.current = capture;
     setVoiceRun(next);
-    voiceTick.current = window.setInterval(() => setRun(current => current ? { ...current } : current), 500);
-    if (mode === "lecture") lectureTimer.current = window.setInterval(() => void rotateLecture(), voiceDefaults.chunkMs);
+    voiceTick.current = window.setInterval(() => {
+      if (lecture.current && lecture.current.recorder.durationMs >= lectureDefaults.seconds * 1000) void saveLecture();
+      setRun(current => current ? { ...current } : current);
+    }, 500);
   };
 
-  async function rotateLecture() {
-    const current = runRef.current, capture = recorder.current;
-    if (!current || current.mode !== "lecture" || current.phase !== "recording" || !capture) return;
-    const next = new VoiceRecorder();
-    try { await next.start(); }
-    catch (failure) { setNotice((failure as Error).message); return; }
-    let part;
-    try { part = await capture.stop(); }
-    catch (failure) { next.cancel(); setNotice((failure as Error).message); return; }
-    recorder.current = next;
-    const result = await transcribeCapture(part.wav, { mode: "lecture", language: voice.language, id: current.id });
-    const after = runRef.current;
-    if (!after || after.mode !== "lecture" || after.phase !== "recording") return;
-    const segments = result.ok && result.text
-      ? [...after.segments, { startMs: after.offsetMs, endMs: after.offsetMs + part.durationMs, text: result.text }] : after.segments;
-    if (!result.ok) setNotice(result.message ?? "A lecture chunk was not transcribed.");
-    setVoiceRun({ ...after, segments, offsetMs: after.offsetMs + part.durationMs });
+  // Each utterance is transcribed in order while the lecture goes on; Save waits for the queue to drain.
+  function queueUtterance(id: string, utterance: Utterance) {
+    const current = lecture.current, run = runRef.current;
+    if (!current || run?.id !== id) return;
+    const wav = encodeVoiceWav(utterance.samples, voiceDefaults.rate);
+    setVoiceRun({ ...run, pending: run.pending + 1 });
+    current.chain = current.chain.then(async () => {
+      if (runRef.current?.id !== id) return;
+      const result = await transcribeCapture(wav, { mode: "lecture", language: voice.language, id })
+        .catch((failure: Error) => ({ ok: false, code: "failed", text: null, message: failure.message }));
+      const after = runRef.current;
+      if (after?.id !== id) return;
+      const heard = result.ok && result.text;
+      if (!result.ok && result.code !== "no-speech" && result.code !== "cancelled") setNotice(result.message ?? "A lecture passage was not transcribed.");
+      setVoiceRun({ ...after, pending: after.pending - 1,
+        segments: heard ? [...after.segments, { startMs: utterance.startMs, endMs: utterance.endMs, text: result.text! }] : after.segments });
+    });
   }
 
   async function finishVoice() {
@@ -1319,33 +1321,34 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   }
 
   async function saveLecture() {
-    const current = runRef.current, capture = recorder.current;
-    if (!current) return;
+    const current = runRef.current, capture = lecture.current;
+    if (!current || current.phase !== "recording" || !capture) return;
     clearVoiceTimers();
-    setVoiceRun({ ...current, phase: "saving" });
-    let segments = current.segments, offsetMs = current.offsetMs;
-    if (capture) {
-      let part: CapturePart | undefined;
-      try { part = await capture.stop(); } catch (failure) { setNotice((failure as Error).message); }
-      recorder.current = undefined;
-      if (part) {
-        const result = await transcribeCapture(part.wav, { mode: "lecture", language: voice.language, id: current.id });
-        if (result.ok && result.text) segments = [...segments, { startMs: offsetMs, endMs: offsetMs + part.durationMs, text: result.text }];
-        else if (!result.ok) setNotice(result.message ?? "The last chunk was not transcribed.");
-        offsetMs += part.durationMs;
-      }
-    }
-    if (!segments.length) { setVoiceRun(undefined); leaveVoiceTool(); setNotice("Nothing was transcribed."); return; }
-    const value = await send({ action: "voice-lecture", note: latest.current.note, transcript: segments, marks: current.marks, language: voice.language });
+    setVoiceRun({ ...current, phase: "transcribing" });
+    let audio = null;
+    try { audio = await capture.recorder.stop(); } catch (failure) { setNotice((failure as Error).message); }
+    await capture.chain;
+    const done = runRef.current;
+    if (done?.id !== current.id) return;
+    lecture.current = undefined;
+    if (!done.segments.length) { setVoiceRun(undefined); leaveVoiceTool(); setNotice("Nothing was transcribed."); return; }
+    setVoiceRun({ ...done, phase: "saving" });
+    let payload = null;
+    try { payload = audio ? { base64: await blobBase64Async(audio.blob), mime: audio.mime } : null; }
+    catch (failure) { setNotice((failure as Error).message); }
+    // Times move onto the archive's clock, so every stamp and section seeks to its own words.
+    const offset = payload && audio ? audio.offsetMs : 0, onArchive = (ms: number) => Math.max(0, ms - offset);
+    const value = await send({ action: "voice-lecture", note: latest.current.note,
+      transcript: done.segments.map(segment => ({ ...segment, startMs: onArchive(segment.startMs), endMs: onArchive(segment.endMs) })),
+      marks: done.marks.map(mark => ({ atMs: onArchive(mark.atMs) })), audio: payload, language: voice.language });
     setVoiceRun(undefined); leaveVoiceTool();
     setNotice(value?.note ? `Saved ${String(value.note)}` : "The lecture was not saved.");
   }
 
   function markMoment() {
     const current = runRef.current;
-    if (!current || current.mode !== "lecture") return;
-    const atMs = current.offsetMs + (recorder.current?.durationMs ?? 0);
-    setVoiceRun({ ...current, marks: [...current.marks, { atMs }] });
+    if (!current || current.mode !== "lecture" || !lecture.current) return;
+    setVoiceRun({ ...current, marks: [...current.marks, { atMs: lecture.current.recorder.durationMs }] });
   }
 
   function cancelVoice() {
@@ -1353,6 +1356,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     clearVoiceTimers();
     recorder.current?.cancel();
     recorder.current = undefined;
+    lecture.current?.recorder.cancel();
+    lecture.current = undefined;
     if (current) cancelTranscribe(current.id);
     setVoiceRun(undefined); leaveVoiceTool();
   }
@@ -1599,6 +1604,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     if (!block) { setNotice("Put the audio or video in a paragraph."); return; }
     const cues: ReturnType<typeof transcriptLine>[] = [];
     for (let next = element?.nextElementSibling; next && cues.length < timelineDefaults.maxTranscript; next = next.nextElementSibling) {
+      if (next.matches("h1, h2, h3, h4, h5, h6")) continue;
       const direct = transcriptLine((next.textContent ?? "").trim());
       if (direct) cues.push(direct);
       else {
@@ -2582,6 +2588,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     clearVoiceTimers();
     recorder.current?.cancel();
     recorder.current = undefined;
+    lecture.current?.recorder.cancel();
+    lecture.current = undefined;
     runRef.current = undefined;
   }, []);
 
@@ -2800,7 +2808,7 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
     <p className="glass-palette-hint">{tool === "memo"
       ? "Click a paragraph: audio stays on this machine in .omarkie/assets, its transcript is searchable."
       : tool === "lecture"
-        ? "Start once. Every minute is transcribed locally; Save writes one new note with the marked moments."
+        ? "Start once. Every pause closes a sentence that is transcribed locally; Save writes one note with its audio and the marked moments."
         : `Click a paragraph, or hold ${voice.key}. A quick tap keeps recording until the next tap.`}</p>
     <p className="glass-palette-hint" data-voice-language>Language: {voice.language === "auto" ? "auto (ES/EN)" : voice.language}</p>
     {!voice.valid && <p className="glass-palette-hint" role="alert">OMARKIE_STT is not readable. Check the setting value.</p>}
@@ -2808,7 +2816,9 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const voicePill = run ? <div className="voice-pill" data-voice-pill={run.phase} data-voice-mode={run.mode} role="status">
     <Mic size={13} aria-hidden="true" />
     <span className="voice-pill-state">{run.phase === "recording" ? run.mode === "memo" ? "Memo" : run.mode === "lecture" ? "Lecture" : "Dictation" : run.phase === "saving" ? "Saving" : "Transcribing"}</span>
-    {run.phase === "recording" && <time data-voice-clock>{timestampLabel(Date.now() - run.startedAt + run.offsetMs)}</time>}
+    {run.phase === "recording" && <time data-voice-clock>{timestampLabel(lecture.current?.recorder.durationMs ?? Date.now() - run.startedAt)}</time>}
+    {run.mode === "lecture" && run.pending > 0 && <span className="voice-pill-pending" data-voice-pending={run.pending}
+      title="Sentences still being transcribed">{run.pending}</span>}
     {run.mode === "lecture" && run.phase === "recording" && <button type="button" data-voice-mark onClick={markMoment}>Mark{run.marks.length ? ` (${run.marks.length})` : ""}</button>}
     {run.phase === "recording" && <button type="button" data-voice-stop={run.mode === "lecture" ? "save" : "stop"}
       onClick={() => void (run.mode === "lecture" ? saveLecture() : finishVoice())}>{run.mode === "lecture" ? "Save" : "Stop"}</button>}

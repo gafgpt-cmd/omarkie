@@ -21,5 +21,6 @@ export interface EmbedSource {
 export const embedLimits: { depth: number; bytes: number; read: number };
 export function noteEmbed(target: string): boolean;
 export function baseEmbed(target: string): boolean;
+export function audioEmbed(target: string): boolean;
 export function rebaseLinks(markdown: string, targetRelative: string, fromRelative: string, exists?: (path: string) => boolean): string;
 export function createEmbedSource(options: { read(relatives: string[]): Promise<{ relative: string; content: string }[]> | { relative: string; content: string }[] }): EmbedSource;
