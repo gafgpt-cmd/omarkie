@@ -11,7 +11,7 @@ import { _electron as launch, expect } from "playwright/test";
 import { endpoint } from "../electron/tutor-transport.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 
-// Glass waits for the first note's paint; a window that never paints (minimized, hidden) must still answer omarkie-axi.
+// A window that never paints (minimized, hidden) must still answer omarkie-axi.
 if (process.platform === "win32") process.exit(0);
 const home = await realpath(await mkdtemp(path.join(os.tmpdir(), "omarkie-unpainted-")));
 const vault = path.join(home, "vault"), doc = "unpainted.md", file = path.join(vault, doc);

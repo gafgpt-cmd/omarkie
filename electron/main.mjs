@@ -61,7 +61,7 @@ if (debugLogFile) {
   let tick = performance.now();
   setInterval(() => { const now = performance.now(), late = now - tick - 100; if (late > 250) debugLog("main-stall", `${Math.round(late)}ms`); tick = now; }, 100).unref();
 }
-// Tests hold Glass startup back after first paint to model a slow machine.
+// Tests hold Glass startup back after the bridge binds to model a slow machine.
 const testGlassDelay = Number(process.env.OMARKIE_TEST_GLASS_DELAY_MS) || 0;
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
@@ -210,8 +210,6 @@ function announceGlass(request) {
     "srs-card", "srs-answer", "srs-review", "study-set"].includes(request?.action)) window?.webContents.send("glass:changed", { note: request.note, action: request.action });
 }
 
-let documentPainted;
-const firstDocumentPaint = new Promise(resolve => { documentPainted = resolve; });
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
   const run = glassQueue.then(() => syncGlassNow(folder));
@@ -269,10 +267,6 @@ async function syncGlassNow(folder) {
     // its requests wait for them, so an agent's first CLI call never races a cold start.
     await bindGlassBridge(folder, root);
     step("bridge");
-    // Storage, index and watcher open only after the first document painted: on a slow machine their startup
-    // held the first note's render back for seconds.
-    await firstDocumentPaint;
-    step("wait-paint");
     if (testGlassDelay) { await new Promise(resolve => setTimeout(resolve, testGlassDelay)); step("test-delay"); }
     const { GlassService } = await import("./glass-service.mjs");
     step("import");
@@ -692,7 +686,6 @@ const handlers = {
     try { send({ action: "opened", document: await store.open(file) }); }
     catch (error) { showError(error); }
   } return true; },
-  painted: () => { debugLog("painted"); documentPainted(); },
   cancelClose: () => { closing = false; },
   recent: () => workspace.recent(),
   recentAction: async (_, action, file) => { if (action !== "open") return workspace.recentAction(action, file); const item = (await workspace.recent()).find(item => item.path === file); if (!item) throw new Error(t("最近项目已移除。")); await workspace.remember(file, item.folder); return item.folder ? store.scan(file) : store.open(file); },
@@ -1131,8 +1124,7 @@ app
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       const contents = created.webContents;
-      // A renderer that dies or a window that closes before its first paint must not hold Glass startup forever.
-      contents.on("render-process-gone", () => { stopSpeech(); detachTutor(contents); documentPainted(); });
+      contents.on("render-process-gone", () => { stopSpeech(); detachTutor(contents); });
       contents.on("did-start-navigation", details => { if (details.isMainFrame && !details.isSameDocument) detachTutor(contents); });
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
@@ -1146,7 +1138,6 @@ app
       });
       window.on("focus", () => { void glassRuntime.sync?.focus().catch(() => {}); });
       window.on("closed", () => {
-        documentPainted();
         stopSpeech();
         detachTutor(contents);
         window = null;
