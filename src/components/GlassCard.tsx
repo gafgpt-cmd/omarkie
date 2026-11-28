@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, BookMarked, Calculator, Check, ChevronDown, ExternalLink, FoldVertical, GitBranch, ListChecks, Sparkles, Trash2 } from "lucide-react";
 import { findIdentifiers } from "../../shared/bubble-context.mjs";
-import type { CardKind } from "../../shared/glass-cards.mjs";
+import { foldLineIsEvidence, type CardKind } from "../../shared/glass-cards.mjs";
 import { anchorOf, nearestBlock } from "../glass/glass-model";
 import type { GlassBlock } from "../glass/anchor-map";
 import { newCardId, cardBlock, type GlassCard } from "../glass/card-model";
@@ -158,7 +158,7 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge, onMark, onAcc
   const answer = card.answer.trim();
   return <section className="glass-card-panel" data-card-panel ref={panel}>
     <header className="glass-card-head">
-      <span className="glass-card-heading"><KindIcon kind={card.card} size={13} />{card.card === "ai" ? t("AI cue") : card.title}</span>
+      <span className="glass-card-heading"><KindIcon kind={card.card} size={13} />{card.card === "ai" ? t("AI cue") : card.card === "fold" ? t("Fold line") : card.title}</span>
       <div className="glass-card-actions">
         <button type="button" data-card-mark aria-label={t("Mark for exam")} title={card.marked ? t("Marked for exam") : t("Mark for exam")}
           aria-pressed={card.marked} onClick={() => onMark(!card.marked)}>★</button>
@@ -194,10 +194,11 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge, onMark, onAcc
         : <p className="glass-card-broken" role="status" data-card-broken>{brokenText(staticState)}</p>}
     </>}
     {card.card === "fold" && <>
-      <p className="glass-card-fold-line" data-card-fold-line>
-        {card.stop && <span className="glass-card-stop">{card.stop === "estudio" ? t("Estudio") : stopLabel(card.stop)}</span>}{card.question}
+      {!foldLineIsEvidence(card) && <p className="glass-card-fold-line" data-card-fold-line>{card.question}</p>}
+      <p className="glass-card-source" data-card-source>
+        {card.stop && <span className="glass-card-stop">{card.stop === "estudio" ? t("Estudio") : stopLabel(card.stop)}</span>}
+        {t("Evidence")}{card.link ? ` · ${card.link}` : ""}
       </p>
-      <p className="glass-card-source" data-card-source>{t("Evidence")}{card.link ? ` · ${card.link}` : ""}</p>
       <blockquote className="payload-result glass-card-evidence" data-card-evidence dangerouslySetInnerHTML={{ __html: renderPayload(card.answer) }} />
     </>}
     {card.card === "ai" && <>

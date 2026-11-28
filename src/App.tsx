@@ -38,7 +38,7 @@ const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => (
 const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
 const FoldView = lazy(() => import("./components/fold/FoldView"));
-import type { FoldStart, Stop } from "./components/fold/stops";
+import { STOPS, type FoldStart, type Stop } from "./components/fold/stops";
 import type { FoldOut } from "./components/fold/drag";
 import type { StudyMark } from "./components/learning-overlays";
 import type { FlashcardPanel } from "./components/Flashcards";
@@ -128,13 +128,19 @@ export default function App() {
   const foldMarks = useRef<ReadonlyMap<number, readonly StudyMark[]>>(new Map());
   const foldOut = useRef<FoldOut | null>(null);
   // An omarkie://open link (a dragged fold line opened from another app): waits for its note to appear in the folder list.
-  const [noteLink, setNoteLink] = useState<{ note: string; line: number } | null>(null);
+  // With a stop, the note opens in Fold view at that stop, focused on the line.
+  const [noteLink, setNoteLink] = useState<{ note: string; line: number; stop?: Stop } | null>(null);
+  const [linkFold, setLinkFold] = useState<{ id: string; line: number; stop: Stop } | null>(null);
   useEffect(() => {
     if (!noteLink || !session.files.length) return;
     setNoteLink(null);
     const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === noteLink.note);
     if (!file) { session.setMessage(t("Linked note is not in this folder.")); return; }
-    void session.openToken(file.token).then(record => { if (record) jumpTo(record.id, noteLink.line); }).catch((error: Error) => session.setMessage(error.message));
+    void session.openToken(file.token).then(record => {
+      if (!record) return;
+      jumpTo(record.id, noteLink.line);
+      if (noteLink.stop) setLinkFold({ id: record.id, line: noteLink.line, stop: noteLink.stop });
+    }).catch((error: Error) => session.setMessage(error.message));
   }, [noteLink, session.files]);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
@@ -296,6 +302,18 @@ export default function App() {
   activeIdRef.current = active?.id;
   useEffect(() => { if (!readingVisible && !(learningEnabled && !focus)) setFoldId(null); }, [readingVisible, learningEnabled, focus]);
   useEffect(() => { setFoldId(null); setFoldReturn(null); }, [active?.id]);
+  // Declared after the reset above, so a link that also switched notes opens its fold last.
+  useEffect(() => {
+    if (!linkFold || active?.id !== linkFold.id) return;
+    setLinkFold(null);
+    setFoldStop(linkFold.stop);
+    foldStart.current = { line: linkFold.line, focus: true };
+    setFoldReturn(null);
+    if (cleanVisible) setCleanId(null);
+    if (!learningEnabled) toggleReading();
+    else if (focus) setFocus(false);
+    setFoldId(linkFold.id);
+  }, [linkFold, active?.id]);
   useEffect(() => { if (!readingVisible) setFoldReturn(null); }, [readingVisible]);
   function toggleFold() {
     if (!active || editor()?.composing()) return;
@@ -673,7 +691,7 @@ export default function App() {
   useEffect(() => {
     editor()?.focus();
   }, [session.activeId]);
-  commands.current = ({ action, document: opened, anchor, line, message, note: boardNote, magnet: boardMagnet }) => {
+  commands.current = ({ action, document: opened, anchor, line, message, note: boardNote, magnet: boardMagnet, stop }) => {
     if (["new", "newWindow", "newTab", "open"].includes(action) && window.desktop?.windowAction) { void host.windowAction(action).catch((error: Error) => session.setMessage(error.message)); return; }
     const context = commandsByAction.get(action)?.context;
     if (readOnly && ((context && context !== "document") || ["delete-word", "undo", "redo", "paste-plain", "image", "table", "link", "reference-link", "footnote", "copy-all-images", "move-all-images", "upload-all-images"].includes(action))) { session.setMessage(t("只读模式已开启，请先在插件管理中关闭或切换只读效果。")); return; }
@@ -681,7 +699,7 @@ export default function App() {
     if (["rich", "table"].includes(context || "") && !editor()?.richMode()) return;
     if (action === "notice") { if (message) session.setMessage(message); }
     else if (action === "omarchy-theme") void refreshOmarchy();
-    else if (action === "open-note") { if (boardNote) setNoteLink({ note: boardNote, line: line || 1 }); }
+    else if (action === "open-note") { if (boardNote) setNoteLink({ note: boardNote, line: line || 1, stop: STOPS.find(item => item === stop) }); }
     else if (action === "opened") {
       if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; jumpTo(record.id, line || heading?.line || 1); } });
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();

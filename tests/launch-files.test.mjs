@@ -15,8 +15,9 @@ test("Linux desktop %U file URLs decode spaces and Unicode before opening a docu
   const file=path.resolve('会议 notes #1.md');
   assert.deepEqual(launchFiles(['omarkie',pathToFileURL(file).href,'file:///%ZZ.md'],true),[file]);
 });
-test("omarkie://open links reach a vault note line and refuse escapes", () => {
-  assert.deepEqual(launchLinks(["omarkie", "--flag", "omarkie://open?note=Physiology%2FRenal.md&line=12&stop=key"]), [{ note: "Physiology/Renal.md", line: 12 }]);
+test("omarkie://open links reach a vault note line at a fold stop and refuse escapes", () => {
+  assert.deepEqual(launchLinks(["omarkie", "--flag", "omarkie://open?note=Physiology%2FRenal.md&line=12&stop=key"]), [{ note: "Physiology/Renal.md", line: 12, stop: "key" }]);
+  assert.deepEqual(launchLinks(["omarkie://open?note=a.md&line=3&stop=summary"]), [{ note: "a.md", line: 3 }]);
   for (const bad of ["omarkie://open?note=..%2Fx.md&line=1", "omarkie://open?note=%2Fetc%2Fx.md", "omarkie://open?note=a.txt", "omarkie://open?note=a.md&line=0", "omarkie://other?note=a.md"])
     assert.deepEqual(launchLinks([bad]), [], bad);
 });

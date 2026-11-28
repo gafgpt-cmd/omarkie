@@ -17,7 +17,7 @@ The page text never moves: cards live on the `ai-cards` glass layer, not in the 
 - A static card polls while unfolded; a missing note or section states why.
 - AI answers stay in the journal. Offline, the cached answer still renders. Regenerate asks again.
 - Identifiers in a question or its paragraph block the ask until each one is marked not identifying.
-- A `fold` card comes from dragging a fold line onto the page (Glass on), or D → Card on the page. It never merges into the note: its evidence is already there.
+- A `fold` card comes from dragging a fold line onto the page (Glass on), or D → Card on the page. Open, it shows the line once, its stop, then the evidence (at Full the evidence is the line). It never merges into the note: its evidence is already there.
 
 ## Open as page
 

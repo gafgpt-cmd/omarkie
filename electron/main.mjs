@@ -107,9 +107,9 @@ function openFiles(files) {
     else pending.push(file);
   }
 }
-// A dragged fold line's link: the renderer opens the vault note at the line once its folder is listed.
+// A dragged fold line's link: the renderer opens the vault note at the line, in Fold view at its stop, once its folder is listed.
 function openLinks(links) {
-  if (window && rendererReady) for (const link of links) send({ action: "open-note", note: link.note, line: link.line });
+  if (window && rendererReady) for (const link of links) send({ action: "open-note", note: link.note, line: link.line, stop: link.stop });
   else pendingLinks.push(...links);
 }
 if (process.platform !== "darwin") {

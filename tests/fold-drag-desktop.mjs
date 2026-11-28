@@ -154,9 +154,18 @@ try {
   await expect(card).toBeVisible({ timeout: 15_000 });
   if (await card.getAttribute("data-folded") === "true") await card.locator("[data-card-pill]").click();
   await expect(card.locator("[data-card-evidence]")).toHaveText(definition, { timeout: 15_000 });
+  // The line shows once: the heading names the kind, the body holds the line at its stop, then the evidence.
+  await expect(card.locator(".glass-card-heading")).toHaveText(t("Fold line"));
+  await expect(card.locator("[data-card-fold-line]")).toHaveText(copied["text/plain"].split("\n")[0]);
   await expect(card).toContainText("[[ward#");
   await shot(page, "en-light-glass-card");
   await page.keyboard.press("g");
+
+  // The way back from another app: the link opens the note in Fold view at the line's stop, focused on the line.
+  await app.evaluate(({ app: electron }, url) => electron.emit("open-url", { preventDefault() {} }, url), `omarkie://open?note=ward.md&line=${ASSESSMENT}&stop=brief`);
+  await expect(fold(page, t)).toHaveAttribute("data-stop", "brief");
+  await expect(unit(page, ASSESSMENT)).toBeFocused();
+  await closeFold(page);
 
   // A linked excerpt pasted into a note lands as its own quoted block with the way back.
   await page.getByRole("button", { name: t("显示"), exact: true }).click();
@@ -195,4 +204,4 @@ for (const language of ["en", "es"]) {
     assert.deepEqual(errors, []);
   } finally { await app.close(); }
 }
-console.log(`PASS: D menu and grip drag send a fold line to a sheet, the tray or the page (scrap or Glass card with its evidence), four drag types, linked-excerpt paste, no task over 50 ms. Shots in ${evidence}`);
+console.log(`PASS: D menu and grip drag send a fold line to a sheet, the tray or the page (scrap, or Glass card showing the line once over its evidence), four drag types, omarkie:// link opens at its stop, linked-excerpt paste, no task over 50 ms. Shots in ${evidence}`);

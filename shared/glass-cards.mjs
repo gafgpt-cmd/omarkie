@@ -197,6 +197,12 @@ function firstLine(value, limit = 90) {
   return line.length > limit ? `${line.slice(0, limit).toWellFormed()}…` : line;
 }
 
+// At Full a fold line is its own evidence, so it shows once.
+export function foldLineIsEvidence(card) {
+  const flat = value => String(value ?? "").replace(/\s+/g, " ").trim();
+  return flat(card?.question) === flat(card?.answer);
+}
+
 export function cardTitle(card) {
   const explicit = typeof card?.title === "string" ? card.title.trim() : "";
   if (explicit) return explicit.slice(0, cardDefaults.titleLimit);
@@ -245,8 +251,9 @@ export function cardPageMarkdown(card, { markdown = "" } = {}) {
     if (card.flow) lines.push("```text", ...flowOutline(card.flow), "```", "");
     if (card.citation?.trim()) lines.push(`**Citation:** ${card.citation.trim()}`, "");
   } else if (card.card === "fold") {
-    // The line as it read at its stop, then the author's own words it was folded from.
-    if (card.question?.trim()) lines.push(card.question.trim(), "");
+    // The heading is the line; the body repeats it only when the heading cut it short. Then the author's own words.
+    const line = card.question?.trim() ?? "";
+    if (line && line.replace(/\s+/g, " ") !== title && !foldLineIsEvidence(card)) lines.push(line, "");
     if (card.answer?.trim()) lines.push(...card.answer.trim().split(/\r?\n/).map(line => line ? `> ${line}` : ">"), "");
     const parsed = parseCardLink(card.link ?? "");
     if (parsed) lines.push(`Source: ${parsed.section ? `[[${parsed.target || "this note"}#${parsed.section}]]` : `[[${parsed.target || "this note"}]]`}`, "");
