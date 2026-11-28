@@ -37,7 +37,8 @@ export class TableHandles {
     this.sizeButton.addEventListener("mousedown", event => event.preventDefault());
     this.sizeButton.addEventListener("click", () => this.picker.hidden ? this.openPicker() : this.closePicker(true));
     this.picker.className = "table-size-picker"; this.picker.hidden = true; this.picker.contentEditable = "false";
-    this.picker.role = "dialog"; this.picker.setAttribute("aria-label", t("Table size"));
+    // Dialog role only while open: open-dialog checks (Escape, shortcuts) must not see the hidden picker.
+    this.picker.setAttribute("aria-label", t("Table size"));
     this.pickerGrid.className = "table-size-grid"; this.pickerGrid.tabIndex = 0; this.pickerGrid.role = "spinbutton";
     this.pickerGrid.setAttribute("aria-label", t("Rows and columns: arrow keys change, Enter applies"));
     this.pickerLabel.className = "table-size-label"; this.pickerNote.className = "table-size-note";
@@ -175,7 +176,7 @@ export class TableHandles {
     if (!table?.dataset.cid) return;
     const current = { rows: table.rows.length, columns: table.rows[0]?.cells.length || 1 };
     this.size = { ...current, current, cid: table.dataset.cid };
-    this.picker.hidden = false; this.sizeButton.setAttribute("aria-expanded", "true");
+    this.picker.hidden = false; this.picker.setAttribute("role", "dialog"); this.sizeButton.setAttribute("aria-expanded", "true");
     this.renderPicker();
     const rect = this.sizeButton.getBoundingClientRect();
     this.place(this.picker, rect, 0, rect.height + 4);
@@ -183,7 +184,7 @@ export class TableHandles {
   }
   private closePicker(returnFocus: boolean) {
     if (this.picker.hidden) return;
-    this.picker.hidden = true; this.sizeButton.setAttribute("aria-expanded", "false");
+    this.picker.hidden = true; this.picker.removeAttribute("role"); this.sizeButton.setAttribute("aria-expanded", "false");
     if (returnFocus && this.cell?.isConnected) this.cell.closest<HTMLElement>("[contenteditable=true]")?.focus({ preventScroll: true });
   }
   private pick(rows: number, columns: number) {
