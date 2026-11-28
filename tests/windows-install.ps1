@@ -14,6 +14,12 @@ node tests/electron-shell.mjs
 $shellExit = $LASTEXITCODE
 node tests/parity-desktop.mjs
 $parityExit = $LASTEXITCODE
+$parityLog = Join-Path $env:OMARKIE_QA_DIR 'parity-app.log'
+if ($parityExit -ne 0 -and (Test-Path $parityLog)) {
+  Write-Output '::group::Editing parity app log (Glass startup steps, saves, main-process stalls)'
+  Get-Content $parityLog -Encoding UTF8
+  Write-Output '::endgroup::'
+}
 node tests/compatibility-desktop.mjs
 $compatibilityExit = $LASTEXITCODE
 node tests/ime-desktop.mjs
