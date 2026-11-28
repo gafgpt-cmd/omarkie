@@ -21,6 +21,7 @@ export function mergeKindLabel(kind, fields = {}) {
   if (kind === "ink") return "Ink → SVG picture";
   if (kind === "card") {
     if (fields.card === "calc" || fields.card === "flow") return "Live card → stays on the glass";
+    if (fields.card === "fold") return "Fold line → stays on the glass";
     return (fields.mode ?? (cardMergeTarget(fields) ? "embed" : "plain")) === "embed" ? "Card → section embed" : "Card → plain Markdown";
   }
   return `${kind} → Markdown`;
@@ -99,6 +100,7 @@ export function mergeLines(kind, fields, { settings, assetPath, assetName } = {}
   if (kind === "card") {
     if (fields.card === "calc" || fields.card === "flow")
       throw new Error("A live card stays on the glass: its formula and citation are not copied into the note, and its result is never written.");
+    if (fields.card === "fold") throw new Error("A fold line stays on the glass: its evidence is already in this note.");
     const target = cardMergeTarget(fields);
     const mode = fields.mode ?? (target ? "embed" : "plain");
     if (mode === "embed") {

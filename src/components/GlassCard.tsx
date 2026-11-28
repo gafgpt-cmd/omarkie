@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, BookMarked, Calculator, Check, ChevronDown, ExternalLink, GitBranch, ListChecks, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDownToLine, BookMarked, Calculator, Check, ChevronDown, ExternalLink, FoldVertical, GitBranch, ListChecks, Sparkles, Trash2 } from "lucide-react";
 import { findIdentifiers } from "../../shared/bubble-context.mjs";
 import type { CardKind } from "../../shared/glass-cards.mjs";
 import { anchorOf, nearestBlock } from "../glass/glass-model";
@@ -12,15 +12,17 @@ import { renderPayload } from "./payload-controls";
 import { Dialog } from "./Dialog";
 import type { LiveTutor } from "./tutor-live";
 import { t } from "../i18n";
+import { stopLabel } from "./fold/stops";
 
 interface Place { x: number; y: number; width: number }
 interface StaticState { status: "ok" | "empty" | "section-missing" | "missing" | "invalid" | "error"; markdown?: string; target?: string | null; section?: string | null; message?: string }
 
 const kindLabel = (kind: CardKind) => kind === "ai" ? t("AI") : kind === "menu" ? t("Menu")
-  : kind === "calc" ? t("Calculator") : kind === "flow" ? t("Decision flow") : t("Section");
+  : kind === "calc" ? t("Calculator") : kind === "flow" ? t("Decision flow") : kind === "fold" ? t("Fold line") : t("Section");
 const KindIcon = ({ kind, size = 14 }: { kind: CardKind; size?: number }) =>
   kind === "ai" ? <Sparkles size={size} aria-hidden="true" /> : kind === "menu" ? <ListChecks size={size} aria-hidden="true" />
   : kind === "calc" ? <Calculator size={size} aria-hidden="true" /> : kind === "flow" ? <GitBranch size={size} aria-hidden="true" />
+  : kind === "fold" ? <FoldVertical size={size} aria-hidden="true" />
   : <BookMarked size={size} aria-hidden="true" />;
 
 function brokenText(state: StaticState) {
@@ -163,7 +165,7 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge, onMark, onAcc
         <button type="button" data-card-open-page title={t("Open as its own note")} onClick={() => void openPage()}>
           <ExternalLink size={13} aria-hidden="true" /><span>{t("Open as page")}</span>
         </button>
-        {card.card !== "calc" && card.card !== "flow"
+        {card.card !== "calc" && card.card !== "flow" && card.card !== "fold"
           && <button type="button" data-card-merge={card.id} aria-label="Merge down into the page" title="Merge down into the page" onClick={onMerge}>
             <ArrowDownToLine size={13} aria-hidden="true" />
           </button>}
@@ -190,6 +192,13 @@ function CardBody({ card, note, live, onCached, onDelete, onMerge, onMark, onAcc
       {staticState.status === "ok"
         ? <div className="payload-result" data-card-content dangerouslySetInnerHTML={{ __html: renderPayload(staticState.markdown ?? "") }} />
         : <p className="glass-card-broken" role="status" data-card-broken>{brokenText(staticState)}</p>}
+    </>}
+    {card.card === "fold" && <>
+      <p className="glass-card-fold-line" data-card-fold-line>
+        {card.stop && <span className="glass-card-stop">{card.stop === "estudio" ? t("Estudio") : stopLabel(card.stop)}</span>}{card.question}
+      </p>
+      <p className="glass-card-source" data-card-source>{t("Evidence")}{card.link ? ` · ${card.link}` : ""}</p>
+      <blockquote className="payload-result glass-card-evidence" data-card-evidence dangerouslySetInnerHTML={{ __html: renderPayload(card.answer) }} />
     </>}
     {card.card === "ai" && <>
       <p className="glass-card-question" data-card-question>{card.question}</p>

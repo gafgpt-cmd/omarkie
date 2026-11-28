@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { launchFiles } from "./launch-files.mjs";
+import { launchFiles, launchLinks } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
 import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
 import { readBackground, saveBackground, clearBackground } from "./background.mjs";
@@ -92,7 +92,7 @@ let window,
   store, workspace,
   dirty = false,
   closing = false;
-const pending = [], pendingPdfs = [];
+const pending = [], pendingPdfs = [], pendingLinks = [];
 let rendererReady = false;
 let revealWindow = () => {};
 let speech;
@@ -107,19 +107,30 @@ function openFiles(files) {
     else pending.push(file);
   }
 }
+// A dragged fold line's link: the renderer opens the vault note at the line once its folder is listed.
+function openLinks(links) {
+  if (window && rendererReady) for (const link of links) send({ action: "open-note", note: link.note, line: link.line });
+  else pendingLinks.push(...links);
+}
 if (process.platform !== "darwin") {
   if (process.platform === "win32") app.setAppUserModelId("org.omarkie.desktop");
   if (!app.requestSingleInstanceLock()) app.quit();
   else {
     pending.push(...launchFiles(process.argv, app.isPackaged));
+    pendingLinks.push(...launchLinks(process.argv));
     app.on("second-instance", (_, argv, cwd) => {
       openFiles(launchFiles(argv, app.isPackaged, cwd));
+      openLinks(launchLinks(argv));
       if (window?.isMinimized()) window.restore();
       window?.show();
       window?.focus();
     });
   }
 }
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  openLinks(launchLinks([url]));
+});
 app.on("open-file", (event, file) => {
   event.preventDefault();
   openFiles([file]);
@@ -691,7 +702,7 @@ const handlers = {
     // A restored session that never paints (a window launched minimized throttles its frames) still brings Glass up
     // for omarkie-axi; the bound leaves a slow machine's first render time to finish before startup competes with it.
     setTimeout(documentPainted, glassPaintFallback).unref?.();
-    rendererReady = true; revealWindow(); openFiles(pendingPdfs.splice(0)); for (const file of pending.splice(0)) {
+    rendererReady = true; revealWindow(); openFiles(pendingPdfs.splice(0)); openLinks(pendingLinks.splice(0)); for (const file of pending.splice(0)) {
     if (isPdf(file)) { openFiles([file]); continue; }
     try { send({ action: "opened", document: await store.open(file) }); }
     catch (error) { showError(error); }

@@ -30,6 +30,7 @@ await build({
     files: ["**/*"], asar: true, asarUnpack: ["**/*.node"], npmRebuild: false,
     extraFiles: [{ from: path.resolve("packaging/omarkie-axi"), to: "omarkie-axi" }],
     electronVersion: pkg.devDependencies.electron,
+    protocols: pkg.build.protocols,
     linux: {
       executableName: "omarkie", icon: "build/icon.png", category: "Office",
       artifactName: `Omarkie-${version}-linux-x64.\${ext}`,

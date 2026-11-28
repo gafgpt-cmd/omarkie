@@ -1,7 +1,7 @@
 import type { CalcInput } from "./calc-model.mjs";
 import type { FlowNode } from "./flow-model.mjs";
 
-export type CardKind = "static" | "ai" | "menu" | "calc" | "flow";
+export type CardKind = "static" | "ai" | "menu" | "calc" | "flow" | "fold";
 export interface CardChoice { label: string; body: string }
 export interface CardLink { target: string; section: string }
 export interface CardSection {
@@ -24,6 +24,7 @@ export interface CardShape {
   precision?: number;
   flow?: FlowNode;
   proposed?: boolean;
+  stop?: string;
 }
 
 export const cardKinds: readonly CardKind[];
@@ -42,6 +43,6 @@ export function sectionRange(markdown: unknown, path: string[]): { start: number
 export function normalizeChoices(value: unknown): CardChoice[];
 export function cardFields(fields: Record<string, unknown>): Record<string, unknown>;
 export function cardTitle(card: CardShape | undefined): string;
-export function cardIcon(card: CardShape | undefined): "sparkles" | "list" | "book" | "calculator" | "flow";
+export function cardIcon(card: CardShape | undefined): "sparkles" | "list" | "book" | "calculator" | "flow" | "fold";
 export function cardPageMarkdown(card: CardShape, options?: { markdown?: string }): string;
 export function cardPageStem(card: CardShape): string;

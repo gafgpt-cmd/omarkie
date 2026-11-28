@@ -5,8 +5,9 @@ import { sanitizeTitle, validAnchor } from "./glass-core.mjs";
 import { calcLimits, normalizeCalcInputs, normalizePrecision } from "./calc-model.mjs";
 import { flowOutline, normalizeFlow } from "./flow-model.mjs";
 import { headingSlug } from "./wiki-syntax.mjs";
+import { isLevelId } from "./fold-format.mjs";
 
-export const cardKinds = ["static", "ai", "menu", "calc", "flow"];
+export const cardKinds = ["static", "ai", "menu", "calc", "flow", "fold"];
 export const cardLayer = "ai-cards";
 export const cardDefaults = {
   w: 300, minW: 220, maxW: 420, titleLimit: 200, linkLimit: 2048, questionLimit: 4000,
@@ -14,7 +15,7 @@ export const cardDefaults = {
   headingLimit: 300, pageBytes: 512 * 1024, citationLimit: calcLimits.citation,
 };
 export const cardFieldNames = new Set(["kind", "card", "layer", "title", "link", "question", "answer", "answerAt",
-  "choices", "anchor", "x", "y", "w", "folded", "marked", "formula", "inputs", "unit", "citation", "precision", "flow", "proposed"]);
+  "choices", "anchor", "x", "y", "w", "folded", "marked", "formula", "inputs", "unit", "citation", "precision", "flow", "proposed", "stop"]);
 
 const text = (value, limit, empty = true) => typeof value === "string" && value.length <= limit
   && !value.includes("\u0000") && (empty || value.trim().length > 0);
@@ -165,6 +166,9 @@ export function cardFields(fields) {
       values.precision = normalizePrecision(value);
     } else if (field === "flow") {
       values.flow = normalizeFlow(value);
+    } else if (field === "stop") {
+      if (!isLevelId(value)) throw new Error("A card stop must be a fold level.");
+      values.stop = value;
     } else if (field === "proposed") {
       if (typeof value !== "boolean") throw new Error("Card proposed must be true or false.");
       values.proposed = value;
@@ -200,6 +204,7 @@ export function cardTitle(card) {
   if (card?.card === "menu") return firstLine(card.choices?.[0]?.label) || "Menu";
   if (card?.card === "calc") return firstLine(card.formula, 60) || "Calculator";
   if (card?.card === "flow") return firstLine(card.flow?.question, 80) || "Decision flow";
+  if (card?.card === "fold") return firstLine(card.question, 80) || "Fold line";
   const parsed = parseCardLink(card?.link ?? "");
   if (!parsed) return "Card";
   if (parsed.section) return parsed.section.slice(0, cardDefaults.titleLimit);
@@ -211,6 +216,7 @@ export function cardIcon(card) {
   if (card?.card === "menu") return "list";
   if (card?.card === "calc") return "calculator";
   if (card?.card === "flow") return "flow";
+  if (card?.card === "fold") return "fold";
   return "book";
 }
 
@@ -238,6 +244,12 @@ export function cardPageMarkdown(card, { markdown = "" } = {}) {
     lines.push("> Live decision flow. Walks in Omarkie; no answer is stored in the note.", "");
     if (card.flow) lines.push("```text", ...flowOutline(card.flow), "```", "");
     if (card.citation?.trim()) lines.push(`**Citation:** ${card.citation.trim()}`, "");
+  } else if (card.card === "fold") {
+    // The line as it read at its stop, then the author's own words it was folded from.
+    if (card.question?.trim()) lines.push(card.question.trim(), "");
+    if (card.answer?.trim()) lines.push(...card.answer.trim().split(/\r?\n/).map(line => line ? `> ${line}` : ">"), "");
+    const parsed = parseCardLink(card.link ?? "");
+    if (parsed) lines.push(`Source: ${parsed.section ? `[[${parsed.target || "this note"}#${parsed.section}]]` : `[[${parsed.target || "this note"}]]`}`, "");
   } else {
     for (const choice of card.choices ?? []) {
       lines.push(`## ${choice.label}`, "");

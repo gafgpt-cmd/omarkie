@@ -50,3 +50,13 @@ test("open-as-page is its own note, never the source", () => {
   assert.match(page, /Embedded from \[\[Reference#Kerma\]\]/);
   assert.match(page, /Energy per unit mass\./);
 });
+
+test("a fold card keeps its line, stop and evidence, and its page quotes the evidence", () => {
+  const values = cardFields({ kind: "card", card: "fold", question: "GFR falls as afferent tone rises.", answer: "Filtration falls when the afferent arteriole constricts.",
+    link: "[[Renal#Filtration]]", stop: "key", folded: false });
+  assert.equal(values.stop, "key");
+  assert.throws(() => cardFields({ card: "fold", stop: "summary" }), /fold level/);
+  assert.equal(cardTitle({ card: "fold", question: values.question }), "GFR falls as afferent tone rises.");
+  assert.equal(cardPageMarkdown({ card: "fold", ...values }),
+    "# GFR falls as afferent tone rises.\n\nGFR falls as afferent tone rises.\n\n> Filtration falls when the afferent arteriole constricts.\n\nSource: [[Renal#Filtration]]\n");
+});

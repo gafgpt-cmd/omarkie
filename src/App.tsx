@@ -39,6 +39,7 @@ const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
 const FoldView = lazy(() => import("./components/fold/FoldView"));
 import type { FoldStart, Stop } from "./components/fold/stops";
+import type { FoldOut } from "./components/fold/drag";
 import type { StudyMark } from "./components/learning-overlays";
 import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
@@ -125,6 +126,16 @@ export default function App() {
   // Editor reveal from the fold: pending until the fold unmounts, then armed as the way back (Esc or the pill).
   const foldReveal = useRef<{ id: string; line: number; y: number } | null>(null), [foldReturn, setFoldReturn] = useState<{ id: string; line: number; y: number } | null>(null);
   const foldMarks = useRef<ReadonlyMap<number, readonly StudyMark[]>>(new Map());
+  const foldOut = useRef<FoldOut | null>(null);
+  // An omarkie://open link (a dragged fold line opened from another app): waits for its note to appear in the folder list.
+  const [noteLink, setNoteLink] = useState<{ note: string; line: number } | null>(null);
+  useEffect(() => {
+    if (!noteLink || !session.files.length) return;
+    setNoteLink(null);
+    const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === noteLink.note);
+    if (!file) { session.setMessage(t("Linked note is not in this folder.")); return; }
+    void session.openToken(file.token).then(record => { if (record) jumpTo(record.id, noteLink.line); }).catch((error: Error) => session.setMessage(error.message));
+  }, [noteLink, session.files]);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
@@ -670,6 +681,7 @@ export default function App() {
     if (["rich", "table"].includes(context || "") && !editor()?.richMode()) return;
     if (action === "notice") { if (message) session.setMessage(message); }
     else if (action === "omarchy-theme") void refreshOmarchy();
+    else if (action === "open-note") { if (boardNote) setNoteLink({ note: boardNote, line: line || 1 }); }
     else if (action === "opened") {
       if (opened) void session.add(opened).then(record => { if (record && (anchor || line)) { const heading = anchor ? extractHeadings(record.content).find(heading => heading.id === anchor || heading.text === anchor) : undefined; jumpTo(record.id, line || heading?.line || 1); } });
     } else if (["new", "newWindow", "newTab"].includes(action)) void session.create();
@@ -1006,13 +1018,14 @@ export default function App() {
               key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
               start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
               reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={() => foldMarks.current}
+              note={vaultRelative(session.folder, active.path) ?? ""} title={active.name} out={() => foldOut.current}
             /></Suspense>}
             {foldReturn && !foldVisible && readingVisible && active?.id === foldReturn.id &&
               <button type="button" className="leave-focus" onClick={returnToFold}>{t("Back to fold · Esc")}</button>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               note={vaultRelative(session.folder, active.path)}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} fold={{ open: foldVisible, stop: foldStop, toggle: toggleFold, marks: foldMarks }} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} fold={{ open: foldVisible, stop: foldStop, toggle: toggleFold, marks: foldMarks, out: foldOut }} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
               openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}

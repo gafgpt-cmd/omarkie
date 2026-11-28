@@ -1777,5 +1777,21 @@
   "Corte": "Tall",
   "Compare with Full · C": "Compara amb Complet · C",
   "Divider between Full and {{level}}": "Divisor entre Complet i {{level}}",
-  "{{percent}}% shows Full": "{{percent}} % mostra Complet"
+  "{{percent}}% shows Full": "{{percent}} % mostra Complet",
+  "Send line to": "Envia la línia a",
+  "Copy linked excerpt": "Copia l’extracte enllaçat",
+  "Show on page": "Mostra a la pàgina",
+  "Linked excerpt copied": "Extracte enllaçat copiat",
+  "Could not copy the line.": "No s’ha pogut copiar la línia.",
+  "Could not keep the line.": "No s’ha pogut desar la línia.",
+  "Drag this line out · D": "Arrossega aquesta línia fora · D",
+  "Fold line": "Línia plegada",
+  "Linked note is not in this folder.": "La nota enllaçada no és en aquesta carpeta.",
+  "Open a saved note in Learning mode to keep this line.": "Obre una nota desada en el mode d’aprenentatge per conservar aquesta línia.",
+  "Scrap on the page": "Retall a la pàgina",
+  "Card on the page": "Targeta a la pàgina",
+  "Added to loose scraps": "Afegit als retalls solts",
+  "Added to {{sheet}}": "Afegit a {{sheet}}",
+  "Card pinned beside line {{line}}": "Targeta fixada al costat de la línia {{line}}",
+  "This line has no paragraph to pin to.": "Aquesta línia no té cap paràgraf on fixar-se."
 }

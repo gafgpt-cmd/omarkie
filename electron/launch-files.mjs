@@ -8,6 +8,20 @@ export function launchFiles(argv, packaged, cwd = process.cwd()) {
     if (!value.startsWith("file:")) return value;
     try { return fileURLToPath(value); } catch { return ""; }
   })
-    .filter(value => !value.startsWith("-") && /\.(md|markdown|mdown|pdf)$/i.test(value))
+    .filter(value => !value.startsWith("-") && !/^omarkie:/i.test(value) && /\.(md|markdown|mdown|pdf)$/i.test(value))
     .map(value => path.resolve(cwd, value)))];
+}
+
+// `omarkie://open?note=<vault-relative>&line=<n>` from a dragged fold line; anything else is ignored.
+export function launchLinks(argv) {
+  return argv.flatMap(value => {
+    if (!/^omarkie:\/\/open\b/i.test(value)) return [];
+    try {
+      const url = new URL(value), note = url.searchParams.get("note") ?? "", line = Number(url.searchParams.get("line") ?? 1);
+      const parts = note.split("/");
+      if (!note || note.length > 1024 || note.includes("\\") || note.includes("\0") || parts.some(part => !part || part === "." || part === "..")
+        || !/\.(md|markdown|mdown)$/i.test(note) || !Number.isInteger(line) || line < 1) return [];
+      return [{ note, line }];
+    } catch { return []; }
+  });
 }

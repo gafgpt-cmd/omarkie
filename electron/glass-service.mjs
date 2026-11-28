@@ -22,7 +22,7 @@ import {
   validCompareFields, validMeasureFields, validSheetLabelFields, validTraceFields,
 } from "../shared/glass-visual.mjs";
 import {
-  cardDefaults, cardFields, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
+  cardDefaults, cardFields, cardKinds, cardLayer, cardPageMarkdown, cardPageStem, extractSection, parseCardLink,
 } from "../shared/glass-cards.mjs";
 import { clipFieldValues, cutoutFieldValues, extraPageFieldValues, sheetTitle } from "../shared/glass-clips.mjs";
 import { labelFields } from "../shared/glass-labels.mjs";
@@ -2200,7 +2200,7 @@ export class GlassService {
     }
     if (request.mode !== "page") throw new Error("Unknown card request.");
     this.assertWritable();
-    const card = { card: fields.card, title: fields.title, link: fields.link, question: fields.question, answer: fields.answer, choices: fields.choices };
+    const card = { card: fields.card, title: fields.title, link: fields.link, question: fields.question, answer: fields.answer, choices: fields.choices, stop: fields.stop };
     const options = {};
     if (fields.card === "static") {
       const resolved = await this.resolveCardLink(name, fields.link);
@@ -2852,7 +2852,7 @@ function validateMagnetFields(kind, fields, partial) {
   if (kind === "card") {
     const values = cardFields(partial ? fields : { ...fields, kind: "card" });
     if (!partial) {
-      if (!values.card) throw new Error("A card needs a card kind: static, ai or menu.");
+      if (!values.card) throw new Error(`A card needs a card kind: ${cardKinds.join(", ")}.`);
       if (!values.anchor) throw new Error("A card needs an anchor.");
       values.layer ??= cardLayer;
       values.title ??= "";
@@ -2874,6 +2874,8 @@ function validateMagnetFields(kind, fields, partial) {
         if (!values.flow) throw new Error("A flow card needs its decision steps.");
         if (!values.citation?.trim()) throw new Error("A flow card needs a citation.");
       }
+      if (values.card === "fold" && (!values.question?.trim() || !values.answer?.trim() || !values.stop))
+        throw new Error("A fold card needs its line, its evidence and its stop.");
       values.proposed ??= false;
     }
     return values;
