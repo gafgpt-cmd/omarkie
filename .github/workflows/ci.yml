@@ -67,8 +67,8 @@ jobs:
 
   chaos-drives:
     # Real loop-mounted vfat/exFAT/NTFS sticks. Needs passwordless sudo for losetup and mount;
-    # the job prints that requirement and exits green when the runner has none.
-    if: github.event_name != 'pull_request'
+    # runs on pushes and same-repo PRs (not external forks) and prints a notice when the runner has no sudo.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
     timeout-minutes: 30
     steps:

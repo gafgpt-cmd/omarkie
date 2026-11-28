@@ -35,7 +35,7 @@ try {
     packaged: app.isPackaged, version: app.getVersion(), windows: BrowserWindow.getAllWindows().length,
   }));
   assert.equal(identity.packaged, true);
-  assert.equal(identity.version, JSON.parse(await readFile("package.json", "utf8")).version);
+  assert.equal(identity.version, process.env.OMARKIE_EXPECTED_VERSION || JSON.parse(await readFile("package.json", "utf8")).version);
   await promisify(execFile)(executablePath, [process.platform === "linux" ? pathToFileURL(second).href : second], { env, timeout: 30000 });
   await expect(page.getByRole("button", { name: path.basename(second), exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Windows 文件关联" })).toBeVisible();

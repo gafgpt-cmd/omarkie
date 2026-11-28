@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -23,7 +23,7 @@ async function run(cwd, ...args) {
 }
 
 test("closed vault writes exact-anchor scraps and proposals without writing Markdown", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "omarkie-axi-test-"));
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "omarkie-axi-test-")));
   const doc = "chapter.md", source = "---\r\ntitle: Fixture\r\n---\r\n\r\n# A **map**\r\n\r\nTwo ridges have a low saddle between them.\r\n\r\n## Other\r\n\r\nTwo ridges have a low saddle between them.\r\n";
   const file = path.join(root, doc), after = path.join(root, "after.txt");
   await writeFile(file, source);

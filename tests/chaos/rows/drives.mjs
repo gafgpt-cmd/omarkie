@@ -2,7 +2,7 @@
 // Needs root: loop devices and mounts are a root/CI capability on every OS (measured in the study, M12).
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { lstat, mkdir, readFile, readdir, rename, symlink, truncate, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, readdir, rename, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   copyTree, manifest, openService, openSync, sameGlass, scratch, vault,
@@ -28,6 +28,11 @@ async function requireRoot() {
   }
 }
 
+async function createImage(file, size) {
+  const handle = await open(file, "w");
+  try { await handle.truncate(size); } finally { await handle.close(); }
+}
+
 // One image file, attached as a loop device and mounted as if it were a stick.
 class Stick {
   constructor(folder) { this.folder = folder; }
@@ -35,7 +40,7 @@ class Stick {
     const folder = await scratch(`omarkie-chaos-${kind}-`);
     const stick = new Stick(folder);
     stick.image = path.join(folder, `${kind}.img`);
-    await truncate(stick.image, 96 * 1024 * 1024);
+    await createImage(stick.image, 96 * 1024 * 1024);
     if (kind === "vfat") await run("mkfs.vfat", ["-F", "32", stick.image]);
     else if (kind === "exfat") await run("mkfs.exfat", [stick.image]);
     else if (kind === "ntfs") await run("mkfs.ntfs", ["-F", "-Q", stick.image]);
@@ -48,7 +53,7 @@ class Stick {
     await mkdir(point, { recursive: true });
     const { stdout } = await run("losetup", ["--show", "-f", this.image]);
     this.device = stdout.trim();
-    const options = "uid=0,gid=0,umask=0000";
+    const options = this.kind === "vfat" ? "uid=0,gid=0,umask=0000,utf8" : "uid=0,gid=0,umask=0000";
     await run("mount", ["-t", this.kind, "-o", options, this.device, point]);
     return point;
   }
@@ -97,9 +102,9 @@ export const rows = [
           try {
             const after = await manifest(moved);
             assert.equal(after.vaultId, basis.vaultId, `the id travels on ${kind}`);
-            assert.equal(after.magnets, basis.magnets);
-            assert.equal(after.journals, basis.journals);
-            assert.ok(after.files >= basis.files);
+            assert.ok(sameGlass(basis, after), `same glass travels on ${kind}`);
+            assert.deepEqual(after.journals, basis.journals);
+            assert.ok(after.notes.length >= basis.notes.length);
           } finally { await second.sync.close(); await second.service.close(); }
           return { kind, vaultId: basis.vaultId };
         }));
@@ -159,15 +164,16 @@ export const rows = [
           assert.equal(unplugged.saved, false, "no write is claimed while the stick is gone");
           assert.ok(service.status().pending >= 1);
           assert.ok(service.status().error, "the offline banner state is set");
+
+          // Same stick, same path: no torn line was committed while gone, then the queued op replays.
+          await stick.attach(stick.mountpoint);
           const journal = path.join(folder, ".omarkie", "glass", unplugged.journal.split("/").at(-1));
           assert.equal(replayJournalText(await readFile(journal, "utf8")).invalid, 0, "no torn line was committed");
-
-          // Same stick, same path: the queued op replays.
-          await stick.attach(stick.mountpoint);
           const flushed = await service.request({ action: "flush" });
           assert.equal(flushed.pending, 0);
           assert.equal(flushed.error, null);
           assert.equal((await service.request({ action: "list", note: "map.md" })).magnets[0].fields.text, "while unplugged");
+          basis = await manifest(environment);
         } finally { await sync.close(); await service.close(); }
 
         // Replugged under another mount point: the app still knows the vault and its glass.
@@ -283,26 +289,30 @@ export const rows = [
       // FAT32 cannot hold a 4 GB+ file at all: the app must reference media, never copy it.
       const folder = await scratch("omarkie-chaos-fat32-");
       const image = path.join(folder, "fat32.img");
-      await truncate(image, 96 * 1024 * 1024);
+      await createImage(image, 96 * 1024 * 1024);
       await run("mkfs.vfat", ["-F", "32", image]);
       const mountpoint = path.join(folder, "mnt");
       await mkdir(mountpoint, { recursive: true });
       const { stdout } = await run("losetup", ["--show", "-f", image]);
       const device = stdout.trim();
-      await run("mount", ["-t", "vfat", "-o", "uid=0,gid=0,umask=0000", device, mountpoint]);
+      await run("mount", ["-t", "vfat", "-o", "uid=0,gid=0,umask=0000,utf8", device, mountpoint]);
       try {
-        await assert.rejects(truncate(path.join(mountpoint, "big.mp4"), 5 * 1024 * 1024 * 1024), /File too large|EFBIG/u);
+        const big = path.join(mountpoint, "big.mp4");
+        const handle = await open(big, "w");
+        try {
+          await assert.rejects(handle.truncate(5 * 1024 * 1024 * 1024), /File too large|EFBIG/u);
+        } finally { await handle.close(); }
         const vaultFolder = path.join(mountpoint, "vault");
         await mkdir(vaultFolder, { recursive: true });
         await writeFile(path.join(vaultFolder, "map.md"), "# Map\n\nSee video.\n");
-        await symlink("/etc/passwd", path.join(vaultFolder, "leak.md"));
+        await assert.rejects(symlink("/etc/passwd", path.join(vaultFolder, "leak.md")), error => ["EPERM", "ENOSYS"].includes(error.code));
         const environment = { root: mountpoint, folder: vaultFolder, data: path.join(folder, "data"), cache: path.join(folder, "cache") };
         const { service, sync } = await openSync(environment);
         try {
           await service.request({ action: "add", note: "map.md", magnet: "m-media", text: "see also" });
           await sync.whenIdle();
           const map = await sync.map();
-          assert.equal(map.files, 1, "the symlink is not a note");
+          assert.equal(map.files, 1);
           const store = path.join(vaultFolder, ".omarkie");
           let largest = 0;
           for (const name of await readdir(store, { recursive: true })) {
@@ -311,6 +321,19 @@ export const rows = [
           }
           assert.ok(largest < 1024 * 1024, `glass store stays small, largest file ${largest} bytes`);
         } finally { await sync.close(); await service.close(); }
+
+        // On a symlink-capable filesystem, verify the vault still ignores symlinked notes.
+        const posixVault = path.join(folder, "posix-vault");
+        await mkdir(posixVault, { recursive: true });
+        await writeFile(path.join(posixVault, "map.md"), "# Map\n\nSee video.\n");
+        await symlink("/etc/passwd", path.join(posixVault, "leak.md"));
+        const posixEnv = { root: folder, folder: posixVault, data: path.join(folder, "posix-data"), cache: path.join(folder, "posix-cache") };
+        const posix = await openSync(posixEnv);
+        try {
+          await posix.service.request({ action: "add", note: "map.md", magnet: "m-media", text: "see also" });
+          await posix.sync.whenIdle();
+          assert.equal((await posix.sync.map()).files, 1, "the symlink is not a note");
+        } finally { await posix.sync.close(); await posix.service.close(); }
         return { kind: "fat32", fiveGbRefused: true, symlinkIgnored: true };
       } finally {
         await run("umount", ["-l", mountpoint]).catch(() => {});
