@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld("desktop", {
   check: (id) => call("check", id),
   reload: (id, encoding) => call("reload", id, encoding),
   acceptDisk: (id, content, hash) => call("acceptDisk", id, content, hash),
+  peek: token => call("peek", token),
+  resolveConflict: (id, request) => call("resolveConflict", id, request),
   importImage: (id, bytes, name, options) => call("image", id, bytes, name, options),
   exportPdf: (_html, options) => call("pdf", options),
   openLink: (url) => call("link", url),

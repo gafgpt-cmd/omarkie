@@ -16,3 +16,7 @@
 .sync-actions{margin-top:8px}
 .sync-spin{animation:sync-spin 1s linear infinite}
 @keyframes sync-spin{to{transform:rotate(360deg)}}
+.companion-dialog dl.sync-status{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;margin:14px 0 16px;font-size:13px}
+.companion-dialog dt{color:var(--muted)}
+.companion-dialog dd{margin:0;overflow-wrap:anywhere}
+.companion-actions{flex-wrap:wrap}

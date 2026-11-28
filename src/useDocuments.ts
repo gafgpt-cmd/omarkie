@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { host } from "./host";
 import { newNote } from "../shared/new-note.mjs";
 import { t } from "./i18n";
-import type { DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
+import type { ConflictRequest, DocumentRecord, FileEntry, FolderResult, PathChange, RecentEntry, FileOperation } from "./types";
 export function useDocuments(canPrepare: () => boolean = () => true) {
   const prepareEditor = useRef(canPrepare); prepareEditor.current = canPrepare;
   const [documents, setDocuments] = useState<DocumentRecord[]>([]),
@@ -82,6 +82,14 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     );
     return () => clearTimeout(timer);
   }, [documents, activeId, ready]);
+  // A phone suspends a hidden tab without warning: write the session the moment the page hides.
+  useEffect(() => {
+    if (!ready || host.native) return;
+    const flush = () => { if (document.visibilityState === "hidden" && !closing.current) void host.persist(current.current).catch(notify); };
+    document.addEventListener("visibilitychange", flush);
+    window.addEventListener("pagehide", flush);
+    return () => { document.removeEventListener("visibilitychange", flush); window.removeEventListener("pagehide", flush); };
+  }, [ready]);
   useEffect(() => {
     localStorage.setItem("omarkie-autosave", String(autosave));
   }, [autosave]);
@@ -154,13 +162,21 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
         for (const record of current.current.documents) {
           if (!record.path || inFlight.current.has(record.id)) continue;
           const change = await host.check(record.id);
-          if (!change || !prepareEditor.current()) continue;
+          if (!prepareEditor.current()) continue;
           const latest = current.current.documents.find(
             (item) => item.id === record.id,
           );
           if (!latest) continue;
+          // The disk is back at the version this window last saw: nothing left to resolve.
+          if (!change) { if (latest.conflict) update(record.id, { conflict: false, missing: false }); continue; }
+          if (change.moved && change.path && change.name) {
+            update(record.id, { path: change.path, name: change.name, conflict: false, missing: false });
+            setMessage(t("“{{name}}” was renamed or moved on disk. Omarkie followed it.", { name: change.name }));
+            void refresh();
+            continue;
+          }
           if (latest.content !== latest.savedContent || change.error) {
-            if (!latest.conflict) update(record.id, { conflict: true });
+            if (!latest.conflict || !!latest.missing !== !!change.missing) update(record.id, { conflict: true, missing: !!change.missing });
           } else if (change.content !== undefined && change.diskHash) {
             const accepted = await host.acceptDisk(
               record.id,
@@ -392,6 +408,23 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
       notify(error);
     }
   }
+  // Both versions survive: the one not kept lands beside the note as a conflict copy or in the Trash.
+  async function resolveConflict(id: string, request: ConflictRequest) {
+    if (!host.resolveConflict) return null;
+    if (!prepareEditor.current()) throw new Error(t("请先完成输入法组合输入。"));
+    await inFlight.current.get(id);
+    const pending = host.resolveConflict(id, request);
+    inFlight.current.set(id, pending);
+    let result;
+    try { result = await pending; }
+    finally { if (inFlight.current.get(id) === pending) inFlight.current.delete(id); }
+    if (request.action !== "drop-copy") {
+      const { path, name, content, savedContent, diskHash, lineEnding, bom, encoding } = result.record;
+      update(id, { path, name, content, savedContent, diskHash, lineEnding, bom, encoding, conflict: false, missing: false });
+    }
+    await refresh();
+    return result;
+  }
   async function changeEncoding(mode: "reopen" | "convert", encoding: string, bom: boolean) {
     if (closing.current || !prepareEditor.current()) throw new Error(t("请先完成输入法组合输入。"));
     closing.current = true;
@@ -494,6 +527,7 @@ export function useDocuments(canPrepare: () => boolean = () => true) {
     close,
     reopen,
     reload,
+    resolveConflict,
     changeEncoding,
     quit,
     closeWindow,

@@ -20,6 +20,7 @@ import { Workspace } from "./workspace.mjs";
 import { vaultSnapshot, readNotes, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
+import { moveExclusive } from "./move-exclusive.mjs";
 import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { launchFiles } from "./launch-files.mjs";
 import { plugins, installPlugin } from "./plugins.mjs";
@@ -782,6 +783,8 @@ const handlers = {
       throw new Error(t("磁盘内容已再次变化。"));
     return store.acceptDisk(id, content, hash, disk.bom, disk.encoding);
   },
+  peek: (_, token) => store.peek(token),
+  resolveConflict: (_, id, request) => store.resolve(id, request, file => shell.trashItem(file), moveExclusive),
   image: (_, id, bytes, name, options) => store.importImage(id, bytes, name, options),
   pdf: async (_, options = {}) => {
     const title = typeof options.title === "string" && options.title ? options.title : t("文档");
