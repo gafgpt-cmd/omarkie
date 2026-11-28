@@ -1002,7 +1002,7 @@ export default function App() {
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
             {foldVisible && <Suspense fallback={null}><FoldView
-              key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
+              key={active.id} id={active.id} title={active.name.replace(/\.(?:md|markdown|mdown|mkd)$/i, "")} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
               start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
               reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={() => foldMarks.current}
             /></Suspense>}

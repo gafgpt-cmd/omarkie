@@ -1760,5 +1760,18 @@
   "Corte": "Corte",
   "Compare with Full · C": "Compare with Full · C",
   "Divider between Full and {{level}}": "Divider between Full and {{level}}",
-  "{{percent}}% shows Full": "{{percent}}% shows Full"
+  "{{percent}}% shows Full": "{{percent}}% shows Full",
+  "How Topic shows": "How Topic shows",
+  "Cards": "Cards",
+  "Map": "Map",
+  "Topic cards": "Topic cards",
+  "Topic map": "Topic map",
+  "Opening": "Opening",
+  "Open any line at {{level}} with a click or Enter": "Open any line at {{level}} with a click or Enter",
+  "{{count}} rows": "{{count}} rows",
+  "{{count}} rows_one": "{{count}} row",
+  "{{count}} rows_other": "{{count}} rows",
+  "{{count}} lines": "{{count}} lines",
+  "{{count}} lines_one": "{{count}} line",
+  "{{count}} lines_other": "{{count}} lines"
 }

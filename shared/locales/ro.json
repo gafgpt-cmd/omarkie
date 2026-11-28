@@ -1777,5 +1777,20 @@
   "Corte": "Secțiune",
   "Compare with Full · C": "Compară cu Complet · C",
   "Divider between Full and {{level}}": "Separator între Complet și {{level}}",
-  "{{percent}}% shows Full": "{{percent}}% arată Complet"
+  "{{percent}}% shows Full": "{{percent}}% arată Complet",
+  "How Topic shows": "Cum se afișează Tema",
+  "Cards": "Carduri",
+  "Map": "Hartă",
+  "Topic cards": "Cardurile temei",
+  "Topic map": "Harta temei",
+  "Opening": "Început",
+  "Open any line at {{level}} with a click or Enter": "Deschide orice rând la {{level}} cu un clic sau Enter",
+  "{{count}} rows": "{{count}} de rânduri",
+  "{{count}} rows_one": "{{count}} rând",
+  "{{count}} rows_few": "{{count}} rânduri",
+  "{{count}} rows_other": "{{count}} de rânduri",
+  "{{count}} lines": "{{count}} de linii",
+  "{{count}} lines_one": "{{count}} linie",
+  "{{count}} lines_few": "{{count}} linii",
+  "{{count}} lines_other": "{{count}} de linii"
 }

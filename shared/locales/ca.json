@@ -1777,5 +1777,20 @@
   "Corte": "Tall",
   "Compare with Full · C": "Compara amb Complet · C",
   "Divider between Full and {{level}}": "Divisor entre Complet i {{level}}",
-  "{{percent}}% shows Full": "{{percent}} % mostra Complet"
+  "{{percent}}% shows Full": "{{percent}} % mostra Complet",
+  "How Topic shows": "Com es mostra el Tema",
+  "Cards": "Targetes",
+  "Map": "Mapa",
+  "Topic cards": "Targetes del tema",
+  "Topic map": "Mapa del tema",
+  "Opening": "Inici",
+  "Open any line at {{level}} with a click or Enter": "Obre qualsevol línia a {{level}} amb un clic o Retorn",
+  "{{count}} rows": "{{count}} files",
+  "{{count}} rows_one": "{{count}} fila",
+  "{{count}} rows_many": "{{count}} de files",
+  "{{count}} rows_other": "{{count}} files",
+  "{{count}} lines": "{{count}} línies",
+  "{{count}} lines_one": "{{count}} línia",
+  "{{count}} lines_many": "{{count}} de línies",
+  "{{count}} lines_other": "{{count}} línies"
 }

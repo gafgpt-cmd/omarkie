@@ -918,5 +918,16 @@
   "Corte": "剖面",
   "Compare with Full · C": "与全文对比 · C",
   "Divider between Full and {{level}}": "全文与{{level}}之间的分隔线",
-  "{{percent}}% shows Full": "{{percent}}% 显示全文"
+  "{{percent}}% shows Full": "{{percent}}% 显示全文",
+  "How Topic shows": "主题层的显示方式",
+  "Cards": "卡片",
+  "Map": "导图",
+  "Topic cards": "主题卡片",
+  "Topic map": "主题导图",
+  "Opening": "开头",
+  "Open any line at {{level}} with a click or Enter": "单击或按 Enter 键，在{{level}}层打开任意一行",
+  "{{count}} rows": "{{count}} 行",
+  "{{count}} rows_other": "{{count}} 行",
+  "{{count}} lines": "{{count}} 行",
+  "{{count}} lines_other": "{{count}} 行"
 }
