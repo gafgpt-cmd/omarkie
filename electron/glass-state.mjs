@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath } from "node:fs/promises";
 import { constants, watch } from "node:fs";
 import path from "node:path";
 import { atomicWrite } from "./store.mjs";
@@ -32,7 +32,8 @@ async function storeLocation(root, appData) {
   if (!appData) return { mode: "inside", vaultId: null };
   let registry = null;
   try { registry = JSON.parse(await readFile(path.join(appData, "glass-vaults", "roots.json"), "utf8")); } catch { registry = null; }
-  const vaultId = vaultIdOf(registry?.[root]?.vaultId);
+  const canonical = await realpath(root).catch(() => root);
+  const vaultId = vaultIdOf((registry?.[canonical] ?? registry?.[root])?.vaultId);
   if (!vaultId) return { mode: "inside", vaultId: null };
   if (await readState(path.join(appData, "glass-vaults", vaultId, "settings.json"))) return { mode: "outside", vaultId };
   return { mode: "inside", vaultId };

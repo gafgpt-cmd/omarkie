@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { GlassService } from "../electron/glass-service.mjs";
+import { lockDirectory, unlockDirectory } from "./readonly-dir.mjs";
 import { imageLink, inkSvg, mergeDiff, mergeKindLabel, mergeLines, noteMergeSettings } from "../shared/glass-merge.mjs";
 import { markdownElements } from "../shared/element-model.mjs";
 
@@ -92,7 +93,7 @@ test("sticky merge: preview, accept, byte-exact undo, magnet leaves the glass", 
   const accepted = await service.request({ action: "merge-accept", note: "notes/Note.md", magnet: "m-sticky",
     expectedHash: preview.merge.baseHash, approved: true });
   assert.equal(accepted.merged, true);
-  assert.equal((await stat(path.join(environment.folder, "notes", "Note.md"))).mode & 0o777, 0o640);
+  if (process.platform !== "win32") assert.equal((await stat(path.join(environment.folder, "notes", "Note.md"))).mode & 0o777, 0o640);
   const bytes = await readFile(path.join(environment.folder, "notes", "Note.md"));
   assert.deepEqual([...bytes.subarray(0, 3)], [0xef, 0xbb, 0xbf]);
   const written = bytes.subarray(3).toString("utf8");
@@ -190,14 +191,14 @@ test("a write that cannot land leaves the old bytes and no partial note", async 
   await sticky(service);
   const preview = await service.request({ action: "merge-preview", note: "notes/Note.md", magnet: "m-sticky" });
   const directory = path.join(environment.folder, "notes");
-  await chmod(directory, 0o500);
+  await lockDirectory(directory, 0o500);
   try {
     await assert.rejects(service.request({ action: "merge-accept", note: "notes/Note.md", magnet: "m-sticky",
       expectedHash: preview.merge.baseHash, approved: true }));
     assert.deepEqual(await readFile(path.join(directory, "Note.md")), environment.bytes);
     assert.deepEqual((await readdir(directory)).filter(name => name.endsWith(".tmp")), [], "no partial temp file survives");
     assert.equal((await service.request({ action: "list", note: "notes/Note.md" })).magnets.length, 1);
-  } finally { await chmod(directory, 0o700); }
+  } finally { await unlockDirectory(directory, 0o700); }
   const accepted = await service.request({ action: "merge-accept", note: "notes/Note.md", magnet: "m-sticky",
     expectedHash: preview.merge.baseHash, approved: true });
   assert.equal(accepted.merged, true);
