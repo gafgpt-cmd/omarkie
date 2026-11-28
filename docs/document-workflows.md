@@ -114,7 +114,7 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
   - **Corte** (`C` or bar button): divider over the page. Left = Full, right = current stop; dropped words tinted. Drag or `←` `→` `Home` `End` move it.
   - Drag the level bar or `Ctrl`+wheel to scrub between stops; release settles on the nearest. `Ctrl`+wheel over one unit folds only that unit.
   - Pre-fold strip, above the first line: what the fold keeps (`Fold keeps 2 highlights · 1 card · 2 red flags`) + **Adjust**. Opens by itself on a note's first fold, then stays one line.
-    - Ticked groups reach Takeaway in the author's words. Suggested (local rules, no model): keep highlights, ink, cards, magnets, red flags (never / avoid / do not); let labels and arrows fold. Choice saved per note.
+    - Ticked groups reach Takeaway in the author's words. Suggested (local rules, no model): keep highlights, ink, cards, magnets, red flags (contraindicated, do not use, avoid, never, maximum dose, do not exceed, warning, black box; ES too); let labels and arrows fold. "No contraindications" is not a flag. Choice saved per note.
     - `Tab` into the list, `Space` toggles, **Use suggestions** resets, `Esc` closes it back to **Adjust**.
     - **Make cards** opens card drafts from highlights without a card; nothing saves until you save.
   - Hints, never applied by themselves: ★ your pin, ⚑ suggested red flag, `Negation/Condition/Limit/Number kept` when the plain stop would drop it; **Keep** on an out-of-fold chip keeps that group.

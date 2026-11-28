@@ -25,6 +25,24 @@ test("red flags are prohibitions and contraindications, not every negation", () 
     assert.equal(isRedFlag(text), false, text);
 });
 
+test("clinician red flags: contraindications, do-not-use, avoid, dose limits and warnings in EN and ES", () => {
+  const flagged = {
+    en: ["Ketorolac is contraindicated in renal failure.", "Pregnancy is a contraindication to warfarin.", "Do not use in children under 12.",
+      "Patients with asthma: do not use propranolol.", "Avoid NSAIDs after bariatric surgery.", "Maximum dose 4 g per day.",
+      "The daily dose should not exceed 4 g.", "Not to exceed 3 doses in 24 hours.", "Warning: risk of serotonin syndrome.",
+      "Fluoroquinolones carry a black box warning for tendon rupture."],
+    es: ["El ketorolaco está contraindicado en la insuficiencia renal.", "La metformina está contraindicada si el filtrado es bajo.",
+      "El embarazo es una contraindicación absoluta.", "No usar en menores de 12 años.", "Evitar los AINE tras cirugía bariátrica.",
+      "Evítese en ancianos frágiles.", "Dosis máxima 4 g al día.", "No superar 3 dosis en 24 horas.", "No exceder la dosis diaria.",
+      "Advertencia: riesgo de síndrome serotoninérgico.", "Lleva advertencia de recuadro negro por rotura tendinosa."],
+  };
+  for (const text of [...flagged.en, ...flagged.es]) assert.equal(isRedFlag(text), true, text);
+  for (const text of ["No contraindications in pregnancy.", "The drug is not contraindicated in renal failure.", "There are no known contraindications.",
+    "Sin contraindicaciones en el embarazo.", "No está contraindicado en la insuficiencia renal.", "The early warning score stays at 2.",
+    "La dosis se ajusta al peso.", "El fármaco no atraviesa la placenta."])
+    assert.equal(isRedFlag(text), false, text);
+});
+
 test("sentences come out of lists item by item and out of callouts without their header", () => {
   const units = extractUnits(NOTE);
   assert.deepEqual(units.map(unitSentences), [

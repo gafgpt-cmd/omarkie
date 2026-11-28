@@ -22,7 +22,7 @@ function reason(group: StripGroup) {
     case "card": return t("Suggested: keep · you study them as cards");
     case "magnet": return t("Suggested: keep · your notes explain these lines");
     case "navigation": return t("Suggested: let fold · they point the way, they are not facts");
-    case "redflag": return t("Suggested: keep · never, avoid, do not: a no must not fold away");
+    case "redflag": return t("Suggested: keep · contraindications, dose limits, warnings");
   }
 }
 
