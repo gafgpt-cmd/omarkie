@@ -166,6 +166,18 @@ async function glassOcrRegion(payload) {
 
 let glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null, bridgeState: null, started: Promise.resolve() };
 let syncTokens;
+// Fold of the open vault: loads on first use and closes with the vault's Glass storage.
+let foldRuntime = null, readPreferences = () => null;
+function foldHost() {
+  foldRuntime ??= import("./fold-host.mjs").then(({ FoldHost }) => new FoldHost({
+    glass: () => glassRuntime.service,
+    preferences: () => { try { return JSON.parse(readPreferences() ?? "null"); } catch { return null; } },
+    language: () => language,
+    appData: app.getPath("userData"),
+    send: event => window?.webContents.send("fold:progress", event),
+  }));
+  return foldRuntime;
+}
 function tokenStore() {
   syncTokens ??= new SyncTokenStore({ file: path.join(app.getPath("userData"), "sync-tokens.json"), safeStorage });
   return syncTokens;
@@ -214,7 +226,9 @@ function scheduleGlassRetry(folder) {
 async function closeGlassRuntime() {
   if (glassRetry) { clearTimeout(glassRetry); glassRetry = null; }
   glassRetries = 0;
-  const current = glassRuntime;
+  const current = glassRuntime, fold = foldRuntime;
+  foldRuntime = null;
+  await fold?.then(host => host.close()).catch(() => {});
   glassRuntime = { folder: null, root: null, service: null, sync: null, syncEngine: null, close: null, error: null, bridgeState: null, started: Promise.resolve() };
   await current.close?.().catch(() => {});
   await current.sync?.close().catch(() => {});
@@ -295,9 +309,17 @@ async function bindGlassBridge(folder, root = glassRuntime.root) {
   let state = "listening";
   try {
     glassRuntime.close = await listenBridge(root, {
-      // Waits for storage and the index to finish opening; a bridge bound by a retry finds them open.
-      client(request, send) { void ready.then(() => serveGlassBridge(request, send)); },
-      stopWait() {}, bind() { return {}; }, unbind() { return 0; },
+      // Fold frames reach the agent queue at once; the rest wait for storage and the index to finish opening
+      // (a bridge bound by a retry finds them open).
+      client(request, send, waitId) {
+        if (request?.op === "fold") {
+          foldHost().then(host => host.bridge.client(request, send, waitId), error => send({ error: error.message }));
+          return;
+        }
+        void ready.then(() => serveGlassBridge(request, send));
+      },
+      stopWait(waitId, timedOut) { void foldRuntime?.then(host => host.bridge.stopWait(waitId, timedOut)).catch(() => {}); },
+      bind() { return {}; }, unbind() { return 0; },
     }, "glass");
   } catch (error) {
     state = "unavailable";
@@ -854,6 +876,7 @@ app
         return null;
       });
       let pending = saved, writing;
+      if (channel === "app:preferences") readPreferences = () => pending;
       ipcMain.on(channel, (event, update) => {
         if (event.sender !== window?.webContents || event.senderFrame !== event.sender.mainFrame) {
           event.returnValue = null;
@@ -1003,6 +1026,20 @@ app
         finally {
           if (bibliography && bibliography.root !== store.folder) releaseBibliography();
           void syncGlass(store?.folder ?? null).catch(() => { /* the glass handler reports its own error */ });
+        }
+      });
+    // Fold routes (design §4.1): the route, egress and never-online checks run in main, never in the renderer.
+    for (const name of ["get", "run", "cancel"])
+      ipcMain.handle(`fold:${name}`, async (event, request) => {
+        if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame) return { ok: false, error: t("来源无效。") };
+        try {
+          if (name !== "cancel") {
+            if (glassRuntime.error) { glassRuntime.folder = null; glassRuntime.error = null; }
+            await syncGlass(store?.folder ?? null);
+          }
+          return { ok: true, value: await (await foldHost())[name](request) };
+        } catch (error) {
+          return { ok: false, error: error.message, code: error.code, ...(error.route ? { route: error.route } : {}) };
         }
       });
     function createWindow() {

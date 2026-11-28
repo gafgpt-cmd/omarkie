@@ -68,6 +68,14 @@ contextBridge.exposeInMainWorld("desktop", {
     ipcRenderer.on("glass:storage", listener);
     return () => ipcRenderer.removeListener("glass:storage", listener);
   },
+  foldGet: request => ipcRenderer.invoke("fold:get", request),
+  foldRun: request => ipcRenderer.invoke("fold:run", request),
+  foldCancel: request => ipcRenderer.invoke("fold:cancel", request),
+  onFoldProgress: callback => {
+    const listener = (_, event) => callback(event);
+    ipcRenderer.on("fold:progress", listener);
+    return () => ipcRenderer.removeListener("fold:progress", listener);
+  },
   vaultSnapshot: chaptersOnly => call("vaultSnapshot", chaptersOnly),
   readNotes: relatives => call("readNotes", relatives),
   bibliography: (folder, action, value) => call("bibliography", folder, action, value),
