@@ -59,6 +59,8 @@ export class GlassSync {
     this.caseInsensitive = false;
     this.indexId = null;
     this.closed = false;
+    // map and find wait for the first indexed batch of the startup scan; a cold-start call never reads an empty index.
+    this.firstBatch = new Promise(resolve => { this.firstBatchDone = resolve; });
   }
 
   async start() {
@@ -216,6 +218,7 @@ export class GlassSync {
         await this.requestIndex("files", { files: batch });
         indexed += batch.length;
         this.indexed = indexed;
+        this.firstBatchDone();
         batch = [];
       };
       const caseFold = relative => noteKey(relative, this.caseInsensitive);
@@ -304,6 +307,7 @@ export class GlassSync {
       this.scanComplete = true;
     } finally {
       this.scanning = false;
+      this.firstBatchDone();
       this.notify();
     }
     return this.status();
@@ -516,6 +520,7 @@ export class GlassSync {
   }
 
   async map() {
+    if (this.scanning) await this.firstBatch;
     const base = await this.requestIndex("map");
     const startup = !this.scanComplete && this.scanning;
     return { vault: this.root, vaultId: this.service.vaultId ?? null, index: this.indexFile, rebuilt: false,
@@ -529,6 +534,7 @@ export class GlassSync {
     const query = String(request.query ?? request.text ?? "").trim();
     if (!query) throw new Error("A search query is required.");
     const limit = Number(request.limit) > 0 ? Number(request.limit) : 20;
+    if (this.scanning) await this.firstBatch;
     const results = await this.requestIndex("find", { query, limit });
     return { query, count: results.length, results };
   }
