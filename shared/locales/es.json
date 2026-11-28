@@ -1531,5 +1531,21 @@
   "That connection is not valid JSON Canvas.": "Esa conexión no es JSON Canvas válido.",
   "The board has too many cards or connections.": "El tablero tiene demasiadas tarjetas o conexiones.",
   "The board is not text.": "El tablero no es texto.",
-  "The board is not valid JSON.": "El tablero no es JSON válido."
+  "The board is not valid JSON.": "El tablero no es JSON válido.",
+  "Fold view": "Vista plegada",
+  "Fold_rail": "Pliegue",
+  "Full": "Completo",
+  "Brief": "Breve",
+  "Key": "Clave",
+  "Takeaway": "Idea final",
+  "Topic": "Tema",
+  "Estudio": "Estudio",
+  "local": "local",
+  "now": "ahora",
+  "off": "desactivado",
+  "Fold level": "Nivel de pliegue",
+  "Too short to fold": "Demasiado corta para plegar",
+  "Local fold · model lines when you choose": "Pliegue local · líneas del modelo cuando elijas",
+  "{{level}}, {{percent}}% of words": "{{level}}, {{percent}} % de las palabras",
+  "Estudio needs a model; local stops only for now": "Estudio necesita un modelo; por ahora solo niveles locales"
 }

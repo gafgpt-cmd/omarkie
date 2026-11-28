@@ -943,6 +943,20 @@ async function auditFull() {
     await page.keyboard.press('Escape'); await expect(picker).toBeHidden();
     pass(`canvas-boards: ${route}`, 'Board picker for the open folder opens; Escape closes it');
   }
+  const foldView = page.getByRole('region', { name: t('Fold view'), exact: true });
+  for (const route of ['menu', 'native', 'toolbar', 'shortcut']) {
+    await rich().focus();
+    await command('fold', route);
+    await expect(foldView).toBeVisible();
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('.fold-document').focus();
+    await page.keyboard.press('Escape');
+    await expect(foldView).toBeHidden();
+    await expect(rich()).toBeVisible();
+    await learningToggle.click();
+    await expect(learningToggle).toHaveAttribute('aria-pressed', 'false');
+    pass(`fold: ${route}`, 'Fold view opens with Learning mode and Esc gives the editor back');
+  }
   for (const route of ['menu', 'native', 'toolbar', 'shortcut']) for (const action of ['text-larger', 'text-smaller', 'text-reset']) {
     await rich().focus(); const before = await rich().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     await command(action, route);
