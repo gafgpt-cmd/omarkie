@@ -96,7 +96,11 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 **Speed checks.** After `npm run build`, use the [timing command and release policy](../README.md#performance-targets).
 - `tests/perf-desktop.mjs` creates fresh synthetic fixtures and isolated profiles under `test-results/` each run.
 - Results: `test-results/perf/perf-results.json`; `OMARKIE_QA_DIR` overrides the output directory.
-- Reports include medians. Photo samples report `naturalSize` (density-corrected browser dimensions, not decoded pixel counts) and `loadedAfter3s` (loaded-image count).
+- Reports include every sample plus median, p95, min and max per metric, and the runtime: Electron/Chromium/Node, OS, CPU, cores, memory, load average, device pixel ratio, screen and display type.
+- Photo samples report `naturalSize` (density-corrected browser dimensions, not decoded pixel counts), `loadedAfter3s` (loaded-image count) and `photoStages`: auth, queue, read and decode-to-visible for the first visible photo.
+- `firstPhotoWarm` relaunches the cold run's profile once its preview cache holds a photo. Reported, not budgeted.
+- `launchStages`: ms after the launch request for each `OMARKIE_TRACE_STARTUP=1` mark (main process and renderer).
+- `OMARKIE_PERF_HEADLESS=1` runs Linux timing on headless Ozone without an X display, for stage diagnosis. The report records `display: headless`; budgets still apply.
 - Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
 - Glass: the 50,000-note unit test checks searchable results and heartbeat progress. Only `test:perf` enforces the 400 ms main-thread gap budget.
 - On a 60 Hz display, drawing ink and dragging arrows must miss no refreshes: no gap above 25 ms, and p95 at most 17.5 ms. The hover check measures handler CPU time, not display intervals.

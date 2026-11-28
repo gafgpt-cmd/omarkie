@@ -1,0 +1,30 @@
+filters:
+  or:
+    - file.hasTag("project")
+    - 'type == "project"'
+views:
+  - type: table
+    name: Active
+    filters:
+      and:
+        - 'due <= date("2026-12-31")'
+        - 'done == false'
+        - priority > 1
+    order:
+      - file.name
+      - due
+      - priority
+      - done
+      - owner
+    sort:
+      - property: due
+        direction: ASC
+    groupBy:
+      property: priority
+      direction: DESC
+  - type: table
+    name: Linked
+    filters: 'file.backlinks.length > 0 || priority >= 3'
+    order:
+      - file.name
+      - priority

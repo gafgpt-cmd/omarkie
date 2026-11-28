@@ -17,7 +17,7 @@ import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.
 import { imageAction, imageName } from "./image-actions.mjs";
 import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
-import { vaultSnapshot, exportBundle, projectDestination } from "./document-workflows.mjs";
+import { vaultSnapshot, readNotes, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
@@ -35,17 +35,19 @@ import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spe
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
 import { listenBridge } from "./tutor-transport.mjs";
-import { GlassService } from "./glass-service.mjs";
 import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
 import { GlassSync } from "./glass-sync.mjs";
-import { GitSync } from "./git-sync.mjs";
 import { SyncTokenStore } from "./sync-token.mjs";
 const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
-function startupMark(name) {
-  if (!traceStartup) return;
+// Epoch-stamped stages for tests/perf-desktop.mjs; process start is performance.timeOrigin.
+const startupTrace = traceStartup ? (globalThis.omarkieStartupTrace = []) : null;
+function startupMark(name, detail) {
+  if (!traceStartup || startupTrace.length > 200) return;
   performance.mark(`omarkie:${name}`);
+  startupTrace.push({ name, at: performance.timeOrigin + performance.now(), ...detail });
   console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
 }
+startupMark("main-module-evaluated");
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 let tutorSessions, tutorLoading;
@@ -167,8 +169,11 @@ function tokenStore() {
   syncTokens ??= new SyncTokenStore({ file: path.join(app.getPath("userData"), "sync-tokens.json"), safeStorage });
   return syncTokens;
 }
-function syncEngine() {
+// Git sync and the Glass service load on first use, not during main-module evaluation (tests/perf-desktop.mjs launch stages).
+async function syncEngine() {
   if (!glassRuntime.root) throw new Error("Open a note folder before syncing.");
+  const runtime = glassRuntime, { GitSync } = await import("./git-sync.mjs");
+  if (runtime !== glassRuntime) throw new Error("Open a note folder before syncing.");
   glassRuntime.syncEngine ??= new GitSync({ root: glassRuntime.root, appData: app.getPath("userData"), service: glassRuntime.service, tokenStore: tokenStore() });
   return glassRuntime.syncEngine;
 }
@@ -224,6 +229,8 @@ async function syncGlassNow(folder) {
   glassRuntime.folder = folder;
   try {
     const root = await realpath(folder);
+    const { GlassService } = await import("./glass-service.mjs");
+    if (glassRuntime.folder !== folder) return;
     const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
     if (glassRuntime.folder !== folder) { await service.close(); return; }
     glassRuntime.root = root;
@@ -255,10 +262,7 @@ async function bindGlassBridge(folder) {
       client(request, send) {
         if (request?.op === "sync") {
           if (request.action !== "status" && request.action !== "now") return send({ error: "Sync bridge supports status or now." });
-          let engine;
-          try { engine = syncEngine(); } catch (error) { return send({ error: error.message }); }
-          const job = request.action === "status" ? engine.status() : engine.syncNow();
-          Promise.resolve(job).then(async result => {
+          syncEngine().then(engine => request.action === "status" ? engine.status() : engine.syncNow()).then(async result => {
             if (request.action === "now" && (result.pulled || result.journals?.length)) {
               await glassRuntime.service?.reloadStore().catch(() => {});
               void glassRuntime.sync?.scan("sync").catch(() => {});
@@ -419,7 +423,7 @@ const handlers = {
     throw new Error("Unknown voice action.");
   },
   sync: async (_, request = {}) => {
-    const engine = syncEngine();
+    const engine = await syncEngine();
     const action = request?.action ?? "status";
     if (action === "status") return engine.status();
     if (action === "configure") return engine.setRemote(request.remote, request.branch || null);
@@ -561,6 +565,7 @@ const handlers = {
   conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
   importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
   vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
+  readNotes: (_, relatives) => readNotes(store, relatives),
   bibliography: async (_, folder, action, value) => {
     if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
     if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -615,8 +620,11 @@ const handlers = {
   },
   ready: async () => {
     if (traceStartup) {
-      const marks = await window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))');
-      for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
+      startupMark("renderer-ready");
+      // Logged without awaiting: tracing must not delay the documents opened below.
+      void window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))').then(marks => {
+        for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
+      }, () => {});
     }
     rendererReady = true; revealWindow(); openFiles(pendingPdfs.splice(0)); for (const file of pending.splice(0)) {
     if (isPdf(file)) { openFiles([file]); continue; }
@@ -628,7 +636,7 @@ const handlers = {
   recentAction: async (_, action, file) => { if (action !== "open") return workspace.recentAction(action, file); const item = (await workspace.recent()).find(item => item.path === file); if (!item) throw new Error(t("最近项目已移除。")); await workspace.remember(file, item.folder); return item.folder ? store.scan(file) : store.open(file); },
   searchFiles: async (_, query, options) => {
     const inventory = await store.scan();
-    const result = await workspace.search(inventory.files, query, { ...options, encodings: Object.fromEntries([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding])) });
+    const result = await workspace.search(inventory.files.filter(file => !/\.base$/i.test(file.name)), query, { ...options, encodings: Object.fromEntries([...store.records.values()].filter(record => record.path).map(record => [record.path, record.encoding])) });
     return { ...result, skipped: result.skipped + inventory.skipped };
   },
   reveal: async (_, file) => shell.showItemInFolder(await workspace.authorize(file, store)),
@@ -902,8 +910,11 @@ app
       });
       return { turn, release };
     }
+    let tracedAssets = 0;
     protocol.handle("omarkie-asset", async (request) => {
       try {
+        const traced = traceStartup && tracedAssets < 8 ? ++tracedAssets : 0, mark = (name, detail) => { if (traced) startupMark(name, { request: traced, ...detail }); };
+        mark("photo-request");
         const url = new URL(request.url), width = Number(url.searchParams.get("preview"));
         const [id, ...rest] = url.pathname.slice(1).split("/");
         const file = await store.asset(
@@ -912,6 +923,7 @@ app
         );
         const served = await photoPreviews.get(file, width);
         const source = pathToFileURL(served).href;
+        mark("photo-authorized", { preview: width || 0, cached: served !== file });
         if (served === file && /\.jpe?g$/i.test(file) && previewWidths.includes(width)) {
           const { size } = await stat(file);
           const abort = new AbortController(), { signal } = abort;
@@ -923,6 +935,7 @@ app
                 if (!reader) {
                   await turn;
                   if (signal.aborted) return;
+                  mark("photo-turn");
                   const response = await net.fetch(source, { signal });
                   if (!response.ok || !response.body) throw new Error("Image unavailable");
                   reader = response.body.getReader();
@@ -930,6 +943,7 @@ app
                 const { done, value } = await reader.read();
                 if (signal.aborted) return;
                 if (!done) { controller.enqueue(value); return; }
+                mark("photo-read", { bytes: size });
                 controller.close();
                 release();
               } catch (error) {
@@ -942,6 +956,7 @@ app
           return new Response(body, { headers: { "Content-Type": "image/jpeg", "Content-Length": String(size), "Cache-Control": "no-store" } });
         }
         const response = await net.fetch(source);
+        mark("photo-turn", { direct: true });
         if (!url.searchParams.has("preview") || served !== file) return response;
         // The original stands in until the preview exists; keep Chromium from reusing it for this preview URL.
         const headers = new Headers(response.headers); headers.set("Cache-Control", "no-store");
@@ -994,6 +1009,8 @@ app
         },
       });
       const created = window;
+      startupMark("window-created");
+      if (traceStartup) created.webContents.once("did-finish-load", () => startupMark("document-loaded"));
       let paintReady = false, revealing = false;
       revealWindow = () => {
         if (!paintReady || !rendererReady || revealing || created.isDestroyed()) return;
@@ -1004,7 +1021,7 @@ app
           if (process.env.OMARKIE_TEST_HIDDEN !== "1") { created.show(); startupMark("window-shown"); }
         });
       };
-      created.once("ready-to-show", () => { paintReady = true; revealWindow(); });
+      created.once("ready-to-show", () => { startupMark("ready-to-show"); paintReady = true; revealWindow(); });
       // G21: voice needs the microphone and nothing else. Audio-only, main frame, local app origin.
       const audioPermission = (contents, details) => {
         if (!contents || contents !== created.webContents) return false;

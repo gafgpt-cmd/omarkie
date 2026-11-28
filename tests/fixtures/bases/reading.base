@@ -1,0 +1,39 @@
+filters:
+  and:
+    - file.inFolder("Library")
+    - 'file.ext == "md"'
+formulas:
+  pages_left: 'pages - read'
+properties:
+  note.author:
+    displayName: Author
+  file.name:
+    displayName: Title
+views:
+  - type: table
+    name: Unread
+    filters:
+      and:
+        - 'status != "done"'
+        - not:
+            - file.hasTag("archive")
+    order:
+      - file.name
+      - author
+      - pages
+      - formula.pages_left
+    sort:
+      - property: pages
+        direction: DESC
+    limit: 2
+    columnSize:
+      note.author: 180
+  - type: cards
+    name: All books
+    order:
+      - file.name
+      - note.author
+      - published
+    sort:
+      - property: published
+        direction: ASC
