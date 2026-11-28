@@ -359,7 +359,7 @@ export class FoldRails implements Riders {
     const left = Math.min(...xs) - pad, top = Math.min(...ys) - pad;
     const svg = document.createElementNS(SVG, "svg");
     svg.setAttribute("viewBox", `${left} ${top} ${Math.max(...xs) + pad - left} ${Math.max(...ys) + pad - top}`);
-    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("aria-hidden", "true"); svg.setAttribute("preserveAspectRatio", "none");
     svg.dataset.marks = mark.id;
     svg.append(element);
     return svg;

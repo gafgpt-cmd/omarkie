@@ -57,7 +57,7 @@
 .fold-out-count, .fold-words-count { display: none; }
 .fold-pin { color: var(--accent); font-size: 13px; line-height: 1; }
 .fold-deck svg { width: 13px; height: 13px; fill: var(--paper); stroke: currentColor; stroke-width: 1.2; }
-.fold-glyph svg { width: 26px; height: 15px; overflow: visible; }
+.fold-glyph svg { width: 28px; height: 10px; margin-block: 2px; overflow: visible; }
 .fold-ink { position: absolute; z-index: 1; pointer-events: none; }
 .fold-ink svg { display: block; overflow: visible; }
 .fold-words-card { margin: 6px 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-inline-start: 3px solid var(--warning, #c88730); border-radius: 6px; background: var(--sidebar); font-size: 0.92em; }
@@ -68,6 +68,9 @@
 :root[data-appearance="dark"] .fold-document path[data-ink-colour="#1d4ed8"] { fill: #8fb2ff; }
 :root[data-appearance="dark"] .fold-document path[data-ink-colour="#b42318"] { fill: #ff9a8a; }
 :root[data-appearance="dark"] .fold-document path[data-ink-tool="highlighter"] { fill-opacity: 0.22; mix-blend-mode: screen; }
+/* The glyph is an icon of the ink, not the ink: one solid text-colour line at least 1.6 px thick, whatever the pen or theme. */
+:root .fold-document .fold-glyph path[data-ink-colour] { fill: currentColor; fill-opacity: 1; stroke: currentColor; stroke-width: 1.6px; stroke-linejoin: round; vector-effect: non-scaling-stroke; mix-blend-mode: normal; }
+.fold-glyph { color: var(--ink); }
 /* A narrow page has no margin for words: the chips shrink to their counts and the page makes room for them. */
 @container fold-page (max-width: 1120px) {
   .rich-document.fold-document[data-marks] { padding-inline: 48px; }
@@ -182,28 +185,26 @@
   .fold-reveal-flash { animation: none; background-color: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
 }
 
+/* One panel: the hint line sits on the bar's own surface, never as a second chip over the text. */
 .fold-bar {
   position: absolute;
   inset-inline: 0;
   bottom: 18px;
   display: grid;
   justify-items: center;
-  gap: 4px;
-  pointer-events: none;
-}
-.fold-bar-note { margin: 0; padding: 2px 10px; border-radius: 999px; background: var(--sidebar); color: var(--muted); font-size: 12px; }
-.fold-bar-row {
-  display: flex;
-  align-items: stretch;
+  gap: 2px;
+  width: fit-content;
   max-width: calc(100% - 24px);
+  margin-inline: auto;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 18px;
   background: color-mix(in srgb, var(--sidebar) 92%, transparent);
   box-shadow: 0 6px 22px rgb(0 0 0 / 14%);
-  pointer-events: auto;
   backdrop-filter: blur(8px);
 }
+.fold-bar-note { margin: 0; padding: 2px 10px 0; color: var(--muted); font-size: 12px; }
+.fold-bar-row { display: flex; align-items: stretch; max-width: 100%; }
 .fold-track { display: flex; min-width: 0; border-radius: 999px; cursor: pointer; touch-action: none; user-select: none; }
 .fold-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fold-stop {
