@@ -1,5 +1,6 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
+import { appendFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,11 +14,15 @@ const original = '# Editing parity\n\n- alpha\n- beta\n- gamma\n\n> - quoted one
 await writeFile(file,original);
 const env = await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:path.join(data,"session"),OMARKIE_LANGUAGE:"zh"});
 delete env.ELECTRON_RUN_AS_NODE; delete env.OMARKIE_DEV_URL;
+// Glass startup, save and stall timings plus the app's own output; tests/windows-install.ps1 prints it on failure.
+const appLog = env.OMARKIE_DEBUG_LOG ||= path.join(qa,"parity-app.log");
+const mark = text => appendFileSync(appLog, `${new Date().toISOString()} test ${text}\n`);
 let application,page;
 const errors = [], checks = [];
 try {
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on("pageerror",error => errors.push(error.message));
+  for (const stream of [application.process().stdout, application.process().stderr]) stream?.on("data", chunk => appendFileSync(appLog, String(chunk)));
   await fullSize(application, page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({ timeout: 30_000 });
   await application.evaluate(({dialog},file) => {dialog.showOpenDialog = async () => ({canceled:false,filePaths:[file]});},file);
@@ -34,7 +39,7 @@ try {
     element.focus(); getSelection().setBaseAndExtent(a,a.data.indexOf(start)+offset,b,b.data.indexOf(end)+(end===start?offset:end.length));
     document.dispatchEvent(new Event('selectionchange'));
   },{start,end,offset});
-  const saved = text => expect.poll(()=>readFile(file,'utf8')).toBe(text);
+  const saved = text => { mark('expect save'); return expect.poll(()=>readFile(file,'utf8')).toBe(text); };
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   await point('alpha','alpha',2); await page.keyboard.press(`${mod}+d`);
   await page.keyboard.insertText('replaced'); await saved(original.replace('alpha','replaced'));
