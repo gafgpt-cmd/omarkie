@@ -76,7 +76,3 @@ export function scrubSegment(value, count) {
 export function nearestStop(value, count) {
   return Math.round(clamp(value, count));
 }
-
-export function stepStop(index, delta, count) {
-  return Math.round(clamp(index + delta, count));
-}

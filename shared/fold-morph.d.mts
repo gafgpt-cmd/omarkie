@@ -20,4 +20,3 @@ export declare function commonPairs(source: readonly string[], target: readonly 
 export declare function morphPlan(source: readonly string[], target: readonly string[]): MorphPlan;
 export declare function scrubSegment(value: number, count: number): ScrubSegment;
 export declare function nearestStop(value: number, count: number): number;
-export declare function stepStop(index: number, delta: number, count: number): number;

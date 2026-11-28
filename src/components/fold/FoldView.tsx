@@ -40,6 +40,7 @@ export default function FoldView({ id, content, stop, setStop, close, startLine,
     root.focus({ preventScroll: true });
     void renderMath(root).catch(() => {});
     return () => {
+      latest.current.startLine = view.topLine();
       view.dispose();
       engine.current = null;
       root.replaceChildren();

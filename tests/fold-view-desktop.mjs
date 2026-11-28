@@ -255,6 +255,9 @@ try {
   await expect(view).toBeHidden();
   assert.equal(await page.locator(".document-editor:not([hidden]) .rich-scroller").evaluate(element => element.scrollTop), 0);
   assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("fold-toggle")), false);
+  await quickOpen(page, t, "ward.md");
+  await expect(view).toBeHidden();
+  await expect(rich(page)).toBeVisible();
 
   // Too short: the bar says so and stays at Full.
   await quickOpen(page, t, "short.md");

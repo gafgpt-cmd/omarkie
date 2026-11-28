@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { commonPairs, morphPlan, nearestStop, scrubSegment, stepStop, WORD_MORPH_LIMIT } from "../shared/fold-morph.mjs";
+import { commonPairs, morphPlan, nearestStop, scrubSegment, WORD_MORPH_LIMIT } from "../shared/fold-morph.mjs";
 import { foldDocumentLadder } from "../shared/fold-units.mjs";
 
 const split = text => text.split(/\s+/).filter(Boolean);
@@ -37,8 +37,6 @@ test("slider positions map to a segment, a nearest stop and clamped steps", () =
   assert.deepEqual(scrubSegment(-1, 5), { from: 0, to: 1, fraction: 0 });
   assert.equal(nearestStop(1.6, 5), 2);
   assert.equal(nearestStop(Number.NaN, 5), 0);
-  assert.equal(stepStop(4, 1, 5), 4);
-  assert.equal(stepStop(0, -1, 5), 0);
   assert.equal(WORD_MORPH_LIMIT, 300);
 });
 
