@@ -453,7 +453,9 @@ export class DocumentStore {
           const changed = await this.check(record.id);
           if (changed?.moved) Object.assign(record, { path: changed.path, name: changed.name });
           else if (changed && !changed.error) {
-            if (record.content === record.savedContent) {
+            // A draft equal to the disk text was saved after the last session write (exit between save and
+            // session write): clean, not a conflict.
+            if (record.content === record.savedContent || record.content === changed.content) {
               record.content = changed.content;
               record.savedContent = changed.content;
               record.diskHash = changed.diskHash;

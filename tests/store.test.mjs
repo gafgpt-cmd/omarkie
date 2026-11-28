@@ -105,6 +105,21 @@ test("recovery preserves dirty content and reports conflicting disk changes", as
   assert.equal(restored.documents[0].content, "未保存的草稿");
   assert.equal(restored.documents[0].conflict, true);
 });
+test("recovery treats a draft already saved to disk as clean", async () => {
+  const { store, file, record, directory } = await setup();
+  await store.persist({
+    documents: [{ ...record, content: "已保存的草稿" }],
+    activeId: record.id,
+  });
+  // The save landed but the app exited before the next session write.
+  await writeFile(file, "已保存的草稿");
+  const restored = await new DocumentStore(
+    path.join(directory, "recovery"),
+  ).restore();
+  assert.equal(restored.documents[0].content, "已保存的草稿");
+  assert.equal(restored.documents[0].savedContent, "已保存的草稿");
+  assert.ok(!restored.documents[0].conflict);
+});
 test("untitled documents survive session recovery", async () => {
   const { store, directory } = await setup();
   const record = store.registerDraft({

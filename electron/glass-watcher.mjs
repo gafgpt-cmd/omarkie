@@ -3,6 +3,9 @@ import { watch as fsWatch } from "node:fs";
 import path from "node:path";
 
 const ignored = [".omarkie", ".git", ".obsidian", ".trash", "node_modules", ".sync"];
+// Pinned per platform: auto-detection probes Watchman first, which on Windows shells out to cmd.exe and
+// blocks the main process about 5 s per subscribe when Watchman is absent (parcel-bundler/watcher#155).
+const nativeBackend = { linux: "inotify", win32: "windows", darwin: "fs-events" }[process.platform];
 const networkFileSystems = new Set(["fuse", "fuseblk", "fuse.sshfs", "fuse.rclone", "nfs", "nfs4", "cifs", "smb3", "9p", "vboxsf", "davfs", "afs"]);
 
 const quietFor = 300;
@@ -127,7 +130,7 @@ export async function createWatcher({ root, onBatch, env = process.env, onMode, 
       subscription = await watcher.subscribe(root, (error, events) => {
         if (error) { void startPolling(); return; }
         for (const event of events) queue(event);
-      }, { ignore: ignored.map(name => path.join(root, name)), backend: process.platform === "linux" ? "inotify" : undefined });
+      }, { ignore: ignored.map(name => path.join(root, name)), backend: nativeBackend });
       mode = "parcel";
       onMode?.(mode);
     } catch {
