@@ -1657,7 +1657,6 @@
   "This vault never goes online; only a loopback route can fold.": "Aquesta cambra no es connecta mai; només una ruta de bucle local pot plegar.",
   "Name a model for this fold slot in Preferences → Fold.": "Indica un model per a aquesta franja a Preferències → Plec.",
   "Allow this slot to send note text to {{destination}} in Preferences → Fold first.": "Primer permet que aquesta franja enviï text de la nota a {{destination}} a Preferències → Plec.",
-  "Only the Ladder slot can run a fold.": "Només la franja Escala pot plegar.",
   "Open a note folder before folding.": "Obre una carpeta de notes abans de plegar.",
   "Unknown fold slot.": "Franja de plec desconeguda.",
   "Canvas boards…": "Taulers Canvas…",

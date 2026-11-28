@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { mergeEstudio } from "../shared/fold-estudio.mjs";
 import {
   CHECK_CLASSES, FOLD_FORMAT, FOLD_VERSION, LEVELS, LEVEL_IDS, ROLES,
   evidenceFits, foldProblems, isAuthorText, isEvidence, isFold, isFoldLine, isLevelId, isRole, isWrittenText, levelOf,
@@ -106,11 +107,12 @@ test("a valid ladder record passes with no problems", () => {
 });
 
 test("an Estudio record holds the sheet and no ladder lines", () => {
-  const estudio = { ...ladder(), written: [], sections: [], estudio: { oneLiner: [] } };
+  const estudio = { ...ladder(), written: [], sections: [], estudio: mergeEstudio([]) };
   estudio.meta = { ...estudio.meta, slot: "estudio", agent: "claude", model: "sonnet", outLang: "en" };
   assert.equal(isFold(estudio), true);
   assert.match(foldProblems({ ...estudio, written: ladder().written }).join("\n"), /no ladder lines/);
   assert.match(foldProblems({ ...ladder(), estudio: {} }).join("\n"), /no Estudio sheet/);
+  assert.match(foldProblems({ ...estudio, estudio: { ...mergeEstudio([]), format: "textfold/estudio" } }).join("\n"), /fold\.estudio\.format/);
 });
 
 test("the guard names each broken field by path", () => {

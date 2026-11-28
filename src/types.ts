@@ -148,7 +148,7 @@ export interface Host {
   clearBackground(): Promise<unknown>;
   foldGet?(request: { note: string; slot?: "ladder" | "estudio" }): Promise<FoldState>;
   foldRun?(request: FoldRunRequest): Promise<{ runId: string; noteId: string; outLang: string; route: FoldRouteView }>;
-  foldCancel?(request: { noteId: string }): Promise<{ cancelled: boolean }>;
+  foldCancel?(request: { noteId: string; slot?: "ladder" | "estudio" }): Promise<{ cancelled: boolean }>;
   onFoldProgress?(callback: (event: FoldProgress) => void): () => void;
   plugins(): Promise<{ id: string; name: string; url: string }[]>;
   installPlugin(folder?: boolean): Promise<{ id: string; name: string; url: string } | null>;

@@ -1,0 +1,76 @@
+{
+  "oneLiner": { "text": "Nephritic: proteinuria below 3.5 g/day with RBC casts. Nephrotic: proteinuria ≥3.5 g/day without red blood cell casts.", "stars": 2, "evidence": [{ "quote": "Proteinuria stays below 3.5 g/day" }, { "quote": "red blood cell casts" }, { "quote": "Hallmark proteinuria is ≥3.5 g/day" }, { "quote": "without red blood cell casts" }] },
+  "caso": [
+    { "entity": "Nephritic syndrome", "text": "inflammatory damage to the glomerular basement membrane, leaking red blood cells and mild-to-moderate protein", "stars": 1, "evidence": [{ "quote": "Nephritic syndrome results from inflammatory damage to the glomerular basement membrane, allowing red blood cells and mild-to-moderate protein to leak into the urine" }] },
+    { "entity": "Nephrotic syndrome", "text": "podocyte foot-process effacement without prominent glomerular inflammation", "stars": 1, "evidence": [{ "quote": "Nephrotic syndrome reflects podocyte foot-process effacement without prominent glomerular inflammation" }] }
+  ],
+  "vs": [
+    {
+      "title": "Nephritic vs nephrotic",
+      "columns": ["Nephritic", "Nephrotic"],
+      "rows": [
+        { "label": "Proteinuria", "stars": 2, "cells": [
+          { "text": "Stays below 3.5 g/day", "evidence": [{ "quote": "Proteinuria stays below 3.5 g/day" }] },
+          { "text": "≥3.5 g/day", "evidence": [{ "quote": "Hallmark proteinuria is ≥3.5 g/day" }] }
+        ] },
+        { "label": "Urinalysis", "stars": 2, "cells": [
+          { "text": "Dysmorphic red blood cells and red blood cell casts", "evidence": [{ "quote": "dysmorphic red blood cells (acanthocytes) and red blood cell casts" }] },
+          { "text": "Fatty casts, oval fat bodies, Maltese crosses, without red blood cell casts", "evidence": [{ "quote": "Urinalysis reveals fatty casts, oval fat bodies, and Maltese crosses under polarised light, without red blood cell casts" }] }
+        ] },
+        { "label": "Mechanism", "stars": 1, "cells": [
+          { "text": "Inflammatory damage to the glomerular basement membrane", "evidence": [{ "quote": "inflammatory damage to the glomerular basement membrane" }] },
+          { "text": "Podocyte foot-process effacement without prominent glomerular inflammation", "evidence": [{ "quote": "podocyte foot-process effacement without prominent glomerular inflammation" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "Nephritic proteinuria", "value": "<3.5", "unit": "g/day", "consequence": "stays below 3.5 g/day", "decisive": true, "stars": 2, "evidence": [{ "quote": "Proteinuria stays below 3.5 g/day" }] },
+    { "label": "Nephrotic proteinuria", "value": "≥3.5", "unit": "g/day", "consequence": "hallmark; urine protein-to-creatinine ratio ≥3.5 g/g", "decisive": true, "stars": 2, "evidence": [{ "quote": "Hallmark proteinuria is ≥3.5 g/day (urine protein-to-creatinine ratio ≥3.5 g/g)" }] },
+    { "label": "Albumin in nephrotic syndrome", "value": "<3.0", "unit": "g/dL", "consequence": "severe hypoalbuminaemia", "decisive": true, "stars": 1, "evidence": [{ "quote": "severe hypoalbuminaemia (<3.0 g/dL)" }] },
+    { "label": "Post-streptococcal glomerulonephritis latency", "value": "2-4", "unit": "weeks", "consequence": "after pharyngitis or impetigo", "decisive": false, "stars": 1, "evidence": [{ "quote": "2-4 weeks after pharyngitis or impetigo" }] },
+    { "label": "IgA nephropathy latency", "value": "1-3", "unit": "days", "consequence": "synpharyngitic haematuria", "decisive": false, "stars": 1, "evidence": [{ "quote": "synpharyngitic haematuria within 1-3 days" }] }
+  ],
+  "flujo": [],
+  "bloques": [
+    { "kind": "dx", "bullets": [
+      { "text": "Proteinuria cut-off: nephritic stays below 3.5 g/day; nephrotic is ≥3.5 g/day, urine protein-to-creatinine ratio ≥3.5 g/g", "stars": 2, "evidence": [{ "quote": "Proteinuria stays below 3.5 g/day" }, { "quote": "Hallmark proteinuria is ≥3.5 g/day (urine protein-to-creatinine ratio ≥3.5 g/g)" }] },
+      { "text": "Nephritic urine sediment: dysmorphic red blood cells (acanthocytes) and red blood cell casts, cola-coloured haematuria", "stars": 2, "evidence": [{ "quote": "Urinalysis classically shows dysmorphic red blood cells (acanthocytes) and red blood cell casts, producing cola-coloured haematuria" }] },
+      { "text": "Nephrotic urine sediment: fatty casts, oval fat bodies and Maltese crosses, without red blood cell casts", "stars": 2, "evidence": [{ "quote": "Urinalysis reveals fatty casts, oval fat bodies, and Maltese crosses under polarised light, without red blood cell casts" }] },
+      { "text": "Nephritic hallmarks: oliguria, azotaemia, hypertension; post-streptococcal low C3 at 2-4 weeks; IgA nephropathy within 1-3 days, normal complement; rapidly progressive crescents", "stars": 2, "evidence": [{ "quote": "oliguria, azotaemia" }, { "quote": "hypertension" }, { "quote": "post-streptococcal glomerulonephritis (low C3" }, { "quote": "2-4 weeks" }, { "quote": "IgA nephropathy (synpharyngitic haematuria within 1-3 days, normal complement)" }, { "quote": "rapidly progressive glomerulonephritis (crescents" }] },
+      { "text": "Mnemonic PHARAOH for nephritic features", "stars": 1, "evidence": [{ "quote": "Use the mnemonic PHARAOH for nephritic features" }] }
+    ] },
+    { "kind": "mechanism", "bullets": [
+      { "text": "Nephrotic hallmarks: severe hypoalbuminaemia (<3.0 g/dL), anasarca, hyperlipidaemia, antithrombin III loss with hypercoagulable renal vein thrombosis, encapsulated bacteria from immunoglobulin loss", "stars": 2, "evidence": [{ "quote": "severe hypoalbuminaemia (<3.0 g/dL)" }, { "quote": "anasarca" }, { "quote": "hyperlipidaemia" }, { "quote": "Urinary loss of antithrombin III creates a hypercoagulable state with risk of renal vein thrombosis" }, { "quote": "urinary loss of immunoglobulins increases susceptibility to encapsulated bacteria" }] },
+      { "text": "Renal vein thrombosis risk especially in membranous nephropathy", "stars": 1, "evidence": [{ "quote": "renal vein thrombosis (especially in membranous nephropathy)" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "Do not diagnose nephrotic syndrome on dipstick alone without quantifying proteinuria ≥3.5 g/day", "why": "", "stars": 2, "evidence": [{ "quote": "Do not diagnose nephrotic syndrome on dipstick alone without quantifying proteinuria ≥3.5 g/day" }] },
+    { "text": "Do not overlook overlap: membranoproliferative glomerulonephritis and diffuse proliferative lupus nephritis can display both nephritic and nephrotic features", "why": "", "stars": 1, "evidence": [{ "quote": "Do not overlook overlap presentations" }, { "quote": "membranoproliferative glomerulonephritis and diffuse proliferative lupus nephritis can display both nephritic and nephrotic features" }] }
+  ],
+  "buzzwords": [
+    { "term": "Maltese crosses", "concept": "nephrotic urinalysis under polarised light", "evidence": [{ "quote": "Maltese crosses under polarised light" }] },
+    { "term": "Anti-PLA2R antibodies", "concept": "membranous nephropathy", "evidence": [{ "quote": "membranous nephropathy (anti-PLA2R antibodies" }] }
+  ],
+  "mnemonics": [
+    { "label": "Nephritic features", "word": "PHARAOH", "items": [
+      { "letter": "P", "text": "Proteinuria below 3.5 g/day", "evidence": [{ "quote": "Proteinuria (<3.5 g/day)" }] },
+      { "letter": "H", "text": "Haematuria: dysmorphic RBCs and RBC casts", "evidence": [{ "quote": "Haematuria (dysmorphic RBCs and RBC casts)" }] },
+      { "letter": "A", "text": "Azotaemia", "evidence": [{ "quote": "Azotaemia" }] },
+      { "letter": "R", "text": "RBC casts", "evidence": [{ "quote": "RBC casts, Antistreptolysin" }] },
+      { "letter": "A", "text": "Antistreptolysin O / low complement in PSGN", "evidence": [{ "quote": "Antistreptolysin O / low complement in PSGN" }] },
+      { "letter": "O", "text": "Oliguria", "evidence": [{ "quote": "Oliguria, and Hypertension" }] },
+      { "letter": "H", "text": "Hypertension", "evidence": [{ "quote": "Oliguria, and Hypertension" }] }
+    ] }
+  ],
+  "cards": [
+    { "q": "Nephritic proteinuria?", "a": "Stays below 3.5 g/day", "evidence": [{ "quote": "Proteinuria stays below 3.5 g/day" }] },
+    { "q": "Nephrotic proteinuria?", "a": "≥3.5 g/day", "evidence": [{ "quote": "Hallmark proteinuria is ≥3.5 g/day" }] },
+    { "q": "Nephrotic urinalysis?", "a": "Fatty casts, oval fat bodies, Maltese crosses, without red blood cell casts", "evidence": [{ "quote": "Urinalysis reveals fatty casts, oval fat bodies, and Maltese crosses under polarised light, without red blood cell casts" }] },
+    { "q": "Post-streptococcal glomerulonephritis latency?", "a": "2-4 weeks after pharyngitis or impetigo", "evidence": [{ "quote": "2-4 weeks after pharyngitis or impetigo" }] },
+    { "q": "IgA nephropathy latency?", "a": "Synpharyngitic haematuria within 1-3 days", "evidence": [{ "quote": "synpharyngitic haematuria within 1-3 days" }] },
+    { "q": "Albumin in nephrotic syndrome?", "a": "Severe hypoalbuminaemia, below 3.0 g/dL", "evidence": [{ "quote": "severe hypoalbuminaemia (<3.0 g/dL)" }] }
+  ],
+  "gaps": []
+}

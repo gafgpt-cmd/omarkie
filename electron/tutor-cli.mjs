@@ -1059,7 +1059,9 @@ async function foldCommand(command, root, opts, id) {
 
 function foldJobView(job, full) {
   const units = job.units.map(unit => ({ elementId: unit.elementId, kind: unit.kind, raw: unit.raw ? "yes" : "no", sectionId: unit.sectionId,
-    text: preview(unit.text, full), brief: preview(unit.brief, full), briefWords: unit.briefWords }));
+    text: preview(unit.text, full),
+    ...(unit.brief === undefined ? {} : { brief: preview(unit.brief, full), briefWords: unit.briefWords }),
+    ...(unit.cells ? { cells: unit.cells.map(cell => ({ ...cell, text: preview(cell.text, full) })) } : {}) }));
   return {
     job: { id: job.id, slot: job.slot, agent: job.agent, model: job.model, outLang: job.outLang, state: job.state },
     instruction: job.instruction,
