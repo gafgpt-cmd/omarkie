@@ -298,7 +298,7 @@ function Board({ board: initial, vault, clips, close, openNote, askTutor }: { bo
       setStatus("error");
     } finally {
       saving.current = false;
-      if (queued.current && !closed.current) { queued.current = false; void save(); }
+      if (queued.current) { queued.current = false; void save(); }
     }
   }, [readOnly]);
 
@@ -327,8 +327,9 @@ function Board({ board: initial, vault, clips, close, openNote, askTutor }: { bo
   // Clips from Learning arrive as one gesture, placed beside whatever is in view.
   const placed = useRef<CanvasNode[] | undefined>(undefined);
   useEffect(() => {
-    if (!clips?.length || placed.current === clips || readOnly) return;
+    if (!clips?.length || placed.current === clips) return;
     placed.current = clips;
+    if (readOnly) { setNotice(t("This board is read-only; the clip was not added.")); return; }
     const box = document.querySelector(".canvas-flow")?.getBoundingClientRect();
     const center = box ? flow.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 }) : { x: 0, y: 0 };
     commit(current => {

@@ -1448,6 +1448,7 @@
   "Group": "Group",
   "Omarkie cannot show “{{type}}” cards yet. It is kept as is.": "Omarkie cannot show “{{type}}” cards yet. It is kept as is.",
   "Clip added to the board.": "Clip added to the board.",
+  "This board is read-only; the clip was not added.": "This board is read-only; the clip was not added.",
   "Reloaded the board from disk.": "Reloaded the board from disk.",
   "{{name}} copy": "{{name}} copy",
   "Saved your edits as {{name}}.": "Saved your edits as {{name}}.",

@@ -610,6 +610,7 @@
   "Group": "分组",
   "Omarkie cannot show “{{type}}” cards yet. It is kept as is.": "Omarkie 暂时无法显示“{{type}}”卡片，已原样保留。",
   "Clip added to the board.": "摘录已添加到白板。",
+  "This board is read-only; the clip was not added.": "此白板为只读;摘录未添加。",
   "Reloaded the board from disk.": "已从磁盘重新载入白板。",
   "{{name}} copy": "{{name}} 副本",
   "Saved your edits as {{name}}.": "你的修改已另存为 {{name}}。",

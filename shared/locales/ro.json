@@ -1463,6 +1463,7 @@
   "Group": "Grupează",
   "Omarkie cannot show “{{type}}” cards yet. It is kept as is.": "Omarkie nu poate încă afișa carduri „{{type}}”. Este păstrat neschimbat.",
   "Clip added to the board.": "Decupajul a fost adăugat pe planșă.",
+  "This board is read-only; the clip was not added.": "Această planșă este doar în citire; decupajul nu a fost adăugat.",
   "Reloaded the board from disk.": "Planșa a fost reîncărcată de pe disc.",
   "{{name}} copy": "{{name}} copie",
   "Saved your edits as {{name}}.": "Modificările tale au fost salvate ca {{name}}.",

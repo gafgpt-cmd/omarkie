@@ -1461,6 +1461,7 @@
   "Group": "Agrupar",
   "Omarkie cannot show “{{type}}” cards yet. It is kept as is.": "Omarkie aún no puede mostrar tarjetas «{{type}}». Se conserva tal cual.",
   "Clip added to the board.": "Recorte añadido al tablero.",
+  "This board is read-only; the clip was not added.": "Este tablero es de solo lectura; el recorte no se añadió.",
   "Reloaded the board from disk.": "Tablero recargado desde el disco.",
   "{{name}} copy": "{{name}} copia",
   "Saved your edits as {{name}}.": "Tus cambios se guardaron como {{name}}.",
