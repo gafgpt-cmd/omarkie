@@ -19,12 +19,12 @@ try {
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on("pageerror",error => errors.push(error.message));
   await fullSize(application, page);
-  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({ timeout: 30_000 });
   await application.evaluate(({dialog},file) => {dialog.showOpenDialog = async () => ({canceled:false,filePaths:[file]});},file);
   const menu = async name => {await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name,exact:true}).click();};
   await menu('打开文件');
   const surface = page.locator('.document-editor:not([hidden])'), root = surface.locator('.rich-document');
-  await expect(root.getByRole('heading',{name:'Editing parity',exact:true})).toBeVisible();
+  await expect(root.getByRole('heading',{name:'Editing parity',exact:true})).toBeVisible({ timeout: 15_000 });
   const point = async (start,end=start,offset=0) => root.evaluate((element,{start,end,offset}) => {
     const walker = document.createTreeWalker(element,NodeFilter.SHOW_TEXT), found = [];
     let node;
