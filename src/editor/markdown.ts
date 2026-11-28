@@ -2,7 +2,7 @@ import { createMarkdown, setSyntaxOptions } from "../../shared/markdown.mjs";
 import { collectImages } from "../../shared/image-references.mjs";
 import { parserContext } from "../../shared/parser-context.mjs";
 import { sourceLines } from "../../shared/source-lines.mjs";
-import { baseEmbed, noteEmbed } from "../../shared/embeds.mjs";
+import { audioEmbed, baseEmbed, noteEmbed } from "../../shared/embeds.mjs";
 import { markdownBlocks, plainProposal } from "../../shared/markdown-blocks.mjs";
 let hljs: typeof import("highlight.js/lib/common")["default"] | undefined;
 let highlighting: Promise<void> | undefined;
@@ -122,14 +122,18 @@ md.renderer.rules.image = (tokens, index, _options, env) => {
   const token = tokens[index];
   return imageHtml(String(token.attrGet("src") || ""), md.utils.escapeHtml(token.content || t("图片")), typeof env?.documentId === "string" ? env.documentId : undefined, standalone(tokens, index, env), String(token.attrGet("width") ?? "") || undefined, String(token.attrGet("height") ?? "") || undefined, token.attrGet("data-image-float"));
 };
+// The asset URL an Obsidian embed target resolves to; Fold's lecture player plays the same file.
+export function embedURL(target: string, documentId: string) {
+  return `omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(md.normalizeLink(target.replaceAll("%", "%25")))}`;
+}
 // Obsidian embeds resolve like Obsidian: next to the note first, then anywhere in the vault (host side).
 md.renderer.rules.wiki_embed = (tokens, index, _options, env) => {
   const token = tokens[index], meta = (token.meta || {}) as { target?: string; width?: string; height?: string }, target = (meta.target || "").split("#")[0], documentId = typeof env?.documentId === "string" ? env.documentId : undefined;
   const name = md.utils.escapeHtml(token.content || target), source = md.normalizeLink(target.replaceAll("%", "%25"));
   if (/\.(?:png|jpe?g|gif|webp|avif|svg)$/i.test(target)) return imageHtml(source, name, documentId, standalone(tokens, index, env), meta.width, meta.height, token.attrGet("data-image-float"));
-  const media = /\.(?:mp3|wav|m4a|ogg)$/i.test(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
+  const media = audioEmbed(target) ? "audio" : /\.(?:mp4|webm)$/i.test(target) ? "video" : "";
   return media && documentId
-    ? `<${media} controls preload="metadata" src="omarkie-asset://local/${encodeURIComponent(documentId)}/${encodeURIComponent(source)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
+    ? `<${media} controls preload="metadata" src="${embedURL(target, documentId)}"${meta.width ? ` width="${md.utils.escapeHtml(meta.width)}"` : ""}></${media}>`
     : noteEmbed(meta.target || "") || baseEmbed(meta.target || "") ? `<span class="note-embed" data-embed="${md.utils.escapeHtml(meta.target || "")}">${name}</span>` : `<span class="wiki-embed">${name}</span>`;
 };
 function imageCandidates(value: string, documentId?: string) {

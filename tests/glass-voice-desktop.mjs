@@ -13,6 +13,7 @@ import { decode } from "@toon-format/toon";
 import sharp from "sharp";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
 import { wavInfo } from "../shared/voice.mjs";
+import { speechWav } from "./lecture-audio.mjs";
 
 const home = await mkdtemp(path.join(os.tmpdir(), "omarkie-glass-voice-"));
 const vault = path.join(home, "vault"), doc = "voice.md", file = path.join(vault, doc);
@@ -41,7 +42,10 @@ chmodSync(stub, 0o755);
 const baseEnv = await isolatedEnvironment({ ...process.env, OMARKIE_DATA_DIR: home, OMARKIE_LANGUAGE: "en", OMARKIE_STT: stub });
 delete baseEnv.OMARKIE_DEV_URL; delete baseEnv.ELECTRON_RUN_AS_NODE;
 const noHook = { ...baseEnv }; delete noHook.OMARKIE_STT;
-const media = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"];
+// Lectures split on pauses, so the fake microphone speaks: an 800 ms burst every 2 s.
+const speech = path.join(home, "speech.wav");
+await speechWav(speech, [[200, 1_000]], 2);
+const media = ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", `--use-file-for-fake-audio-capture=${speech}`];
 const evidence = process.env.OMARKIE_QA_DIR ?? path.join(home, "shots");
 await mkdir(evidence, { recursive: true });
 const shot = (page, name) => page.screenshot({ path: path.join(evidence, `${name}.png`) });
@@ -192,25 +196,26 @@ try {
   await page.locator(".bubble-close").click();
   await expect(panel).toHaveCount(0);
 
-  // Lecture: one save, exactly one new note with a timestamped transcript and the marked moment.
+  // Lecture: one save, exactly one new note with a timestamped transcript, its sections and its audio beside it.
   await tray.locator('[data-glass-tool="lecture"]').click();
   await clickBlock(page, second);
   await expect(page.locator('[data-voice-pill="recording"]')).toHaveAttribute("data-voice-mode", "lecture");
   await page.waitForTimeout(1_200);
   await page.locator("[data-voice-mark]").click();
   await expect(page.locator("[data-voice-mark]")).toContainText("(1)");
+  await page.waitForTimeout(2_000);
   await page.locator('[data-voice-stop="save"]').click();
   await expect(page.locator(".glass-notice")).toContainText("Saved", { timeout: 20_000 });
   const noteList = async () => (await readdir(vault, { recursive: true })).filter(name => /\.md$/.test(String(name)) && !String(name).startsWith(".omarkie"));
   await expect.poll(noteList, { timeout: 15_000 }).toHaveLength(2);
   const notes = await noteList();
   const lecturePath = path.join(vault, String(notes.find(name => !String(name).endsWith(doc))));
-  const lecture = await readFile(lecturePath, "utf8");
-  assert.match(lecture, /## Transcript/);
-  assert.match(lecture, /00:0\d Spaced practice fights forgetting\./);
+  const lecture = await readFile(lecturePath, "utf8"), lectureTitle = path.basename(lecturePath, ".md");
+  assert.match(lecture, /^## 00:00$/m);
+  assert.match(lecture, /^00:0\d\.\d Spaced practice fights forgetting\.$/m);
   assert.match(lecture, /type: Reference/);
-  const lectureMagnet = await axi("glass", "list", "--note", path.basename(lecturePath));
-  assert.ok(lectureMagnet.magnets.length >= 1, "the marked moment pins a magnet");
+  assert.ok(lecture.includes(`![[${lectureTitle}.m4a]]`), "the lecture embeds its audio");
+  assert.ok((await stat(path.join(path.dirname(lecturePath), `${lectureTitle}.m4a`))).size > 0, "the audio sits beside the note");
 
   // Light and dark, wide and narrow.
   await page.evaluate(() => localStorage.removeItem("omarkie-theme"));
@@ -260,4 +265,4 @@ try {
 } finally { await bare.app.close(); }
 
 assert.ok((await stat(stub)).isFile());
-console.log("PASS: push-to-talk sticky, memo create/play/search, voice ask with X-ray, one-file lecture save, hidden without hook, light/dark 1440/720");
+console.log("PASS: push-to-talk sticky, memo create/play/search, voice ask with X-ray, lecture note with sections and its m4a, hidden without hook, light/dark 1440/720");

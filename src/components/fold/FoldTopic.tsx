@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { OPENING, topicCardAt, topicCards, type FoldTopic as Topic, type TopicItem, type TopicSection } from "../../../shared/fold-topic.mjs";
 import type { RawMeta } from "../../../shared/fold-units.mjs";
+import { clockLabel } from "../../../shared/voice.mjs";
 import { renderMarkdownEach } from "../../editor/markdown";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
@@ -75,11 +76,19 @@ function rawLabel(raw: RawMeta) {
   return raw.alt ? `${kind} · ${raw.alt}` : kind;
 }
 
+// A lecture line's start, the second a click on it plays from.
+function Time({ time }: { time: number }) {
+  return <span className="fold-time"><span aria-hidden="true">▶ </span>{clockLabel(time * 1000)}</span>;
+}
+
 function Item({ item, html }: { item: TopicItem; html(markdown: string): string }) {
   if (item.kind === "raw") return <div className="fold-topic-raw" data-raw={item.raw.class}>
     <span aria-hidden="true">{RAW_GLYPH[item.raw.class]}</span> {rawLabel(item.raw)}
   </div>;
-  return <div className="fold-topic-line" dangerouslySetInnerHTML={{ __html: html(item.markdown) }} />;
+  if (item.time === null) return <div className="fold-topic-line" dangerouslySetInnerHTML={{ __html: html(item.markdown) }} />;
+  return <div className="fold-topic-line" data-anchor={item.unitId} data-time={item.time}>
+    <Time time={item.time} /><div dangerouslySetInnerHTML={{ __html: html(item.markdown) }} />
+  </div>;
 }
 
 function Heading({ section, html, id, className }: { section: TopicSection; html(markdown: string): string; id?: string; className: string }) {
@@ -105,7 +114,7 @@ function Cards({ topic, html, current, onKeyDown }: {
     {mounted.map(({ section, eyebrow }) => {
       const id = `fold-card-${section.id}`;
       return <li key={section.id}>
-        <div className="fold-card" role="button" tabIndex={section.id === active ? 0 : -1} data-anchor={section.anchor ?? undefined}
+        <div className="fold-card" role="button" tabIndex={section.id === active ? 0 : -1} data-anchor={section.anchor ?? undefined} data-time={section.time ?? undefined}
           data-current={section.id === current || undefined} aria-labelledby={`${id}-title`}
           aria-describedby={section.items.length ? `${id}-body` : undefined} onFocus={() => setActive(section.id)}>
           {eyebrow !== null && <div className="fold-card-eyebrow" dangerouslySetInnerHTML={{ __html: inline(html(eyebrow)) }} />}
@@ -216,6 +225,7 @@ function TopicMap({ topic, title, html, current, onKeyDown }: {
       <svg ref={links} className="fold-map-links" aria-hidden="true" />
       {mounted.map((node, index) => <div key={node.key} className="fold-map-node" role="treeitem" aria-level={node.depth + 1}
         tabIndex={index === active ? 0 : -1} data-node={index} data-kind={node.kind} data-anchor={node.anchor ?? undefined}
+        data-time={(node.section ? node.section.time : node.item?.kind === "line" ? node.item.time : null) ?? undefined}
         data-current={(node.section && node.section.id === current) || undefined} onFocus={() => setActive(index)}>
         {node.kind === "root"
           ? topic.title ? <div dangerouslySetInnerHTML={{ __html: inline(html(topic.title.markdown)) }} /> : title
@@ -255,7 +265,8 @@ function cardStep(cards: HTMLElement[], from: number, key: string) {
 }
 
 // Topic stop (design §3.D): the note's sections as cards or as a map, both from one topic model. Opening a card or
-// node moves the Fold view to Key at that unit, kept at the height it was clicked.
+// node moves the Fold view to Key at that unit, kept at the height it was clicked; in a lecture note it also plays the
+// audio from that line's second (§9.5). A click on one line of a card opens that line.
 export function FoldTopic({ topic, title, documentId, view, setView, reading, open }: {
   topic: Topic;
   title: string;
@@ -264,7 +275,7 @@ export function FoldTopic({ topic, title, documentId, view, setView, reading, op
   setView(view: TopicView): void;
   /** Source line the reader was at when Topic opened. */
   reading(): number;
-  open(unitId: string, top: number): void;
+  open(unitId: string, top: number, time: number | null): void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [current] = useState(() => topicCardAt(topic, reading())?.id ?? null);
@@ -282,8 +293,8 @@ export function FoldTopic({ topic, title, documentId, view, setView, reading, op
     focusOn(root.current!.querySelector<HTMLElement>('[data-anchor][tabindex="0"]'));
   }, []);
   const activate = (element: HTMLElement) => {
-    const anchor = element.dataset.anchor;
-    if (anchor) open(anchor, element.getBoundingClientRect().top);
+    const anchor = element.dataset.anchor, time = element.dataset.time;
+    if (anchor) open(anchor, element.getBoundingClientRect().top, time ? Number(time) : null);
   };
   const cardKeys = (event: ReactKeyboardEvent<HTMLElement>) => {
     const card = (event.target as Element).closest<HTMLElement>(".fold-card");
@@ -322,7 +333,7 @@ export function FoldTopic({ topic, title, documentId, view, setView, reading, op
   const option = (value: TopicView, label: string) => <button type="button" role="radio" data-view={value} aria-checked={view === value}
     tabIndex={view === value ? 0 : -1} onClick={() => setView(value)}>{label}</button>;
   return <div ref={root} className="fold-topic" onClick={event => {
-    const target = (event.target as Element).closest<HTMLElement>(".fold-card,.fold-map-node");
+    const target = (event.target as Element).closest<HTMLElement>(".fold-topic-line[data-anchor],.fold-card,.fold-map-node");
     if (target && !window.getSelection()?.toString()) activate(target);
   }}>
     <div className="rich-document fold-topic-page" data-view={view}>
@@ -334,7 +345,8 @@ export function FoldTopic({ topic, title, documentId, view, setView, reading, op
           {option("cards", t("Cards"))}
           {option("map", t("Map"))}
         </div>
-        <p className="fold-topic-hint">{t("Open any line at {{level}} with a click or Enter", { level: stopLabel("key") })}</p>
+        <p className="fold-topic-hint">{t("Open any line at {{level}} with a click or Enter", { level: stopLabel("key") })}
+          {topic.audio && <> · {t("Lines with a time play the lecture from that second")}</>}</p>
       </header>
       {view === "cards"
         ? <Cards topic={topic} html={html} current={current} onKeyDown={cardKeys} />

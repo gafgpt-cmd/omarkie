@@ -3,6 +3,7 @@
 import type { GlassAnchor, GlassPlacement } from "./anchor-map";
 import type { GlassMagnet } from "./glass-model";
 import { anchorFrom } from "./glass-state.ts";
+import { transcriptStamp } from "../../shared/voice.mjs";
 
 export interface TranscriptCue { start: number; end: number; text: string }
 
@@ -106,10 +107,10 @@ export function pinPercent(source: number, duration: number): number {
   return Math.max(0, Math.min(1, source / duration));
 }
 
-// Transcript line: "[00:12] text", "1:02:03.5 text" or "00:12 - text".
+// Transcript line: "[00:12] text", "1:02:03.5 text" or "00:12 - text". One grammar with Fold's lecture cards.
 export function transcriptLine(text: string): TranscriptCue | null {
-  const match = /^\s*\[?((?:\d{1,2}:)?\d{1,3}:\d{1,2}(?:\.\d{1,3})?)\]?\s*(?:[-–—:]\s*)?(.+?)\s*$/u.exec(text);
-  if (!match) return null;
-  const start = parseTime(match[1]);
-  return start === null ? null : { start, end: start + 0.05, text: match[2].slice(0, 4_000) };
+  const stamp = transcriptStamp(text);
+  const rest = stamp ? text.slice(stamp.length).trimEnd() : "";
+  if (!stamp || /[\n\r\u2028\u2029]/u.test(rest)) return null;
+  return { start: stamp.seconds, end: stamp.seconds + 0.05, text: rest.slice(0, 4_000) };
 }

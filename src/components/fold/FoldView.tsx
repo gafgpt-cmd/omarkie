@@ -7,11 +7,13 @@ import { worthFolding } from "../../../shared/fold-text.mjs";
 import { foldTopic } from "../../../shared/fold-topic.mjs";
 import { extractUnits, foldDocumentLadder, type FoldDocumentLadder, type FoldPin } from "../../../shared/fold-units.mjs";
 import type { SheetColour } from "../../../shared/reading-store.ts";
+import { embedURL } from "../../editor/markdown";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
 import CompareSlider from "../CompareSlider";
 import type { StudyMark } from "../learning-overlays";
 import { compareEditions } from "./edition";
+import { FoldAudio } from "./FoldAudio";
 import { FoldBar } from "./FoldBar";
 import { foldDragType, foldPayload, readFoldTransfer, writeFoldTransfer, type FoldOut, type FoldPayload, type FoldTarget } from "./drag";
 import { EditionPicker, FoldEdition, projectEdition, type EditionSource, type EditionSources, type EditionStatus } from "./FoldEdition";
@@ -117,6 +119,8 @@ export default function FoldView({ id, title, name, memory, content, stop, setSt
   cutRef.current = cutValue;
   const [grip, setGrip] = useState<Grip | null>(null), [menu, setMenu] = useState<Menu | null>(null), [notice, setNotice] = useState<FoldNotice | null>(null);
   const dragged = useRef<FoldUnitView | null>(null), copying = useRef<FoldPayload | null>(null);
+  const player = useRef<HTMLAudioElement>(null);
+  const lecture = topic.audio;
   const [view, setView] = useState<TopicView>(savedTopicView);
   // Topic shows as cards or a map; while the reader scrubs, the morphing page shows through instead.
   const [scrubbing, setScrubbing] = useState(false);
@@ -213,6 +217,26 @@ export default function FoldView({ id, title, name, memory, content, stop, setSt
     landed.addEventListener("animationend", () => landed.classList.remove("fold-landed"), { once: true });
   }, [index, editing]);
   useEffect(() => short ? undefined : warmTopic(topic, id), [topic, id, short]);
+  // Follow-along: the paragraph being heard carries data-speaking, found by its start second.
+  useEffect(() => {
+    const element = player.current;
+    if (!lecture || !element) return;
+    const times = [...lecture.times].sort((a, b) => a.time - b.time);
+    let speaking: HTMLElement | undefined;
+    const follow = () => {
+      let low = 0, high = times.length;
+      while (low < high) { const middle = (low + high) >> 1; if (times[middle].time <= element.currentTime + 0.05) low = middle + 1; else high = middle; }
+      const unit = low && (element.currentTime > 0 || !element.paused) ? times[low - 1].unitId : null;
+      const root = unit ? engine.current?.units.find(item => item.unit.elementId === unit)?.root : undefined;
+      if (root === speaking) return;
+      delete speaking?.dataset.speaking;
+      speaking = root;
+      if (root) root.dataset.speaking = "";
+    };
+    const events = ["timeupdate", "seeked", "play"] as const;
+    for (const name of events) element.addEventListener(name, follow);
+    return () => { for (const name of events) element.removeEventListener(name, follow); delete speaking?.dataset.speaking; };
+  }, [lecture, ladder]);
   // Leaving the Topic overlay by key or bar removes the focused card; focus returns to the page.
   useLayoutEffect(() => {
     if (!topicShown && (!document.activeElement || document.activeElement === document.body)) article.current?.focus({ preventScroll: true });
@@ -399,10 +423,14 @@ export default function FoldView({ id, title, name, memory, content, stop, setSt
     if (next === index && !edition) engine.current?.switchTo(next);
     setStop(STOPS[next]);
   }
-  function openAt(unit: string, top: number) {
+  function openAt(unit: string, top: number, time: number | null) {
     landing.current = { unit, top };
     setHint(false);
     setStop("key");
+    const element = player.current;
+    if (time === null || !element) return;
+    element.currentTime = time;
+    void element.play().catch(() => {});
   }
   function chooseView(next: TopicView) {
     saveTopicView(next);
@@ -724,7 +752,7 @@ export default function FoldView({ id, title, name, memory, content, stop, setSt
     {toast && <div className="fold-toast" role="status">{t("Highlight added")}
       {feed.canUndo && <button type="button" onClick={undo}>{t("Undo")}</button>}</div>}
     <FoldBar index={index} percents={percents} ticks={edition ? editionTicks : ticks} disabled={short && !edition} hint={hint && !edition} pick={pick}
-      cut={cut} toggleCut={toggleCut} edition={editing} toggleEdition={editions ? toggleEdition : undefined}
+      cut={cut} toggleCut={toggleCut} edition={editing} toggleEdition={editions ? toggleEdition : undefined} player={lecture && <FoldAudio audio={player} />}
       scrub={value => { if (edition) editionScrub.current = value; else { setScrubbing(true); engine.current?.scrub(value); } }}
       release={() => {
         if (edition) { setHint(false); setStop(STOPS[Math.round(editionScrub.current)]); return; }
@@ -734,5 +762,6 @@ export default function FoldView({ id, title, name, memory, content, stop, setSt
         // The page committed in this task; Topic, if the slider settled there, mounts in one of its own.
         window.setTimeout(() => setScrubbing(false));
       }} />
+    {lecture && <audio ref={player} preload="metadata" src={embedURL(lecture.target, id)} />}
   </section>;
 }

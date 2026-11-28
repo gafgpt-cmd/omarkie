@@ -126,6 +126,7 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
     - Fact chips: numbers old → new, new never-dos (with their clause), dropped conditions/scope/hedges. Summary strip counts each; unchanged units stay hidden.
     - Stops fold each card locally, no model. Keys: `↑` `↓` cards, `Enter` Full, `Shift+Enter` opens the line in the editor, `Esc` folds the card back, then leaves.
     - Folding runs in a worker; a 50 kB pair stays under 50 ms per main-thread task.
+  - Lecture notes (a `![[x.m4a]]` embed plus `mm:ss.t` paragraphs): Topic lines and cards show `▶ mm:ss`; click or `Enter` opens at Key and plays from that second. The bar gets a play/pause button (`Tab` to it; `Space`/`Enter`). The playing paragraph is marked as it goes.
   - Estudio is disabled: it needs a model; local stops only for now. Short notes show **Too short to fold**.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
 - **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.

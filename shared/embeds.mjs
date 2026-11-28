@@ -12,6 +12,7 @@ export const noteEmbed = target => {
   return !media.test(path) && !otherFile.test(path);
 };
 export const baseEmbed = target => /\.base$/i.test(String(target ?? "").split("#")[0].trim());
+export const audioEmbed = target => /\.(?:mp3|wav|m4a|ogg)$/i.test(String(target ?? "").split("#")[0].trim());
 const folderOf = relative => relative.split("/").slice(0, -1).join("/");
 const scheme = /^[a-z][a-z\d+.-]*:|^[/\\]{2}/i;
 

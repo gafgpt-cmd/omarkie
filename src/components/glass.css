@@ -695,6 +695,10 @@
 }
 .voice-pill-state { font-weight: 600; }
 .voice-pill time { font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--ink, #333) 68%, transparent); }
+.voice-pill-pending {
+  min-width: 1.5em; padding: 0 6px; border-radius: 999px; text-align: center; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent, #326eaa) 16%, transparent);
+}
 .voice-pill button {
   height: 20px;
   padding: 0 6px;
