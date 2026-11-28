@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { installPlugin } from "../electron/plugins.mjs";
 import { builtInThemes } from "../src/themes.ts";
 import backgroundFormats from "./background-formats.json" with {type:"json"};
+import { appReady, readinessReport } from "./app-readiness.mjs";
 
 const executablePath = process.env.OMARKIE_EXECUTABLE;
 assert.ok(["win32", "linux"].includes(process.platform));
@@ -31,6 +32,7 @@ try {
   currentPage = page;
   await expect(page.getByRole("button", { name: path.basename(first), exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "A quiet place for your words" })).toBeVisible();
+  await appReady(application, page);
   const identity = await application.evaluate(({ app, BrowserWindow }) => ({
     packaged: app.isPackaged, version: app.getVersion(), windows: BrowserWindow.getAllWindows().length,
   }));
@@ -76,6 +78,7 @@ try {
   await application.close();
   const fs = await import('node:fs/promises'); await fs.rm(backgroundFile);
   application = await electron.launch({executablePath,args:[second],env,timeout:30000}); page = await application.firstWindow(); currentPage = page;
+  await appReady(application, page);
   await expect(page.locator('.editor-background')).toHaveCSS('opacity','0.55');
   await expect(page.locator('.editor-background')).toHaveCSS('filter','blur(5px)');
   await expect(page.locator('.editor-background')).toHaveCSS('background-position','50% 0%');
@@ -123,7 +126,7 @@ try {
   await writeFile(path.join(qa, `${process.platform}-shell-results.json`), JSON.stringify({ ...identity, commandLineOpen: true, secondInstanceOpen: true, unicodePaths: true, backgroundPickControls:true, backgroundRestart:true, backgroundSourceMode:true, backgroundExportExcluded:true, backgroundInvalidAndCancel:true, backgroundClear:true, themes:6, installedPluginModule:true, pluginEditUndo:true, readOnlyLiveAndSource:true, pluginCleanup:true }, null, 2));
   console.log("PASS: installed Windows executable, command-line documents, single instance and Unicode paths");
 } catch (error) {
-  console.error(JSON.stringify({ error: String(error), alerts: await currentPage?.getByRole('alert').allTextContents().catch(() => []) }));
+  console.error(JSON.stringify({ error: String(error), ...(await readinessReport(application, currentPage)) }));
   await currentPage?.screenshot({path:path.join(qa,'windows-shell-failure.png')}).catch(() => {});
   throw error;
 } finally { await application?.close(); }

@@ -2,6 +2,7 @@ import {_electron as electron,expect} from 'playwright/test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,cp,rename,readFile,writeFile} from 'node:fs/promises';
 import {fullSize,headlessArguments,isolatedEnvironment,packagedScreenshotArguments} from './desktop-window.mjs';
+import {appReady,readinessReport,saved} from './app-readiness.mjs';
 import path from 'node:path';
 import os from 'node:os';
 const data=await mkdtemp(path.join(os.tmpdir(),'omarkie-package-ui-')), profile=path.join(data,'profile'), folder=path.join(data,'插件文件夹');
@@ -9,7 +10,7 @@ const qa=process.env.OMARKIE_QA_DIR || path.join(data,'evidence');await mkdir(qa
 await cp(new URL('./fixtures/plugin-package',import.meta.url),folder,{recursive:true});
 const env=await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:profile,OMARKIE_LANGUAGE:'zh'});delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
 let app,page;const errors=[],checks=[];
-const launch=async()=>{app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await fullSize(app,page);await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({timeout:30_000});};
+const launch=async()=>{app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await fullSize(app,page);await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({timeout:30_000});await appReady(app,page);};
 const stop=async()=>{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});app=null;}};
 const openPlugins=async()=>{await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'插件管理…',exact:true}).click();};
 const card=()=>page.locator('.plugin-card').filter({has:page.getByRole('heading',{name:'Package fixture',exact:true})});
@@ -28,7 +29,7 @@ try {
   await expect.poll(()=>page.evaluate(()=>getComputedStyle(document.querySelector('.document-editor:not([hidden]) .rich-document')).getPropertyValue('--package-fixture').trim())).toBe('loaded');
   await card().getByRole('button',{name:'切换效果',exact:true}).click();
   await page.getByRole('dialog',{name:'插件管理',exact:true}).getByRole('button',{name:'完成',exact:true}).click();
-  await expect.poll(()=>readFile(file,'utf8')).toContain('插件中文😀42');await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');await expect.poll(()=>readFile(file,'utf8')).toBe(original);
+  await saved(app,file,text=>text.includes('插件中文😀42'));await page.keyboard.press(process.platform==='darwin'?'Meta+z':'Control+z');await saved(app,file,original);
   checks.push('Installed relative JS/JSON/CSS modules work after source removal; Unicode command undoes once');
   await openPlugins();await card().getByRole('checkbox').uncheck();await expect.poll(()=>card().locator('.plugin-toggle').textContent()).toContain('未启用');
   const ticks=await page.evaluate(()=>window.packageProbe.ticks);await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.packageProbe.ticks),ticks);
@@ -38,5 +39,5 @@ try {
   await card().getByRole('checkbox').uncheck();assert.deepEqual(errors,[]);
   await writeFile(path.join(qa,'plugin-package-results.json'),JSON.stringify({platform:process.platform,checks,errors},null,2));
   for(const check of checks)console.log('PASS: '+check);
-}catch(error){await page?.screenshot({path:path.join(qa,'plugin-package-failure.png')}).catch(()=>{});throw error;}
+}catch(error){console.error(JSON.stringify(await readinessReport(app,page)));await page?.screenshot({path:path.join(qa,'plugin-package-failure.png')}).catch(()=>{});throw error;}
 finally{await stop();}

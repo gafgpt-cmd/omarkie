@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { pathToFileURL } from "node:url";
 import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
+import { appReady, photoDecoded, readinessReport, saved } from "./app-readiness.mjs";
 const root = process.cwd(),
   qa = process.env.OMARKIE_QA_DIR || "/tmp/omarkie-qa";
 await mkdir(qa, { recursive: true });
@@ -25,6 +26,7 @@ async function launch() {
   page.on("pageerror", (error) => errors.push(error.message));
   await fullSize(application, page);
   await page.getByRole("button", { name: "travel-journal.md", exact: true }).waitFor();
+  await appReady(application, page);
   return page;
 }
 async function menu(page, name) {
@@ -58,7 +60,7 @@ try {
     await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
   const firstPhoto = page.locator(".document-editor:not([hidden]) img").first();
   await expect(firstPhoto).toBeVisible();
-  await expect.poll(() => firstPhoto.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  await photoDecoded(firstPhoto);
   await page.screenshot({ path: path.join(qa, "desktop.png") });
   passed.push("First launch opens all five illustrated introductions and decodes the first photo");
   const welcome = path.join(dataDir, "Showcase/travel-journal.md");
@@ -76,14 +78,12 @@ try {
   await editor.click();
   await editor.press("ControlOrMeta+End");
   await page.keyboard.insertText("\n中文输入验收：你好，世界。\n");
-  await waitForFile(welcome, (text) =>
-    text.includes("中文输入验收：你好，世界。"),
-  );
+  await saved(application, welcome, (text) => text.includes("中文输入验收：你好，世界。"));
   passed.push("Chinese text input persists through Electron-host automatic save");
   await editor.press("ControlOrMeta+z");
-  await waitForFile(welcome, (text) => !text.includes("中文输入验收"));
+  await saved(application, welcome, (text) => !text.includes("中文输入验收"));
   await editor.press("ControlOrMeta+Shift+z");
-  await waitForFile(welcome, (text) => text.includes("中文输入验收"));
+  await saved(application, welcome, (text) => text.includes("中文输入验收"));
   passed.push("Undo and redo persist correct file contents");
   await page.getByRole("button", { name: "space-explainer.md", exact: true }).click();
   await mode(page, true);
@@ -128,7 +128,7 @@ try {
   await crlfEditor.click();
   await crlfEditor.press("ControlOrMeta+End");
   await page.keyboard.insertText("新增中文");
-  await waitForFile(crlfFile, (text) => text.endsWith("新增中文"));
+  await saved(application, crlfFile, (text) => text.endsWith("新增中文"));
   assert.equal(await readFile(crlfFile, "utf-8"), crlfOriginal + "新增中文");
   passed.push(
     "Real editor preserves BOM, CRLF, front matter and trailing spaces",
@@ -153,9 +153,7 @@ try {
     },
     [...tinyPng],
   );
-  const imageContent = await waitForFile(crlfFile, (text) =>
-    text.includes("![paste.png](.assets/"),
-  );
+  const imageContent = await saved(application, crlfFile, (text) => text.includes("![paste.png](.assets/"));
   const imageRelative = /!\[paste.png\]\(([^)]+)\)/.exec(imageContent)[1];
   assert.deepEqual(await readFile(path.join(dataDir, imageRelative)), tinyPng);
   await mode(page, true);
@@ -191,7 +189,7 @@ try {
   for (const alt of ["raw-space image", "picture with spaces.png", "absolute image", "HTML image"]) {
     const image = pictureEditor.getByRole("img", { name: alt, exact: true });
     await image.scrollIntoViewIfNeeded();
-    await expect.poll(() => image.evaluate(element => element.complete && element.naturalWidth > 0)).toBe(true);
+    await photoDecoded(image);
   }
   await expect(pictureEditor.getByRole("img", { name: "picture with spaces.png", exact: true })).toHaveAttribute("width", "40");
   await expect(pictureEditor.getByRole("img", { name: "absolute image", exact: true })).toHaveAttribute("width", "30");
@@ -214,8 +212,7 @@ try {
   await expect(
     page.getByRole("heading", { name: "Seven Days on the Lighthouse Coast" }),
   ).toBeVisible();
-  // Poll instead of decode(): the photo's src may still switch to its screen-size preview, which rejects a pending decode.
-  await expect.poll(() => page.locator(".document-editor:not([hidden]) img").first().evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  await photoDecoded(page.locator(".document-editor:not([hidden]) img").first());
   await expect.poll(() => readFile(missingNote).catch(() => null)).toEqual(noteBytes);
   await expect.poll(() => readFile(missingPhoto).catch(() => null)).toEqual(photoBytes);
   assert.deepEqual(await readFile(welcome), editedTravel);
@@ -229,7 +226,7 @@ try {
   const fresh = page.locator(".document-editor:not([hidden]) .cm-content");
   await fresh.fill("# 新文档\n\n这是一份真实保存的 Markdown。\n");
   await menu(page, "保存");
-  await waitForFile(target, (text) => text.includes("真实保存"));
+  await saved(application, target, (text) => text.includes("真实保存"));
   passed.push("New document Save uses native file persistence");
   await page.getByRole("button", { name: "更多操作" }).click();
   await page
@@ -266,7 +263,7 @@ try {
   );
   console.log(JSON.stringify({ passed, errors, dataDir }, null, 2));
 } catch (error) {
-  const diagnostics = { error: String(error), passed, errors, alerts: await currentPage?.getByRole("alert").allTextContents().catch(() => []), dataDir };
+  const diagnostics = { error: String(error), passed, errors, ...(await readinessReport(application, currentPage)), dataDir };
   console.error(JSON.stringify(diagnostics, null, 2));
   await currentPage?.screenshot({ path: path.join(qa, "failure.png") }).catch(() => {});
   await writeFile(path.join(qa, "failure.json"), JSON.stringify(diagnostics, null, 2));

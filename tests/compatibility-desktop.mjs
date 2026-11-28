@@ -9,6 +9,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {pandocPath,libreOfficePath} from '../electron/interchange.mjs';
 import {fullSize,headlessArguments,isolatedEnvironment,packagedScreenshotArguments} from './desktop-window.mjs';
+import {appReady,readinessReport,saved} from './app-readiness.mjs';
 const exec = promisify(execFile), pandoc = await pandocPath(), office = await libreOfficePath();
 assert.ok(pandoc && office,'Install Pandoc and LibreOffice for actual conversion acceptance');
 await mkdir("test-results", {recursive:true});
@@ -29,6 +30,7 @@ try {
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments} : {args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
+  await appReady(application,page);
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});
   const command = action=>application.evaluate(({BrowserWindow},action)=>BrowserWindow.getAllWindows()[0].webContents.send('app:command',{action}),action);
   const openDialog = async file=>application.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
@@ -49,7 +51,7 @@ try {
     const exported = path.join(data,'export-'+format+'.html'); await saveDialog(exported); await command('html');
     await expect.poll(async()=>{try{return await readFile(exported,'utf8');}catch{return '';}},{timeout:30000}).toContain('data:image/png;base64,');
     const html = await readFile(exported,'utf8'); assert.ok(html.includes('cell one')&&html.includes('Footnote text'));
-    if (format === 'docx') { savedDoc=path.join(data,'Imported saved.md'); await saveDialog(savedDoc); await command('saveAs'); await expect.poll(async()=>{try{return await readFile(savedDoc,'utf8');}catch{return '';}}).toContain('Imported/'); }
+    if (format === 'docx') { savedDoc=path.join(data,'Imported saved.md'); await saveDialog(savedDoc); await command('saveAs'); await saved(application,savedDoc,text=>text.includes('Imported/')); }
     checks.push(format+': actual import renders persistent image/table/note, then embeds it in portable HTML');
 
   }
@@ -73,6 +75,7 @@ try {
   await application.close(); application=null;
   application = await electron.launch({...(process.env.OMARKIE_EXECUTABLE ? {executablePath:process.env.OMARKIE_EXECUTABLE,args:[savedDoc,...packagedScreenshotArguments]} : {args:[process.cwd(),savedDoc,...headlessArguments]}),env,timeout:30000});
   page = await application.firstWindow(); page.on('pageerror',error=>errors.push(error.message)); await fullSize(application,page);
+  await appReady(application,page);
   const reopened = page.locator('.document-editor:not([hidden]) .rich-document');
   await application.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:2});});
   await page.getByRole('button',{name:'Imported saved.md',exact:true}).click();
@@ -81,5 +84,5 @@ try {
   checks.push('Saved imported document and extracted media survive an application restart');
   assert.deepEqual(errors,[]); await writeFile(path.join(qa,'compatibility-results.json'),JSON.stringify({platform:process.platform,checks,errors,pandoc,office},null,2));
   console.log(checks.map(check=>'PASS: '+check).join('\n'));
-} catch(error) { await page?.screenshot({path:path.join(qa,'compatibility-failure.png')}).catch(()=>{}); throw error; }
+} catch(error) { console.error(JSON.stringify(await readinessReport(application,page))); await page?.screenshot({path:path.join(qa,'compatibility-failure.png')}).catch(()=>{}); throw error; }
 finally { if (application) { await application.evaluate(({app})=>app.exit(0)).catch(()=>{}); await application.close().catch(()=>{}); } server.close(); }

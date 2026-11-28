@@ -40,26 +40,59 @@ import { listenBridge } from "./tutor-transport.mjs";
 import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
 import { GlassSync } from "./glass-sync.mjs";
 import { SyncTokenStore } from "./sync-token.mjs";
-const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
-// Epoch-stamped stages for tests/perf-desktop.mjs; process start is performance.timeOrigin.
-const startupTrace = traceStartup ? (globalThis.omarkieStartupTrace = []) : null;
-function startupMark(name, detail) {
-  if (!traceStartup || startupTrace.length > 200) return;
-  performance.mark(`omarkie:${name}`);
-  startupTrace.push({ name, at: performance.timeOrigin + performance.now(), ...detail });
-  console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
-}
-startupMark("main-module-evaluated");
-// OMARKIE_DEBUG_LOG=<file>: Glass startup steps, saves and main-process stalls, one line each; off by default.
+// OMARKIE_DEBUG_LOG=<file>: startup marks, Glass startup steps, dirty/save timings, photo requests and
+// main/renderer stalls, one line each; off by default.
 const debugLogFile = process.env.OMARKIE_DEBUG_LOG?.trim();
 function debugLog(...parts) {
   if (!debugLogFile) return;
   try { appendFileSync(debugLogFile, `${new Date().toISOString()} ${parts.join(" ")}\n`); } catch { /* diagnostics never break the app */ }
 }
 const elapsed = since => `${Math.round(performance.now() - since)}ms`;
+const traceStartup = process.env.OMARKIE_TRACE_STARTUP === "1";
+// Epoch-stamped stages for tests/perf-desktop.mjs; process start is performance.timeOrigin.
+const startupTrace = traceStartup ? (globalThis.omarkieStartupTrace = []) : null;
+function startupMark(name, detail) {
+  debugLog("startup", name, `${Math.round(performance.now())}ms`, detail ? JSON.stringify(detail) : "");
+  if (!traceStartup || startupTrace.length > 200) return;
+  performance.mark(`omarkie:${name}`);
+  startupTrace.push({ name, at: performance.timeOrigin + performance.now(), ...detail });
+  console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
+}
+startupMark("main-module-evaluated");
+// App milestones a test or a diagnostic waits on instead of guessing a duration: Glass state and saves flushed to disk.
+// Read through Playwright's application.evaluate; `changed` resolves on the next milestone, or after `ms` at the latest.
+const readinessState = { version: 0, glass: "off", glassError: "", dirty: false, saves: 0, saveFailures: 0, lastSaveError: "" };
+let readinessWaiters = [];
+const readiness = globalThis.omarkieReadiness = {
+  snapshot: () => ({ ...readinessState }),
+  update(patch) {
+    Object.assign(readinessState, patch);
+    readinessState.version += 1;
+    const waiting = readinessWaiters;
+    readinessWaiters = [];
+    for (const wake of waiting) wake();
+  },
+  changed(version, ms) {
+    if (version !== readinessState.version) return Promise.resolve({ ...readinessState });
+    return new Promise(resolve => {
+      const wake = () => { clearTimeout(timer); resolve({ ...readinessState }); };
+      const timer = setTimeout(() => { readinessWaiters = readinessWaiters.filter(item => item !== wake); wake(); }, ms);
+      readinessWaiters.push(wake);
+    });
+  },
+};
 if (debugLogFile) {
   let tick = performance.now();
   setInterval(() => { const now = performance.now(), late = now - tick - 100; if (late > 250) debugLog("main-stall", `${Math.round(late)}ms`); tick = now; }, 100).unref();
+  // A busy renderer main thread delays input handling and the autosave timer alike.
+  let probing = false;
+  setInterval(() => {
+    const contents = window?.webContents;
+    if (probing || !contents || contents.isDestroyed() || contents.isLoading()) return;
+    probing = true;
+    const began = performance.now();
+    contents.executeJavaScript("0").then(() => { const late = performance.now() - began; if (late > 250) debugLog("renderer-stall", `${Math.round(late)}ms`); }, () => {}).finally(() => { probing = false; });
+  }, 250).unref();
 }
 // Tests hold Glass startup back after the bridge binds to model a slow machine.
 const testGlassDelay = Number(process.env.OMARKIE_TEST_GLASS_DELAY_MS) || 0;
@@ -212,6 +245,8 @@ function announceGlass(request) {
 
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
+  // Marked before the queued run starts: a caller answered by this IPC must already see Glass as starting.
+  if (folder !== glassRuntime.folder && readinessState.glass !== "starting") readiness.update({ glass: folder ? "starting" : "off", glassError: "" });
   const run = glassQueue.then(() => syncGlassNow(folder));
   glassQueue = run.catch(() => {});
   return run;
@@ -254,8 +289,9 @@ async function syncGlassNow(folder) {
     return;
   }
   await closeGlassRuntime();
-  if (!folder) return;
+  if (!folder) { readiness.update({ glass: "off", glassError: "" }); return; }
   glassRuntime.folder = folder;
+  if (readinessState.glass !== "starting") readiness.update({ glass: "starting", glassError: "" });
   let started;
   glassRuntime.started = new Promise(resolve => { started = resolve; });
   try {
@@ -285,14 +321,19 @@ async function syncGlassNow(folder) {
       glassRuntime.sync = sync;
       await sync.start();
       debugLog("glass ready");
+      readiness.update({ glass: "ready" });
     } catch (error) {
       await sync?.close().catch(() => {});
       service.sync = null;
       glassRuntime.sync = null;
       console.warn("Glass index:", error.message);
+      debugLog("glass index-failed", error.message);
+      readiness.update({ glass: "failed", glassError: error.message });
     }
   } catch (error) {
     glassRuntime.error = error;
+    debugLog("glass failed", error.message);
+    readiness.update({ glass: "failed", glassError: error.message });
     scheduleGlassRetry(folder);
     throw error;
   } finally { started(); }
@@ -674,8 +715,8 @@ const handlers = {
     return imageAction({store,id,sources,action,options,destination,directory,trash:file=>shell.trashItem(file),notice:message=>window.webContents.send("app:command",{action:"notice",message})});
   },
   ready: async () => {
+    startupMark("renderer-ready");
     if (traceStartup) {
-      startupMark("renderer-ready");
       // Logged without awaiting: tracing must not delay the documents opened below.
       void window?.webContents.executeJavaScript('performance.getEntriesByType("mark").filter(mark => mark.name.startsWith("omarkie:")).map(mark => ({ name: mark.name, startTime: mark.startTime, origin: performance.timeOrigin }))').then(marks => {
         for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
@@ -811,9 +852,11 @@ const handlers = {
     try {
       const saved = await store.save(id, text, destination, force, options);
       debugLog("save done", elapsed(began));
+      readiness.update({ saves: readinessState.saves + 1 });
       return saved;
     } catch (error) {
       debugLog("save failed", elapsed(began), error.code || "");
+      readiness.update({ saveFailures: readinessState.saveFailures + 1, lastSaveError: `${error.code || ""} ${error.message}`.trim() });
       throw error;
     }
   },
@@ -883,6 +926,7 @@ const handlers = {
     return result.response === 1;
   },
   dirty: (_, value) => {
+    if (dirty !== Boolean(value)) { debugLog("dirty", Boolean(value)); readiness.update({ dirty: Boolean(value) }); }
     dirty = Boolean(value);
     if (process.platform === "darwin") window?.setDocumentEdited(dirty);
   },
@@ -985,7 +1029,7 @@ app
     let tracedAssets = 0;
     protocol.handle("omarkie-asset", async (request) => {
       try {
-        const traced = traceStartup && tracedAssets < 8 ? ++tracedAssets : 0, mark = (name, detail) => { if (traced) startupMark(name, { request: traced, ...detail }); };
+        const traced = (traceStartup || debugLogFile) && tracedAssets < 8 ? ++tracedAssets : 0, mark = (name, detail) => { if (traced) startupMark(name, { request: traced, ...detail }); };
         mark("photo-request");
         const url = new URL(request.url), width = Number(url.searchParams.get("preview"));
         const [id, ...rest] = url.pathname.slice(1).split("/");

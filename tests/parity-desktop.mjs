@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
+import { appReady, readinessReport, saved as savedFile } from "./app-readiness.mjs";
 
 const data = await mkdtemp(path.join(os.tmpdir(), "omarkie-parity-"));
 const qa = process.env.OMARKIE_QA_DIR || path.join(data, "evidence");
@@ -25,6 +26,7 @@ try {
   for (const stream of [application.process().stdout, application.process().stderr]) stream?.on("data", chunk => appendFileSync(appLog, String(chunk)));
   await fullSize(application, page);
   await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({ timeout: 30_000 });
+  await appReady(application, page); mark('app ready');
   await application.evaluate(({dialog},file) => {dialog.showOpenDialog = async () => ({canceled:false,filePaths:[file]});},file);
   const menu = async name => {await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name,exact:true}).click();};
   await menu('打开文件');
@@ -39,7 +41,7 @@ try {
     element.focus(); getSelection().setBaseAndExtent(a,a.data.indexOf(start)+offset,b,b.data.indexOf(end)+(end===start?offset:end.length));
     document.dispatchEvent(new Event('selectionchange'));
   },{start,end,offset});
-  const saved = text => { mark('expect save'); return expect.poll(()=>readFile(file,'utf8')).toBe(text); };
+  const saved = text => { mark('expect save'); return savedFile(application, file, text); };
   const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
   await point('alpha','alpha',2); await page.keyboard.press(`${mod}+d`);
   await page.keyboard.insertText('replaced'); await saved(original.replace('alpha','replaced'));
@@ -139,14 +141,14 @@ try {
   await point('| Name | 中文 |','| Name | 中文 |','| Name | 中文 |'.length);await page.keyboard.press('Enter');
   await expect(root.locator('thead th')).toHaveCount(2);await expect(root.locator('tbody td')).toHaveCount(2);
   const emptyTable=header+'\n| --- | --- |\n|  |  |';
-  await expect.poll(()=>readFile(headerFile,'utf8')).toBe(emptyTable);
+  await savedFile(application, headerFile, emptyTable);
   await page.keyboard.insertText('路径|中文');
   const filled=emptyTable.replace('|  |  |','| 路径\\|中文 |  |');
-  await expect.poll(()=>readFile(headerFile,'utf8')).toBe(filled);
+  await savedFile(application, headerFile, filled);
   await page.getByRole('button',{name:'源码',exact:true}).click();await expect(sourceContent).toContainText('路径\\|中文');
   await page.getByRole('button',{name:'即时渲染',exact:true}).click();
-  await page.keyboard.press(`${mod}+z`);await expect.poll(()=>readFile(headerFile,'utf8')).toBe(emptyTable);
-  await page.keyboard.press(`${mod}+z`);await expect.poll(()=>readFile(headerFile,'utf8')).toBe(header);
+  await page.keyboard.press(`${mod}+z`);await savedFile(application, headerFile, emptyTable);
+  await page.keyboard.press(`${mod}+z`);await savedFile(application, headerFile, header);
   await page.keyboard.press(`${mod}+Shift+z`);await expect(root.locator('tbody td')).toHaveCount(2);
   checks.push('Header Enter creates a table and focuses its first body cell; Chinese/pipe typing, source round trip and separate undo/redo preserve it');
   assert.deepEqual(errors,[]);
@@ -155,5 +157,6 @@ try {
   await writeFile(path.join(qa,'parity-results.json'),JSON.stringify({platform:process.platform,checks,errors,originalPreserved:await readFile(file,'utf8')===original},null,2));
   console.log(checks.map(check=>'PASS: '+check).join('\n'));
 } catch(error) {
+  console.error(JSON.stringify(await readinessReport(application, page)));
   await page?.screenshot({path:path.join(qa,'parity-failure.png')}).catch(()=>{}); throw error;
 } finally {await application?.close();}

@@ -10,8 +10,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing version tag, for example v0.5.2"
-        required: true
+        description: "Existing version tag, for example v0.5.2; empty runs the Linux, Arch and Windows builds and tests on the chosen branch without releasing"
+        required: false
         type: string
 
 concurrency:
