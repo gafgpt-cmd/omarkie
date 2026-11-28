@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Dialog } from "./Dialog";
 import type { PluginDefinition, PluginPreferences, PluginState, PluginAction } from "../plugins/types";
+import { capabilityLabel } from "../plugins/ports/capabilities";
 import { t } from "../i18n";
 function PluginSettings({ definition, apply }: { definition: PluginDefinition; apply(config: Record<string, any>): void }) {
   const [text, setText] = useState(JSON.stringify(definition.config, null, 2)), [error, setError] = useState("");
@@ -12,10 +13,14 @@ export function PluginsDialog({ definitions, preferences, states, toggle, config
   return <Dialog title={t("插件管理")} close={close}>
     <div className="plugin-intro"><p>{t("Original community plugins and focused reading ports. Enable only what you need.")}</p></div>
     <div className="plugin-list">{definitions.map(definition => { const state = states[definition.id], enabled = preferences[definition.id]?.enabled || false; return <section className="plugin-card" key={definition.id} data-plugin-id={definition.id}>
-      <div className="plugin-card-top"><div><h3>{t(definition.name)}</h3><span className="plugin-origin">{definition.builtin ? t("社区插件 · 随应用提供") : t("本地安装")}</span></div><label className="plugin-toggle"><input type="checkbox" aria-label={t("启用{{name}}", { name: t(definition.name) })} checked={enabled} disabled={state?.status === "loading"} onChange={event => toggle(definition.id, event.target.checked)} /><span>{state?.status === "loading" ? t("正在加载") : state?.status === "error" ? t("加载失败") : enabled ? t("已启用") : t("未启用")}</span></label></div>
+      <div className="plugin-card-top"><div><h3>{t(definition.name)}</h3><span className="plugin-origin">{definition.origin === "obsidian" ? t("Obsidian port · bundled") : definition.builtin ? t("社区插件 · 随应用提供") : t("本地安装")}</span></div><label className="plugin-toggle"><input type="checkbox" aria-label={t("启用{{name}}", { name: t(definition.name) })} checked={enabled} disabled={state?.status === "loading"} onChange={event => toggle(definition.id, event.target.checked)} /><span>{state?.status === "loading" ? t("正在加载") : state?.status === "error" ? t("加载失败") : enabled ? t("已启用") : t("未启用")}</span></label></div>
       <p>{definition.description}</p>
+      {definition.origin === "obsidian" && <ul className="plugin-capabilities" aria-label={t("Access")}>
+        {definition.capabilities?.map(capability => <li key={capability}>{capabilityLabel(capability)}</li>)}
+        <li>{t("No network access. Never changes notes.")}</li>
+      </ul>}
       {state?.status === "error" && <p role="alert" className="form-error">{t("加载失败：{{error}}", { error: state.error })}</p>}
-      {!definition.renderer && <div className="plugin-actions"><code>{definition.config.HOTKEY || t("未设置快捷键")}</code>{!["collapse_list", "collapse_paragraph", "auto_number", "callouts", "resize_image", "collapse_table", "slash_commands"].includes(definition.id) && <button disabled={state?.status !== "ready"} onClick={() => void invoke(definition.id)}>{t("切换效果")}</button>}<button disabled={state?.status !== "ready"} onClick={() => setCommands({id:definition.id,items:actions(definition.id)})}>{t("插件命令…")}</button></div>}
+      {!definition.renderer && <div className="plugin-actions"><code>{definition.config.HOTKEY || t("未设置快捷键")}</code>{definition.origin !== "obsidian" && !["collapse_list", "collapse_paragraph", "auto_number", "callouts", "resize_image", "collapse_table", "slash_commands"].includes(definition.id) && <button disabled={state?.status !== "ready"} onClick={() => void invoke(definition.id)}>{t("切换效果")}</button>}<button disabled={state?.status !== "ready"} onClick={() => setCommands({id:definition.id,items:actions(definition.id)})}>{t("插件命令…")}</button></div>}
       {commands?.id===definition.id && state?.status==='ready' && <div aria-label={t("{{name}}命令", { name: t(definition.name) })}>{commands.items.length ? commands.items.map(action=><button key={action.value} disabled={action.disabled} aria-pressed={action.checked} onClick={() => void invoke(definition.id,action.value).then(()=>setCommands({id:definition.id,items:actions(definition.id)}))}>{action.name}</button>) : <p className="dialog-note">{t("此插件未提供额外命令。")}</p>}</div>}
       {!definition.renderer && <PluginSettings key={JSON.stringify(definition.config)} definition={definition} apply={config => configure(definition.id, config)} />}
       {!definition.builtin && <button className="plugin-remove" onClick={() => void remove(definition.id).catch(error => setError(error.message))}>{t("移除插件")}</button>}

@@ -44,6 +44,22 @@ export function suggestCards(cards: readonly StoredCard[], highlights: readonly 
   return drafts;
 }
 
+/** Imported drafts not saved yet, within the per-note limit. A card is the same when source, answer and question match. */
+export function freshImports(cards: readonly StoredCard[], drafts: readonly Omit<CardDraft, "id" | "type">[]) {
+  const key = (card: Pick<CardDraft, "front" | "anchor">) => card.anchor ? JSON.stringify([anchorKey(card.anchor), normalize(card.front)]) : "";
+  const seen = new Set(cards.map(key));
+  const fresh: Omit<CardDraft, "id" | "type">[] = [];
+  let saved = 0, skipped = 0;
+  for (const draft of drafts) {
+    const id = key(draft);
+    if (seen.has(id)) { saved++; continue; }
+    seen.add(id);
+    if (fresh.length >= cardsPerNote - cards.length) { skipped++; continue; }
+    fresh.push(draft);
+  }
+  return { fresh, saved, skipped };
+}
+
 export function dueCards(entries: readonly ReadingEntry[], now: number): StoredCard[] {
   // One durable answer event per rating. Replay avoids a second, partially committed schedule write.
   const answers = entries.filter(entry => entry.type === "answer").sort((a, b) => a.at.localeCompare(b.at));

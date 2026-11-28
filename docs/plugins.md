@@ -38,6 +38,20 @@ Disabled bundled plugins are never imported or evaluated. Enabling dynamically i
 
 **Learning mode** is a bundled renderer feature, not a Typora compatibility plugin. The Plugin Manager and title bar share the same switch. Study data stays in the vault. The optional local Tutor socket opens on the first local ask, never at startup.
 
+## Obsidian ports
+
+Two Obsidian plugins are rewritten as first-party Omarkie modules in `src/plugins/ports`. Obsidian is not installed or required. Both are off initially and load only when enabled, after first paint. Provenance and MIT notices: `third-party/obsidian-ports/NOTICE`.
+
+| Port | Does | Access | Default shortcut |
+| --- | --- | --- | --- |
+| Dataview | Renders ` ```dataview ` `TABLE` / `LIST` fences as tables over frontmatter of notes in the open folder. Click a result to open that note; click the block to edit the query. Unsaved edits count. **Refresh Dataview queries** re-reads the folder | read folder, read current note, open notes | Mod+Alt+Shift+Q |
+| Spaced Repetition | **Import flashcards from this note** parses `Question::Answer`, `:::` reversed, multiline `?` / `??` and `==cloze==` cards, then opens **Study cards** with them as drafts. Review, edit, save; **Test me** schedules them | read current note, propose cards | Mod+Alt+Shift+C |
+
+- Ports see only `utils.ports`, gated by their catalog `capabilities`. Network, file writes, Node/shell, `App`/workspace internals, DOM/CSS/editor extensions: refused with a message naming the call. Turning a port off ends its access, removes its output and stops its events.
+- Notes are never written. Removing or disabling a port leaves them byte-identical.
+- Dataview not supported: `TASK`, `CALENDAR`, `csv()`, DataviewJS, inline `key:: value` fields, regex functions, `elink()`, `hash()`, `durationformat()`. `file.mtime` / `file.ctime` read as empty with a warning. Results cap at 500 rows.
+- Spaced Repetition: its `<!--SR:…-->` review state is ignored, not converted; Study cards keeps its own SM-2 schedule. Already-saved cards are skipped on re-import; a note holds at most 10 cards. Bold and `{{curly}}` cloze patterns: enable in **Plugin settings** (`BOLD_CLOZE`, `CURLY_CLOZE`).
+
 ## Installing another plugin
 
 Use **Install local plugin**, review the trust notice, and choose either a UTF-8 `.js` / `.cjs` file of at most 1 MB or **Choose plugin folder**. Installation creates a managed, content-addressed module and leaves it disabled. Enable it explicitly. To uninstall, use **Remove plugin**; desktop copies go to the operating system Trash and the original source file stays intact.

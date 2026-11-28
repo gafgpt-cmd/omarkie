@@ -1,0 +1,49 @@
+Obsidian ports
+
+First-party TypeScript ports. Upstream code was read and rewritten; nothing is vendored.
+Obsidian is not installed, loaded or required.
+
+Dataview
+Source: https://github.com/blacksmithgu/obsidian-dataview
+Revision: 5ad0994ff384cbb797de382e7edff2388141b73a
+Copyright (c) 2021 Michael Brenan
+License: MIT, reproduced in LICENSE-dataview in this directory.
+
+Inspected source -> adapted module in src/plugins/ports:
+- src/data-model/value.ts -> dataview-values.ts
+- src/expression/parse.ts + src/query/parse.ts + src/query/query.ts -> dataview-query.ts
+- src/expression/context.ts + binaryop.ts + functions.ts + src/query/engine.ts + src/data-index/resolver.ts -> dataview-engine.ts
+- frontmatter typing from src/data-import/markdown-file.ts -> dataview-engine.ts
+- fence rendering (no upstream UI code) -> dataview.ts
+
+Left out, rejected with a message: TASK and CALENDAR views, csv() sources, DataviewJS and inline JS,
+regex functions, elink(), hash(), durationformat(). Read as empty with a warning: file.mtime/ctime/mday/cday.
+Not read: inline fields (key:: value); only frontmatter. file.size counts note bytes.
+No background index, file watcher, remote fetch or CSV file read included.
+
+Spaced Repetition
+Source: https://github.com/st3v3nmw/obsidian-spaced-repetition
+Revision: 298c19f699db4f66eb38c1775bfc7752d7c5963e
+Copyright (c) 2021 - 2024 Stephen Mwangi
+License: MIT, reproduced in LICENSE-spaced-repetition in this directory.
+
+Inspected source -> adapted module in src/plugins/ports:
+- src/parser.ts + src/question-type.ts + src/question.ts (splitText) -> srs-cards.ts
+- command wiring (no upstream UI code) -> spaced_repetition.ts
+
+Kept: single-line, reversed, multiline and cloze card syntax; configurable separators.
+Left out: decks, review queue, scheduling and <!--SR:...--> state; Study cards schedules with its own SM-2.
+Notes are never rewritten. Fixed while porting: HTML-comment skip, `$` in replacements.
+
+clozecraft 0.4.0 (cloze logic used by Spaced Repetition)
+Source: https://www.npmjs.com/package/clozecraft
+Copyright (c) 2024 Ocimar Mota dos Santos Filho (MotaOcimar)
+License: MIT, reproduced in LICENSE-clozecraft in this directory.
+
+Inspected source -> adapted module in src/plugins/ports:
+- dist/implementation/ClozeCrafter, ClozeNote*, ClozeDeletion*, ClozePattern, ClozeRegExp -> srs-cards.ts
+
+Capability broker (no upstream code) -> capabilities.ts
+Ports reach notes only through granted capabilities; network, writes, Node/shell, workspace internals,
+DOM/CSS/editor extensions are denied with a message.
+No telemetry or phone-home code included.
