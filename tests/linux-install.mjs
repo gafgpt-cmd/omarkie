@@ -19,7 +19,7 @@ await mkdir(qa,{recursive:true});
 const run = (command,args,options={}) => execFileSync(command,args,{stdio:"inherit",...options});
 const exercise = async (executable,kind) => {
   const evidence = path.join(qa,kind); await mkdir(evidence,{recursive:true});
-  const env = {...process.env, OMARKIE_EXECUTABLE:executable, OMARKIE_QA_DIR:evidence};
+  const env = {...process.env, OMARKIE_EXECUTABLE:executable, OMARKIE_QA_DIR:evidence, OMARKIE_EXPECTED_VERSION:version};
   run(process.execPath, ["tests/packaged-axi.mjs", path.join(path.dirname(executable), "omarkie-axi")]);
   for (const file of ["desktop.mjs","electron-shell.mjs","parity-desktop.mjs","compatibility-desktop.mjs","ime-desktop.mjs","plugin-package-desktop.mjs"]) run(process.execPath,[`tests/${file}`],{env});
   const {dataDir} = JSON.parse(await readFile(path.join(evidence,"desktop-results.json"),"utf8"));

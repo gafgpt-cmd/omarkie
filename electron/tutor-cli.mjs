@@ -263,7 +263,8 @@ export async function main(argv = process.argv.slice(2)) {
     if (command === "skill") {
       if (!opts.check) process.stdout.write(skill);
       else {
-        if (await readFile(skillPath, "utf8").catch(() => "") !== skill) throw new Error("Tutor skill differs from AXI guidance. Regenerate it with `npm run --silent omarkie-axi -- skill`.");
+        const current = (await readFile(skillPath, "utf8").catch(() => "")).replace(/\r\n/g, "\n");
+        if (current !== skill) throw new Error("Tutor skill differs from AXI guidance. Regenerate it with `npm run --silent omarkie-axi -- skill`.");
         emit({ skill: "up to date" });
       }
       return;

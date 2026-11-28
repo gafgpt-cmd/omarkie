@@ -74,6 +74,7 @@ try {
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const place = endpoint(vault);
   const socketPresent = () => lstat(place.socket).then(stat => stat.isSocket(), () => false);
+  const bridgeReady = async () => (await socketPresent()) && (await lstat(place.discovery).then(stat => stat.isFile(), () => false));
   async function snapshot(name) { if (qa) await page.screenshot({ path: path.join(qa, `learning-axi-${name}-1440.png`) }); }
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setContentSize(1440, 900));
   await expect.poll(() => page.evaluate(() => [innerWidth, innerHeight])).toEqual([1440, 900]);
@@ -94,7 +95,7 @@ try {
   await newQuestion.fill(question);
   await button(panel, "Send question").click();
   await expect(panel.getByRole("status")).toHaveText("Queued for a local agent");
-  await expect.poll(socketPresent).toBe(true);
+  await expect.poll(bridgeReady).toBe(true);
   assert.equal((await lstat(place.discovery)).mode & 0o777, 0o600);
   assert.equal((await lstat(place.socket)).mode & 0o777, 0o600);
   assert.deepEqual(await guarded(place.socket), { error: "Unauthorized Tutor bridge request." });
