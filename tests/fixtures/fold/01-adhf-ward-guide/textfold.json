@@ -1,0 +1,245 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-acute-decompensated-heart-failure-ward-92bb93cf",
+  "lang": "en",
+  "title": "Acute Decompensated Heart Failure: Ward Guide",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:14Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-definition-and-diagnosis",
+      "num": "",
+      "title": "Definition and diagnosis",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-1de3381a",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Acute decompensated heart failure is a rapid onset of symptoms and signs of congestion or hypoperfusion at rest. Dyspnoea, orthopnoea and elevated jugular venous pressure are the bedside triad. BNP above 100 pg/mL supports the diagnosis, but obesity lowers it and renal failure raises it.",
+          "sentences": [
+            "Acute decompensated heart failure is a rapid onset of symptoms and signs of congestion or hypoperfusion at rest.",
+            "Dyspnoea, orthopnoea and elevated jugular venous pressure are the bedside triad.",
+            "BNP above 100 pg/mL supports the diagnosis, but obesity lowers it and renal failure raises it."
+          ],
+          "brief": [
+            "Acute decompensated heart failure is a rapid onset of symptoms and signs of congestion or hypoperfusion at rest."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Acute decompensated heart failure is a rapid onset of symptoms and signs of congestion or hypoperfusion at rest.",
+          "takeaway": "Acute decompensated heart failure is a rapid onset of symptoms and signs of congestion",
+          "topic": "Acute decompensated heart"
+        }
+      ]
+    },
+    {
+      "id": "sec-initial-assessment",
+      "num": "",
+      "title": "Initial assessment",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-48d5ebc3",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Assess perfusion and congestion within the first hour. Cold and wet means low output with congestion: give diuretics and consider inotropes. Warm and wet means congestion with adequate output: diurese and vasodilate. Warm and dry needs no decongestion. Cold and dry is hypovolaemic or low output: assess with echocardiography.",
+          "sentences": [
+            "Assess perfusion and congestion within the first hour.",
+            "Cold and wet means low output with congestion: give diuretics and consider inotropes.",
+            "Warm and wet means congestion with adequate output: diurese and vasodilate.",
+            "Warm and dry needs no decongestion.",
+            "Cold and dry is hypovolaemic or low output: assess with echocardiography."
+          ],
+          "brief": [
+            "Assess perfusion and congestion within the first hour."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Assess perfusion and congestion within the first hour.",
+          "takeaway": "Assess perfusion and congestion within the first hour",
+          "topic": "Assess perfusion and"
+        }
+      ]
+    },
+    {
+      "id": "sec-treatment",
+      "num": "",
+      "title": "Treatment",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-7df1e676",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics. Double the home oral dose in a patient already taking furosemide. Reassess urine output and symptoms at 2 hours, then every 6 hours. Add a thiazide when the response is poor after 6 hours.",
+          "sentences": [
+            "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics.",
+            "Double the home oral dose in a patient already taking furosemide.",
+            "Reassess urine output and symptoms at 2 hours, then every 6 hours.",
+            "Add a thiazide when the response is poor after 6 hours."
+          ],
+          "brief": [
+            "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics.",
+          "takeaway": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics",
+          "topic": "Intravenous furosemide 40"
+        },
+        {
+          "id": "p-877c5bf5",
+          "kind": "list item",
+          "role": "context",
+          "full": "Nitrates reduce preload and are first line when blood pressure allows.",
+          "sentences": [
+            "Nitrates reduce preload and are first line when blood pressure allows."
+          ],
+          "brief": [
+            "Nitrates reduce preload and are first line when blood pressure allows."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Nitrates reduce preload and are first line when blood pressure allows.",
+          "takeaway": "Nitrates reduce preload and are first line when blood pressure allows",
+          "topic": "Nitrates reduce preload"
+        },
+        {
+          "id": "p-793401ed",
+          "kind": "list item",
+          "role": "context",
+          "full": "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia.",
+          "sentences": [
+            "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia."
+          ],
+          "brief": [
+            "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia.",
+          "takeaway": "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia",
+          "topic": "Non-invasive ventilation is"
+        },
+        {
+          "id": "p-dcaf203a",
+          "kind": "list item",
+          "role": "context",
+          "full": "Inotropes are for cardiogenic shock, not for congestion alone.",
+          "sentences": [
+            "Inotropes are for cardiogenic shock, not for congestion alone."
+          ],
+          "brief": [
+            "Inotropes are for cardiogenic shock, not for congestion alone."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Inotropes are for cardiogenic shock, not for congestion alone.",
+          "takeaway": "Inotropes are for cardiogenic shock, not for congestion alone",
+          "topic": "Inotropes are for"
+        }
+      ]
+    },
+    {
+      "id": "sec-pitfalls",
+      "num": "",
+      "title": "Pitfalls",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-d44f0bb2",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Do not give fluids for a low blood pressure that comes with congestion. Do not stop beta blockers abruptly unless there is shock. Check potassium and renal function after every diuretic dose change, because hypokalaemia and worsening renal function change the plan.",
+          "sentences": [
+            "Do not give fluids for a low blood pressure that comes with congestion.",
+            "Do not stop beta blockers abruptly unless there is shock.",
+            "Check potassium and renal function after every diuretic dose change, because hypokalaemia and worsening renal function change the plan."
+          ],
+          "brief": [
+            "Do not give fluids for a low blood pressure that comes with congestion."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Do not give fluids for a low blood pressure that comes with congestion.",
+          "takeaway": "Do not give fluids for a low blood pressure that comes with congestion",
+          "topic": "Do not give"
+        }
+      ]
+    },
+    {
+      "id": "sec-numbers-to-remember",
+      "num": "",
+      "title": "Numbers to remember",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-de861d70",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "The dose-response curve is flat until the urinary sodium rises. Sodium excretion below 50 mmol/L at 6 hours predicts diuretic resistance.",
+          "sentences": [
+            "The dose-response curve is flat until the urinary sodium rises.",
+            "Sodium excretion below 50 mmol/L at 6 hours predicts diuretic resistance."
+          ],
+          "brief": [
+            "The dose-response curve is flat until the urinary sodium rises."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "The dose-response curve is flat until the urinary sodium rises.",
+          "takeaway": "The dose-response curve is flat until the urinary sodium rises",
+          "topic": "The dose-response curve"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

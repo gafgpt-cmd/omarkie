@@ -1,0 +1,146 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-metformina-en-enfermedad-renal-cr-nica-bb369ccf",
+  "lang": "es",
+  "title": "Metformina en enfermedad renal crónica",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:17Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-ajuste-según-filtrado-glomerular-estimado-egfr",
+      "num": "",
+      "title": "Ajuste según filtrado glomerular estimado (eGFR)",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-deeae5bd",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR) en pacientes con enfermedad renal crónica. Con un eGFR ≥60 mL/min/1,73 m² puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día), con control anual de función renal. Cuando el eGFR se sitúa entre 45 y 59 mL/min/1,73 m², suele mantenerse la dosis habitual pero aumentando la frecuencia de monitorización a cada 3-6 meses y revisando riesgos de hipoperfusión.",
+          "sentences": [
+            "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR) en pacientes con enfermedad renal crónica.",
+            "Con un eGFR ≥60 mL/min/1,73 m² puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día), con control anual de función renal.",
+            "Cuando el eGFR se sitúa entre 45 y 59 mL/min/1,73 m², suele mantenerse la dosis habitual pero aumentando la frecuencia de monitorización a cada 3-6 meses y revisando riesgos de hipoperfusión."
+          ],
+          "brief": [
+            "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR) en pacientes con enfermedad renal crónica."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR) en pacientes con enfermedad renal crónica.",
+          "takeaway": "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR) en pacientes con enfermedad",
+          "topic": "Metformina debe ajustarse"
+        },
+        {
+          "id": "p-0459f30b",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día), monitorizar el eGFR cada 3 meses y no iniciar tratamiento nuevo con metformina en este rango. Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada debido al riesgo de acidosis láctica asociada a metformina (MALA).",
+          "sentences": [
+            "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día), monitorizar el eGFR cada 3 meses y no iniciar tratamiento nuevo con metformina en este rango.",
+            "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada debido al riesgo de acidosis láctica asociada a metformina (MALA)."
+          ],
+          "brief": [
+            "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día), monitorizar el eGFR cada 3 meses y no iniciar tratamiento nuevo con metformina en este rango."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día), monitorizar el eGFR cada 3 meses y no iniciar tratamiento nuevo con metformina en este rango.",
+          "takeaway": "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la",
+          "topic": "Con filtrados entre"
+        }
+      ]
+    },
+    {
+      "id": "sec-situaciones-agudas-y-contraste-yodado",
+      "num": "",
+      "title": "Situaciones agudas y contraste yodado",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-8087a593",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal. En procedimientos con contraste yodado intravascular, suspender metformina en el momento de la prueba si el eGFR es inferior a 45 mL/min/1,73 m² (o en administración intraarterial) y reanudarla únicamente tras 48 horas si se comprueba que la función renal permanece estable. No suspenderla de forma rutinaria antes del contraste si el eGFR es ≥45 mL/min/1,73 m² y la administración es intravenosa sin factores de riesgo agudos.",
+          "sentences": [
+            "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal.",
+            "En procedimientos con contraste yodado intravascular, suspender metformina en el momento de la prueba si el eGFR es inferior a 45 mL/min/1,73 m² (o en administración intraarterial) y reanudarla únicamente tras 48 horas si se comprueba que la función renal permanece estable.",
+            "No suspenderla de forma rutinaria antes del contraste si el eGFR es ≥45 mL/min/1,73 m² y la administración es intravenosa sin factores de riesgo agudos."
+          ],
+          "brief": [
+            "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal.",
+          "takeaway": "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca",
+          "topic": "Suspender metformina de"
+        }
+      ]
+    },
+    {
+      "id": "sec-vigilancia-a-largo-plazo",
+      "num": "",
+      "title": "Vigilancia a largo plazo",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-2925d6cb",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "El uso prolongado de metformina puede causar déficit de vitamina B12, especialmente en dosis altas o tras varios años de tratamiento; medir vitamina B12 periódicamente, sobre todo si aparece anemia o neuropatía periférica.",
+          "sentences": [
+            "El uso prolongado de metformina puede causar déficit de vitamina B12, especialmente en dosis altas o tras varios años de tratamiento; medir vitamina B12 periódicamente, sobre todo si aparece anemia o neuropatía periférica."
+          ],
+          "brief": [
+            "El uso prolongado de metformina puede causar déficit de vitamina B12, especialmente en dosis altas o tras varios años de tratamiento; medir vitamina B12 periódicamente, sobre todo si aparece anemia o neuropatía periférica."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "El uso prolongado de metformina puede causar déficit de vitamina B12, especialmente en dosis altas o tras varios años de tratamiento; medir vitamina B12 periódicamente, sobre todo si aparece anemia o neuropatía periférica.",
+          "takeaway": "El uso prolongado de metformina puede causar déficit de vitamina B12, especialmente en dosis",
+          "topic": "El uso prolongado"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

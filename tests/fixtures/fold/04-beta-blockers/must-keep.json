@@ -1,0 +1,43 @@
+{
+  "id": "04-beta-blockers",
+  "number": 4,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Beta-Blockers: Class Guide",
+  "stresses": ["vs table", "buzzwords"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "9", "unit": "minutes", "context": "Esmolol ultra-short half-life", "source": "half-life of 9 minutes" },
+    { "value": "1 to 2", "unit": "weeks", "context": "Taper duration to avoid rebound withdrawal", "source": "1 to 2 weeks" },
+    { "value": "<50", "unit": "bpm", "context": "Severe symptomatic bradycardia contraindication", "source": "<50 bpm" }
+  ],
+  "negations": [
+    { "token": "never", "phrase": "never start in acute decompensated shock", "rule": "Do not initiate HFrEF beta-blockers during acute decompensated shock" },
+    { "token": "without", "phrase": "second- or third-degree AV block without a pacemaker", "rule": "Contraindicated in 2nd/3rd-degree AV block unless paced" },
+    { "token": "Do not", "phrase": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure", "rule": "Absolute contraindications list" },
+    { "token": "Avoid", "phrase": "Avoid non-selective agents in asthma", "rule": "Non-selective beta-blockers contraindicated in asthma" }
+  ],
+  "conditions": [
+    { "token": "although", "phrase": "although selectivity is lost at high doses", "rule": "Beta-1 cardioselectivity is dose-dependent and lost at high doses" },
+    { "token": "once", "phrase": "once the patient is euvolaemic", "rule": "Start mortality-reducing HFrEF beta-blockers only when euvolaemic" },
+    { "token": "without", "phrase": "without a pacemaker", "rule": "High-grade AV block contraindication applies without pacemaker" }
+  ],
+  "highYield": [
+    { "fact": "Subclasses: β1-selective (metoprolol, bisoprolol, atenolol, esmolol; selectivity lost at high doses), non-selective (propranolol, nadolol, timolol), α1+β (carvedilol, labetalol), ISA (pindolol, acebutolol)", "stars": 2 },
+    { "fact": "HFrEF mortality benefit: bisoprolol, carvedilol, metoprolol succinate — start only once euvolaemic, never in acute decompensated shock", "stars": 2 },
+    { "fact": "Esmolol ultra-short half-life 9 min for acute perioperative / aortic dissection control", "stars": 1 },
+    { "fact": "Masks hypoglycaemia symptoms except diaphoresis (cholinergic)", "stars": 2 },
+    { "fact": "Unopposed alpha-1 vasoconstriction in cocaine toxicity or untreated phaeochromocytoma", "stars": 2 },
+    { "fact": "Beta-blocker overdose antidote: IV glucagon (beta-receptor-independent cAMP) + atropine + high-dose insulin", "stars": 2 },
+    { "fact": "Abrupt withdrawal causes rebound tachycardia/angina; taper over 1-2 weeks", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": false,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

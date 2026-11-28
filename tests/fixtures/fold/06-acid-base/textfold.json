@@ -1,0 +1,280 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-acid-base-disorders-thresholds-and-a41d14a0",
+  "lang": "en",
+  "title": "Acid-Base Disorders: Thresholds and Compensation Formulas",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:16Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-normal-arterial-reference-ranges",
+      "num": "",
+      "title": "Normal arterial reference ranges",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-9b8df746",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L. Acidaemia is defined as pH <7.35 and alkalaemia as pH >7.45. Always evaluate the primary disorder first, then check whether compensation matches the expected formula; compensation never fully normalises pH except possibly in mild chronic respiratory alkalosis.",
+          "sentences": [
+            "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L. Acidaemia is defined as pH <7.35 and alkalaemia as pH >7.45.",
+            "Always evaluate the primary disorder first, then check whether compensation matches the expected formula; compensation never fully normalises pH except possibly in mild chronic respiratory alkalosis."
+          ],
+          "brief": [
+            "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L. Acidaemia is defined as pH <7.35 and alkalaemia as pH >7.45."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45 mmHg, and HCO3- 22 to 26 mEq/L. Acidaemia is defined as pH <7.35 and alkalaemia as pH >7.45.",
+          "takeaway": "Normal arterial blood gas values are pH 7.35 to 7.45, PaCO2 35 to 45",
+          "topic": "Normal arterial blood"
+        }
+      ]
+    },
+    {
+      "id": "sec-anion-gap-and-albumin-correction",
+      "num": "",
+      "title": "Anion gap and albumin correction",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-96aa757e",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Calculate the serum anion gap in every metabolic acidosis:",
+          "sentences": [
+            "Calculate the serum anion gap in every metabolic acidosis:"
+          ],
+          "brief": [
+            "Calculate the serum anion gap in every metabolic acidosis:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Calculate the serum anion gap in every metabolic acidosis:",
+          "takeaway": "Calculate the serum anion gap in every metabolic acidosis",
+          "topic": "Calculate the serum"
+        },
+        {
+          "id": "p-47a23e15",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "The normal anion gap is 8 to 12 mEq/L. Because albumin is the major unmeasured anion, hypoalbuminaemia hides an elevated anion gap: add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL:",
+          "sentences": [
+            "The normal anion gap is 8 to 12 mEq/L. Because albumin is the major unmeasured anion, hypoalbuminaemia hides an elevated anion gap: add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL:"
+          ],
+          "brief": [
+            "The normal anion gap is 8 to 12 mEq/L. Because albumin is the major unmeasured anion, hypoalbuminaemia hides an elevated anion gap: add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "The normal anion gap is 8 to 12 mEq/L. Because albumin is the major unmeasured anion, hypoalbuminaemia hides an elevated anion gap: add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL:",
+          "takeaway": "The normal anion gap is 8 to 12 mEq/L. Because albumin is the",
+          "topic": "The normal anion"
+        },
+        {
+          "id": "p-df46cfa5",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "High anion gap metabolic acidosis (AG >12 mEq/L) includes methanol, uraemia, diabetic ketoacidosis, propylene glycol, isoniazid or iron, lactic acidosis, ethylene glycol, and salicylates. Normal anion gap (hyperchloraemic) metabolic acidosis results from renal tubular acidosis, diarrhoea, or excessive 0.9% saline infusion.",
+          "sentences": [
+            "High anion gap metabolic acidosis (AG >12 mEq/L) includes methanol, uraemia, diabetic ketoacidosis, propylene glycol, isoniazid or iron, lactic acidosis, ethylene glycol, and salicylates.",
+            "Normal anion gap (hyperchloraemic) metabolic acidosis results from renal tubular acidosis, diarrhoea, or excessive 0.9% saline infusion."
+          ],
+          "brief": [
+            "High anion gap metabolic acidosis (AG >12 mEq/L) includes methanol, uraemia, diabetic ketoacidosis, propylene glycol, isoniazid or iron, lactic acidosis, ethylene glycol, and salicylates."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "High anion gap metabolic acidosis (AG >12 mEq/L) includes methanol, uraemia, diabetic ketoacidosis, propylene glycol, isoniazid or iron, lactic acidosis, ethylene glycol, and salicylates.",
+          "takeaway": "High anion gap metabolic acidosis (AG >12 mEq/L) includes methanol, uraemia, diabetic ketoacidosis",
+          "topic": "High anion gap"
+        }
+      ]
+    },
+    {
+      "id": "sec-expected-compensation-formulas",
+      "num": "",
+      "title": "Expected compensation formulas",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-d104093d",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "In metabolic acidosis, Winter's formula predicts respiratory compensation:",
+          "sentences": [
+            "In metabolic acidosis, Winter's formula predicts respiratory compensation:"
+          ],
+          "brief": [
+            "In metabolic acidosis, Winter's formula predicts respiratory compensation:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "In metabolic acidosis, Winter's formula predicts respiratory compensation:",
+          "takeaway": "In metabolic acidosis, Winter's formula predicts respiratory compensation",
+          "topic": "In metabolic acidosis"
+        },
+        {
+          "id": "p-406994d8",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present; if lower than the lower limit, a concomitant respiratory alkalosis is present.",
+          "sentences": [
+            "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present; if lower than the lower limit, a concomitant respiratory alkalosis is present."
+          ],
+          "brief": [
+            "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present; if lower than the lower limit, a concomitant respiratory alkalosis is present."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present; if lower than the lower limit, a concomitant respiratory alkalosis is present.",
+          "takeaway": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is",
+          "topic": "If measured PaCO2"
+        },
+        {
+          "id": "p-b53febe7",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "In metabolic alkalosis, PaCO2 rises by approximately 0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L (typically capped below 55 mmHg because hypoxaemia limits hypoventilation).",
+          "sentences": [
+            "In metabolic alkalosis, PaCO2 rises by approximately 0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L (typically capped below 55 mmHg because hypoxaemia limits hypoventilation)."
+          ],
+          "brief": [
+            "In metabolic alkalosis, PaCO2 rises by approximately 0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L (typically capped below 55 mmHg because hypoxaemia limits hypoventilation)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "In metabolic alkalosis, PaCO2 rises by approximately 0.7 mmHg for each 1 mEq/L increase in HCO3- above 24 mEq/L (typically capped below 55 mmHg because hypoxaemia limits hypoventilation).",
+          "takeaway": "In metabolic alkalosis, PaCO2 rises by approximately 0.7 mmHg for each 1 mEq/L",
+          "topic": "In metabolic alkalosis"
+        },
+        {
+          "id": "p-b3fec7fb",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "For primary respiratory disorders, renal HCO3- compensation depends on chronicity:",
+          "sentences": [
+            "For primary respiratory disorders, renal HCO3- compensation depends on chronicity:"
+          ],
+          "brief": [
+            "For primary respiratory disorders, renal HCO3- compensation depends on chronicity:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "For primary respiratory disorders, renal HCO3- compensation depends on chronicity:",
+          "takeaway": "For primary respiratory disorders, renal HCO3- compensation depends on chronicity",
+          "topic": "For primary respiratory"
+        }
+      ]
+    },
+    {
+      "id": "sec-delta-delta-ratio-and-pitfalls",
+      "num": "",
+      "title": "Delta-delta ratio and pitfalls",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-baeb7917",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "In high anion gap metabolic acidosis, calculate the delta-delta ratio to uncover hidden mixed metabolic disorders:",
+          "sentences": [
+            "In high anion gap metabolic acidosis, calculate the delta-delta ratio to uncover hidden mixed metabolic disorders:"
+          ],
+          "brief": [
+            "In high anion gap metabolic acidosis, calculate the delta-delta ratio to uncover hidden mixed metabolic disorders:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "In high anion gap metabolic acidosis, calculate the delta-delta ratio to uncover hidden mixed metabolic disorders:",
+          "takeaway": "In high anion gap metabolic acidosis, calculate the delta-delta ratio to uncover hidden mixed",
+          "topic": "In high anion"
+        },
+        {
+          "id": "p-6f734b06",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis.",
+          "sentences": [
+            "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis."
+          ],
+          "brief": [
+            "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis.",
+          "takeaway": "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and",
+          "topic": "A ratio <1"
+        },
+        {
+          "id": "p-101a9cf9",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Do not assume a normal pH excludes an acid-base disorder: a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder. Do not rapidly overcorrect chronic respiratory acidosis with aggressive mechanical ventilation, because post-hypercapnic metabolic alkalosis can precipitate arrhythmias and seizures.",
+          "sentences": [
+            "Do not assume a normal pH excludes an acid-base disorder: a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder.",
+            "Do not rapidly overcorrect chronic respiratory acidosis with aggressive mechanical ventilation, because post-hypercapnic metabolic alkalosis can precipitate arrhythmias and seizures."
+          ],
+          "brief": [
+            "Do not assume a normal pH excludes an acid-base disorder: a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Do not assume a normal pH excludes an acid-base disorder: a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder.",
+          "takeaway": "Do not assume a normal pH excludes an acid-base disorder: a normal pH with",
+          "topic": "Do not assume"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

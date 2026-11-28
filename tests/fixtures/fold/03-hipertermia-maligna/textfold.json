@@ -1,0 +1,229 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-hipertermia-maligna-crisis-bb783233",
+  "lang": "es",
+  "title": "Hipertermia maligna: crisis perioperatoria",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:15Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-fisiopatología-y-desencadenantes",
+      "num": "",
+      "title": "Fisiopatología y desencadenantes",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-892b304f",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La hipertermia maligna es una crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina en pacientes susceptibles, habitualmente portadores de una mutación autosómica dominante en el receptor de rianodina RYR1 (y con menor frecuencia en CACNA1S). El óxido nitroso y el propofol no la desencadenan, y tampoco lo hacen los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes. La liberación descontrolada de calcio desde el retículo sarcoplásmico provoca contracción muscular sostenida, consumo extremo de ATP y rabdomiólisis.",
+          "sentences": [
+            "La hipertermia maligna es una crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina en pacientes susceptibles, habitualmente portadores de una mutación autosómica dominante en el receptor de rianodina RYR1 (y con menor frecuencia en CACNA1S).",
+            "El óxido nitroso y el propofol no la desencadenan, y tampoco lo hacen los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes.",
+            "La liberación descontrolada de calcio desde el retículo sarcoplásmico provoca contracción muscular sostenida, consumo extremo de ATP y rabdomiólisis."
+          ],
+          "brief": [
+            "La hipertermia maligna es una crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina en pacientes susceptibles, habitualmente portadores de una mutación autosómica dominante en el receptor de rianodina RYR1 (y con menor frecuencia en CACNA1S)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La hipertermia maligna es una crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano, desflurano, isoflurano) y succinilcolina en pacientes susceptibles, habitualmente portadores de una mutación autosómica dominante en el receptor de rianodina RYR1 (y con menor frecuencia en CACNA1S).",
+          "takeaway": "La hipertermia maligna es una crisis hipermetabólica farmacogenética desencadenada por anestésicos volátiles halogenados (sevoflurano",
+          "topic": "La hipertermia maligna"
+        }
+      ]
+    },
+    {
+      "id": "sec-presentación-clínica",
+      "num": "",
+      "title": "Presentación clínica",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-88392aa8",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "El primer signo más sensible en quirófano suele ser el aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto, acompañado de taquicardia sinusal inexplicable y rigidez del músculo masetero tras succinilcolina. La hipertermia elevada (>40 °C) es un signo tardío: nunca esperes a la fiebre para iniciar el tratamiento. En fases avanzadas aparecen acidosis mixta (respiratoria y láctica), hiperpotasemia grave, arritmias ventriculares, mioglobinuria y coagulación intravascular diseminada.",
+          "sentences": [
+            "El primer signo más sensible en quirófano suele ser el aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto, acompañado de taquicardia sinusal inexplicable y rigidez del músculo masetero tras succinilcolina.",
+            "La hipertermia elevada (>40 °C) es un signo tardío: nunca esperes a la fiebre para iniciar el tratamiento.",
+            "En fases avanzadas aparecen acidosis mixta (respiratoria y láctica), hiperpotasemia grave, arritmias ventriculares, mioglobinuria y coagulación intravascular diseminada."
+          ],
+          "brief": [
+            "El primer signo más sensible en quirófano suele ser el aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto, acompañado de taquicardia sinusal inexplicable y rigidez del músculo masetero tras succinilcolina."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "El primer signo más sensible en quirófano suele ser el aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto, acompañado de taquicardia sinusal inexplicable y rigidez del músculo masetero tras succinilcolina.",
+          "takeaway": "El primer signo más sensible en quirófano suele ser el aumento progresivo del EtCO2",
+          "topic": "El primer signo"
+        }
+      ]
+    },
+    {
+      "id": "sec-manejo-inmediato",
+      "num": "",
+      "title": "Manejo inmediato",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-10429afd",
+          "kind": "list item",
+          "role": "context",
+          "full": "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los anestésicos volátiles y la succinilcolina.",
+          "sentences": [
+            "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los anestésicos volátiles y la succinilcolina."
+          ],
+          "brief": [
+            "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los anestésicos volátiles y la succinilcolina."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los anestésicos volátiles y la succinilcolina.",
+          "takeaway": "Pedir ayuda, solicitar el carro de hipertermia maligna y suspender de inmediato todos los",
+          "topic": "Pedir ayuda, solicitar"
+        },
+        {
+          "id": "p-b5cdbf0f",
+          "kind": "list item",
+          "role": "context",
+          "full": "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min) y colocar filtros de carbón activado en el circuito anestésico; no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno.",
+          "sentences": [
+            "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min) y colocar filtros de carbón activado en el circuito anestésico; no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno."
+          ],
+          "brief": [
+            "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min) y colocar filtros de carbón activado en el circuito anestésico; no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min) y colocar filtros de carbón activado en el circuito anestésico; no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno.",
+          "takeaway": "Hiperventilar con oxígeno al 100 % a alto flujo (≥10 L/min) y colocar filtros",
+          "topic": "Hiperventilar con oxígeno"
+        },
+        {
+          "id": "p-4ac6fa00",
+          "kind": "list item",
+          "role": "context",
+          "full": "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos hasta una dosis acumulada habitual de 10 mg/kg (puede requerirse más si los signos persisten).",
+          "sentences": [
+            "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos hasta una dosis acumulada habitual de 10 mg/kg (puede requerirse más si los signos persisten)."
+          ],
+          "brief": [
+            "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos hasta una dosis acumulada habitual de 10 mg/kg (puede requerirse más si los signos persisten)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos hasta una dosis acumulada habitual de 10 mg/kg (puede requerirse más si los signos persisten).",
+          "takeaway": "Administrar dantroleno sódico 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 minutos",
+          "topic": "Administrar dantroleno sódico"
+        },
+        {
+          "id": "p-f037d0d7",
+          "kind": "list item",
+          "role": "context",
+          "full": "Iniciar enfriamiento activo si la temperatura supera 39 °C con suero salino frío IV y lavado de cavidades, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia.",
+          "sentences": [
+            "Iniciar enfriamiento activo si la temperatura supera 39 °C con suero salino frío IV y lavado de cavidades, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia."
+          ],
+          "brief": [
+            "Iniciar enfriamiento activo si la temperatura supera 39 °C con suero salino frío IV y lavado de cavidades, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Iniciar enfriamiento activo si la temperatura supera 39 °C con suero salino frío IV y lavado de cavidades, pero detener el enfriamiento al alcanzar 38 °C para evitar hipotermia.",
+          "takeaway": "Iniciar enfriamiento activo si la temperatura supera 39 °C con suero salino frío IV",
+          "topic": "Iniciar enfriamiento activo"
+        },
+        {
+          "id": "p-ef3e1bf0",
+          "kind": "list item",
+          "role": "context",
+          "full": "Tratar la hiperpotasemia con calcio IV, insulina con glucosa y bicarbonato según gasometría, y forzar diuresis ≥1-2 mL/kg/h para proteger el riñón de la mioglobinuria.",
+          "sentences": [
+            "Tratar la hiperpotasemia con calcio IV, insulina con glucosa y bicarbonato según gasometría, y forzar diuresis ≥1-2 mL/kg/h para proteger el riñón de la mioglobinuria."
+          ],
+          "brief": [
+            "Tratar la hiperpotasemia con calcio IV, insulina con glucosa y bicarbonato según gasometría, y forzar diuresis ≥1-2 mL/kg/h para proteger el riñón de la mioglobinuria."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Tratar la hiperpotasemia con calcio IV, insulina con glucosa y bicarbonato según gasometría, y forzar diuresis ≥1-2 mL/kg/h para proteger el riñón de la mioglobinuria.",
+          "takeaway": "Tratar la hiperpotasemia con calcio IV, insulina con glucosa y bicarbonato según gasometría, y",
+          "topic": "Tratar la hiperpotasemia"
+        }
+      ]
+    },
+    {
+      "id": "sec-precauciones-y-seguimiento",
+      "num": "",
+      "title": "Precauciones y seguimiento",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-119bc729",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con dantroleno porque pueden precipitar hiperpotasemia grave y colapso cardiovascular. Tras controlar la crisis, vigilar en UCI durante al menos 24 horas por riesgo de recrudescencia (hasta 25 % de los casos), manteniendo dantroleno 1 mg/kg IV cada 6 horas si reaparecen signos de hipermetabolismo. Confirmar la susceptibilidad posteriormente mediante prueba de contractura cafeína-halotano en biopsia muscular o estudio genético de RYR1.",
+          "sentences": [
+            "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con dantroleno porque pueden precipitar hiperpotasemia grave y colapso cardiovascular.",
+            "Tras controlar la crisis, vigilar en UCI durante al menos 24 horas por riesgo de recrudescencia (hasta 25 % de los casos), manteniendo dantroleno 1 mg/kg IV cada 6 horas si reaparecen signos de hipermetabolismo.",
+            "Confirmar la susceptibilidad posteriormente mediante prueba de contractura cafeína-halotano en biopsia muscular o estudio genético de RYR1."
+          ],
+          "brief": [
+            "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con dantroleno porque pueden precipitar hiperpotasemia grave y colapso cardiovascular."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con dantroleno porque pueden precipitar hiperpotasemia grave y colapso cardiovascular.",
+          "takeaway": "No administrar bloqueantes de los canales de calcio (como verapamilo o diltiazem) junto con",
+          "topic": "No administrar bloqueantes"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

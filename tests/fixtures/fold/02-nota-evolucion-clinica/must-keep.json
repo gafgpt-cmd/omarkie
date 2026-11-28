@@ -1,0 +1,50 @@
+{
+  "id": "02-nota-evolucion-clinica",
+  "number": 2,
+  "lang": "es",
+  "genre": "clinical",
+  "title": "Nota de evolución — Medicina Interna (paciente sintético)",
+  "stresses": ["ES register", "labs", "plan"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "152/88", "unit": "mmHg", "context": "Tensión arterial al ingreso", "source": "152/88 mmHg" },
+    { "value": "91", "unit": "%", "context": "Saturación de O2 con aire ambiente", "source": "91 %" },
+    { "value": "1,4", "unit": "mg/dL", "context": "Creatinina al ingreso (previa 1,1 mg/dL)", "source": "Creatinina 1,4 mg/dL (previa 1,1 mg/dL)" },
+    { "value": "42", "unit": "mL/min/1,73 m²", "context": "Filtrado glomerular estimado", "source": "42 mL/min/1,73 m²" },
+    { "value": "4.800", "unit": "pg/mL", "context": "NT-proBNP al ingreso", "source": "NT-proBNP 4.800 pg/mL" },
+    { "value": "55", "unit": "%", "context": "FEVI conservada en ecocardiograma", "source": "ventrículo izquierdo 55 %" },
+    { "value": "40", "unit": "mg", "context": "Furosemida IV cada 12 horas inicial", "source": "Furosemida intravenosa 40 mg cada 12 horas" },
+    { "value": "2", "unit": "g", "context": "Restricción diaria de sodio", "source": "sodio a 2 g al día" },
+    { "value": "1,5", "unit": "litros", "context": "Restricción diaria de líquidos", "source": "líquidos a 1,5 litros" },
+    { "value": "20", "unit": "mg", "context": "Reducción a furosemida oral cada 12 h a las 48 h", "source": "furosemida a 20 mg cada 12 horas por vía oral" }
+  ],
+  "negations": [
+    { "token": "No", "phrase": "No alergias medicamentosas conocidas", "rule": "Sin alergias medicamentosas conocidas" },
+    { "token": "No", "phrase": "No dolor torácico, no palpitaciones, no fiebre", "rule": "Ausencia de dolor torácico, palpitaciones y fiebre" },
+    { "token": "sin", "phrase": "sin cambios isquémicos agudos", "rule": "ECG en FA sin isquemia aguda" },
+    { "token": "sin", "phrase": "sin datos de sangrado", "rule": "FA anticoagulada sin sangrado" },
+    { "token": "sin", "phrase": "Continuar apixabán sin cambios", "rule": "Mantener apixabán sin modificar pauta" },
+    { "token": "sin", "phrase": "sin episodios de hipotensión ni arritmias nuevas", "rule": "Evolución estable sin hipotensión ni arritmias nuevas" }
+  ],
+  "conditions": [
+    { "token": "según", "phrase": "con ajuste según diuresis y función renal", "rule": "Ajustar furosemida según respuesta diurética y función renal" },
+    { "token": "por", "phrase": "Suspensión transitoria de metformina por insuficiencia renal", "rule": "Suspender metformina transitoriamente por deterioro renal" },
+    { "token": "al", "phrase": "valorar sacubitrilo-valsartán al estabilizar", "rule": "Solo valorar sacubitrilo-valsartán tras estabilización" }
+  ],
+  "highYield": [
+    { "fact": "IC aguda descompensada con FEVI preservada (55 %) NYHA III-IV + LRA sobre ERC (Cr 1,4 desde 1,1; eGFR 42)", "stars": 2 },
+    { "fact": "NT-proBNP 4.800 pg/mL, troponina negativa x2, ECG FA 95 lpm sin isquemia aguda", "stars": 2 },
+    { "fact": "Furosemida IV 40 mg/12 h ajustada según diuresis y función renal + restricción Na 2 g/d y líquidos 1,5 L/d", "stars": 2 },
+    { "fact": "Suspensión transitoria de metformina por insuficiencia renal; mantener apixabán sin cambios y enalapril vigilando Cr y K", "stars": 2 },
+    { "fact": "A 48 h: diuresis 2.800 mL/24 h, -1,8 kg, Cr 1,2 mg/dL, Na 137 mEq/L → paso a furosemida VO 20 mg/12 h", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": false,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": false,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

@@ -1,0 +1,48 @@
+{
+  "id": "13-contrato-arrendamiento",
+  "number": 13,
+  "lang": "es",
+  "genre": "legal",
+  "title": "Contrato sintético de arrendamiento de vivienda",
+  "stresses": ["genre table", "non-medical scope"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "5 / 7", "unit": "años", "context": "Prórroga obligatoria mínima (persona física / jurídica)", "source": "mínimo de 5 años si el Arrendador es persona física, o de 7 años si el Arrendador es persona jurídica" },
+    { "value": "6", "unit": "meses", "context": "Plazo mínimo antes de desistimiento del arrendatario", "source": "transcurridos 6 meses" },
+    { "value": "30", "unit": "días", "context": "Preaviso escrito del arrendatario para no renovar o desistir", "source": "al menos 30 días de antelación" },
+    { "value": "4 / 2", "unit": "meses", "context": "Preaviso de no renovación al fin del periodo mínimo (arrendador / arrendatario)", "source": "el Arrendador con 4 meses de antelación o el Arrendatario con 2 meses" },
+    { "value": "1.100", "unit": "€", "context": "Renta mensual y fianza legal (1 mes)", "source": "1.100 €" },
+    { "value": "7", "unit": "días", "context": "Plazo mensual de pago de renta", "source": "7 primeros días de cada mes" },
+    { "value": "2", "unit": "meses", "context": "Tope de garantía adicional (2.200 €) y preaviso por necesidad propia", "source": "en ningún caso podrá exceder de 2 meses de renta (2.200 €)" },
+    { "value": "1", "unit": "mes", "context": "Plazo de devolución de fianza tras entrega de llaves sin devengar interés legal", "source": "más de 1 mes desde la entrega de llaves" },
+    { "value": "150", "unit": "€", "context": "Tope de pequeñas reparaciones ordinarias a cargo del arrendatario", "source": "hasta 150 € por incidencia" }
+  ],
+  "negations": [
+    { "token": "prohibido", "phrase": "Queda prohibido el subarriendo total o parcial y la cesión del contrato sin consentimiento previo y por escrito del Arrendador", "rule": "Prohibido subarriendo/cesión sin consentimiento escrito" },
+    { "token": "no", "phrase": "El Arrendador no podrá resolver anticipadamente el contrato salvo por impago", "rule": "El arrendador no puede resolver anticipadamente salvo causas tasadas" },
+    { "token": "ningún", "phrase": "en ningún caso podrá exceder de 2 meses de renta", "rule": "Garantía adicional nunca >2 meses de renta" },
+    { "token": "no", "phrase": "El Arrendatario no podrá realizar obras que modifiquen la configuración de la vivienda o disminuyan su estabilidad o seguridad sin autorización escrita previa del Arrendador", "rule": "Prohibidas obras estructurales o de configuración sin autorización escrita" }
+  ],
+  "conditions": [
+    { "token": "siempre que", "phrase": "siempre que lo notifique por escrito al Arrendador con al menos 30 días de antelación", "rule": "Desistimiento tras 6 meses requiere preaviso escrito ≥30 días" },
+    { "token": "Si", "phrase": "Si el Arrendatario desiste antes de cumplir el primer año, deberá indemnizar al Arrendador", "rule": "Indemnización prorrateada solo si el desistimiento ocurre antes del primer año" },
+    { "token": "si", "phrase": "si el Arrendador es persona física y la cláusula consta expresamente en el contrato", "rule": "Recuperación por necesidad propia solo para persona física con cláusula expresa tras 1 año y preaviso ≥2 meses" },
+    { "token": "salvo", "phrase": "salvo pacto expreso en contrario", "rule": "IBI y comunidad corresponden al arrendador salvo pacto expreso" }
+  ],
+  "highYield": [
+    { "fact": "Duración: 1 año prorrogable obligatoriamente hasta 5 años (persona física) o 7 años (persona jurídica) + hasta 3 años de prórroga tácita (preavisos: arrendador 4 meses, arrendatario 2 meses)", "stars": 2 },
+    { "fact": "Desistimiento del arrendatario: tras 6 meses con preaviso escrito ≥30 días; si <1 año, indemniza 1 mes de renta/año restante prorrateado", "stars": 2 },
+    { "fact": "Resolución del arrendador: NO salvo impago, no fianza, subarriendo no consentido, daños dolosos, uso ilícito/distinto; o necesidad propia (persona física, cláusula expresa, tras 1 año, preaviso ≥2 meses)", "stars": 2 },
+    { "fact": "Renta 1.100 €/mes (primeros 7 días, actualización anual máx índice oficial); fianza legal 1 mes + garantía adicional máx 2 meses; devolución en ≤1 mes tras llaves", "stars": 2 },
+    { "fact": "Conservación a cargo del arrendador sin subir renta (salvo culpa del arrendatario); pequeñas reparaciones ≤150 € y suministros a cargo del arrendatario; IBI y comunidad al arrendador salvo pacto expreso", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": false,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

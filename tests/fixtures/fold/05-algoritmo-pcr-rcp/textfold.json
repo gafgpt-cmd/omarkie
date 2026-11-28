@@ -1,0 +1,211 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-algoritmo-de-parada-cardiorrespiratoria-581d1c1e",
+  "lang": "es",
+  "title": "Algoritmo de parada cardiorrespiratoria y soporte vital avanzado",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:16Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-reconocimiento-y-rcp-de-alta-calidad",
+      "num": "",
+      "title": "Reconocimiento y RCP de alta calidad",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-b244d043",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Ante un paciente inconsciente que no respira o presenta respiración agónica, activar el sistema de emergencias, pedir desfibrilador e iniciar compresiones torácicas de inmediato. Realizar compresiones a una frecuencia de 100 a 120 por minuto con profundidad de 5 a 6 cm, permitiendo la reexpansión torácica completa y cambiando de reanimador cada 2 minutos para evitar fatiga. Nunca interrumpir las compresiones durante más de 10 segundos. Sin vía aérea avanzada, aplicar una relación de 30 compresiones por 2 ventilaciones; una vez asegurada la vía aérea avanzada, ventilar de forma asíncrona a 10 respiraciones por minuto (una cada 6 segundos) evitando la hiperventilación.",
+          "sentences": [
+            "Ante un paciente inconsciente que no respira o presenta respiración agónica, activar el sistema de emergencias, pedir desfibrilador e iniciar compresiones torácicas de inmediato.",
+            "Realizar compresiones a una frecuencia de 100 a 120 por minuto con profundidad de 5 a 6 cm, permitiendo la reexpansión torácica completa y cambiando de reanimador cada 2 minutos para evitar fatiga.",
+            "Nunca interrumpir las compresiones durante más de 10 segundos.",
+            "Sin vía aérea avanzada, aplicar una relación de 30 compresiones por 2 ventilaciones; una vez asegurada la vía aérea avanzada, ventilar de forma asíncrona a 10 respiraciones por minuto (una cada 6 segundos) evitando la hiperventilación."
+          ],
+          "brief": [
+            "Ante un paciente inconsciente que no respira o presenta respiración agónica, activar el sistema de emergencias, pedir desfibrilador e iniciar compresiones torácicas de inmediato."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Ante un paciente inconsciente que no respira o presenta respiración agónica, activar el sistema de emergencias, pedir desfibrilador e iniciar compresiones torácicas de inmediato.",
+          "takeaway": "Ante un paciente inconsciente que no respira o presenta respiración agónica, activar el sistema",
+          "topic": "Ante un paciente"
+        }
+      ]
+    },
+    {
+      "id": "sec-rama-desfibrilable-fv-tv-sin-pulso",
+      "num": "",
+      "title": "Rama desfibrilable (FV / TV sin pulso)",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-854736c8",
+          "kind": "list item",
+          "role": "context",
+          "full": "Administrar una descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos sin comprobar el pulso inmediatamente después de la descarga.",
+          "sentences": [
+            "Administrar una descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos sin comprobar el pulso inmediatamente después de la descarga."
+          ],
+          "brief": [
+            "Administrar una descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos sin comprobar el pulso inmediatamente después de la descarga."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Administrar una descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos sin comprobar el pulso inmediatamente después de la descarga.",
+          "takeaway": "Administrar una descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas",
+          "topic": "Administrar una descarga"
+        },
+        {
+          "id": "p-d9adc748",
+          "kind": "list item",
+          "role": "context",
+          "full": "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, administrar una segunda descarga y continuar 2 minutos de RCP.",
+          "sentences": [
+            "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, administrar una segunda descarga y continuar 2 minutos de RCP."
+          ],
+          "brief": [
+            "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, administrar una segunda descarga y continuar 2 minutos de RCP."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, administrar una segunda descarga y continuar 2 minutos de RCP.",
+          "takeaway": "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso",
+          "topic": "Evaluar el ritmo"
+        },
+        {
+          "id": "p-467ffb44",
+          "kind": "list item",
+          "role": "context",
+          "full": "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo.",
+          "sentences": [
+            "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo."
+          ],
+          "brief": [
+            "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo.",
+          "takeaway": "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a",
+          "topic": "Tras la tercera"
+        },
+        {
+          "id": "p-5f85bd7b",
+          "kind": "list item",
+          "role": "context",
+          "full": "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO (alternativa: lidocaína 1-1,5 mg/kg inicial y 0,5-0,75 mg/kg adicional).",
+          "sentences": [
+            "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO (alternativa: lidocaína 1-1,5 mg/kg inicial y 0,5-0,75 mg/kg adicional)."
+          ],
+          "brief": [
+            "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO (alternativa: lidocaína 1-1,5 mg/kg inicial y 0,5-0,75 mg/kg adicional)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO (alternativa: lidocaína 1-1,5 mg/kg inicial y 0,5-0,75 mg/kg adicional).",
+          "takeaway": "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de",
+          "topic": "Si el ritmo"
+        }
+      ]
+    },
+    {
+      "id": "sec-rama-no-desfibrilable-asistolia-aesp",
+      "num": "",
+      "title": "Rama no desfibrilable (asistolia / AESP)",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-2b565e22",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso. Iniciar RCP de alta calidad durante 2 minutos y administrar adrenalina 1 mg IV/IO tan pronto como se disponga de acceso vascular, repitiendo cada 3 a 5 minutos. Reevaluar el ritmo cada 2 minutos y comprobar pulso únicamente si aparece un ritmo eléctrico organizado compatible con perfusión.",
+          "sentences": [
+            "No desfibrilar la asistolia ni la actividad eléctrica sin pulso.",
+            "Iniciar RCP de alta calidad durante 2 minutos y administrar adrenalina 1 mg IV/IO tan pronto como se disponga de acceso vascular, repitiendo cada 3 a 5 minutos.",
+            "Reevaluar el ritmo cada 2 minutos y comprobar pulso únicamente si aparece un ritmo eléctrico organizado compatible con perfusión."
+          ],
+          "brief": [
+            "No desfibrilar la asistolia ni la actividad eléctrica sin pulso."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso.",
+          "takeaway": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso",
+          "topic": "No desfibrilar la"
+        }
+      ]
+    },
+    {
+      "id": "sec-monitorización-y-causas-reversibles",
+      "num": "",
+      "title": "Monitorización y causas reversibles",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-5c3a08d5",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La capnografía cuantitativa con EtCO2 inferior a 10 mmHg tras 20 minutos de RCP refleja perfusión muy pobre y exige mejorar la calidad de las compresiones; un aumento brusco del EtCO2 por encima de 40 mmHg sugiere recuperación de la circulación espontánea (RCE). Buscar y tratar activamente las causas reversibles en todo momento: las 4 H (hipoxia, hipovolemia, hipo/hiperpotasemia y alteraciones metabólicas, hipotermia) y las 4 T (neumotórax a tensión, taponamiento cardiaco, tóxicos, trombosis coronaria o pulmonar).",
+          "sentences": [
+            "La capnografía cuantitativa con EtCO2 inferior a 10 mmHg tras 20 minutos de RCP refleja perfusión muy pobre y exige mejorar la calidad de las compresiones; un aumento brusco del EtCO2 por encima de 40 mmHg sugiere recuperación de la circulación espontánea (RCE).",
+            "Buscar y tratar activamente las causas reversibles en todo momento: las 4 H (hipoxia, hipovolemia, hipo/hiperpotasemia y alteraciones metabólicas, hipotermia) y las 4 T (neumotórax a tensión, taponamiento cardiaco, tóxicos, trombosis coronaria o pulmonar)."
+          ],
+          "brief": [
+            "La capnografía cuantitativa con EtCO2 inferior a 10 mmHg tras 20 minutos de RCP refleja perfusión muy pobre y exige mejorar la calidad de las compresiones; un aumento brusco del EtCO2 por encima de 40 mmHg sugiere recuperación de la circulación espontánea (RCE)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La capnografía cuantitativa con EtCO2 inferior a 10 mmHg tras 20 minutos de RCP refleja perfusión muy pobre y exige mejorar la calidad de las compresiones; un aumento brusco del EtCO2 por encima de 40 mmHg sugiere recuperación de la circulación espontánea (RCE).",
+          "takeaway": "La capnografía cuantitativa con EtCO2 inferior a 10 mmHg tras 20 minutos de RCP",
+          "topic": "La capnografía cuantitativa"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

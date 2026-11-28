@@ -1,0 +1,45 @@
+{
+  "id": "11-ocr-messy-chapter",
+  "number": 11,
+  "lang": "es",
+  "genre": "clinical",
+  "title": "Hiperpotasemia aguda (capítulo pegado de OCR)",
+  "stresses": ["messy input rebuild", "pipe-soup table"],
+  "synthetic": true,
+  "numbers": [
+    { "value": ">5,5", "unit": "mEq/L", "context": "Definición de hiperpotasemia", "source": "superior a 5,5 mEq/L" },
+    { "value": ">6,5", "unit": "mEq/L", "context": "Hiperpotasemia grave (o cambios ECG)", "source": "supera 6,5 mEq/L" },
+    { "value": ">7,0", "unit": "mEq/L", "context": "ECG puede ser normal incluso >7,0 mEq/L", "source": "potasio >7,0 mEq/L" },
+    { "value": "10", "unit": "mL", "context": "Gluconato cálcico 10 % IV en 2-3 min", "source": "10 mL IV en 2-3 min" },
+    { "value": "10", "unit": "UI", "context": "Insulina rápida IV + 25-50 g glucosa (baja 0,5-1,2 mEq/L)", "source": "10 UI IV + 25-50 g glucosa" },
+    { "value": "10-20", "unit": "mg", "context": "Salbutamol nebulizado (baja 0,5-1,0 mEq/L)", "source": "10-20 mg nebulizado" },
+    { "value": ">250", "unit": "mg/dL", "context": "Única excepción para omitir glucosa con insulina", "source": "salvo glucemia basal >250 mg/dL" },
+    { "value": "4", "unit": "horas", "context": "Monitorizar glucemia capilar tras insulina", "source": "al menos 4 horas" }
+  ],
+  "negations": [
+    { "token": "nunca", "phrase": "nunca confiar en un ECG normal para descartar peligro", "rule": "Un ECG normal no descarta hiperpotasemia peligrosa" },
+    { "token": "NO", "phrase": "El calcio NO reduce el potasio corporal ni sérico", "rule": "Gluconato cálcico estabiliza membrana pero no baja el K+" },
+    { "token": "nunca", "phrase": "nunca usar sulfonato de poliestireno sódico con sorbitol por riesgo de necrosis colónica", "rule": "Prohibido sulfonato de poliestireno sódico con sorbitol por necrosis colónica" }
+  ],
+  "conditions": [
+    { "token": "si", "phrase": "Repetir una segunda dosis tras 5 minutos si persisten alteraciones del ECG", "rule": "Repetir gluconato cálcico a los 5 min si persisten cambios ECG" },
+    { "token": "salvo", "phrase": "salvo glucemia basal >250 mg/dL", "rule": "Dar glucosa siempre con insulina salvo glucemia basal >250 mg/dL" },
+    { "token": "solo si", "phrase": "furosemida IV solo si el paciente mantiene diuresis", "rule": "Furosemida solo útil si diuresis conservada" }
+  ],
+  "highYield": [
+    { "fact": "Definición: K+ >5,5 mEq/L; grave si >6,5 mEq/L o cambios ECG; descartar pseudohiperpotasemia (hemólisis/torniquete) si asintomático sin ECG", "stars": 2 },
+    { "fact": "Secuencia ECG: T picudas → PR largo/P aplanada → QRS ancho → onda sinusoidal → FV/asistolia; ECG puede ser normal incluso >7,0 mEq/L", "stars": 2 },
+    { "fact": "Gluconato cálcico 10 % 10 mL IV en 2-3 min (inicio 1-3 min, dura 30-60 min): estabiliza membrana, NO baja el K+; repetir a los 5 min si persiste ECG", "stars": 2 },
+    { "fact": "Redistribución: insulina rápida 10 UI IV + glucosa 25-50 g (salvo glucemia >250 mg/dL, vigilar glucemia ≥4 h) + salbutamol 10-20 mg nebulizado", "stars": 2 },
+    { "fact": "Eliminación: furosemida 40-80 mg IV solo si diuresis conservada, quelantes modernos (SZC/patiromer), hemodiálisis urgente si refractaria/anuria; nunca SPS con sorbitol (necrosis colónica)", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}
