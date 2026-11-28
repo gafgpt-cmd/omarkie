@@ -8,6 +8,7 @@ import { fullSize, headlessArguments, isolatedEnvironment } from "./desktop-wind
 import groups from "../shared/commands.json" with { type: "json" };
 import manifest from "../package.json" with { type: "json" };
 import { createTranslator } from "../shared/i18n.mjs";
+import { bundledPlugins } from "../src/plugins/catalog.ts";
 const t = createTranslator("en");
 if (process.platform !== "linux") {
   console.log("SKIP: the Linux in-window menu audit requires Linux; native macOS/Windows acceptance remains separate");
@@ -821,6 +822,8 @@ async function auditFull() {
   }
   await preferences().getByRole("button", { name: t("管理插件…"), exact: true }).click({ force: true });
   await expect(page.getByRole("dialog", { name: t("插件管理"), exact: true })).toBeVisible();
+  const pluginCards = page.locator(".plugin-card");
+  assert.deepEqual(await pluginCards.evaluateAll(cards => cards.map(card => card.dataset.pluginId)), bundledPlugins.map(plugin => plugin.id));
   for (const card of await page.locator(".plugin-card").all()) {
     const name = await card.locator("h3").textContent();
     const toggle = card.getByRole("checkbox"); await toggle.check();
@@ -843,13 +846,13 @@ async function auditFull() {
   await application.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async (_window, options) => { globalThis.auditPluginDialogOptions = options; return { canceled: false, filePaths: [file] }; }; }, plugin);
   await install.click({ force: true });
   assert.deepEqual(await application.evaluate(() => globalThis.auditPluginDialogOptions.properties), ["openFile"]);
-  await expect(page.locator(".plugin-card")).toHaveCount(17);
+  await expect(pluginCards).toHaveCount(bundledPlugins.length + 1);
   const installed = page.locator(".plugin-card").last();
   await installed.getByRole("checkbox").check();
   await expect.poll(() => rich().evaluate(element => getComputedStyle(element).getPropertyValue("--audit-plugin").trim())).toBe("active");
   await installed.getByRole("checkbox").uncheck();
   await installed.getByRole("button", { name: t("移除插件"), exact: true }).click({ force: true });
-  await expect(page.locator(".plugin-card")).toHaveCount(16);
+  await expect(pluginCards).toHaveCount(bundledPlugins.length);
   await page.keyboard.press("Tab"); await expect(page.getByRole("dialog").locator(":focus")).toHaveCount(1);
   await page.keyboard.press("Escape"); await expect(page.getByRole("dialog")).toHaveCount(0);
   pass("Install and remove local plugin", "Trust gate, installed stylesheet and removal work");
