@@ -751,8 +751,7 @@ function isProseUnit(unit) {
 // `skipped` says the kept text starts after the run's first sentence.
 function keepSentences(text, n, pin, lead) {
   if (!pin) return lead ? { ...sentences(text, n), skipped: false } : { text: "", more: true, skipped: false };
-  const list = [];
-  for (let rest = text.trim(); rest;) { const s = firstSentence(rest); list.push(s.head); rest = s.rest; }
+  const list = splitSentences(text);
   const keep = new Set();
   if (lead) for (let index = 0; index < Math.min(n, list.length); index++) keep.add(index);
   for (const quote of pin.quotes) for (const index of quoteSentences(list, quote)) keep.add(index);
@@ -760,6 +759,22 @@ function keepSentences(text, n, pin, lead) {
   const order = [...keep].sort((a, b) => a - b);
   const kept = order.map((index, k) => (k && order[k - 1] !== index - 1 ? "… " : "") + list[index]).join(" ");
   return { text: kept, more: order.length > 0 && order[order.length - 1] < list.length - 1, skipped: order[0] > 0 };
+}
+
+function splitSentences(text) {
+  const list = [];
+  for (let rest = text.trim(); rest;) { const s = firstSentence(rest); list.push(s.head); rest = s.rest; }
+  return list;
+}
+
+/** The sentences a pin can keep, split as the fold splits them: list items one by one, quotes and callouts without markers. */
+export function unitSentences(unit) {
+  if (unit.kind === "heading" || unit.kind === "html" || unit.raw !== null) return [];
+  if (unit.kind === "list") return parseListItems(unit.markdown).flatMap(item => splitSentences(item.text));
+  if (unit.kind === "callout") return splitSentences(parseQuotedBody(splitLines(unit.markdown).slice(1)).proseLines.join(" "));
+  if (unit.kind === "quote") return splitSentences(parseQuotedBody(splitLines(unit.markdown)).proseLines.join(" "));
+  const lines = splitLines(unit.markdown);
+  return isArtParagraph(lines) ? [] : splitSentences(lines.map(line => line.trim()).filter(Boolean).join(" "));
 }
 
 function foldProseUnit(unit, effectiveDepth, ctx) {
@@ -1024,10 +1039,11 @@ function pinsByUnit(units, pins) {
 }
 
 /** Computes all five local stops in one pass with D5 raw-block preservation and D4 per-unit monotonic guard.
- *  `options.pins` ([{ line, quote? }]) keep marked sentences through Takeaway; `pinned` lists the stops a pin changed. */
+ *  `options.pins` ([{ line, quote? }]) keep marked sentences through Takeaway; `pinned` lists the stops a pin changed
+ *  and `plain` the stops the unit shows without its pins. `options.units`: this markdown's units, already extracted. */
 export function foldDocumentLadder(markdown, options = {}) {
   const source = typeof markdown === "string" ? markdown : "";
-  const units = extractUnits(source, options);
+  const units = options.units ?? extractUnits(source, options);
   const contexts = buildContexts(units);
   const pins = pinsByUnit(units, options.pins);
 
@@ -1049,12 +1065,10 @@ export function foldDocumentLadder(markdown, options = {}) {
       takeaway: words(guarded.stops.takeaway),
       topic: words(guarded.stops.topic),
     };
-    let pinned = [];
-    if (pin) {
-      const plain = enforceMonotonic(ladderOf(ctx)).stops;
-      pinned = LOCAL_STOP_IDS.filter(stopId => plain[stopId] !== guarded.stops[stopId]);
-    }
-    return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations, pinned };
+    if (!pin) return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations, pinned: [] };
+    const plain = enforceMonotonic(ladderOf(ctx)).stops;
+    const pinned = LOCAL_STOP_IDS.filter(stopId => plain[stopId] !== guarded.stops[stopId]);
+    return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations, pinned, plain };
   });
 
   const total = byUnit.reduce((sum, item) => sum + item.words.full, 0);

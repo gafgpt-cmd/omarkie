@@ -62,11 +62,11 @@ function fragment(html: string) {
   return template.content;
 }
 
-export function buildUnits(container: HTMLElement, ladder: FoldDocumentLadder, documentId: string): FoldUnitView[] {
-  const rendered = new Map<string, string>();
+// `rendered` collects this build's Markdown → HTML; `reuse` is the last build's, so a pin change re-renders only what it changed.
+export function buildUnits(container: HTMLElement, ladder: FoldDocumentLadder, documentId: string, rendered: Map<string, string>, reuse?: ReadonlyMap<string, string>): FoldUnitView[] {
   const html = (markdown: string) => {
     let value = rendered.get(markdown);
-    if (value === undefined) rendered.set(markdown, value = markdown ? renderMarkdown(markdown, documentId) : "");
+    if (value === undefined) rendered.set(markdown, value = reuse?.get(markdown) ?? (markdown ? renderMarkdown(markdown, documentId) : ""));
     return value;
   };
   const units: FoldUnitView[] = [];
@@ -152,6 +152,8 @@ const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").match
 // Fold motion: discrete stop switches glide survivors (FLIP), a scrub interpolates between two stops.
 export class FoldEngine {
   readonly units: FoldUnitView[];
+  // Markdown → HTML of this build; the next build of the same note reuses it.
+  readonly rendered = new Map<string, string>();
   readonly wordMorph: boolean;
   stop = 0;
   value = 0;
@@ -168,8 +170,8 @@ export class FoldEngine {
   private cutX = 0;
   private cuts = new Map<FoldUnitView, CutGeometry>();
 
-  constructor(private scroller: HTMLElement, private container: HTMLElement, private ladder: FoldDocumentLadder, private documentId: string) {
-    this.units = buildUnits(container, ladder, documentId);
+  constructor(private scroller: HTMLElement, private container: HTMLElement, private ladder: FoldDocumentLadder, private documentId: string, reuse?: ReadonlyMap<string, string>) {
+    this.units = buildUnits(container, ladder, documentId, this.rendered, reuse);
     this.wordMorph = this.units.length <= WORD_MORPH_LIMIT;
     for (const unit of this.units) this.byRoot.set(unit.root, unit);
     // Two screens either side are near: they lay out fully, so motion there is never clipped.

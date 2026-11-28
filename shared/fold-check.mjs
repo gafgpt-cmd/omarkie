@@ -984,6 +984,36 @@ export function extractPayload(text, options = {}) {
   };
 }
 
+/** Negation, restriction and condition only: the payload classes that are cheap to read on every fold. */
+export function extractPolarity(text) {
+  const value = typeof text === "string" ? text.normalize("NFC") : "";
+  const condition = extractConditionWithSpans(value);
+  return {
+    negation: extractNegation(value, condition.filter(c => c.kind === "negative_conditional").map(c => [c.index, c.end])),
+    restriction: extractRestriction(value),
+    condition: condition.map(({ raw, kind }) => ({ raw, kind })),
+  };
+}
+
+// Red flags: negations a reader must never lose. Bare "no", "not" and "without" are too common to flag
+// unless they forbid an action ("no administrar", "not be given"); "do not" only as a command.
+const RED_FLAG_WORDS = new Set(["must not", "should not", "shall not", "mustn't", "shouldn't", "never", "avoid", "prohibited", "forbidden",
+  "nunca", "jamás", "evitar", "evite", "evítese", "prohibido", "prohibida", "prohibidos", "prohibidas"]);
+const RED_FLAG_COMMAND = /^[\s>*_\-+•\d.)]*(?:do\s+not|don't|don’t)(?![\p{L}])/iu;
+const RED_FLAG_FORBIDS = /(?:^|[^\p{L}])(?:no\s+(?:se\s+)?(?:deb|administr|utiliz|usa|use|combin|suspend|retir|inici|recomiend|recomend|dar(?![\p{L}])|dé(?![\p{L}]))|not\s+(?:be\s+)?(?:given|used|recommended|administered|combined)(?![\p{L}]))/iu;
+// Dose limits, do-not-use and boxed warnings anywhere in the sentence; "early warning" names a score, not a warning.
+const RED_FLAG_LIMITS = /(?:^|[^\p{L}])(?:do\s+not\s+use|don['’]t\s+use|max(?:imum)?\s+(?:daily\s+)?doses?|dosis\s+m[aá]ximas?|(?:not|never)\s+(?:to\s+)?exceed|(?:no|sin)\s+(?:se\s+deben?\s+)?(?:superar|exceder|sobrepasar)|black[\s-]+box|boxed\s+warning|recuadro\s+negro|(?<!early\s)warnings?|advertencias?)(?![\p{L}])/iu;
+// "No contraindications", "not contraindicated", "sin contraindicaciones": descriptive, not a flag.
+const NEGATED_BEFORE = /(?:^|[^\p{L}])(?:no|not|without|sin|ningun[ao]?|ningún|never|nunca)(?:\s+\p{L}+){0,2}\s*$/iu;
+
+/** Whether a sentence carries a red flag: a contraindication, dose limit, warning, never, avoid, must not, or a command not to act. */
+export function isRedFlag(text) {
+  const value = typeof text === "string" ? text.normalize("NFC") : "";
+  if (RED_FLAG_COMMAND.test(value) || RED_FLAG_FORBIDS.test(value) || RED_FLAG_LIMITS.test(value)) return true;
+  if (collectMatches(value, CONTRAINDICATION_RE).some(m => !NEGATED_BEFORE.test(value.slice(0, m.index + m.raw.search(/\p{L}/u))))) return true;
+  return extractNegation(value).some(token => RED_FLAG_WORDS.has(token.raw.toLowerCase().replace(/\s+/g, " ")));
+}
+
 // --- Format / injection check ---
 const MD_IMAGE_RE = /!\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g;
 const MD_LINK_RE = /\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g;

@@ -143,6 +143,10 @@ export interface WrittenUnitCheckResult {
 
 export declare function countWords(text: string): number;
 export declare function extractPayload(text: string, options?: { includeSpelled?: boolean }): PayloadTokens;
+/** Negation, restriction and condition only: the payload classes that are cheap to read on every fold. */
+export declare function extractPolarity(text: string): Pick<PayloadTokens, "negation" | "restriction" | "condition">;
+/** Whether a sentence carries a red flag: a contraindication, never, avoid, must not, or a command not to act. */
+export declare function isRedFlag(text: string): boolean;
 export declare function checkFormat(text: string): FormatCheckResult;
 export declare function checkPins(line: FoldLine | string, pins?: readonly PinInput[]): PinsCheckResult;
 export declare function checkMonotonic<T extends FoldLine | string>(stops: MonotonicStopsInput<T>): MonotonicCheckResult<T>;

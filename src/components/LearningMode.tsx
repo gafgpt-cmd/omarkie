@@ -28,7 +28,8 @@ import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
 import type { CanvasNode } from "../../shared/json-canvas.mjs";
 import { headingNode, snapshotNode } from "../../shared/papercut.mjs";
 import { stopLabel, type Stop } from "./fold/stops";
-import type { FoldMark, FoldMarks } from "./fold/fold-marks";
+import { emptyFoldMarks, type FoldMark, type FoldMarks } from "./fold/fold-marks";
+import { suggestCards, type StoredCard } from "../flashcards";
 import { glassMarks } from "./fold/glass-marks";
 import type { GlassMagnet } from "../glass/glass-model";
 import { squash } from "../../shared/fold-project.mjs";
@@ -58,7 +59,7 @@ const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scrol
 
 export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, fold, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest, openBoard, tutorRequest }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
-  sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
+  sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"], highlights?: FlashcardPanel["highlights"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
   cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: FoldMarks; out: RefObject<FoldOut | null> }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
@@ -407,8 +408,21 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     return () => { current = false; stop?.(); };
   }, [foldGlass, note]);
   const glassList = useMemo(() => magnets ? glassMarks(magnets, context) : [], [magnets, context]);
-  const foldActions = useRef({ highlight: foldHighlight, undo: undoLast });
-  foldActions.current = { highlight: foldHighlight, undo: undoLast };
+  // The note's cards, so the fold strip counts highlights still without one; read again when the card panel closes.
+  const [noteCards, setNoteCards] = useState<StoredCard[]>();
+  const cardsOpen = !!cards;
+  useEffect(() => {
+    if (!foldOpen || !saved || cardsOpen) return;
+    let current = true;
+    void store(id, { action: "list", types: ["card"] })
+      .then(items => { if (current) setNoteCards(items.filter((item): item is StoredCard => item.type === "card")); }).catch(() => {});
+    return () => { current = false; };
+  }, [foldOpen, saved, cardsOpen, id, store]);
+  const highlights = useMemo(() => study.entries.flatMap(entry => entry.type === "mark" && visibleSheet(entry.sheet) ? [entry.anchor] : []), [study.entries, visibleSheet]);
+  const uncarded = useMemo(() => noteCards ? suggestCards(noteCards, highlights, [], "", () => "").length : 0, [noteCards, highlights]);
+  const foldActions = useRef({ highlight: foldHighlight, undo: undoLast, makeCards });
+  foldActions.current = { highlight: foldHighlight, undo: undoLast, makeCards };
+  function makeCards() { openCard(undefined, undefined, highlights); }
   const published = useRef("");
   useEffect(() => {
     if (!foldOpen) return;
@@ -416,16 +430,16 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     for (const entry of study.entries) if (entry.type === "mark" && visibleSheet(entry.sheet))
       marks.push({ id: entry.id, kind: "highlight", line: locations.get(entry.id) ?? null, colour: entry.colour, quote: entry.anchor.quote });
     marks.push(...glassList);
-    const signature = JSON.stringify([marks, !!undo]);
+    const signature = JSON.stringify([marks, !!undo, uncarded]);
     if (signature === published.current) return;
     published.current = signature;
     fold.marks.set({
-      marks, canUndo: !!undo,
+      marks, canUndo: !!undo, uncarded,
       study: new Map([...byLine].filter(([, group]) => group.marks.length).map(([line, group]) => [line, group.marks])),
-      highlight: (...args) => foldActions.current.highlight(...args), undo: () => foldActions.current.undo(),
+      highlight: (...args) => foldActions.current.highlight(...args), undo: () => foldActions.current.undo(), makeCards: () => foldActions.current.makeCards(),
     });
   });
-  useEffect(() => () => { published.current = ""; fold.marks.set({ marks: [], study: new Map(), canUndo: false, highlight: async () => false, undo: async () => false }); }, [fold.marks]);
+  useEffect(() => () => { published.current = ""; fold.marks.set(emptyFoldMarks); }, [fold.marks]);
   useEffect(() => { if (!foldOpen) published.current = ""; }, [foldOpen]);
   async function foldHighlight(line: number, endLine: number, quote: string, colour: SheetColour) {
     const current = editor()?.readingContext(), needle = squash(quote);
