@@ -961,6 +961,108 @@ describe("raw-block preservation rule (D5)", () => {
       assert.equal(tokens.filter(t => t.type === "table_open").length, 2, `expected 2 quoted tables at ${stopId}:\n${out}`);
     }
   });
+
+  test("unclosed short fences and multiline math blocks self-close at folded stops without swallowing content", () => {
+    const parser = createMarkdown();
+    const nestedQuoteTable = [
+      "## Dosing",
+      "",
+      "> > ```js",
+      "> > const x = 1;",
+      ">",
+      "> | Drug | Dose |",
+      "> | --- | --- |",
+      "> | Lidocaine | 4.5 mg/kg |",
+      "> | Bupivacaine | 2 mg/kg |",
+    ].join("\n");
+    const quoteTableLadder = foldDocumentLadder(nestedQuoteTable);
+    for (const item of quoteTableLadder.byUnit) {
+      assert.deepEqual(item.violations, []);
+      assert.equal(isMonotonic(item.stops), true);
+    }
+    for (const stopId of ["brief", "key"]) {
+      const tokens = parser.parse(quoteTableLadder.stops[stopId].text, {});
+      assert.equal(tokens.some(t => t.type === "fence"), true, `fence missing at ${stopId}`);
+      assert.equal(tokens.some(t => t.type === "table_open"), true, `table swallowed at ${stopId}`);
+    }
+    assert.ok(quoteTableLadder.stops.takeaway.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(quoteTableLadder.stops.takeaway.text.includes("| Lidocaine | 4.5 mg/kg |"));
+    assert.equal(quoteTableLadder.stops.takeaway.text.includes("Bupivacaine"), false);
+    assert.ok(quoteTableLadder.stops.topic.text.includes("`⋯ 1 lines of code`"));
+    assert.ok(quoteTableLadder.stops.topic.text.includes("| Drug | Dose |"));
+    assert.equal(quoteTableLadder.stops.topic.text.includes("Lidocaine"), false);
+
+    const quoteMediaAfterUnclosedFence = [
+      "> Lead sentence. Second has ![Scan](scan.png).",
+      ">",
+      "> > ```js",
+      "> > const x = 1;",
+    ].join("\n");
+    const quoteMediaLadder = foldDocumentLadder(quoteMediaAfterUnclosedFence);
+    assert.deepEqual(quoteMediaLadder.byUnit[0].violations, []);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const tokens = parser.parse(quoteMediaLadder.stops[stopId].text, {});
+      const inlineTokens = tokens.filter(t => t.type === "inline").flatMap(t => t.children ?? []);
+      assert.equal(
+        inlineTokens.some(t => t.type === "image"),
+        true,
+        `inline image trapped inside unclosed fence at ${stopId}:\n${quoteMediaLadder.stops[stopId].text}`,
+      );
+    }
+
+    const listMarkerUnclosedBeforeHeading = [
+      "- ```js",
+      "  const x = 1;",
+      "",
+      "## Next section",
+      "",
+      "Administer furosemide 40 mg IV.",
+    ].join("\n");
+    const nextSecLadder = foldDocumentLadder(listMarkerUnclosedBeforeHeading);
+    for (const stopId of ["brief", "key"]) {
+      const tokens = parser.parse(nextSecLadder.stops[stopId].text, {});
+      assert.equal(tokens.some(t => t.type === "fence"), true, `fence missing at ${stopId}`);
+      assert.equal(tokens.some(t => t.type === "heading_open"), true, `heading swallowed at ${stopId}`);
+    }
+
+    const unclosedMathBeforeTable = [
+      "> > $$",
+      "> > E = mc^2",
+      ">",
+      "> | Drug | Dose |",
+      "> | --- | --- |",
+      "> | A | 1 mg |",
+    ].join("\n");
+    const mathLadder = foldDocumentLadder(unclosedMathBeforeTable);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const tokens = parser.parse(mathLadder.stops[stopId].text, {});
+      assert.equal(tokens.some(t => t.type === "math_block"), true, `math_block missing at ${stopId}`);
+      assert.equal(tokens.some(t => t.type === "table_open"), true, `table missing after unclosed math at ${stopId}`);
+    }
+  });
+
+  test("fallback piped Obsidian embeds stay separated from trailing list tables", () => {
+    const parser = createMarkdown();
+    const md = [
+      "- First regimen. Second sentence has ![[scan.png|Basal]].",
+      "  | Drug | Dose |",
+      "  | --- | --- |",
+      "  | Lidocaine | 4.5 mg/kg |",
+    ].join("\n");
+    const ladder = foldDocumentLadder(md);
+    for (const stopId of ["brief", "key", "takeaway", "topic"]) {
+      const out = ladder.stops[stopId].text;
+      assert.ok(out.includes("![[scan.png|Basal]]"), `embed missing at ${stopId}`);
+      const tokens = parser.parse(out, {});
+      assert.equal(tokens.filter(t => t.type === "table_open").length, 1, `table count at ${stopId}`);
+      const inlineTokens = tokens.filter(t => t.type === "inline").flatMap(t => t.children ?? []);
+      assert.equal(
+        inlineTokens.some(t => t.type === "wiki_embed"),
+        true,
+        `embed swallowed into table row at ${stopId}:\n${out}`,
+      );
+    }
+  });
 });
 
 describe("monotonic guard (D4)", () => {

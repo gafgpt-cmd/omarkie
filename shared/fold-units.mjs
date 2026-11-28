@@ -609,7 +609,7 @@ function preserveInlineMedia(text, inlineMedia, { quotePrefix = false } = {}) {
     }
   }
   if (!missing.length) return text;
-  const sep = quotePrefix ? "\n>\n" : "\n";
+  const sep = quotePrefix ? "\n>\n" : "\n\n";
   return text ? `${text}${sep}${missing.join("\n")}` : missing.join("\n");
 }
 
@@ -696,10 +696,24 @@ function foldRawBlock(raw, markdown, effectiveDepth, knownCodeLines) {
   if (raw === "code") {
     const lines = splitLines(markdown);
     const bodyLines = knownCodeLines ?? codeBodyLines(lines);
-    if (effectiveDepth <= 3 && lines.length <= 8) return markdown;
+    if (effectiveDepth <= 3 && lines.length <= 8) {
+      const mark = fenceMark(lines[0] ?? "");
+      const closed = mark !== null && lines.length > 1 && fenceClose(lines[lines.length - 1] ?? "", mark);
+      return mark && !closed ? `${markdown}\n${mark}` : markdown;
+    }
     return `\`⋯ ${bodyLines} lines of code\``;
   }
-  // Math and image/embed blocks stay verbatim at every stop (D5).
+  if (raw === "math") {
+    const lines = splitLines(markdown);
+    const first = (lines[0] ?? "").trim();
+    if (first.startsWith("$$")) {
+      const singleClosed = first.length >= 4 && first.endsWith("$$");
+      const multiClosed = lines.length > 1 && (lines[lines.length - 1] ?? "").trim().endsWith("$$");
+      if (!singleClosed && !multiClosed) return `${markdown}\n$$`;
+    }
+    return markdown;
+  }
+  // Image/embed blocks stay verbatim at every stop (D5).
   return markdown;
 }
 
