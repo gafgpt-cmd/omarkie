@@ -232,6 +232,30 @@ try {
   await closeFold(page);
   await expect(view).toBeHidden();
 
+  // Lifecycle: the fold closes with Learning and with focus mode, and leaving never touches another note.
+  await openFold(page, t);
+  for (let pass = 0; pass < 2; pass++) {
+    await page.getByRole("button", { name: t("显示"), exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: t("Learning mode"), exact: true }).click();
+  }
+  await expect(rich(page)).toHaveAttribute("contenteditable", "false");
+  await expect(view).toBeHidden();
+  await expect(rich(page)).toBeVisible();
+  await rich(page).focus();
+  await page.keyboard.press("F8");
+  await expect(page.locator(".app-shell.focus-mode")).toHaveCount(1);
+  await page.keyboard.press("Control+Shift+H");
+  await expect(page.locator(".app-shell.focus-mode")).toHaveCount(0);
+  await expect(view).toBeVisible();
+  await page.locator(".fold-scroller").evaluate(element => { element.scrollTop = element.scrollHeight / 2; });
+  await page.locator(".fold-document").focus();
+  await quickOpen(page, t, "chapter.md");
+  await expect(rich(page).getByRole("heading", { name: "Integrative Cardiopulmonary and Renal Physiology", exact: true })).toBeVisible();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(view).toBeHidden();
+  assert.equal(await page.locator(".document-editor:not([hidden]) .rich-scroller").evaluate(element => element.scrollTop), 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains("fold-toggle")), false);
+
   // Too short: the bar says so and stays at Full.
   await quickOpen(page, t, "short.md");
   await expect(rich(page).getByRole("heading", { name: "Short note", exact: true })).toBeVisible();
