@@ -1,0 +1,160 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-sepsis-one-hour-bundle-strict-boundaries-ae8989f5",
+  "lang": "en",
+  "title": "Sepsis One-Hour Bundle: Strict Boundaries and Exclusions",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:18Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-antimicrobials-and-cultures",
+      "num": "",
+      "title": "Antimicrobials and cultures",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-fbe5aabd",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Obtain serum lactate and at least two sets of blood cultures before starting antimicrobials, but never delay antimicrobial administration by more than 45 minutes while waiting for cultures. Administer broad-spectrum intravenous antimicrobials within 1 hour when septic shock is present or sepsis is likely; a 3-hour diagnostic window applies only if sepsis is possible without shock. Do not add empiric antifungal coverage unless the patient has high fungal risk factors, and do not continue dual Gram-negative therapy once susceptibilities are known except in resistant pathogens where monotherapy is inadequate.",
+          "sentences": [
+            "Obtain serum lactate and at least two sets of blood cultures before starting antimicrobials, but never delay antimicrobial administration by more than 45 minutes while waiting for cultures.",
+            "Administer broad-spectrum intravenous antimicrobials within 1 hour when septic shock is present or sepsis is likely; a 3-hour diagnostic window applies only if sepsis is possible without shock.",
+            "Do not add empiric antifungal coverage unless the patient has high fungal risk factors, and do not continue dual Gram-negative therapy once susceptibilities are known except in resistant pathogens where monotherapy is inadequate."
+          ],
+          "brief": [
+            "Obtain serum lactate and at least two sets of blood cultures before starting antimicrobials, but never delay antimicrobial administration by more than 45 minutes while waiting for cultures."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Obtain serum lactate and at least two sets of blood cultures before starting antimicrobials, but never delay antimicrobial administration by more than 45 minutes while waiting for cultures.",
+          "takeaway": "Obtain serum lactate and at least two sets of blood cultures before starting antimicrobials",
+          "topic": "Obtain serum lactate"
+        }
+      ]
+    },
+    {
+      "id": "sec-fluid-resuscitation",
+      "num": "",
+      "title": "Fluid resuscitation",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-0e4e49f4",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Give at least 30 mL/kg of balanced crystalloids within the first 3 hours for sepsis-induced hypoperfusion (lactate ≥4 mmol/L or hypotension). Do not use hydroxyethyl starches under any circumstance, as they increase renal injury and mortality. Do not rely on central venous pressure alone to guide fluid responsiveness; use dynamic variables (pulse pressure variation, passive leg raise, capillary refill time) instead. Do not withhold vasopressors while waiting to complete the 30 mL/kg fluid bolus if life-threatening hypotension (MAP <65 mmHg) persists.",
+          "sentences": [
+            "Give at least 30 mL/kg of balanced crystalloids within the first 3 hours for sepsis-induced hypoperfusion (lactate ≥4 mmol/L or hypotension).",
+            "Do not use hydroxyethyl starches under any circumstance, as they increase renal injury and mortality.",
+            "Do not rely on central venous pressure alone to guide fluid responsiveness; use dynamic variables (pulse pressure variation, passive leg raise, capillary refill time) instead.",
+            "Do not withhold vasopressors while waiting to complete the 30 mL/kg fluid bolus if life-threatening hypotension (MAP <65 mmHg) persists."
+          ],
+          "brief": [
+            "Give at least 30 mL/kg of balanced crystalloids within the first 3 hours for sepsis-induced hypoperfusion (lactate ≥4 mmol/L or hypotension)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Give at least 30 mL/kg of balanced crystalloids within the first 3 hours for sepsis-induced hypoperfusion (lactate ≥4 mmol/L or hypotension).",
+          "takeaway": "Give at least 30 mL/kg of balanced crystalloids within the first 3 hours",
+          "topic": "Give at least"
+        }
+      ]
+    },
+    {
+      "id": "sec-vasopressors-steroids-and-adjuncts",
+      "num": "",
+      "title": "Vasopressors, steroids, and adjuncts",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-bd5d1198",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Start norepinephrine as the first-line vasopressor targeting a mean arterial pressure (MAP) ≥65 mmHg; peripheral administration is acceptable temporarily only while central venous access is being obtained. Add vasopressin (up to 0.03 units/min) only as a second-line adjunct to raise MAP or decrease norepinephrine dose, never as first-line monotherapy. Never use dopamine unless the patient has symptomatic bradycardia with a low risk of tachyarrhythmias. Do not administer intravenous hydrocortisone (200 mg/day) routinely in sepsis without shock; reserve it only for refractory septic shock requiring ongoing vasopressors.",
+          "sentences": [
+            "Start norepinephrine as the first-line vasopressor targeting a mean arterial pressure (MAP) ≥65 mmHg; peripheral administration is acceptable temporarily only while central venous access is being obtained.",
+            "Add vasopressin (up to 0.03 units/min) only as a second-line adjunct to raise MAP or decrease norepinephrine dose, never as first-line monotherapy.",
+            "Never use dopamine unless the patient has symptomatic bradycardia with a low risk of tachyarrhythmias.",
+            "Do not administer intravenous hydrocortisone (200 mg/day) routinely in sepsis without shock; reserve it only for refractory septic shock requiring ongoing vasopressors."
+          ],
+          "brief": [
+            "Start norepinephrine as the first-line vasopressor targeting a mean arterial pressure (MAP) ≥65 mmHg; peripheral administration is acceptable temporarily only while central venous access is being obtained."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Start norepinephrine as the first-line vasopressor targeting a mean arterial pressure (MAP) ≥65 mmHg; peripheral administration is acceptable temporarily only while central venous access is being obtained.",
+          "takeaway": "Start norepinephrine as the first-line vasopressor targeting a mean arterial pressure (MAP) ≥65 mmHg",
+          "topic": "Start norepinephrine as"
+        }
+      ]
+    },
+    {
+      "id": "sec-acidosis-and-transfusion-limits",
+      "num": "",
+      "title": "Acidosis and transfusion limits",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-3dbaadb6",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced lactic acidaemia unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3). Transfuse packed red blood cells only when haemoglobin falls below 7.0 g/dL, unless there is active haemorrhage, acute myocardial ischaemia, or severe hypoxaemia.",
+          "sentences": [
+            "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced lactic acidaemia unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3).",
+            "Transfuse packed red blood cells only when haemoglobin falls below 7.0 g/dL, unless there is active haemorrhage, acute myocardial ischaemia, or severe hypoxaemia."
+          ],
+          "brief": [
+            "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced lactic acidaemia unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced lactic acidaemia unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3).",
+          "takeaway": "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced",
+          "topic": "Do not give"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

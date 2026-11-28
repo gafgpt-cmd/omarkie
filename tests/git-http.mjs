@@ -25,7 +25,11 @@ function backend(projectRoot, request, body) {
       if (code !== 0) reject(new Error(`git http-backend failed: ${Buffer.concat(errors)}`));
       else resolve(Buffer.concat(chunks));
     });
-    child.stdin.end(body);
+    child.stdin.on("error", error => {
+      if (error.code !== "EPIPE") reject(error);
+    });
+    if (body.length > 0) child.stdin.end(body);
+    else child.stdin.end();
   });
 }
 

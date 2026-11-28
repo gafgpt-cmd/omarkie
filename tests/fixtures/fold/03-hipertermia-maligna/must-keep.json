@@ -1,0 +1,52 @@
+{
+  "id": "03-hipertermia-maligna",
+  "number": 3,
+  "lang": "es",
+  "genre": "clinical",
+  "title": "Hipertermia maligna: crisis perioperatoria",
+  "stresses": ["triggers/NOT triggers", "dantroleno dose"],
+  "synthetic": true,
+  "numbers": [
+    { "value": ">40", "unit": "°C", "context": "Fiebre elevada es signo tardío", "source": ">40 °C" },
+    { "value": "100", "unit": "%", "context": "Hiperventilación con oxígeno", "source": "oxígeno al 100 %" },
+    { "value": "≥10", "unit": "L/min", "context": "Flujo alto de gas fresco", "source": "≥10 L/min" },
+    { "value": "2,5", "unit": "mg/kg", "context": "Dosis inicial IV de dantroleno", "source": "2,5 mg/kg IV" },
+    { "value": "10", "unit": "mg/kg", "context": "Dosis acumulada habitual de dantroleno", "source": "10 mg/kg" },
+    { "value": "39", "unit": "°C", "context": "Umbral para iniciar enfriamiento activo", "source": "supera 39 °C" },
+    { "value": "38", "unit": "°C", "context": "Umbral para detener enfriamiento activo", "source": "alcanzar 38 °C" },
+    { "value": "≥1-2", "unit": "mL/kg/h", "context": "Objetivo de diuresis por mioglobinuria", "source": "≥1-2 mL/kg/h" },
+    { "value": "24", "unit": "horas", "context": "Vigilancia mínima en UCI por recrudescencia", "source": "al menos 24 horas" },
+    { "value": "1", "unit": "mg/kg", "context": "Dantroleno de mantenimiento cada 6 h si recurrencia", "source": "1 mg/kg IV cada 6 horas" }
+  ],
+  "negations": [
+    { "token": "no", "phrase": "El óxido nitroso y el propofol no la desencadenan", "rule": "N2O y propofol son seguros y no desencadenan hipertermia maligna" },
+    { "token": "tampoco", "phrase": "tampoco lo hacen los opioides, las benzodiacepinas, los anestésicos locales ni los bloqueantes neuromusculares no despolarizantes", "rule": "Opioides, BZD, AL y BNM no despolarizantes no son desencadenantes" },
+    { "token": "no", "phrase": "aumento progresivo del EtCO2 que no responde al aumentar la ventilación minuto", "rule": "Signo precoz: EtCO2 elevado refractario a hiperventilación" },
+    { "token": "nunca", "phrase": "nunca esperes a la fiebre para iniciar el tratamiento", "rule": "No esperar fiebre para tratar" },
+    { "token": "no", "phrase": "no perder tiempo cambiando la máquina de anestesia antes de administrar dantroleno", "rule": "Dantroleno antes que cambiar la máquina" },
+    { "token": "No", "phrase": "No administrar bloqueantes de los canales de calcio", "rule": "Contraindicados antagonistas del calcio con dantroleno" }
+  ],
+  "conditions": [
+    { "token": "si", "phrase": "si los signos persisten", "rule": "Puede requerirse más de 10 mg/kg de dantroleno si persisten signos" },
+    { "token": "si", "phrase": "si la temperatura supera 39 °C", "rule": "Iniciar enfriamiento activo solo si T >39 °C" },
+    { "token": "al", "phrase": "detener el enfriamiento al alcanzar 38 °C", "rule": "Parar enfriamiento a 38 °C para evitar hipotermia" },
+    { "token": "si", "phrase": "si reaparecen signos de hipermetabolismo", "rule": "Dantroleno 1 mg/kg cada 6 h si reaparecen signos" }
+  ],
+  "highYield": [
+    { "fact": "Desencadenantes: volátiles halogenados + succinilcolina; NO N2O, propofol, opioides, BZD, AL ni BNM no despolarizantes", "stars": 2 },
+    { "fact": "Mutación autosómica dominante habitual en RYR1 (canal de calcio del retículo sarcoplásmico)", "stars": 2 },
+    { "fact": "Primer signo: ↑EtCO2 que no cede al aumentar ventilación minuto (+ taquicardia, rigidez masetero); fiebre >40 °C es tardía", "stars": 2 },
+    { "fact": "Dantroleno 2,5 mg/kg IV en bolo rápido, repetible cada 5-10 min hasta 10 mg/kg (más si persiste)", "stars": 2 },
+    { "fact": "No administrar calcioantagonistas (verapamilo/diltiazem) con dantroleno por hiperpotasemia y colapso cardiovascular", "stars": 2 },
+    { "fact": "Enfriar si >39 °C y parar al llegar a 38 °C; vigilar en UCI ≥24 h por recrudescencia (hasta 25 %)", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

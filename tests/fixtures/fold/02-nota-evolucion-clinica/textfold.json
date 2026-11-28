@@ -1,0 +1,352 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-nota-de-evoluci-n-medicina-interna-c7238a94",
+  "lang": "es",
+  "title": "Nota de evolución — Medicina Interna (paciente sintético)",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:14Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "abstract",
+      "num": "",
+      "title": "",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-9e1cb04c",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Paciente ficticio: Mujer de 68 años, sin datos reales. Ingreso simulado el 12/03/2026. Motivo: disnea progresiva de tres semanas y edemas bilaterales.",
+          "sentences": [
+            "Paciente ficticio: Mujer de 68 años, sin datos reales.",
+            "Ingreso simulado el 12/03/2026.",
+            "Motivo: disnea progresiva de tres semanas y edemas bilaterales."
+          ],
+          "brief": [
+            "Paciente ficticio: Mujer de 68 años, sin datos reales."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Paciente ficticio: Mujer de 68 años, sin datos reales.",
+          "takeaway": "Paciente ficticio: Mujer de 68 años, sin datos reales",
+          "topic": "Paciente ficticio: Mujer"
+        }
+      ]
+    },
+    {
+      "id": "sec-antecedentes",
+      "num": "",
+      "title": "Antecedentes",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-b5e5ea11",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Hipertensión arterial de larga evolución en tratamiento con enalapril 10 mg cada 12 horas. Diabetes mellitus tipo 2 con metformina 850 mg cada 12 horas. Fibrilación auricular permanente anticoagulada con apixabán 5 mg cada 12 horas. Insuficiencia cardiaca con fracción de eyección preservada diagnosticada hace cuatro años. No alergias medicamentosas conocidas. Ex fumadora de 20 paquetes-año.",
+          "sentences": [
+            "Hipertensión arterial de larga evolución en tratamiento con enalapril 10 mg cada 12 horas.",
+            "Diabetes mellitus tipo 2 con metformina 850 mg cada 12 horas.",
+            "Fibrilación auricular permanente anticoagulada con apixabán 5 mg cada 12 horas.",
+            "Insuficiencia cardiaca con fracción de eyección preservada diagnosticada hace cuatro años.",
+            "No alergias medicamentosas conocidas.",
+            "Ex fumadora de 20 paquetes-año."
+          ],
+          "brief": [
+            "Hipertensión arterial de larga evolución en tratamiento con enalapril 10 mg cada 12 horas."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Hipertensión arterial de larga evolución en tratamiento con enalapril 10 mg cada 12 horas.",
+          "takeaway": "Hipertensión arterial de larga evolución en tratamiento con enalapril 10 mg cada 12 horas",
+          "topic": "Hipertensión arterial de"
+        }
+      ]
+    },
+    {
+      "id": "sec-enfermedad-actual",
+      "num": "",
+      "title": "Enfermedad actual",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-86cc72fb",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La paciente refiere aumento progresivo de la disnea hasta hacerse de reposo en la última semana, ortopnea de dos almohadas y edemas maleolares que ascienden hasta tercio medio de ambas piernas. No dolor torácico, no palpitaciones, no fiebre. Diuresis conservada, con nocturia de tres veces. Ganancia ponderal de cuatro kilogramos en tres semanas. Tolera dieta blanda.",
+          "sentences": [
+            "La paciente refiere aumento progresivo de la disnea hasta hacerse de reposo en la última semana, ortopnea de dos almohadas y edemas maleolares que ascienden hasta tercio medio de ambas piernas.",
+            "No dolor torácico, no palpitaciones, no fiebre.",
+            "Diuresis conservada, con nocturia de tres veces.",
+            "Ganancia ponderal de cuatro kilogramos en tres semanas.",
+            "Tolera dieta blanda."
+          ],
+          "brief": [
+            "La paciente refiere aumento progresivo de la disnea hasta hacerse de reposo en la última semana, ortopnea de dos almohadas y edemas maleolares que ascienden hasta tercio medio de ambas piernas."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La paciente refiere aumento progresivo de la disnea hasta hacerse de reposo en la última semana, ortopnea de dos almohadas y edemas maleolares que ascienden hasta tercio medio de ambas piernas.",
+          "takeaway": "La paciente refiere aumento progresivo de la disnea hasta hacerse de reposo en la",
+          "topic": "La paciente refiere"
+        }
+      ]
+    },
+    {
+      "id": "sec-exploración-física",
+      "num": "",
+      "title": "Exploración física",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-e21d4658",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Consciente y orientada. Tensión arterial 152/88 mmHg, frecuencia cardiaca 96 lpm irregular, temperatura 36,4 °C, saturación de oxígeno 91 % con aire ambiente. Ingurgitación yugular a 45 grados. Auscultación pulmonar con crepitantes bibasales hasta campos medios. Auscultación cardiaca arrítmica sin soplos. Abdomen blando, no doloroso, con hepatomegalia de dos traveses. Edemas con fóvea hasta tercio medio de ambas piernas. Pulsos pedios presentes y simétricos.",
+          "sentences": [
+            "Consciente y orientada.",
+            "Tensión arterial 152/88 mmHg, frecuencia cardiaca 96 lpm irregular, temperatura 36,4 °C, saturación de oxígeno 91 % con aire ambiente.",
+            "Ingurgitación yugular a 45 grados.",
+            "Auscultación pulmonar con crepitantes bibasales hasta campos medios.",
+            "Auscultación cardiaca arrítmica sin soplos.",
+            "Abdomen blando, no doloroso, con hepatomegalia de dos traveses.",
+            "Edemas con fóvea hasta tercio medio de ambas piernas.",
+            "Pulsos pedios presentes y simétricos."
+          ],
+          "brief": [
+            "Consciente y orientada."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Consciente y orientada.",
+          "takeaway": "Consciente y orientada",
+          "topic": "Consciente y orientada"
+        }
+      ]
+    },
+    {
+      "id": "sec-pruebas-complementarias",
+      "num": "",
+      "title": "Pruebas complementarias",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-db321c6c",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Analítica: hemoglobina 11,8 g/dL, leucocitos 7.200/µL, plaquetas 210.000/µL. Creatinina 1,4 mg/dL (previa 1,1 mg/dL), filtrado glomerular estimado 42 mL/min/1,73 m². Sodio 134 mEq/L, potasio 4,6 mEq/L. NT-proBNP 4.800 pg/mL. Troponina ultrasensible negativa en dos determinaciones. Radiografía de tórax: cardiomegalia con congestión hiliar bilateral y derrame pleural derecho laminar. Electrocardiograma: fibrilación auricular a 95 lpm, sin cambios isquémicos agudos. Ecocardiograma transtorácico: fracción de eyección del ventrículo izquierdo 55 %, hipertrofia concéntrica moderada, aurícula izquierda dilatada, presión sistólica pulmonar estimada 45 mmHg.",
+          "sentences": [
+            "Analítica: hemoglobina 11,8 g/dL, leucocitos 7.200/µL, plaquetas 210.000/µL.",
+            "Creatinina 1,4 mg/dL (previa 1,1 mg/dL), filtrado glomerular estimado 42 mL/min/1,73 m².",
+            "Sodio 134 mEq/L, potasio 4,6 mEq/L. NT-proBNP 4.800 pg/mL.",
+            "Troponina ultrasensible negativa en dos determinaciones.",
+            "Radiografía de tórax: cardiomegalia con congestión hiliar bilateral y derrame pleural derecho laminar.",
+            "Electrocardiograma: fibrilación auricular a 95 lpm, sin cambios isquémicos agudos.",
+            "Ecocardiograma transtorácico: fracción de eyección del ventrículo izquierdo 55 %, hipertrofia concéntrica moderada, aurícula izquierda dilatada, presión sistólica pulmonar estimada 45 mmHg."
+          ],
+          "brief": [
+            "Analítica: hemoglobina 11,8 g/dL, leucocitos 7.200/µL, plaquetas 210.000/µL."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Analítica: hemoglobina 11,8 g/dL, leucocitos 7.200/µL, plaquetas 210.000/µL.",
+          "takeaway": "Analítica: hemoglobina 11,8 g/dL, leucocitos 7.200/µL, plaquetas 210.000/µL",
+          "topic": "Analítica: hemoglobina 11,8"
+        }
+      ]
+    },
+    {
+      "id": "sec-impresión-diagnóstica",
+      "num": "",
+      "title": "Impresión diagnóstica",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-30f7a1f0",
+          "kind": "list item",
+          "role": "context",
+          "full": "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de la NYHA.",
+          "sentences": [
+            "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de la NYHA."
+          ],
+          "brief": [
+            "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de la NYHA."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de la NYHA.",
+          "takeaway": "Insuficiencia cardiaca aguda descompensada, con fracción de eyección preservada, en clase funcional III-IV de",
+          "topic": "Insuficiencia cardiaca aguda"
+        },
+        {
+          "id": "p-e3be1997",
+          "kind": "list item",
+          "role": "context",
+          "full": "Lesión renal aguda sobre enfermedad renal crónica, probablemente de origen cardiorenal.",
+          "sentences": [
+            "Lesión renal aguda sobre enfermedad renal crónica, probablemente de origen cardiorenal."
+          ],
+          "brief": [
+            "Lesión renal aguda sobre enfermedad renal crónica, probablemente de origen cardiorenal."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Lesión renal aguda sobre enfermedad renal crónica, probablemente de origen cardiorenal.",
+          "takeaway": "Lesión renal aguda sobre enfermedad renal crónica, probablemente de origen cardiorenal",
+          "topic": "Lesión renal aguda"
+        },
+        {
+          "id": "p-ef8593b7",
+          "kind": "list item",
+          "role": "context",
+          "full": "Fibrilación auricular permanente anticoagulada, sin datos de sangrado.",
+          "sentences": [
+            "Fibrilación auricular permanente anticoagulada, sin datos de sangrado."
+          ],
+          "brief": [
+            "Fibrilación auricular permanente anticoagulada, sin datos de sangrado."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Fibrilación auricular permanente anticoagulada, sin datos de sangrado.",
+          "takeaway": "Fibrilación auricular permanente anticoagulada, sin datos de sangrado",
+          "topic": "Fibrilación auricular permanente"
+        },
+        {
+          "id": "p-948ac53e",
+          "kind": "list item",
+          "role": "context",
+          "full": "Hipertensión arterial mal controlada y diabetes mellitus tipo 2.",
+          "sentences": [
+            "Hipertensión arterial mal controlada y diabetes mellitus tipo 2."
+          ],
+          "brief": [
+            "Hipertensión arterial mal controlada y diabetes mellitus tipo 2."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Hipertensión arterial mal controlada y diabetes mellitus tipo 2.",
+          "takeaway": "Hipertensión arterial mal controlada y diabetes mellitus tipo 2",
+          "topic": "Hipertensión arterial mal"
+        }
+      ]
+    },
+    {
+      "id": "sec-plan-terapéutico",
+      "num": "",
+      "title": "Plan terapéutico",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-556e838c",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Ingreso en unidad de hospitalización convencional con balance hídrico estricto y peso diario. Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal. Restricción de sodio a 2 g al día y líquidos a 1,5 litros. Suspensión transitoria de metformina por insuficiencia renal. Mantener enalapril con vigilancia de creatinina y potasio; valorar sacubitrilo-valsartán al estabilizar. Continuar apixabán sin cambios. Control analítico a las 24 y 72 horas. Ecocardiograma de control ambulatorio en un mes. Educación sobre signos de alarma y adherencia al tratamiento al alta.",
+          "sentences": [
+            "Ingreso en unidad de hospitalización convencional con balance hídrico estricto y peso diario.",
+            "Furosemida intravenosa 40 mg cada 12 horas, con ajuste según diuresis y función renal.",
+            "Restricción de sodio a 2 g al día y líquidos a 1,5 litros.",
+            "Suspensión transitoria de metformina por insuficiencia renal.",
+            "Mantener enalapril con vigilancia de creatinina y potasio; valorar sacubitrilo-valsartán al estabilizar.",
+            "Continuar apixabán sin cambios.",
+            "Control analítico a las 24 y 72 horas.",
+            "Ecocardiograma de control ambulatorio en un mes.",
+            "Educación sobre signos de alarma y adherencia al tratamiento al alta."
+          ],
+          "brief": [
+            "Ingreso en unidad de hospitalización convencional con balance hídrico estricto y peso diario."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Ingreso en unidad de hospitalización convencional con balance hídrico estricto y peso diario.",
+          "takeaway": "Ingreso en unidad de hospitalización convencional con balance hídrico estricto y peso diario",
+          "topic": "Ingreso en unidad"
+        }
+      ]
+    },
+    {
+      "id": "sec-evolución",
+      "num": "",
+      "title": "Evolución",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-72eecee3",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg y mejoría de la disnea a clase funcional II. Creatinina desciende a 1,2 mg/dL. Sodio 137 mEq/L. Se reduce furosemida a 20 mg cada 12 horas por vía oral. Se mantiene estable, sin episodios de hipotensión ni arritmias nuevas.",
+          "sentences": [
+            "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg y mejoría de la disnea a clase funcional II.",
+            "Creatinina desciende a 1,2 mg/dL.",
+            "Sodio 137 mEq/L. Se reduce furosemida a 20 mg cada 12 horas por vía oral.",
+            "Se mantiene estable, sin episodios de hipotensión ni arritmias nuevas."
+          ],
+          "brief": [
+            "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg y mejoría de la disnea a clase funcional II."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas, pérdida de 1,8 kg y mejoría de la disnea a clase funcional II.",
+          "takeaway": "A las 48 horas la paciente presenta diuresis de 2.800 mL en 24 horas",
+          "topic": "A las 48"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

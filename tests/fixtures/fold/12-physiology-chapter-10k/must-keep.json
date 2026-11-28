@@ -1,0 +1,53 @@
+{
+  "id": "12-physiology-chapter-10k",
+  "number": 12,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Integrative Cardiopulmonary and Renal Physiology",
+  "stresses": ["10k-word perf", "chunking", "high-yield star selection"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "-90 / -60", "unit": "mV", "context": "Ventricular resting potential vs SA node maximum diastolic potential", "source": "near -90 mV" },
+    { "value": "55-70", "unit": "%", "context": "Normal left ventricular ejection fraction (<40% defines HFrEF)", "source": "55% to 70%" },
+    { "value": "800-1,200", "unit": "dyn·s·cm⁻⁵", "context": "Normal systemic vascular resistance", "source": "800 to 1,200 dyn·s·cm⁻⁵" },
+    { "value": "6", "unit": "mL/kg", "context": "ARDS lung-protective tidal volume by predicted body weight (Pplat <=30 cmH2O)", "source": "6 mL/kg of predicted body weight" },
+    { "value": "88-92", "unit": "%", "context": "Target SpO2 in chronic CO2 retainers", "source": "target SpO2 88% to 92%" },
+    { "value": "80-180", "unit": "mmHg", "context": "MAP range of renal autoregulation (GFR ~120-125 mL/min/1.73 m²)", "source": "80 to 180 mmHg" },
+    { "value": "8", "unit": "mEq/L", "context": "Max 24-hour correction of chronic hyponatraemia to avoid ODS", "source": "faster than 8 mEq/L in any 24-hour period" },
+    { "value": "0.3-0.5", "unit": "mg", "context": "IM epinephrine 1:1,000 first-line for anaphylactic shock", "source": "0.3 to 0.5 mg of 1:1,000" }
+  ],
+  "negations": [
+    { "token": "Never", "phrase": "Never administer QT-prolonging antiarrhythmics without checking baseline QTc and correcting serum potassium and magnesium first", "rule": "Check QTc and replete K+/Mg2+ before QT-prolonging drugs" },
+    { "token": "never", "phrase": "never heard in atrial fibrillation", "rule": "S4 gallop is absent in atrial fibrillation" },
+    { "token": "do not", "phrase": "do not continue aggressive fluid administration once the ventricle operates on the flat limb of the Frank-Starling curve", "rule": "Stop fluid loading on flat Frank-Starling limb" },
+    { "token": "Never", "phrase": "Never use prolonged aggressive hyperventilation routinely in traumatic brain injury except briefly as a rescue bridge during impending herniation", "rule": "No routine prolonged hyperventilation in TBI except brief herniation rescue" },
+    { "token": "never", "phrase": "never actual body weight in obesity", "rule": "ARDS 6 mL/kg tidal volume uses predicted body weight, never actual weight" },
+    { "token": "does not", "phrase": "does not normalise PaO2 even on 100% FiO2", "rule": "True right-to-left shunt fails to normalise PaO2 on 100% O2" },
+    { "token": "never", "phrase": "never combine NSAIDs, ACE inhibitors/ARBs, and loop or thiazide diuretics casually in volume-depleted patients", "rule": "Avoid triple whammy AKI combination" },
+    { "token": "Never", "phrase": "Never correct chronic hyponatraemia (>48 hours duration) faster than 8 mEq/L in any 24-hour period", "rule": "Cap chronic hyponatraemia correction at <=8 mEq/L per 24 h to avoid ODS" },
+    { "token": "never", "phrase": "never rely on a single early normal haemoglobin to exclude active haemorrhage", "rule": "Early normal Hb does not rule out acute massive haemorrhage" }
+  ],
+  "conditions": [
+    { "token": "except", "phrase": "except briefly as a rescue bridge during impending herniation", "rule": "Only brief rescue hyperventilation allowed in TBI" },
+    { "token": "when", "phrase": "when PaO2 drops below 60 mmHg", "rule": "Peripheral carotid body chemoreceptors drive hypoxic ventilation below PaO2 60 mmHg" },
+    { "token": "unless", "phrase": "unless compensated by sympathetic vasoconstriction elsewhere", "rule": "Dilating one parallel organ bed lowers total SVR unless compensated" }
+  ],
+  "highYield": [
+    { "fact": "Cardiac AP: ventricular resting -90 mV (Phase 0 INa, Phase 2 ICa,L plateau prevents tetanus) vs SA node -60 mV (Phase 4 If, Phase 0 ICa,L only); check QTc/K+/Mg2+ before QT-prolonging drugs", "stars": 2 },
+    { "fact": "PV loops: preload widens right; afterload taller/narrower (↑LVESV); contractility steepens ESPVR; S4 never heard in AF; stop fluids on flat Starling limb", "stars": 2 },
+    { "fact": "ARDS lung-protective ventilation: VT 6 mL/kg predicted body weight (never actual), Pplat <=30 cmH2O, driving pressure <15 cmH2O; high Ppeak + normal Pplat = airway resistance", "stars": 2 },
+    { "fact": "Gas exchange: true R→L shunt does NOT correct on 100% FiO2; CO poisoning gives false normal SpO2 (240x affinity, left shift); MetHb fixed ~85% SpO2 → methylene blue (avoid in G6PD); chronic CO2 retainers target SpO2 88-92%", "stars": 2 },
+    { "fact": "Renal arterioles & nephron: NSAIDs constrict afferent (↓GFR), ACEi/ARB dilate efferent (↓GFR, ↓FF); triple whammy = NSAID + ACEi/ARB + diuretic; loops lose Ca2+, thiazides retain Ca2+", "stars": 2 },
+    { "fact": "Never correct chronic hyponatraemia (>48 h) >8 mEq/L per 24 h (ODS risk)", "stars": 2 },
+    { "fact": "Shock haemodynamics table (hypovolaemic, cardiogenic, obstructive, distributive); neurogenic shock (>T6) = hypotension + bradycardia; anaphylaxis = immediate IM epinephrine 0.3-0.5 mg; early Hb can be normal in acute bleeding", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

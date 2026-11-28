@@ -453,19 +453,44 @@ export class GlassService {
     if (this.readOnly) throw Object.assign(new Error(`Glass is read-only: ${this.readOnlyReason ?? "another writer owns this vault"}.`), { code: "GLASS_READ_ONLY" });
   }
 
+  async resolveNormalized(parts) {
+    let dir = this.root;
+    const resolved = [];
+    for (const part of parts) {
+      const target = part.normalize("NFC");
+      const entries = await readdir(dir).catch(() => null);
+      if (!entries) return null;
+      const matches = entries.filter(entry => entry.normalize("NFC") === target);
+      if (matches.length !== 1) return null;
+      const chosen = matches[0];
+      if (!chosen || chosen === "." || chosen === ".." || chosen.startsWith(".")) return null;
+      resolved.push(chosen);
+      dir = path.join(dir, chosen);
+    }
+    return { note: resolved.join("/"), file: dir };
+  }
+
   async validateNote(note) {
     if (typeof note !== "string" || !note.trim() || note.length > 4096 || /[\u0000\\]/.test(note) || path.isAbsolute(note))
       throw new Error("Use a vault-relative Markdown path.");
     const parts = note.split("/");
     if (parts.some(part => !part || part === "." || part === ".." || part.startsWith(".")) || !markdown.test(note))
       throw new Error("Use a vault-relative Markdown path, without hidden folders or symlinks.");
-    const file = path.join(this.root, ...parts);
-    const metadata = await info(file);
+    let file = path.join(this.root, ...parts);
+    let resolvedNote = parts.join("/");
+    let metadata = await info(file);
+    if (!metadata) {
+      const normalized = await this.resolveNormalized(parts);
+      if (normalized) {
+        ({ note: resolvedNote, file } = normalized);
+        metadata = await info(file);
+      }
+    }
     if (metadata?.isSymbolicLink()) throw new Error("Markdown symlinks are not allowed.");
     if (!metadata?.isFile()) throw new Error("Note not found in this vault.");
     // The vault root is already resolved, so any symlinked folder along the way changes this path.
     if (await realpath(file) !== file) throw new Error("Markdown symlinks are not allowed.");
-    return { note: parts.join("/"), file };
+    return { note: resolvedNote, file };
   }
 
   async noteFingerprint(file) {

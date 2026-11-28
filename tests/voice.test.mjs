@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
@@ -30,11 +30,16 @@ function wav({ seconds = 0.5, rate = 16_000, channels = 1, bits = 16 } = {}) {
   return Buffer.from(bytes);
 }
 
+function hookEnv(extra = {}) {
+  const env = { PATH: process.env.PATH, ...extra };
+  if (process.env.SystemRoot) env.SystemRoot = process.env.SystemRoot;
+  return env;
+}
+
 async function hook(root, body) {
-  const file = path.join(root, "stt.sh");
-  await writeFile(file, `#!/bin/sh\n${body}\n`, "utf8");
-  await chmod(file, 0o755);
-  return file;
+  const file = path.join(root, "stt.mjs");
+  await writeFile(file, `${body}\n`, "utf8");
+  return [process.execPath, file];
 }
 
 test("the hook receives exactly one 16 kHz mono PCM WAV", () => {
@@ -74,15 +79,15 @@ test("Alt+V matches a Spanish keyboard by code, and never fires with extra modif
 
 test("a hook that prints a transcript yields clean text", async () => {
   const root = await area();
-  const file = await hook(root, `printf '  Hola, mundo.\\r\\n  '`);
-  const result = await runStt({ argv: [file], audio: path.join(root, "a.wav"), environment: { PATH: process.env.PATH } });
+  const argv = await hook(root, `process.stdout.write("  Hola, mundo.\\r\\n  ");`);
+  const result = await runStt({ argv, audio: path.join(root, "a.wav"), environment: hookEnv() });
   assert.deepEqual({ ok: result.ok, text: result.text, code: result.code }, { ok: true, text: "Hola, mundo.", code: "ok" });
 });
 
 test("hook exit codes map to the documented failures and keep stderr", async () => {
   const root = await area();
-  const bad = await hook(root, `echo 'wav is 48k' >&2; exit 3`);
-  const result = await runStt({ argv: [bad], audio: path.join(root, "a.wav"), environment: { PATH: process.env.PATH } });
+  const argv = await hook(root, `process.stderr.write("wav is 48k\\n"); process.exit(3);`);
+  const result = await runStt({ argv, audio: path.join(root, "a.wav"), environment: hookEnv() });
   assert.equal(result.ok, false);
   assert.equal(result.code, "bad-audio");
   assert.match(result.stderr, /48k/);
@@ -91,18 +96,18 @@ test("hook exit codes map to the documented failures and keep stderr", async () 
 
 test("silence is no-speech, not an empty transcript", async () => {
   const root = await area();
-  const silent = await hook(root, `exit 0`);
-  const result = await runStt({ argv: [silent], audio: path.join(root, "a.wav"), environment: { PATH: process.env.PATH } });
+  const argv = await hook(root, `process.exit(0);`);
+  const result = await runStt({ argv, audio: path.join(root, "a.wav"), environment: hookEnv() });
   assert.equal(result.ok, false);
   assert.equal(result.code, "no-speech");
 });
 
 test("the {wav} placeholder receives the audio path and no shell interpolation happens", async () => {
   const root = await area();
-  const audio = path.join(root, "utterance.wav");
+  const audio = path.join(root, "utterance $(nope).wav");
   const witness = path.join(root, "seen.txt");
-  const file = await hook(root, `printf '%s' "$1" > '${witness}'`);
-  const result = await runStt({ argv: [file, "{wav}"], audio, environment: { PATH: process.env.PATH } });
+  const argv = await hook(root, `import { writeFileSync } from "node:fs"; writeFileSync(process.env.WITNESS, process.argv[2] ?? "");`);
+  const result = await runStt({ argv: [...argv, "{wav}"], audio, environment: hookEnv({ WITNESS: witness }) });
   assert.equal(result.ok, false);
   assert.equal(await readdir(root).then(names => names.includes("seen.txt")), true);
   const seen = await readFile(witness, "utf8");
@@ -111,8 +116,8 @@ test("the {wav} placeholder receives the audio path and no shell interpolation h
 
 test("Voice.transcribe rejects bad audio before starting the hook", async () => {
   const root = await area();
-  const file = await hook(root, `printf 'should not run'`);
-  const voice = new Voice({ dataDir: root, environment: { OMARKIE_STT: file, PATH: process.env.PATH } });
+  const argv = await hook(root, `process.stdout.write("should not run");`);
+  const voice = new Voice({ dataDir: root, environment: hookEnv({ OMARKIE_STT: JSON.stringify(argv) }) });
   const result = await voice.transcribe({ wavBase64: Buffer.from("nope").toString("base64") });
   assert.equal(result.ok, false);
   assert.equal(result.code, "bad-audio");
@@ -120,8 +125,8 @@ test("Voice.transcribe rejects bad audio before starting the hook", async () => 
 
 test("Voice.transcribe keeps the audio when the hook fails", async () => {
   const root = await area();
-  const file = await hook(root, `exit 4`);
-  const voice = new Voice({ dataDir: root, environment: { OMARKIE_STT: file, PATH: process.env.PATH } });
+  const argv = await hook(root, `process.exit(4);`);
+  const voice = new Voice({ dataDir: root, environment: hookEnv({ OMARKIE_STT: JSON.stringify(argv) }) });
   const result = await voice.transcribe({ wavBase64: wav().toString("base64") });
   assert.equal(result.ok, false);
   assert.equal(result.code, "no-model");
@@ -132,8 +137,8 @@ test("Voice.transcribe keeps the audio when the hook fails", async () => {
 
 test("a cancelled transcription keeps no audio at all", async () => {
   const root = await area();
-  const file = await hook(root, `sleep 5`);
-  const voice = new Voice({ dataDir: root, environment: { OMARKIE_STT: file, PATH: process.env.PATH } });
+  const argv = await hook(root, `setTimeout(() => {}, 5000);`);
+  const voice = new Voice({ dataDir: root, environment: hookEnv({ OMARKIE_STT: JSON.stringify(argv) }) });
   const controller = new AbortController();
   const running = voice.transcribe({ wavBase64: wav().toString("base64"), signal: controller.signal });
   setTimeout(() => controller.abort(), 100);

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { lstat, mkdir, open, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createConnection, createServer } from "node:net";
 import os from "node:os";
@@ -148,11 +148,23 @@ export async function listenBridge(root, broker, kind = "bridge") {
     }
     const stale = await info(place.discovery);
     if (stale && (!stale.isFile() || stale.nlink !== 1 || !ownerOnly(stale, 0o600))) throw unavailable();
-    if (stale) await unlink(place.discovery);
-    const handle = await open(place.discovery, "wx", 0o600);
-    discovery = true;
-    try { await handle.writeFile(JSON.stringify({ version: 1, pid: process.pid, vault: root, token: encoded })); }
-    finally { await handle.close(); }
+    const staging = `${place.discovery}.${randomBytes(8).toString("hex")}.tmp`;
+    const handle = await open(staging, "wx", 0o600);
+    try {
+      await handle.writeFile(JSON.stringify({ version: 1, pid: process.pid, vault: root, token: encoded }));
+    } catch (error) {
+      await handle.close().catch(() => {});
+      await unlink(staging).catch(missing);
+      throw error;
+    }
+    await handle.close();
+    try {
+      await rename(staging, place.discovery);
+      discovery = true;
+    } catch (error) {
+      await unlink(staging).catch(missing);
+      throw error;
+    }
     return close;
   } catch (error) { await close(); throw error; }
 }

@@ -68,7 +68,7 @@ function transcriptOf(value: unknown): TranscriptCue[] {
 export function timelineFromMagnet(magnet: GlassMagnet): TimelineMark | undefined {
   const fields = magnet.fields ?? {};
   if ((fields.kind ?? magnet.kind) !== "timeline") return;
-  const src = typeof fields.src === "string" ? fields.src.trim().slice(0, 2_000) : "";
+  const src = typeof fields.src === "string" ? fields.src.trim().slice(0, 64_000) : "";
   if (!src) return;
   const media = fields.media === "video" || /\.(?:mp4|webm|mov)$/iu.test(src) ? "video" : "audio";
   return {
