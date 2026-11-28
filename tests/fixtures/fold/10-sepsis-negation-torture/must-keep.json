@@ -1,0 +1,60 @@
+{
+  "id": "10-sepsis-negation-torture",
+  "number": 10,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Sepsis One-Hour Bundle: Strict Boundaries and Exclusions",
+  "stresses": ["negation polarity torture", "do not / unless / only"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "45", "unit": "minutes", "context": "Max delay for blood cultures before antimicrobials", "source": "more than 45 minutes" },
+    { "value": "1", "unit": "hour", "context": "Antimicrobials window for septic shock or likely sepsis", "source": "within 1 hour" },
+    { "value": "3", "unit": "hours", "context": "Diagnostic window only if sepsis possible without shock; fluid window", "source": "3-hour diagnostic window" },
+    { "value": "30", "unit": "mL/kg", "context": "Balanced crystalloids within 3 h for hypoperfusion", "source": "30 mL/kg" },
+    { "value": "≥4", "unit": "mmol/L", "context": "Lactate threshold defining sepsis-induced hypoperfusion", "source": "lactate ≥4 mmol/L" },
+    { "value": "≥65", "unit": "mmHg", "context": "Target MAP on norepinephrine", "source": "MAP) ≥65 mmHg" },
+    { "value": "0.03", "unit": "units/min", "context": "Second-line vasopressin adjunct ceiling", "source": "0.03 units/min" },
+    { "value": "200", "unit": "mg/day", "context": "IV hydrocortisone only for refractory septic shock", "source": "200 mg/day" },
+    { "value": "≤7.15", "unit": "pH", "context": "Bicarbonate exception threshold with AKI stage 2-3", "source": "pH is ≤7.15" },
+    { "value": "<7.0", "unit": "g/dL", "context": "RBC transfusion threshold unless haemorrhage/ischaemia/hypoxaemia", "source": "below 7.0 g/dL" }
+  ],
+  "negations": [
+    { "token": "never", "phrase": "never delay antimicrobial administration by more than 45 minutes while waiting for cultures", "rule": "Cultures must never delay antibiotics >45 min" },
+    { "token": "Do not", "phrase": "Do not add empiric antifungal coverage unless the patient has high fungal risk factors", "rule": "No empiric antifungals unless high fungal risk" },
+    { "token": "do not", "phrase": "do not continue dual Gram-negative therapy once susceptibilities are known except in resistant pathogens where monotherapy is inadequate", "rule": "Stop dual Gram-negative therapy once susceptibilities known unless resistant" },
+    { "token": "Do not", "phrase": "Do not use hydroxyethyl starches under any circumstance", "rule": "Hydroxyethyl starches strictly forbidden" },
+    { "token": "Do not", "phrase": "Do not rely on central venous pressure alone to guide fluid responsiveness", "rule": "Never rely on CVP alone for fluid responsiveness" },
+    { "token": "Do not", "phrase": "Do not withhold vasopressors while waiting to complete the 30 mL/kg fluid bolus if life-threatening hypotension (MAP <65 mmHg) persists", "rule": "Start vasopressors early if MAP <65 persists; do not wait for full 30 mL/kg" },
+    { "token": "never", "phrase": "never as first-line monotherapy", "rule": "Vasopressin is never first-line monotherapy" },
+    { "token": "Never", "phrase": "Never use dopamine unless the patient has symptomatic bradycardia with a low risk of tachyarrhythmias", "rule": "No dopamine unless bradycardic with low tachyarrhythmia risk" },
+    { "token": "Do not", "phrase": "Do not administer intravenous hydrocortisone (200 mg/day) routinely in sepsis without shock", "rule": "No routine steroids in sepsis without shock" },
+    { "token": "Do not", "phrase": "Do not give sodium bicarbonate to improve haemodynamics or reduce vasopressor requirements in hypoperfusion-induced lactic acidaemia unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3)", "rule": "No bicarbonate unless pH ≤7.15 with AKI stage 2-3" }
+  ],
+  "conditions": [
+    { "token": "only if", "phrase": "only if sepsis is possible without shock", "rule": "3-hour window applies only when sepsis is possible without shock" },
+    { "token": "unless", "phrase": "unless the patient has high fungal risk factors", "rule": "Empiric antifungals exception" },
+    { "token": "only while", "phrase": "only while central venous access is being obtained", "rule": "Peripheral norepinephrine is temporary only while obtaining central access" },
+    { "token": "only as", "phrase": "only as a second-line adjunct", "rule": "Vasopressin role restriction" },
+    { "token": "unless", "phrase": "unless the patient has symptomatic bradycardia with a low risk of tachyarrhythmias", "rule": "Dopamine narrow exception" },
+    { "token": "only for", "phrase": "only for refractory septic shock requiring ongoing vasopressors", "rule": "Hydrocortisone restriction" },
+    { "token": "unless", "phrase": "unless arterial pH is ≤7.15 with acute kidney injury (AKIN stage 2 or 3)", "rule": "Sodium bicarbonate exception" },
+    { "token": "only when", "phrase": "only when haemoglobin falls below 7.0 g/dL, unless there is active haemorrhage, acute myocardial ischaemia, or severe hypoxaemia", "rule": "RBC transfusion threshold and exceptions" }
+  ],
+  "highYield": [
+    { "fact": "Cultures before antibiotics, NEVER delaying antibiotics >45 min; IV antibiotics ≤1 h (shock/likely sepsis) vs 3 h ONLY if possible without shock", "stars": 2 },
+    { "fact": "Balanced crystalloids ≥30 mL/kg within 3 h (lactate ≥4 mmol/L or hypotension); NEVER hydroxyethyl starches; do not rely on CVP alone; do not withhold vasopressors if MAP <65", "stars": 2 },
+    { "fact": "Norepinephrine first-line (MAP ≥65 mmHg; peripheral only while obtaining central access); vasopressin ≤0.03 U/min ONLY second-line, NEVER first-line", "stars": 2 },
+    { "fact": "NEVER dopamine unless symptomatic bradycardia + low tachyarrhythmia risk", "stars": 2 },
+    { "fact": "IV hydrocortisone 200 mg/day ONLY for refractory septic shock, NOT routine without shock", "stars": 2 },
+    { "fact": "NO sodium bicarbonate unless pH ≤7.15 + AKI (AKIN 2-3); RBC transfusion ONLY if Hb <7.0 g/dL unless haemorrhage, acute MI ischaemia, or severe hypoxaemia", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

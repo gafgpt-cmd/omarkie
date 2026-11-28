@@ -1,0 +1,294 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-input-4cdb7369",
+  "lang": "es",
+  "title": "input",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:18Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "abstract",
+      "num": "",
+      "title": "",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-15df9be5",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p. 214",
+          "sentences": [
+            "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p.",
+            "214"
+          ],
+          "brief": [
+            "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p.",
+          "takeaway": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p",
+          "topic": "CAPÍTULO 14 — TRASTORNOS"
+        },
+        {
+          "id": "p-e08e71ff",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "HIPERPOTASEMIA AGUDA",
+          "sentences": [
+            "HIPERPOTASEMIA AGUDA"
+          ],
+          "brief": [
+            "HIPERPOTASEMIA AGUDA"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "HIPERPOTASEMIA AGUDA",
+          "takeaway": "HIPERPOTASEMIA AGUDA",
+          "topic": "HIPERPOTASEMIA AGUDA"
+        },
+        {
+          "id": "p-2a113df3",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La hiperpotasemia se define como potasio sérico superior a 5,5 mEq/L, considerándose grave cuando supera 6,5 mEq/L o cuando existen alteraciones electrocardiográficas independientemente de la cifra. Antes de tratar una cifra aislada en un paciente asintomático sin cambios en el ECG, descartar siempre pseudohiperpotasemia por hemólisis de la muestra, torniquete pro- longado o trombocitosis extrema.",
+          "sentences": [
+            "La hiperpotasemia se define como potasio sérico superior a 5,5 mEq/L, considerándose grave cuando supera 6,5 mEq/L o cuando existen alteraciones electrocardiográficas independientemente de la cifra.",
+            "Antes de tratar una cifra aislada en un paciente asintomático sin cambios en el ECG, descartar siempre pseudohiperpotasemia por hemólisis de la muestra, torniquete pro- longado o trombocitosis extrema."
+          ],
+          "brief": [
+            "La hiperpotasemia se define como potasio sérico superior a 5,5 mEq/L, considerándose grave cuando supera 6,5 mEq/L o cuando existen alteraciones electrocardiográficas independientemente de la cifra."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La hiperpotasemia se define como potasio sérico superior a 5,5 mEq/L, considerándose grave cuando supera 6,5 mEq/L o cuando existen alteraciones electrocardiográficas independientemente de la cifra.",
+          "takeaway": "La hiperpotasemia se define como potasio sérico superior a 5,5 mEq/L, considerándose grave",
+          "topic": "La hiperpotasemia se"
+        },
+        {
+          "id": "p-6a4c190a",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS",
+          "sentences": [
+            "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS"
+          ],
+          "brief": [
+            "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS",
+          "takeaway": "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS",
+          "topic": "CAMBIOS ELECTROCARDIOGRÁFICOS PROGRESIVOS"
+        },
+        {
+          "id": "p-c0c180d8",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La toxicidad miocárdica progresa típicamente en secuencia: ondas T picudas y simétricas → prolongación del intervalo PR y aplanamiento de la onda P → ensanchamiento del complejo QRS → patrón sinusoidal y fibrilación ven- tricular o asistolia. Sin embargo, el ECG puede ser normal incluso con potasio >7,0 mEq/L: nunca confiar en un ECG normal para descartar peligro.",
+          "sentences": [
+            "La toxicidad miocárdica progresa típicamente en secuencia: ondas T picudas y simétricas → prolongación del intervalo PR y aplanamiento de la onda P → ensanchamiento del complejo QRS → patrón sinusoidal y fibrilación ven- tricular o asistolia.",
+            "Sin embargo, el ECG puede ser normal incluso con potasio >7,0 mEq/L: nunca confiar en un ECG normal para descartar peligro."
+          ],
+          "brief": [
+            "La toxicidad miocárdica progresa típicamente en secuencia: ondas T picudas y simétricas → prolongación del intervalo PR y aplanamiento de la onda P → ensanchamiento del complejo QRS → patrón sinusoidal y fibrilación ven- tricular o asistolia."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La toxicidad miocárdica progresa típicamente en secuencia: ondas T picudas y simétricas → prolongación del intervalo PR y aplanamiento de la onda P → ensanchamiento del complejo QRS → patrón sinusoidal y fibrilación ven- tricular o asistolia.",
+          "takeaway": "La toxicidad miocárdica progresa típicamente en secuencia: ondas T picudas y simétricas → prolongación del",
+          "topic": "La toxicidad miocárdica"
+        },
+        {
+          "id": "p-f3d4109b",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Tabla 14.2. Fármacos en hiperpotasemia aguda (resumen de urgencias)",
+          "sentences": [
+            "Tabla 14.2.",
+            "Fármacos en hiperpotasemia aguda (resumen de urgencias)"
+          ],
+          "brief": [
+            "Tabla 14.2."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Tabla 14.2.",
+          "takeaway": "Tabla 14.2",
+          "topic": "Tabla 14.2"
+        },
+        {
+          "id": "p-3ccdc4ea",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Fármaco | Dosis | Inicio | Duración | Baja el K+ sérico? Gluconato cálcico 10 % | 10 mL IV en 2-3 min | 1-3 min | 30-60 min | NO (solo estabiliza membrana) Insulina rápida + glucosa | 10 UI IV + 25-50 g glucosa | 15-30 min | 2-4 h | Sí (baja 0,5-1,2 mEq/L) Salbutamol nebulizado | 10-20 mg nebulizado | 15-30 min | 2-4 h | Sí (baja 0,5-1,0 mEq/L) Furosemida IV | 40-80 mg IV | 30-60 min | 2-4 h | Sí (solo si diuresis conservada) Hemodiálisis | Sesión urgente | Inmediato | Sostenida | Sí (eliminación definitiva)",
+          "sentences": [
+            "Fármaco | Dosis | Inicio | Duración | Baja el K+ sérico?",
+            "Gluconato cálcico 10 % | 10 mL IV en 2-3 min | 1-3 min | 30-60 min | NO (solo estabiliza membrana) Insulina rápida + glucosa | 10 UI IV + 25-50 g glucosa | 15-30 min | 2-4 h | Sí (baja 0,5-1,2 mEq/L) Salbutamol nebulizado | 10-20 mg nebulizado | 15-30 min | 2-4 h | Sí (baja 0,5-1,0 mEq/L) Furosemida IV | 40-80 mg IV | 30-60 min | 2-4 h | Sí (solo si diuresis conservada) Hemodiálisis | Sesión urgente | Inmediato | Sostenida | Sí (eliminación definitiva)"
+          ],
+          "brief": [
+            "Fármaco | Dosis | Inicio | Duración | Baja el K+ sérico?"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Fármaco | Dosis | Inicio | Duración | Baja el K+ sérico?",
+          "takeaway": "Fármaco | Dosis | Inicio | Duración | Baja el K+ sérico",
+          "topic": "Fármaco | Dosis | Inicio"
+        },
+        {
+          "id": "p-1bdee314",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Figura 14.1. Onda T picuda estrecha con base simétrica en derivaciones precordiales V2-V4.",
+          "sentences": [
+            "Figura 14.1.",
+            "Onda T picuda estrecha con base simétrica en derivaciones precordiales V2-V4."
+          ],
+          "brief": [
+            "Figura 14.1."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Figura 14.1.",
+          "takeaway": "Figura 14.1",
+          "topic": "Figura 14.1"
+        },
+        {
+          "id": "p-cbb59804",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p. 215",
+          "sentences": [
+            "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p.",
+            "215"
+          ],
+          "brief": [
+            "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p.",
+          "takeaway": "CAPÍTULO 14 — TRASTORNOS DEL POTASIO p",
+          "topic": "CAPÍTULO 14 — TRASTORNOS"
+        },
+        {
+          "id": "p-674fd1f8",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "MEDIDAS DE EMERGENCIA Y ERRORES FRECUENTES",
+          "sentences": [
+            "MEDIDAS DE EMERGENCIA Y ERRORES FRECUENTES"
+          ],
+          "brief": [
+            "MEDIDAS DE EMERGENCIA Y ERRORES FRECUENTES"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "MEDIDAS DE EMERGENCIA Y ERRORES FRECUENTES",
+          "takeaway": "MEDIDAS DE EMERGENCIA Y ERRORES FRECUENTES",
+          "topic": "MEDIDAS DE EMERGENCIA"
+        },
+        {
+          "id": "p-926d475c",
+          "kind": "list item",
+          "role": "context",
+          "full": "Estabilizar membrana primero si hay cambios ECG o K+ >6,5 mEq/L: gluconato cálcico 10 % 10 mL IV en 2-3 minutos bajo monitorización con- tinua. Repetir una segunda dosis tras 5 minutos si persisten alteraciones del ECG. El calcio NO reduce el potasio corporal ni sérico.",
+          "sentences": [
+            "Estabilizar membrana primero si hay cambios ECG o K+ >6,5 mEq/L: gluconato cálcico 10 % 10 mL IV en 2-3 minutos bajo monitorización con- tinua.",
+            "Repetir una segunda dosis tras 5 minutos si persisten alteraciones del ECG.",
+            "El calcio NO reduce el potasio corporal ni sérico."
+          ],
+          "brief": [
+            "Estabilizar membrana primero si hay cambios ECG o K+ >6,5 mEq/L: gluconato cálcico 10 % 10 mL IV en 2-3 minutos bajo monitorización con- tinua."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Estabilizar membrana primero si hay cambios ECG o K+ >6,5 mEq/L: gluconato cálcico 10 % 10 mL IV en 2-3 minutos bajo monitorización con- tinua.",
+          "takeaway": "Estabilizar membrana primero si hay cambios ECG o K+ >6,5 mEq/L: gluconato cálcico",
+          "topic": "Estabilizar membrana primero"
+        },
+        {
+          "id": "p-add366e8",
+          "kind": "list item",
+          "role": "context",
+          "full": "Redistribuir potasio al interior celular: insulina rápida 10 UI IV acompañada siempre de glucosa (25-50 g IV) salvo glucemia basal >250 mg/dL, monitorizando glucemia capilar durante al menos 4 horas por riesgo de hipoglucemia tardía (especialmente en ERC). Asociar salbutamol nebulizado 10-20 mg, evitando dosis altas en cardiopatía isquémica aguda o taquiarritmia.",
+          "sentences": [
+            "Redistribuir potasio al interior celular: insulina rápida 10 UI IV acompañada siempre de glucosa (25-50 g IV) salvo glucemia basal >250 mg/dL, monitorizando glucemia capilar durante al menos 4 horas por riesgo de hipoglucemia tardía (especialmente en ERC).",
+            "Asociar salbutamol nebulizado 10-20 mg, evitando dosis altas en cardiopatía isquémica aguda o taquiarritmia."
+          ],
+          "brief": [
+            "Redistribuir potasio al interior celular: insulina rápida 10 UI IV acompañada siempre de glucosa (25-50 g IV) salvo glucemia basal >250 mg/dL, monitorizando glucemia capilar durante al menos 4 horas por riesgo de hipoglucemia tardía (especialmente en ERC)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Redistribuir potasio al interior celular: insulina rápida 10 UI IV acompañada siempre de glucosa (25-50 g IV) salvo glucemia basal >250 mg/dL, monitorizando glucemia capilar durante al menos 4 horas por riesgo de hipoglucemia tardía (especialmente en ERC).",
+          "takeaway": "Redistribuir potasio al interior celular: insulina rápida 10 UI IV acompañada siempre de glucosa",
+          "topic": "Redistribuir potasio al"
+        },
+        {
+          "id": "p-76193784",
+          "kind": "list item",
+          "role": "context",
+          "full": "Eliminar potasio del organismo: furosemida IV solo si el paciente mantiene diuresis; quelantes intestinales (ciclosilicato de sodio y circonio o patiromer) para control subagudo — nunca usar sulfonato de poliestireno sódico con sorbitol por riesgo de necrosis colónica. Indicar hemodiálisis urgente en hiperpotasemia refractaria, oliguria/anuria o rabdomiólisis masiva.",
+          "sentences": [
+            "Eliminar potasio del organismo: furosemida IV solo si el paciente mantiene diuresis; quelantes intestinales (ciclosilicato de sodio y circonio o patiromer) para control subagudo — nunca usar sulfonato de poliestireno sódico con sorbitol por riesgo de necrosis colónica.",
+            "Indicar hemodiálisis urgente en hiperpotasemia refractaria, oliguria/anuria o rabdomiólisis masiva."
+          ],
+          "brief": [
+            "Eliminar potasio del organismo: furosemida IV solo si el paciente mantiene diuresis; quelantes intestinales (ciclosilicato de sodio y circonio o patiromer) para control subagudo — nunca usar sulfonato de poliestireno sódico con sorbitol por riesgo de necrosis colónica."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Eliminar potasio del organismo: furosemida IV solo si el paciente mantiene diuresis; quelantes intestinales (ciclosilicato de sodio y circonio o patiromer) para control subagudo — nunca usar sulfonato de poliestireno sódico con sorbitol por riesgo de necrosis colónica.",
+          "takeaway": "Eliminar potasio del organismo: furosemida IV solo si el paciente mantiene diuresis; quelantes intestinales",
+          "topic": "Eliminar potasio del"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

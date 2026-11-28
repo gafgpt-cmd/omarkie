@@ -1,0 +1,49 @@
+{
+  "id": "01-adhf-ward-guide",
+  "number": 1,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Acute Decompensated Heart Failure: Ward Guide",
+  "stresses": ["profiles vs table", "doses", "never-dos"],
+  "synthetic": true,
+  "numbers": [
+    { "value": ">100", "unit": "pg/mL", "context": "BNP supports diagnosis", "source": "BNP above 100 pg/mL" },
+    { "value": ">300", "unit": "pg/mL", "context": "NT-proBNP threshold", "source": ">300 pg/mL" },
+    { "value": "1", "unit": "hour", "context": "Assess perfusion and congestion window", "source": "within the first hour" },
+    { "value": "40", "unit": "mg", "context": "IV furosemide start if diuretic-naive", "source": "Intravenous furosemide 40 mg" },
+    { "value": "2", "unit": "hours", "context": "Initial urine output reassessment", "source": "at 2 hours" },
+    { "value": "6", "unit": "hours", "context": "Repeat reassessment and thiazide escalation window", "source": "every 6 hours" },
+    { "value": "<50", "unit": "mmol/L", "context": "Urinary sodium at 6 h predicts diuretic resistance", "source": "below 50 mmol/L at 6 hours" }
+  ],
+  "negations": [
+    { "token": "no", "phrase": "Warm and dry needs no decongestion", "rule": "Warm and dry profile requires no decongestion" },
+    { "token": "not", "phrase": "patient not on diuretics", "rule": "40 mg IV start applies to diuretic-naive patients" },
+    { "token": "not", "phrase": "not for congestion alone", "rule": "Inotropes are reserved for cardiogenic shock, never congestion alone" },
+    { "token": "Do not", "phrase": "Do not give fluids for a low blood pressure that comes with congestion", "rule": "Never give fluid boluses for hypotension with congestion" },
+    { "token": "Do not", "phrase": "Do not stop beta blockers abruptly unless there is shock", "rule": "Keep beta blockers unless shock is present" }
+  ],
+  "conditions": [
+    { "token": "when", "phrase": "when the response is poor after 6 hours", "rule": "Add a thiazide only when response is poor after 6 h" },
+    { "token": "when", "phrase": "when blood pressure allows", "rule": "Nitrates are first line only when blood pressure permits" },
+    { "token": "unless", "phrase": "unless there is shock", "rule": "Do not stop beta blockers abruptly unless shock" },
+    { "token": "after", "phrase": "after every diuretic dose change", "rule": "Check potassium and renal function after every diuretic dose change" }
+  ],
+  "highYield": [
+    { "fact": "Bedside triad: dyspnoea, orthopnoea, elevated JVP", "stars": 2 },
+    { "fact": "BNP >100 pg/mL supports diagnosis; obesity lowers it, renal failure raises it", "stars": 1 },
+    { "fact": "Classify perfusion x congestion within 1 hour (Warm/Cold x Wet/Dry)", "stars": 2 },
+    { "fact": "IV furosemide 40 mg if naive, or double home oral dose if already on loop diuretic", "stars": 2 },
+    { "fact": "Urinary sodium <50 mmol/L at 6 h predicts diuretic resistance; add thiazide if poor response at 6 h", "stars": 2 },
+    { "fact": "Inotropes only for cardiogenic shock, not congestion alone", "stars": 1 },
+    { "fact": "Never give fluids for low BP with congestion; never stop beta blockers abruptly unless shock", "stars": 2 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

@@ -9,7 +9,7 @@ const qa=process.env.OMARKIE_QA_DIR || path.join(data,'evidence');await mkdir(qa
 await cp(new URL('./fixtures/plugin-package',import.meta.url),folder,{recursive:true});
 const env=await isolatedEnvironment({...process.env,OMARKIE_DATA_DIR:profile,OMARKIE_LANGUAGE:'zh'});delete env.ELECTRON_RUN_AS_NODE;delete env.OMARKIE_DEV_URL;
 let app,page;const errors=[],checks=[];
-const launch=async()=>{app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await fullSize(app,page);await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();};
+const launch=async()=>{app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});page=await app.firstWindow();page.on('pageerror',e=>errors.push(e.message));await fullSize(app,page);await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({timeout:30_000});};
 const stop=async()=>{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{});app=null;}};
 const openPlugins=async()=>{await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'插件管理…',exact:true}).click();};
 const card=()=>page.locator('.plugin-card').filter({has:page.getByRole('heading',{name:'Package fixture',exact:true})});

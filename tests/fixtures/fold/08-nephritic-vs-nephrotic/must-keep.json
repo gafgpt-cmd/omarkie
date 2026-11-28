@@ -1,0 +1,43 @@
+{
+  "id": "08-nephritic-vs-nephrotic",
+  "number": 8,
+  "lang": "en",
+  "genre": "clinical",
+  "title": "Nephritic vs Nephrotic Syndrome",
+  "stresses": ["discrimination table", "mnemonic"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "<3.5", "unit": "g/day", "context": "Nephritic proteinuria stays below 3.5 g/day", "source": "below 3.5 g/day" },
+    { "value": "≥3.5", "unit": "g/day", "context": "Nephrotic-range proteinuria threshold", "source": "≥3.5 g/day" },
+    { "value": "<3.0", "unit": "g/dL", "context": "Severe hypoalbuminaemia in nephrotic syndrome", "source": "<3.0 g/dL" },
+    { "value": "2-4", "unit": "weeks", "context": "PSGN latency after pharyngitis or impetigo", "source": "2-4 weeks" },
+    { "value": "1-3", "unit": "days", "context": "IgA nephropathy synpharyngitic latency", "source": "1-3 days" }
+  ],
+  "negations": [
+    { "token": "without", "phrase": "without prominent glomerular inflammation", "rule": "Nephrotic syndrome lacks prominent glomerular inflammation" },
+    { "token": "without", "phrase": "without red blood cell casts", "rule": "Nephrotic urinalysis has fatty casts/oval fat bodies without RBC casts" },
+    { "token": "Do not", "phrase": "Do not diagnose nephrotic syndrome on dipstick alone without quantifying proteinuria ≥3.5 g/day", "rule": "Always quantify proteinuria ≥3.5 g/day before diagnosing nephrotic syndrome" },
+    { "token": "Do not", "phrase": "Do not overlook overlap presentations", "rule": "MPGN and diffuse proliferative lupus nephritis can present as mixed nephritic-nephrotic" }
+  ],
+  "conditions": [
+    { "token": "without", "phrase": "without quantifying proteinuria ≥3.5 g/day", "rule": "Dipstick alone is insufficient without quantification" },
+    { "token": "especially", "phrase": "especially in membranous nephropathy", "rule": "Renal vein thrombosis risk is highest in membranous nephropathy" }
+  ],
+  "highYield": [
+    { "fact": "Proteinuria cut-off: nephritic <3.5 g/day vs nephrotic ≥3.5 g/day (UPCR ≥3.5 g/g)", "stars": 2 },
+    { "fact": "Urine sediment: nephritic = dysmorphic RBCs/acanthocytes + RBC casts; nephrotic = fatty casts + oval fat bodies + Maltese crosses, no RBC casts", "stars": 2 },
+    { "fact": "Nephritic hallmarks: oliguria, azotaemia, hypertension; prototypes PSGN (2-4 wk, low C3) vs IgA nephropathy (1-3 d, normal C3) vs RPGN (crescents)", "stars": 2 },
+    { "fact": "Nephrotic hallmarks: hypoalbuminaemia <3.0 g/dL, anasarca, hyperlipidaemia, hypercoagulability (antithrombin III loss → renal vein thrombosis in membranous), encapsulated bacterial infections (Ig loss)", "stars": 2 },
+    { "fact": "Mnemonic PHARAOH mapped 1:1 to nephritic features", "stars": 1 },
+    { "fact": "Overlap syndromes: MPGN and diffuse proliferative lupus nephritis can show both nephritic and nephrotic features", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": false,
+    "expectNever": true,
+    "expectMnemonic": true,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

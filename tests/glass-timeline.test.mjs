@@ -27,6 +27,8 @@ test("timestamp magnets survive the journal and reject bad times", () => {
   const timeline = timelineFromMagnet({ id: "l1", fields: { kind: "timeline", src: "lecture.mp3", duration: 600 } });
   assert.equal(timeline?.media, "audio");
   assert.equal(timelineFromMagnet({ id: "l2", fields: { kind: "timeline", src: "clip.mp4" } })?.media, "video");
+  const embedded = `data:audio/wav;base64,${"A".repeat(2_500)}`;
+  assert.equal(timelineFromMagnet({ id: "l3", fields: { kind: "timeline", src: embedded } })?.src, embedded);
 });
 
 test("transcript paragraphs parse without locale", () => {

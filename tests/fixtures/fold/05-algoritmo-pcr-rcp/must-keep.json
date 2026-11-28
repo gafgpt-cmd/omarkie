@@ -1,0 +1,49 @@
+{
+  "id": "05-algoritmo-pcr-rcp",
+  "number": 5,
+  "lang": "es",
+  "genre": "clinical",
+  "title": "Algoritmo de parada cardiorrespiratoria y soporte vital avanzado",
+  "stresses": ["flow arrows", "timings"],
+  "synthetic": true,
+  "numbers": [
+    { "value": "100-120", "unit": "/min", "context": "Frecuencia de compresiones torácicas", "source": "100 a 120 por minuto" },
+    { "value": "5-6", "unit": "cm", "context": "Profundidad de compresiones", "source": "5 a 6 cm" },
+    { "value": "2", "unit": "minutos", "context": "Ciclo de RCP y relevo de reanimador", "source": "cada 2 minutos" },
+    { "value": "10", "unit": "segundos", "context": "Pausa máxima permitida en compresiones", "source": "más de 10 segundos" },
+    { "value": "30:2", "unit": "relación", "context": "Compresiones:ventilaciones sin vía aérea avanzada", "source": "30 compresiones por 2 ventilaciones" },
+    { "value": "10", "unit": "respiraciones/min", "context": "Ventilación asíncrona con vía aérea avanzada (1 cada 6 s)", "source": "10 respiraciones por minuto" },
+    { "value": "150-200", "unit": "J", "context": "Energía descarga bifásica", "source": "150-200 J" },
+    { "value": "1", "unit": "mg", "context": "Adrenalina IV/IO cada 3-5 min", "source": "adrenalina 1 mg IV/IO" },
+    { "value": "300", "unit": "mg", "context": "Amiodarona IV/IO tras 3.ª descarga (2.ª dosis 150 mg)", "source": "amiodarona 300 mg IV/IO" },
+    { "value": "<10", "unit": "mmHg", "context": "EtCO2 tras 20 min indica mala perfusión", "source": "EtCO2 inferior a 10 mmHg tras 20 minutos" },
+    { "value": ">40", "unit": "mmHg", "context": "Subida brusca de EtCO2 sugiere RCE", "source": "EtCO2 por encima de 40 mmHg" }
+  ],
+  "negations": [
+    { "token": "Nunca", "phrase": "Nunca interrumpir las compresiones durante más de 10 segundos", "rule": "Pausa en compresiones nunca >10 s" },
+    { "token": "sin", "phrase": "sin comprobar el pulso inmediatamente después de la descarga", "rule": "Reanudar RCP tras descarga sin comprobar pulso" },
+    { "token": "No", "phrase": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso", "rule": "Asistolia y AESP no son desfibrilables" },
+    { "token": "evitando", "phrase": "evitando la hiperventilación", "rule": "No hiperventilar con vía aérea avanzada" }
+  ],
+  "conditions": [
+    { "token": "Sin", "phrase": "Sin vía aérea avanzada, aplicar una relación de 30 compresiones por 2 ventilaciones", "rule": "Relación 30:2 solo sin vía aérea avanzada" },
+    { "token": "Si", "phrase": "Si el ritmo desfibrilable persiste tras la quinta descarga", "rule": "Segunda dosis de amiodarona 150 mg tras 5.ª descarga" },
+    { "token": "únicamente si", "phrase": "únicamente si aparece un ritmo eléctrico organizado compatible con perfusión", "rule": "Comprobar pulso solo si hay ritmo organizado" }
+  ],
+  "highYield": [
+    { "fact": "RCP calidad: 100-120/min, 5-6 cm, relevo cada 2 min, pausas nunca >10 s, 30:2 sin vía aérea avanzada o 10 resp/min (c/6 s) con ella", "stars": 2 },
+    { "fact": "Desfibrilable (FV/TVSP): descarga bifásica 150-200 J → RCP 2 min inmediata sin comprobar pulso → tras 3.ª descarga adrenalina 1 mg c/3-5 min + amiodarona 300 mg (2.ª dosis 150 mg tras 5.ª)", "stars": 2 },
+    { "fact": "No desfibrilable (asistolia/AESP): NO desfibrilar → RCP 2 min + adrenalina 1 mg IV/IO cuanto antes y c/3-5 min", "stars": 2 },
+    { "fact": "Capnografía: EtCO2 <10 mmHg tras 20 min = mala perfusión; subida brusca >40 mmHg = sugiere RCE", "stars": 2 },
+    { "fact": "Causas reversibles: 4 H (hipoxia, hipovolemia, hipo/hiperpotasemia, hipotermia) + 4 T (neumotórax a tensión, taponamiento, tóxicos, trombosis)", "stars": 1 }
+  ],
+  "structure": {
+    "expectTable": true,
+    "expectNumbersTable": true,
+    "expectFlow": true,
+    "expectNever": true,
+    "expectMnemonic": false,
+    "tableOnlySections": []
+  },
+  "forbidden": []
+}

@@ -132,7 +132,7 @@ test("concurrent readers see a complete legacy image in a scraps-only vault", as
   const store = { v: 1, entry: { id: "legacy-only", type: "scrap", document: "notes/Photo note.md", deleted: false, body: "Cell membrane",
     image: { hash, width: 200, height: 100, side: "left" },
     anchor: { block: "One paragraph under the picture.", line: 2, headings: ["Photo"] } } };
-  const environment = await vault({ ".omarkie/store.jsonl": `${JSON.stringify(store)}\n`, [`".omarkie/scraps/${hash}"`]: png });
+  const environment = await vault({ ".omarkie/store.jsonl": `${JSON.stringify(store)}\n`, [`.omarkie/scraps/${hash}`]: png });
   await mkdir(path.join(environment.folder, "notes"), { recursive: true });
   await writeFile(path.join(environment.folder, "notes/Photo note.md"), "# Photo\n\nOne paragraph under the picture.\n");
   await mkdir(path.join(environment.folder, ".omarkie", "scraps"), { recursive: true });
@@ -156,7 +156,7 @@ test("learning mode scraps migrate once and keep their blob", async () => {
   const store = { v: 1, entry: { id: "legacy-1", type: "scrap", document: "notes/Photo note.md", deleted: false, body: "Cell membrane",
     image: { hash, width: 200, height: 100, name: "cell.png", side: "left" },
     anchor: { block: "One paragraph under the picture.", line: 2, headings: ["Photo"] } } };
-  const environment = await vault({ ".omarkie/store.jsonl": `${JSON.stringify(store)}\n`, [`".omarkie/scraps/${hash}"`]: png });
+  const environment = await vault({ ".omarkie/store.jsonl": `${JSON.stringify(store)}\n`, [`.omarkie/scraps/${hash}`]: png });
   await mkdir(path.join(environment.folder, "notes"), { recursive: true });
   await writeFile(path.join(environment.folder, "notes/Photo note.md"), "# Photo\n\nOne paragraph under the picture.\n");
   await mkdir(path.join(environment.folder, ".omarkie", "scraps"), { recursive: true });

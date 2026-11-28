@@ -1,0 +1,214 @@
+{
+  "format": "textfold/doc",
+  "version": 0,
+  "id": "md-anestesia-regional-dosis-m-ximas-de-0e756c88",
+  "lang": "es",
+  "title": "Anestesia regional: dosis máximas de anestésicos locales",
+  "authors": [],
+  "date": "",
+  "source": {
+    "kind": "markdown",
+    "url": "",
+    "snapshot": "",
+    "label": "input.md",
+    "license": ""
+  },
+  "levels": [
+    "topic",
+    "takeaway",
+    "key",
+    "brief",
+    "full"
+  ],
+  "written": [
+    "topic",
+    "takeaway",
+    "key"
+  ],
+  "provenance": {
+    "made_with": "TextFold 0.10.57",
+    "exported": "2026-11-27T22:45:17Z",
+    "ai_generated": false,
+    "model": "",
+    "levels_made": "",
+    "local": true
+  },
+  "sections": [
+    {
+      "id": "sec-principios-generales",
+      "num": "",
+      "title": "Principios generales",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-e557d53c",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Los anestésicos locales bloquean de forma reversible los canales de sodio dependientes de voltaje desde la cara intracelular de la membrana axonal. La toxicidad sistémica por anestésicos locales (LAST) depende de la dosis total administrada, la vascularización del sitio de inyección (intercostal > caudal > epidural > plexo braquial > subcutáneo) y las comorbilidades del paciente. Calcular siempre la dosis según el peso corporal ideal (nunca por peso real en obesidad) y reducir la dosis en ancianos, gestantes, insuficiencia hepática o cardiopatía avanzada.",
+          "sentences": [
+            "Los anestésicos locales bloquean de forma reversible los canales de sodio dependientes de voltaje desde la cara intracelular de la membrana axonal.",
+            "La toxicidad sistémica por anestésicos locales (LAST) depende de la dosis total administrada, la vascularización del sitio de inyección (intercostal > caudal > epidural > plexo braquial > subcutáneo) y las comorbilidades del paciente.",
+            "Calcular siempre la dosis según el peso corporal ideal (nunca por peso real en obesidad) y reducir la dosis en ancianos, gestantes, insuficiencia hepática o cardiopatía avanzada."
+          ],
+          "brief": [
+            "Los anestésicos locales bloquean de forma reversible los canales de sodio dependientes de voltaje desde la cara intracelular de la membrana axonal."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Los anestésicos locales bloquean de forma reversible los canales de sodio dependientes de voltaje desde la cara intracelular de la membrana axonal.",
+          "takeaway": "Los anestésicos locales bloquean de forma reversible los canales de sodio dependientes de voltaje",
+          "topic": "Los anestésicos locales"
+        }
+      ]
+    },
+    {
+      "id": "sec-dosis-máximas-recomendadas",
+      "num": "",
+      "title": "Dosis máximas recomendadas",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": []
+    },
+    {
+      "id": "sec-toxicidad-sistémica-last",
+      "num": "",
+      "title": "Toxicidad sistémica (LAST)",
+      "depth": 1,
+      "takeaway": "",
+      "topic": "",
+      "units": [
+        {
+          "id": "p-b3b5d8a6",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "La presentación clásica comienza con signos neurológicos (sabor metálico, parestesias periorales, acúfenos, agitación, convulsiones) seguidos de colapso cardiovascular (bradicardia, bloqueos de conducción, asistolia o arritmias ventriculares), aunque la bupivacaína puede causar parada cardiaca sin pródromos neurológicos.",
+          "sentences": [
+            "La presentación clásica comienza con signos neurológicos (sabor metálico, parestesias periorales, acúfenos, agitación, convulsiones) seguidos de colapso cardiovascular (bradicardia, bloqueos de conducción, asistolia o arritmias ventriculares), aunque la bupivacaína puede causar parada cardiaca sin pródromos neurológicos."
+          ],
+          "brief": [
+            "La presentación clásica comienza con signos neurológicos (sabor metálico, parestesias periorales, acúfenos, agitación, convulsiones) seguidos de colapso cardiovascular (bradicardia, bloqueos de conducción, asistolia o arritmias ventriculares), aunque la bupivacaína puede causar parada cardiaca sin pródromos neurológicos."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "La presentación clásica comienza con signos neurológicos (sabor metálico, parestesias periorales, acúfenos, agitación, convulsiones) seguidos de colapso cardiovascular (bradicardia, bloqueos de conducción, asistolia o arritmias ventriculares), aunque la bupivacaína puede causar parada cardiaca sin pródromos neurológicos.",
+          "takeaway": "La presentación clásica comienza con signos neurológicos (sabor metálico, parestesias periorales, acúfenos, agitación, convulsiones",
+          "topic": "La presentación clásica"
+        },
+        {
+          "id": "p-24d9165c",
+          "kind": "paragraph",
+          "role": "context",
+          "full": "Ante sospecha de LAST:",
+          "sentences": [
+            "Ante sospecha de LAST:"
+          ],
+          "brief": [
+            "Ante sospecha de LAST:"
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Ante sospecha de LAST:",
+          "takeaway": "Ante sospecha de LAST",
+          "topic": "Ante sospecha de"
+        },
+        {
+          "id": "p-fbe66a50",
+          "kind": "list item",
+          "role": "context",
+          "full": "Detener la inyección de inmediato, pedir ayuda y solicitar emulsión lipídica al 20 %.",
+          "sentences": [
+            "Detener la inyección de inmediato, pedir ayuda y solicitar emulsión lipídica al 20 %."
+          ],
+          "brief": [
+            "Detener la inyección de inmediato, pedir ayuda y solicitar emulsión lipídica al 20 %."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Detener la inyección de inmediato, pedir ayuda y solicitar emulsión lipídica al 20 %.",
+          "takeaway": "Detener la inyección de inmediato, pedir ayuda y solicitar emulsión lipídica al 20",
+          "topic": "Detener la inyección"
+        },
+        {
+          "id": "p-e6f50d6e",
+          "kind": "list item",
+          "role": "context",
+          "full": "Asegurar la vía aérea con oxígeno al 100 % y evitar hipoxia, hipercapnia y acidosis (empeoran la toxicidad).",
+          "sentences": [
+            "Asegurar la vía aérea con oxígeno al 100 % y evitar hipoxia, hipercapnia y acidosis (empeoran la toxicidad)."
+          ],
+          "brief": [
+            "Asegurar la vía aérea con oxígeno al 100 % y evitar hipoxia, hipercapnia y acidosis (empeoran la toxicidad)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Asegurar la vía aérea con oxígeno al 100 % y evitar hipoxia, hipercapnia y acidosis (empeoran la toxicidad).",
+          "takeaway": "Asegurar la vía aérea con oxígeno al 100 % y evitar hipoxia, hipercapnia y acidosis",
+          "topic": "Asegurar la vía"
+        },
+        {
+          "id": "p-ed48770d",
+          "kind": "list item",
+          "role": "context",
+          "full": "Controlar las convulsiones únicamente con benzodiacepinas; no usar propofol si existe inestabilidad hemodinámica.",
+          "sentences": [
+            "Controlar las convulsiones únicamente con benzodiacepinas; no usar propofol si existe inestabilidad hemodinámica."
+          ],
+          "brief": [
+            "Controlar las convulsiones únicamente con benzodiacepinas; no usar propofol si existe inestabilidad hemodinámica."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Controlar las convulsiones únicamente con benzodiacepinas; no usar propofol si existe inestabilidad hemodinámica.",
+          "takeaway": "Controlar las convulsiones únicamente con benzodiacepinas; no usar propofol si existe inestabilidad hemodinámica",
+          "topic": "Controlar las convulsiones"
+        },
+        {
+          "id": "p-5e4e46a6",
+          "kind": "list item",
+          "role": "context",
+          "full": "Administrar emulsión lipídica al 20 %: bolo IV de 1,5 mL/kg en 1 minuto seguido de perfusión continua a 0,25 mL/kg/min (dosis máxima total 10-12 mL/kg en 30 minutos).",
+          "sentences": [
+            "Administrar emulsión lipídica al 20 %: bolo IV de 1,5 mL/kg en 1 minuto seguido de perfusión continua a 0,25 mL/kg/min (dosis máxima total 10-12 mL/kg en 30 minutos)."
+          ],
+          "brief": [
+            "Administrar emulsión lipídica al 20 %: bolo IV de 1,5 mL/kg en 1 minuto seguido de perfusión continua a 0,25 mL/kg/min (dosis máxima total 10-12 mL/kg en 30 minutos)."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Administrar emulsión lipídica al 20 %: bolo IV de 1,5 mL/kg en 1 minuto seguido de perfusión continua a 0,25 mL/kg/min (dosis máxima total 10-12 mL/kg en 30 minutos).",
+          "takeaway": "Administrar emulsión lipídica al 20 %: bolo IV de 1,5 mL/kg en 1 minuto",
+          "topic": "Administrar emulsión lipídica"
+        },
+        {
+          "id": "p-5757cd4a",
+          "kind": "list item",
+          "role": "context",
+          "full": "Modificar el soporte vital avanzado: reducir los bolos de adrenalina a <1 µg/kg, y nunca administrar vasopresina, bloqueantes de los canales de calcio, betabloqueantes ni lidocaína como antiarrítmico.",
+          "sentences": [
+            "Modificar el soporte vital avanzado: reducir los bolos de adrenalina a <1 µg/kg, y nunca administrar vasopresina, bloqueantes de los canales de calcio, betabloqueantes ni lidocaína como antiarrítmico."
+          ],
+          "brief": [
+            "Modificar el soporte vital avanzado: reducir los bolos de adrenalina a <1 µg/kg, y nunca administrar vasopresina, bloqueantes de los canales de calcio, betabloqueantes ni lidocaína como antiarrítmico."
+          ],
+          "evidence": [
+            0
+          ],
+          "key": "Modificar el soporte vital avanzado: reducir los bolos de adrenalina a <1 µg/kg, y nunca administrar vasopresina, bloqueantes de los canales de calcio, betabloqueantes ni lidocaína como antiarrítmico.",
+          "takeaway": "Modificar el soporte vital avanzado: reducir los bolos de adrenalina a <1 µg/kg",
+          "topic": "Modificar el soporte"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

@@ -5,6 +5,8 @@ on:
     branches: [main]
     tags: ["v*"]
     paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "packaging/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
+  pull_request:
+    paths: ["native/**", "electron/**", "src/**", "shared/**", "scripts/**", "tests/**", "packaging/**", "design/icon.svg", "package*.json", ".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       tag:
@@ -88,7 +90,10 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install desktop runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y rpm libarchive-tools xvfb libgtk-3-0 libnss3 libasound2 libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk libreoffice-writer
+        run: |
+          sudo apt-get update
+          asound=$(apt-cache show libasound2t64 >/dev/null 2>&1 && echo libasound2t64 || echo libasound2)
+          sudo apt-get install -y rpm libarchive-tools xvfb libgtk-3-0 libnss3 "$asound" libgbm1 libxss1 libxtst6 xdg-utils desktop-file-utils fonts-noto-cjk libreoffice-writer
       - name: Install the latest Pandoc, verified against its release digest
         run: bash scripts/install-pandoc.sh
         env:
