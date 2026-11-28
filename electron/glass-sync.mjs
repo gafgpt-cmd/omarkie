@@ -39,13 +39,15 @@ async function coarseFilesystem(root) {
 
 // One index, one watcher and one mover per open vault.
 export class GlassSync {
-  constructor({ service, cacheDir, appData, watcherFactory = createWatcher, indexFactory = GlassIndex }) {
+  constructor({ service, cacheDir, appData, watcherFactory = createWatcher, indexFactory = GlassIndex, trace = () => {} }) {
     if (!service?.root || !cacheDir || !appData) throw new Error("Glass sync needs a service, a cache folder and app data.");
     this.service = service;
     this.root = service.root;
     this.cacheDir = cacheDir;
     this.watcherFactory = watcherFactory;
     this.indexFactory = indexFactory;
+    // trace(step, ms): startup step durations for the app's debug log.
+    this.trace = trace;
     this.finder = new GlassFinder({ file: path.join(appData, "glass-finder.jsonl") });
     this.queue = Promise.resolve();
     this.scanning = false;
@@ -64,12 +66,19 @@ export class GlassSync {
   }
 
   async start() {
+    let lap = performance.now();
+    const step = name => { const now = performance.now(); this.trace(name, Math.round(now - lap)); lap = now; };
     await this.finder.load();
     this.service.finder = this.finder;
+    step("finder");
     await this.rebuildNoteKeys();
+    step("note-keys");
     await this.openIndex();
+    step("index");
     this.unsubscribe = this.service.subscribe?.(() => this.scheduleMagnets());
+    const scanFrom = performance.now();
     this.scanTask = this.scan("startup").catch(error => { this.error = error.message; this.scanComplete = true; });
+    void this.scanTask.then(() => this.trace("scan", Math.round(performance.now() - scanFrom)));
     this.queue = this.scanTask;
     this.mode = null;
     this.watcher = await this.watcherFactory({ root: this.root, onBatch: events => this.handleBatch(events),
@@ -77,6 +86,7 @@ export class GlassSync {
       this.watcherError = error.message;
       return null;
     });
+    step("watcher");
     this.service.afterInitialize = () => { void this.retarget().catch(error => { this.error = error.message; this.notify(); }); };
     return this;
   }
