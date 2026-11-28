@@ -456,12 +456,14 @@ test("checkWrittenUnit produces a valid omarkie/fold WrittenUnit passing foldPro
   const brief = { by: "author", text: "Do not stop beta-blocker unless shock; IV furosemide 40 mg if diuretic-naive." };
   const evAll = makeEvidence(unitText, unitText);
   const evDose = makeEvidence(unitText, "furosemide 40 mg");
+  // The takeaway keeps "if diuretic-naive", so its quote must hold that condition too (an unquoted "if" is added content).
+  const evDoseIf = makeEvidence(unitText, "furosemide 40 mg if diuretic-naive");
 
   const unit = {
     elementId: "paragraph-ab12cd34",
     role: "treatment",
     key: { by: "model", text: "Never stop beta-blocker unless shock; IV furosemide 40 mg if diuretic-naive.", evidence: [evAll] },
-    takeaway: { by: "model", text: "IV furosemide 80 mg if diuretic-naive.", evidence: [evDose] },
+    takeaway: { by: "model", text: "IV furosemide 80 mg if diuretic-naive.", evidence: [evDoseIf] },
     topic: { by: "model", text: "Furosemide [link](https://evil.test)", evidence: [evDose] },
     checks: {},
   };
@@ -660,6 +662,78 @@ test("compound slash-units, prefix currency rates, negated verbal comparators, a
   const trailingFlip = checkLine("Give 40 mg min.", "Give 40 mg max.");
   assert.equal(trailingFlip.checks.number, "fail");
   assert.equal(trailingFlip.text, "Give —?.");
+});
+
+test("rate phrases (ES + EN): 'por minuto' / 'per minute' read as /min, and the rest of the rate family", () => {
+  assert.equal(checkLine("Compresiones 100-120/min.", "Compresiones a una frecuencia de 100 a 120 por minuto.").ok, true);
+  assert.equal(checkLine("Compressions 100-120/min.", "Compress at 100 to 120 per minute.").ok, true);
+  assert.equal(checkLine("Perfusión 100 mL/h.", "Perfusión a 100 mL por hora.").ok, true);
+  assert.equal(checkLine("Give 2 g/day.", "Give 2 g per day.").ok, true);
+  assert.equal(checkLine("Give 2 g/day.", "Give 2 g a day.").ok, true);
+  assert.equal(checkLine("Dar 2 mg/kg.", "Dar 2 mg por kg.").ok, true);
+  assert.equal(checkLine("Noradrenalina 0,1 mcg/kg/min.", "Noradrenalina 0,1 mcg por kg por minuto.").ok, true);
+  assert.equal(checkLine("Saturación 94%.", "Saturación del 94 por ciento.").ok, true);
+  assert.equal(checkLine("Saturation 94%.", "Saturation of 94 percent.").ok, true);
+
+  // The rate still has to be the right one, and the gap covers the phrase as written.
+  const wrongRate = checkLine("Dar 10 mg/h.", "Dar 10 mg por minuto.");
+  assert.equal(wrongRate.checks.number, "fail");
+  assert.equal(wrongRate.findings[0].code, "unit_mismatch");
+  assert.equal(checkLine("Give 10 mg/h.", "Give 10 mg per minute.").checks.number, "fail");
+  assert.equal(checkLine("Dar 10 mg por hora.", "Dar 10 mg/min.").text, "Dar —?.");
+});
+
+test("LaTeX units (ES + EN): \\text{}, \\mathrm{} and math delimiters keep the unit", () => {
+  assert.equal(checkLine("PaCO2 esperada 1,5 × HCO3 + 8 ± 2 mmHg.", "1,5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}").ok, true);
+  assert.equal(checkLine("Give 5 mg IV.", "Give $5\\,\\mathrm{mg}$ IV.").ok, true);
+  assert.equal(checkLine("Dar 37 °C.", "Dar $37^\\circ\\mathrm{C}$.").ok, true);
+  assert.equal(checkLine("Give 50 µg.", "Give $50\\ \\mu\\text{g}$.").ok, true);
+
+  // A dropped LaTeX unit is a dropped unit, and a wrong one still fails.
+  assert.equal(checkLine("PaCO2 esperada = 8 ± 2.", "8 \\pm 2\\text{ mmHg}").checks.number, "fail");
+  assert.equal(checkLine("Give 5 mg.", "Give $5\\ \\mathrm{g}$.").checks.number, "fail");
+  // A plain dollar price is not math.
+  assert.equal(checkLine("$50/month", "€50/month").checks.number, "fail");
+});
+
+test("durations (ES + EN): 'over 1 to 2 weeks' / 'durante 1 a 2 semanas' are spans, not comparators", () => {
+  assert.equal(checkLine("Taper 1-2 weeks.", "Taper over 1 to 2 weeks.").ok, true);
+  assert.equal(checkLine("Infuse over 30 min.", "Infuse in 30 min.").ok, true);
+  assert.equal(checkLine("Retirar en 1-2 semanas.", "Retirar durante 1 a 2 semanas.").ok, true);
+  assert.equal(checkLine("Repetir cada 3-5 min.", "Repetir cada 3 a 5 minutos.").ok, true);
+
+  // "over" before a dose or a single age keeps its comparator.
+  assert.equal(checkLine("Avoid in patients 65 years.", "Avoid in patients over 65 years.").checks.number, "fail");
+  assert.equal(checkLine("Give 40 mg.", "Give over 40 mg.").checks.number, "fail");
+  assert.equal(checkLine("Taper 1-3 weeks.", "Taper over 1 to 2 weeks.").checks.number, "fail");
+});
+
+test("condition (ES + EN): a 'cuando' / 'when' the evidence never set is added content", () => {
+  const esAdded = checkLine("Valorar sacubitrilo-valsartán cuando se estabilice.", "Valorar sacubitrilo-valsartán al alta.");
+  assert.equal(esAdded.checks.condition, "fail");
+  assert.deepEqual(esAdded.findings.find(f => f.code === "invented_condition").extra, ["cuando"]);
+  const enAdded = checkLine("Add a thiazide when urine output is low.", "Add a thiazide.");
+  assert.equal(enAdded.checks.condition, "fail");
+  assert.deepEqual(enAdded.findings.find(f => f.code === "invented_condition").extra, ["when"]);
+  assert.equal(checkLine("Dar si hay fiebre y cuando hay dolor.", "Dar si hay fiebre.").checks.condition, "fail");
+  assert.equal(checkLine("Give unless allergic.", "Give.").checks.condition, "fail");
+
+  // Kept conditions, an exception restated as "unless", and a question pass.
+  assert.equal(checkLine("Añadir tiazida cuando la respuesta es pobre.", "Añadir una tiazida cuando la respuesta es pobre.").ok, true);
+  assert.equal(checkLine("Give unless shock.", "Give except in shock.").ok, true);
+  const card = "When do you add a thiazide?; When the response is poor after 6 hours";
+  assert.equal(checkLine(card, "Add a thiazide when the response is poor after 6 hours").ok, true);
+});
+
+test("checkPins (ES + EN): a bare-number pin is covered by the line that keeps its comparator", () => {
+  assert.equal(checkPins("Glucemia más de 8 mmol/L: ajustar insulina.", ["8 mmol/L"]).ok, true);
+  assert.equal(checkPins("Glucose >8 mmol/L: adjust insulin.", ["8 mmol/L"]).ok, true);
+  assert.equal(checkPins("Glucose over 8 mmol/L: adjust insulin.", ["8 mmol/L"]).ok, true);
+
+  // The number itself still has to be there, and a pin that quotes the comparator needs that one.
+  assert.equal(checkPins("Glucemia más de 18 mmol/L.", ["8 mmol/L"]).ok, false);
+  assert.equal(checkPins("Glucose >8 mmol/L.", ["<8 mmol/L"]).ok, false);
+  assert.equal(checkPins("Glucemia menos de 8 mmol/L.", ["más de 8 mmol/L"]).ok, false);
 });
 
 test("checkFormat reaches fixed point against nested HTML, reconstituted Markdown, whitespace close tags, and unclosed media tags", () => {
