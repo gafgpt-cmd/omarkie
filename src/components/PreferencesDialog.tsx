@@ -6,6 +6,7 @@ import { ThemePicker } from "./ThemePicker";
 import { BackgroundSettings } from "./BackgroundSettings";
 import { FontSettings } from "./FontSettings";
 import { PayloadSettings } from "./PayloadSettings";
+import { FoldSettings } from "./FoldSettings";
 import type { BackgroundAsset } from "../background";
 import type { SmartStyle } from "../editor/smartPunctuation";
 import { t, language, languages, languageChoice, languageKey } from "../i18n";
@@ -33,6 +34,7 @@ export function PreferencesDialog({ value, change, theme, changeTheme, themes, i
       <p className="dialog-note">{t("Off by default. The drawing engine loads only when you open a board, and boards stay offline in .omarkie/assets.")}</p>
     </fieldset>
     {window.desktop?.payloadRequest && <PayloadSettings value={value} change={change} />}
+    {window.desktop?.foldRun && <FoldSettings value={value} change={change} />}
     <fieldset><legend>{t("编辑器")}</legend><div className="form-grid">
       <label>{t("正文字号")}<input type="number" min={12} max={28} value={value.fontSize} onChange={e => { const n = Number(e.target.value); if (n >= 12 && n <= 28) change({ ...value, fontSize: n }); }} /></label>
       <label>{t("Line height")}<input aria-label={t("Line height")} type="number" min={1} max={2.5} step={0.1} value={value.lineHeight} onChange={e => { const n = Number(e.target.value); if (n >= 1 && n <= 2.5) change({ ...value, lineHeight: n }); }} /></label>

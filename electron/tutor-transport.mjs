@@ -85,7 +85,8 @@ export async function requestBridge(root, input, timeout, kind = "bridge") {
     socket.once("error", error => finish(!connected && ["ENOENT", "ECONNREFUSED"].includes(error.code) ? null : unavailable(), null));
     socket.once("close", () => resolve(null));
     socket.setTimeout(timeout, () => finish(new Error("Local Tutor bridge did not respond.")));
-    frame(socket, response => finish(typeof response?.error === "string" ? new Error(response.error) : null, response), () => finish(unavailable()));
+    // The broker's answer rides on the error, so a caller can read the code the broker named.
+    frame(socket, response => finish(typeof response?.error === "string" ? Object.assign(new Error(response.error), { response }) : null, response), () => finish(unavailable()));
   });
 }
 

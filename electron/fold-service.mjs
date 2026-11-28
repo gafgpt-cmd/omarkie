@@ -7,9 +7,9 @@ import { mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { assembleFold, chunkUnits, foldRecord, planChunks, queueOrder, sameWriter } from "../shared/fold-cache.mjs";
-import { countWords, checkLine, checkWrittenUnit, validateEvidence } from "../shared/fold-check.mjs";
+import { countWords, checkFormat, checkLine, checkWrittenUnit, validateEvidence } from "../shared/fold-check.mjs";
 import { foldProblems, isFoldLine, isRole } from "../shared/fold-format.mjs";
-import { extractUnits, foldDocumentLadder } from "../shared/fold-units.mjs";
+import { extractUnits, foldDocumentLadder, isHiddenUnit } from "../shared/fold-units.mjs";
 import { glassFileName } from "../shared/glass-core.mjs";
 import { atomicWrite } from "./store.mjs";
 
@@ -84,10 +84,11 @@ export class FoldService extends EventEmitter {
     this.runs = 0;
   }
 
-  /** Cached fold for the note as it is now: fresh chunks show written lines, edited chunks keep the old lines as stale. */
+  /** Cached fold for the note as it is now: fresh chunks show written lines, edited chunks keep the old lines as stale.
+   *  `noteId` null: the store does not know the note yet, so nothing is cached. */
   async get({ noteId, title, markdown, pins = [] }) {
     const units = extractUnits(markdown);
-    const dir = await this.#folder(noteId, title, false);
+    const dir = noteId === null ? null : await this.#folder(noteId, title, false);
     const previous = dir ? await readFold(path.join(dir, "fold.json")) : null;
     const running = this.active.has(noteId);
     if (!previous) {
@@ -106,8 +107,9 @@ export class FoldService extends EventEmitter {
    * Starts a ladder run. Only chunks without a fresh cache file call the runner; `sections` limits the run to the
    * chunks holding those heading ids. A second run for the same note cancels the first (finished chunks stay)
    * and starts once the first has settled, so `fold.json` never goes back to an older note version.
+   * `connection` reaches the runner with each chunk (the route's endpoint); it is never written to the cache.
    */
-  run({ noteId, title, markdown, route, agent, model, outLang, pins = [], sections = null, visible = null }) {
+  run({ noteId, title, markdown, route, agent, model, outLang, pins = [], sections = null, visible = null, connection = null }) {
     if (!noteIdPattern.test(String(noteId))) throw new TypeError("Invalid fold note id.");
     const meta = { slot: SLOT, route, ...(route === "agent" ? { agent } : {}), model, ...this.#versions(), outLang, created: this.now().toISOString() };
     const problems = foldProblems(foldRecord(meta, [], [], []));
@@ -116,7 +118,7 @@ export class FoldService extends EventEmitter {
     const runId = `${noteId}-${++this.runs}`;
     const controller = new AbortController();
     const prior = this.tails.get(noteId) ?? Promise.resolve();
-    const done = prior.then(() => this.#execute({ runId, noteId, title, markdown, meta, pins, sections, visible, signal: controller.signal }))
+    const done = prior.then(() => this.#execute({ runId, noteId, title, markdown, meta, pins, sections, visible, connection, signal: controller.signal }))
       .finally(() => { if (this.active.get(noteId)?.runId === runId) this.active.delete(noteId); });
     const tail = done.catch(() => {});
     this.tails.set(noteId, tail);
@@ -144,7 +146,7 @@ export class FoldService extends EventEmitter {
     return { promptVersion: this.runner.promptVersion, schemaVersion: this.runner.schemaVersion };
   }
 
-  async #execute({ runId, noteId, title, markdown, meta, pins, sections, visible, signal }) {
+  async #execute({ runId, noteId, title, markdown, meta, pins, sections, visible, connection, signal }) {
     const ladder = foldDocumentLadder(markdown);
     const units = new Map(ladder.units.map(unit => [unit.elementId, unit]));
     const stops = new Map(ladder.byUnit.map(entry => [entry.unit.elementId, entry.stops]));
@@ -185,7 +187,7 @@ export class FoldService extends EventEmitter {
       let outcome;
       try {
         const chunkUnits = chunk.unitIds.map(id => units.get(id));
-        const reply = await this.#foldChunk({ noteId, meta, chunk, chunkUnits, stops, pins, signal, tally });
+        const reply = await this.#foldChunk({ noteId, meta, chunk, chunkUnits, stops, pins, connection, signal, tally });
         if (signal.aborted) throw abortError();
         const record = foldRecord({ ...meta, created: this.now().toISOString() }, chunkUnits, reply.written, reply.sections);
         const problems = foldProblems(record);
@@ -231,8 +233,10 @@ export class FoldService extends EventEmitter {
   }
 
   // One chunk: call, validate, payload-check, retry once naming the missing tokens, then fall back to Brief words.
-  async #foldChunk({ noteId, meta, chunk, chunkUnits, stops, pins, signal, tally }) {
-    const chunkIds = new Set(chunk.unitIds);
+  async #foldChunk({ noteId, meta, chunk, chunkUnits: allUnits, stops, pins, connection, signal, tally }) {
+    // HTML comments are invisible on the page: the model never sees them, so no line can quote or obey them.
+    const chunkUnits = allUnits.filter(unit => !isHiddenUnit(unit));
+    const chunkIds = new Set(chunkUnits.map(unit => unit.elementId));
     const unitPins = new Map();
     for (const pin of pins) {
       if (!chunkIds.has(pin?.elementId) || typeof pin.quote !== "string" || !pin.quote.trim()) continue;
@@ -244,6 +248,7 @@ export class FoldService extends EventEmitter {
       route: meta.route,
       ...(meta.agent ? { agent: meta.agent } : {}),
       model: meta.model,
+      ...(connection ? { connection } : {}),
       outLang: meta.outLang,
       promptVersion: meta.promptVersion,
       schemaVersion: meta.schemaVersion,
@@ -265,7 +270,8 @@ export class FoldService extends EventEmitter {
       return checkWrittenUnit({ ...entry, checks: {} }, { unitText: unit.text, brief: local.brief, full: local.full, pins: unitPins.get(entry.elementId) ?? [], retryAvailable });
     };
     // Unknown units, raw blocks, bad roles or malformed lines are dropped; a stop that quotes outside its unit,
-    // or claims author words the author never wrote, is restored to the unit's Brief words.
+    // claims author words the author never wrote, or carries markup the prompt forbids (a model that obeyed text
+    // inside the note, fixture 14) is restored to the unit's Brief words, as section lines already are.
     const accept = reply => {
       const out = new Map();
       let restored = 0;
@@ -276,7 +282,7 @@ export class FoldService extends EventEmitter {
         const own = new Set([unit.elementId]);
         const lines = Object.fromEntries(STOPS.map(stop => {
           const line = entry[stop];
-          return [stop, authorFits(line, unit) && evidenceIn(line, own, textOf) ? line : brief];
+          return [stop, authorFits(line, unit) && evidenceIn(line, own, textOf) && (line.by !== "model" || checkFormat(line.text).ok) ? line : brief];
         }));
         const fixed = STOPS.filter(stop => lines[stop] !== entry[stop]).length;
         if ((fixed && !brief) || fixed === STOPS.length) continue;

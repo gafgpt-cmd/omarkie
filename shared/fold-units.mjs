@@ -476,6 +476,9 @@ function isHtmlComment(markdown) {
   return markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, "").trim().length === 0;
 }
 
+/** An HTML-comment block: invisible on the page, so it is never folded or shown to a model. */
+export const isHiddenUnit = unit => unit?.kind === "html" && typeof unit.markdown === "string" && isHtmlComment(unit.markdown);
+
 /** Extracts ordered, non-overlapping top-level Fold units from `markdownElements()`. */
 export function extractUnits(markdown, options = {}) {
   if (typeof markdown !== "string" || !markdown) return [];

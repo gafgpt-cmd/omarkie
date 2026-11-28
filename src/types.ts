@@ -1,5 +1,6 @@
 import type { ReadingStore, ReadingTarget } from "../shared/reading-store.ts";
 import type { TutorVerb } from "./components/tutor-verbs";
+import type { FoldEgress, SlotRoute } from "../shared/fold-route.mjs";
 
 export interface DocumentRecord {
   readingRecoveryWarning?: boolean;
@@ -108,6 +109,10 @@ interface BibliographyOperations {
 export type TutorBridgeRequest = { lease: string } & ({ action: "attach" | "detach" } | {
   action: "submit"; target: ReadingTarget; question: string; verb: TutorVerb;
 });
+export interface FoldRouteView { slot: "ladder" | "estudio"; route: SlotRoute; agent?: string; model?: string; egress: FoldEgress; ready: boolean; code: string | null; message: string | null }
+export interface FoldState { noteId: string | null; fold: Record<string, unknown> | null; chunks: { key: string | null; state: string; [field: string]: unknown }[]; stale: number; running: boolean; route: FoldRouteView }
+export type FoldProgress = { runId: string; noteId: string; phase: "start" | "chunk" | "done" | "cancelled" | "error"; [field: string]: unknown };
+export interface FoldRunRequest { note: string; slot?: "ladder" | "estudio"; sections?: string[]; visible?: string; outLang?: string }
 export type TutorReceipt = "queued" | "seen" | "working" | "done";
 export type TutorEvent = { lease: string } & (
   { type: "receipt"; id: string; owner: string | null; status: TutorReceipt } |
@@ -141,6 +146,10 @@ export interface Host {
   background(): Promise<import("./background").BackgroundAsset | null>;
   chooseBackground(): Promise<import("./background").BackgroundAsset | null>;
   clearBackground(): Promise<unknown>;
+  foldGet?(request: { note: string; slot?: "ladder" | "estudio" }): Promise<FoldState>;
+  foldRun?(request: FoldRunRequest): Promise<{ runId: string; noteId: string; outLang: string; route: FoldRouteView }>;
+  foldCancel?(request: { noteId: string }): Promise<{ cancelled: boolean }>;
+  onFoldProgress?(callback: (event: FoldProgress) => void): () => void;
   plugins(): Promise<{ id: string; name: string; url: string }[]>;
   installPlugin(folder?: boolean): Promise<{ id: string; name: string; url: string } | null>;
   removePlugin(id: string): Promise<unknown>;
