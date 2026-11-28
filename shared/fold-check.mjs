@@ -152,15 +152,18 @@ const CONDITION_POSITIVE = [
 const CONDITION_NEG_RE = wordRegex(CONDITION_NEGATIVE);
 const CONDITION_POS_RE = wordRegex(CONDITION_POSITIVE);
 
+// "When do you add a thiazide?" asks; it sets no condition. A question word opens its clause and the clause ends in "?".
+const CLAUSE_OPEN_RE = /(?:^|[.;:!?¿(\n])\s*$/u;
+const isQuestionLead = (text, m) =>
+  CLAUSE_OPEN_RE.test(text.slice(0, m.index)) && text.slice(m.end).match(/[.;!?\n]/u)?.[0] === "?";
+
 function extractConditionWithSpans(text) {
   const negMatches = collectMatches(text, CONDITION_NEG_RE);
   const posMatches = collectMatches(text, CONDITION_POS_RE).filter(pos =>
     !negMatches.some(neg => pos.index >= neg.index && pos.end <= neg.end),
   );
-  const out = [
-    ...negMatches.map(m => ({ raw: m.raw, kind: "negative_conditional", index: m.index, end: m.end })),
-    ...posMatches.map(m => ({ raw: m.raw, kind: "conditional", index: m.index, end: m.end })),
-  ];
+  const token = kind => m => ({ raw: m.raw, kind, index: m.index, end: m.end, ...(isQuestionLead(text, m) ? { question: true } : {}) });
+  const out = [...negMatches.map(token("negative_conditional")), ...posMatches.map(token("conditional"))];
   out.sort((a, b) => a.index - b.index);
   return out;
 }
@@ -376,6 +379,102 @@ function canonicalizeUnit(rawUnit) {
   return trimmed;
 }
 
+// Number source: LaTeX units (`\text{ mmHg}`, `\mathrm{mg}`, `\mu g`, math `$`) and spelled-out rates
+// ("por minuto", "per day", "mg por kg", "por ciento") rewritten to plain units, with a map back to the original
+// offsets so tokens keep their source span and gaps land on the source text.
+const LATEX_MATH_DELIM_RE = /\$\$([\s\S]*?)\$\$|(?<![\\$])\$(?!\$)([^$\n]*?[\\{}^_][^$\n]*?)(?<!\\)\$/g;
+const LATEX_SUPERSCRIPT_RE = /(?<=[\p{L}°}])\^(?:\{\s*([23])\s*\}|([23])(?!\d))|(?<=[\p{L}\p{N}°}\s])\^\s*\{?\s*\\circ\s*\}?/gu;
+const LATEX_WRAP_RE = /\\(?:text(?:rm|up|normal)?|math(?:rm|up|it|sf)|mbox|operatorname)\s*\{([^{}]*)\}/g;
+const LATEX_COMMAND_RE = /\\(?:([a-zA-Z]+)\s*|([,;:! %]))/g;
+const LATEX_COMMANDS = new Map([
+  ["mu", "µ"], ["upmu", "µ"], ["micro", "µ"], ["pm", "±"], ["mp", "∓"], ["times", "×"], ["cdot", "·"],
+  ["le", "≤"], ["leq", "≤"], ["leqslant", "≤"], ["ge", "≥"], ["geq", "≥"], ["geqslant", "≥"], ["lt", "<"], ["gt", ">"],
+  ["degree", "°"], ["quad", " "], ["qquad", " "], ["left", ""], ["right", ""],
+  [",", " "], [";", " "], [":", " "], [" ", " "], ["!", ""], ["%", "%"],
+]);
+const LATEX_KEEP_SPACE = new Set(["pm", "mp", "times", "cdot", "le", "leq", "leqslant", "ge", "geq", "geqslant", "lt", "gt", "quad", "qquad"]);
+// A rate preposition right after a number (optionally with its unit or one counted noun) becomes "/".
+const RATE_PHRASE_RE = new RegExp(
+  `(?<=\\d(?:\\s*[\\p{L}µμ%°][\\p{L}\\p{N}µμ²³]*(?:\\/[\\p{L}µμ][\\p{L}\\p{N}µμ²³]*)*)?)\\s+(?:(?:por|per|al|a\\s+la)\\s+(?=(?:${WORD_UNIT_ALT})${BOUND_R})|an?\\s+(?=(?:minute|hour|day|week|month|year)${BOUND_R}))`,
+  "giu",
+);
+const PERCENT_PHRASE_RE = new RegExp(`(?<=\\d)\\s*(?:por\\s+ciento|per\\s*cent|percent)${BOUND_R}`, "giu");
+
+function applyEdits(src, edits) {
+  if (!edits.length) return src;
+  const starts = src.starts ?? Array.from(src.text, (_, i) => i);
+  const ends = src.ends ?? Array.from(src.text, (_, i) => i + 1);
+  let text = "";
+  const nextStarts = [];
+  const nextEnds = [];
+  const copy = (from, to) => {
+    text += src.text.slice(from, to);
+    for (let i = from; i < to; i += 1) {
+      nextStarts.push(starts[i]);
+      nextEnds.push(ends[i]);
+    }
+  };
+  let pos = 0;
+  for (const edit of edits) {
+    copy(pos, edit.start);
+    // A dropped closing brace belongs to the character before it, so a token ending there spans it.
+    if (edit.glue && nextEnds.length) nextEnds[nextEnds.length - 1] = ends[edit.end - 1];
+    for (let k = 0; k < edit.insert.length; k += 1) {
+      text += edit.insert[k];
+      nextStarts.push(starts[edit.start]);
+      nextEnds.push(ends[edit.end - 1]);
+    }
+    pos = edit.end;
+  }
+  copy(pos, src.text.length);
+  return { text, starts: nextStarts, ends: nextEnds };
+}
+
+function editPass(src, regex, toEdits) {
+  const edits = [];
+  for (const m of collectMatches(src.text, regex)) edits.push(...toEdits(m));
+  return applyEdits(src, edits);
+}
+
+function numberSource(text) {
+  let src = { text, starts: null, ends: null };
+  if (/[\\$]/.test(text)) {
+    src = editPass(src, LATEX_MATH_DELIM_RE, m => {
+      const width = m.raw.startsWith("$$") ? 2 : 1;
+      return [{ start: m.index, end: m.index + width, insert: "" }, { start: m.end - width, end: m.end, insert: "" }];
+    });
+    src = editPass(src, LATEX_SUPERSCRIPT_RE, m => [{
+      start: m.index, end: m.end, insert: { 2: "²", 3: "³" }[m.groups[1] ?? m.groups[2]] ?? "°",
+    }]);
+    // Commands before wrappers: "\mu\text{g}" must not fuse into "\mug".
+    src = editPass(src, LATEX_COMMAND_RE, m => {
+      const name = m.groups[1] ?? m.groups[2];
+      const insert = LATEX_COMMANDS.get(name);
+      if (insert === undefined) return [];
+      // Math mode ignores spaces after a command ("\mu g" is µg); operators keep one.
+      const spaced = Boolean(m.groups[1]) && LATEX_KEEP_SPACE.has(name) && m.raw.length > name.length + 1;
+      return [{ start: m.index, end: m.end, insert: spaced ? `${insert} ` : insert }];
+    });
+    src = editPass(src, LATEX_WRAP_RE, m => {
+      const open = m.raw.length - m.groups[1].length - 1;
+      return [{ start: m.index, end: m.index + open, insert: "" }, { start: m.end - 1, end: m.end, insert: "", glue: true }];
+    });
+  }
+  // Chained rates ("mcg por kg por minuto") resolve one preposition per pass.
+  for (let before = null; before !== src.text;) {
+    before = src.text;
+    src = editPass(src, RATE_PHRASE_RE, m => [{ start: m.index, end: m.end, insert: "/" }]);
+  }
+  src = editPass(src, PERCENT_PHRASE_RE, m => [{ start: m.index, end: m.end, insert: "%" }]);
+  if (!src.starts) return { text, start: i => i, end: i => i };
+  const { starts, ends } = src;
+  return {
+    text: src.text,
+    start: i => (i < starts.length ? starts[i] : text.length),
+    end: i => (i > 0 ? ends[i - 1] : 0),
+  };
+}
+
 const VERBAL_DIRECTIONS = [
   // Negated >= -> <
   ["not greater than or equal to", "<"],
@@ -506,7 +605,7 @@ const NUMBER_RE = new RegExp(
   `(?:(>=|<=|(?<![-=])>|[<≥≤↑↓])\\s*|(?<![\\p{L}\\p{N}_.]))([€$£])?(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:(\\s*(?:–|—|-)\\s*|\\s+(?:to|a)\\s+)(${SIGNED_NUM_PART})(?!\\d|[.,]\\d|-[-−]?(?:\\d|\\.\\d)))?(?:\\s*(${UNIT_ALT}))?`,
   "giu",
 );
-const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde)\s+$/iu;
+const ES_RANGE_A_PREFIX_RE = /(?:^|[^\p{L}\p{N}_])(?:de|desde|durante|cada)\s+$/iu;
 const VERSION_PREFIX_RE = new RegExp(`${BOUND_L}(?:version|versión|edition|edición)\\s+$`, "iu");
 const BETWEEN_RANGE_RE = new RegExp(
   `${BOUND_L}(?:entre|between)\\s+(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)\\s+(?:y|and)\\s+(${SIGNED_NUM_PART})(?!\\d|[.,]\\d)(?:\\s*(${UNIT_ALT}))?`,
@@ -525,7 +624,24 @@ const SPELLED_UNIT_RE = new RegExp(
   "giu",
 );
 
-function extractNumbers(text, { includeSpelled = false } = {}) {
+// "over" before a time span is a duration ("infuse over 30 min", "taper over 1 to 2 weeks"), not a comparator;
+// a single number of years keeps it (ages: "over 65 years").
+const DURATION_UNITS = new Set(["ms", "s", "min", "h", "d", "wk", "mo"]);
+const isOverDuration = (key, unit, high) => key === "over" && (DURATION_UNITS.has(unit) || (unit === "yr" && high !== undefined));
+
+function verbalDirection(text, start, unit, high) {
+  const beforeStart = Math.max(0, start - 48);
+  const verbal = text.slice(beforeStart, start).match(VERBAL_DIR_RE);
+  if (!verbal) return null;
+  const key = verbal[1].toLowerCase().replace(/\s+/g, " ");
+  const direction = VERBAL_DIR_MAP.get(key) ?? null;
+  if (!direction || isOverDuration(key, unit, high)) return null;
+  return { direction, start: beforeStart + verbal.index };
+}
+
+function extractNumbers(source, { includeSpelled = false } = {}) {
+  const src = numberSource(source);
+  const text = src.text;
   const tokens = [];
   const usedSpans = [];
 
@@ -618,16 +734,10 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     // Check verbal direction immediately preceding the number (only when no symbolic comparator).
     let direction = symDir;
     if (!direction) {
-      const beforeStart = Math.max(0, start - 48);
-      const before = text.slice(beforeStart, start);
-      const verbal = before.match(VERBAL_DIR_RE);
+      const verbal = verbalDirection(text, start, canonicalizeUnit(rawUnit), high);
       if (verbal) {
-        const key = verbal[1].toLowerCase().replace(/\s+/g, " ");
-        const mapped = VERBAL_DIR_MAP.get(key) ?? null;
-        if (mapped) {
-          direction = mapped;
-          start = beforeStart + verbal.index;
-        }
+        direction = verbal.direction;
+        start = verbal.start;
       }
     }
     if (!direction) {
@@ -663,15 +773,10 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
       const rawUnit = m.groups[2];
       let start = m.index;
       let direction = null;
-      const beforeStart = Math.max(0, start - 48);
-      const before = text.slice(beforeStart, start);
-      const verbal = before.match(VERBAL_DIR_RE);
+      const verbal = verbalDirection(text, start, canonicalizeUnit(rawUnit), undefined);
       if (verbal) {
-        const mapped = VERBAL_DIR_MAP.get(verbal[1].toLowerCase().replace(/\s+/g, " ")) ?? null;
-        if (mapped) {
-          direction = mapped;
-          start = beforeStart + verbal.index;
-        }
+        direction = verbal.direction;
+        start = verbal.start;
       }
       tokens.push({
         raw: text.slice(start, m.end).trim(),
@@ -686,6 +791,12 @@ function extractNumbers(text, { includeSpelled = false } = {}) {
     }
   }
 
+  // Back to source offsets: raw spans and "—?" gaps cover the text as written, LaTeX included.
+  for (const token of tokens) {
+    token.start = src.start(token.start);
+    token.end = src.end(token.end);
+    token.raw = source.slice(token.start, token.end).trim();
+  }
   tokens.sort((a, b) => a.start - b.start);
   return tokens;
 }
@@ -865,7 +976,7 @@ export function extractPayload(text, options = {}) {
   return {
     negation: extractNegation(value, suppressedNegSpans),
     restriction: extractRestriction(value),
-    condition: condition.map(({ raw, kind }) => ({ raw, kind })),
+    condition: condition.map(({ raw, kind, question }) => (question ? { raw, kind, question } : { raw, kind })),
     uncertainty: extractUncertainty(value),
     number,
     scope: extractScope(value),
@@ -1006,7 +1117,7 @@ function compareRestriction(lineTokens, evTokens, action) {
   return findings;
 }
 
-function compareCondition(lineTokens, evTokens, lineNeg, action) {
+function compareCondition(lineTokens, evTokens, lineNeg, evNegation, action) {
   const findings = [];
   const evNeg = evTokens.filter(t => t.kind === "negative_conditional");
   const lineNegCond = lineTokens.filter(t => t.kind === "negative_conditional");
@@ -1032,6 +1143,26 @@ function compareCondition(lineTokens, evTokens, lineNeg, action) {
       code: "dropped_condition",
       message: `Condition dropped; missing: ${missing.join(", ")}`,
       missing,
+      action,
+    });
+  }
+
+  // More conditions than the evidence holds: the line adds a "cuando"/"when"/"unless" the source never set.
+  // An evidence exception ("salvo", "except") may come back as "unless". Questions set no condition.
+  const evExceptions = evNegation.filter(t => t.kind === "exception").length;
+  const assertedPos = linePos.filter(t => !t.question);
+  const assertedNeg = lineNegCond.filter(t => !t.question);
+  const added = [
+    ...(assertedPos.length > evPos.length ? assertedPos : []),
+    ...(assertedNeg.length > evNeg.length + evExceptions ? assertedNeg : []),
+  ];
+  if (added.length > 0) {
+    const extra = [...new Set(added.map(t => t.raw))];
+    findings.push({
+      class: "condition",
+      code: "invented_condition",
+      message: `Condition added without evidence: ${extra.join(", ")}`,
+      extra,
       action,
     });
   }
@@ -1274,8 +1405,13 @@ function pinCoveredInClause(clauseStr, normPin, pinDirectRe, pinPayload, pinWord
   const clausePayload = extractPayload(clauseStr, { includeSpelled: true });
   const pinPlainNeg = pinPayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
   const clausePlainNeg = clausePayload.negation.filter(t => t.kind === "negation" || t.kind === "contraindication");
+  // A pin quoting a bare number ("8 mmol/L") is covered by the line that keeps it with its direction
+  // ("más de 8 mmol/L"): the pin asks for the number, and the evidence check owns the direction. A pin that
+  // quotes the direction itself ("más de 8 mmol/L") still needs that same direction.
+  const undirected = clausePayload.number.map(n => ({ ...n, direction: null }));
   const numbersOk = () =>
-    pinPayload.number.filter(n => !n.spelled).every(num => numberMatches(num, clausePayload.number, pinPayload.number).ok);
+    pinPayload.number.filter(n => !n.spelled).every(num =>
+      numberMatches(num, num.direction === null ? undirected : clausePayload.number, pinPayload.number).ok);
 
   const directMatch = pinDirectRe.exec(normClause);
   if (directMatch) {
@@ -1543,7 +1679,7 @@ export function checkLine(line, evidence, options = {}) {
   const classFindings = {
     negation: compareNegation(linePayload.negation, evPayload.negation, linePayload.condition, evPayload.condition, semanticAction),
     restriction: compareRestriction(linePayload.restriction, evPayload.restriction, semanticAction),
-    condition: compareCondition(linePayload.condition, evPayload.condition, linePayload.negation, semanticAction),
+    condition: compareCondition(linePayload.condition, evPayload.condition, linePayload.negation, evPayload.negation, semanticAction),
     uncertainty: compareUncertainty(linePayload.uncertainty, evPayload.uncertainty, semanticAction),
     scope: compareScope(linePayload.scope, evPayload.scope, semanticAction),
     attribution: compareAttribution(linePayload.attribution, evPayload.attribution, semanticAction, workingText),
