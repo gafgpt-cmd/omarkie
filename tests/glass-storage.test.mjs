@@ -439,3 +439,16 @@ test("five shared layers persist one line per field, count each kind and survive
     assert.equal(layers.layers.media.visible, false);
   } finally { await merged.close(); }
 });
+
+test("an NFD note on disk resolves under its NFC spelling", async () => {
+  const nfd = "Fluoroscopi\u0301a.md";
+  const nfc = nfd.normalize("NFC");
+  const environment = await vault({ [nfd]: "# Fluoroscopía\n\nDose.\n" });
+  const service = await open(environment);
+  try {
+    await service.request({ action: "add", note: nfd, magnet: "m-accent", text: "accent pin" });
+    const listed = await service.request({ action: "list", note: nfc });
+    assert.equal(listed.magnets.length, 1);
+    assert.equal(listed.magnets[0].fields.text, "accent pin");
+  } finally { await service.close(); }
+});
