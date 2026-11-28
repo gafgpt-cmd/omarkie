@@ -121,6 +121,11 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
     - `Tab` into the list, `Space` toggles, **Use suggestions** resets, `Esc` closes it back to **Adjust**.
     - **Make cards** opens card drafts from highlights without a card; nothing saves until you save.
   - Hints, never applied by themselves: ★ your pin, ⚑ suggested red flag, `Negation/Condition/Limit/Number kept` when the plain stop would drop it; **Keep** on an out-of-fold chip keeps that group.
+  - **New edition** (`E` or bar button): compare this note with an earlier edition of it. Picker lists open notes and vault notes, look-alike names first; type to filter, `Enter` picks.
+    - Shows only changed units, by section: `+` Added, `−` Removed, `~` Changed. Inserted words underlined, dropped words struck through.
+    - Fact chips: numbers old → new, new never-dos (with their clause), dropped conditions/scope/hedges. Summary strip counts each; unchanged units stay hidden.
+    - Stops fold each card locally, no model. Keys: `↑` `↓` cards, `Enter` Full, `Shift+Enter` opens the line in the editor, `Esc` folds the card back, then leaves.
+    - Folding runs in a worker; a 50 kB pair stays under 50 ms per main-thread task.
   - Estudio is disabled: it needs a model; local stops only for now. Short notes show **Too short to fold**.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
 - **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.

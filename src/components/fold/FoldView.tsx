@@ -11,8 +11,10 @@ import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
 import CompareSlider from "../CompareSlider";
 import type { StudyMark } from "../learning-overlays";
+import { compareEditions } from "./edition";
 import { FoldBar } from "./FoldBar";
 import { foldDragType, foldPayload, readFoldTransfer, writeFoldTransfer, type FoldOut, type FoldPayload, type FoldTarget } from "./drag";
+import { EditionPicker, FoldEdition, projectEdition, type EditionSource, type EditionSources, type EditionStatus } from "./FoldEdition";
 import { FoldEvidence, FoldLens } from "./FoldEvidence";
 import type { FoldMark, FoldMarks } from "./fold-marks";
 import { FoldTopic, saveTopicView, savedTopicView, warmTopic, type TopicView } from "./FoldTopic";
@@ -34,6 +36,8 @@ const NOTICE_MS = 8000;
 const STRIP_STORE = "omarkie-fold-strip:";
 
 interface Peek { unit: FoldUnitView; host: HTMLElement; y: number }
+// Nueva edición: the picked earlier edition, its text once read, and the fold of what changed.
+interface EditionMode { source: EditionSource; old: string | null; status: EditionStatus }
 interface Lens { unit: FoldUnitView; x: number; y: number }
 // Author words picked for a highlight, and where the colour choice opens.
 interface Pick { unit: WordUnit; quote: string; x: number; y: number }
@@ -43,12 +47,14 @@ interface Menu { unit: FoldUnitView; x: number; y: number; targets: FoldTarget[]
 const failure = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 // Fold view: the note's own words at a chosen local stop, read-only, in place of the rendered page.
-export default function FoldView({ id, title, memory, content, stop, setStop, close, start, leave, reveal, marks, note, out }: {
+export default function FoldView({ id, title, name, memory, content, stop, setStop, close, start, leave, reveal, marks, note, out, editions }: {
   id: string;
   /** Note name, the Topic title when the note has no single leading H1. */
   title: string;
   // The note's name for what the reader chose to keep (its vault path, else its id).
   memory: string;
+  // The note's file name: the edition picker ranks look-alike names first.
+  name: string;
   content: string;
   stop: Stop;
   setStop(stop: Stop): void;
@@ -63,6 +69,8 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
   note: string;
   // Where a line can go: study sheets, the loose tray, a card on the page. Null while Learning mode is not ready.
   out(): FoldOut | null;
+  // Notes that can stand as this note's earlier edition.
+  editions?: EditionSources;
 }) {
   const feed = useSyncExternalStore(marks.subscribe, marks.get);
   const units = useMemo(() => extractUnits(content), [content]), flags = useMemo(() => redFlags(units), [units]);
@@ -73,14 +81,14 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
   const ownPins = useMemo(() => markPins(feed.marks, choice), [feed.marks, choice]);
   const pinKey = JSON.stringify([ownPins, keeps(choice, "redflag")]);
   const previous = useRef<FoldDocumentLadder | null>(null);
+  const pins = useMemo(() => { const [own, flagged] = JSON.parse(pinKey) as [FoldPin[], boolean]; return flagged ? [...own, ...flags] : own; }, [pinKey, flags]);
   const ladder = useMemo(() => {
-    const [own, flagged] = JSON.parse(pinKey) as [FoldPin[], boolean];
-    const next = foldDocumentLadder(content, { pins: flagged ? [...own, ...flags] : own, units }), last = previous.current;
+    const next = foldDocumentLadder(content, { pins, units }), last = previous.current;
     // Same lines at every stop: keep the built page (and the reader's place) as it is.
     const same = last && last.byUnit.length === next.byUnit.length && last.byUnit.every((entry, at) =>
       entry.pinned.join() === next.byUnit[at].pinned.join() && STOPS.every(level => entry.stops[level] === next.byUnit[at].stops[level]));
     return previous.current = same ? last : next;
-  }, [content, units, flags, pinKey]);
+  }, [content, units, pins]);
   const topic = useMemo(() => foldTopic(ladder), [ladder]);
   // Post-fold hints: ★ for the reader's own pins (and what they keep), ⚑ for suggested red flags, Keep for marks let fold.
   const hints = useMemo<RailHints>(() => ({
@@ -88,9 +96,13 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     kept: keptPayload(ladder, ownPins),
     keepable: mark => { const group = mark.line === null ? null : markGroup(mark); return !!group && !keeps(choice, group); },
   }), [ladder, ownPins, choice]);
+  const [edition, setEdition] = useState<EditionMode | null>(null), [choosing, setChoosing] = useState(false);
+  const folded = edition?.status.state === "ready" ? edition.status.edition : null, editionScrub = useRef(0);
   const short = useMemo(() => !worthFolding(content, ladder.stops.topic.text), [content, ladder]);
-  const index = short ? 0 : STOPS.indexOf(stop);
-  const percents = useMemo(() => STOPS.map(level => ladder.total ? Math.round(ladder.stops[level].shown / ladder.total * 100) : 100), [ladder]);
+  // The edition view folds only what changed, so even a short note has stops there.
+  const index = short && !edition ? 0 : STOPS.indexOf(stop);
+  const percents = useMemo(() => STOPS.map(level => folded ? (folded.total ? Math.round(folded.shown[level] / folded.total * 100) : 0)
+    : ladder.total ? Math.round(ladder.stops[level].shown / ladder.total * 100) : 100), [ladder, folded]);
   const section = useRef<HTMLElement>(null), scroller = useRef<HTMLDivElement>(null), article = useRef<HTMLElement>(null), engine = useRef<FoldEngine | null>(null);
   const rails = useRef<FoldRails | null>(null), [, setPainted] = useState(0), [ticks, setTicks] = useState<{ shown: number; total: number }[]>();
   const [hint, setHint] = useState(true), [stripOpen, setStripOpen] = useState(false);
@@ -108,7 +120,7 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
   const [view, setView] = useState<TopicView>(savedTopicView);
   // Topic shows as cards or a map; while the reader scrubs, the morphing page shows through instead.
   const [scrubbing, setScrubbing] = useState(false);
-  const topicShown = !short && STOPS[index] === "topic" && !scrubbing;
+  const topicShown = !short && STOPS[index] === "topic" && !scrubbing && !edition;
   // A Topic card or map node opened at Key: the unit to land on and the viewport y it was clicked at.
   const landing = useRef<{ unit: string; top: number } | null>(null);
   const latest = useRef({ index, start, leave, togglePeek, feed, hints });
@@ -166,7 +178,10 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     setTicks(glass.ticks());
     view.reflow(() => glass.paint());
   }, [feed.marks]);
+  const editing = !!edition, wasEditing = useRef(false);
   useEffect(() => {
+    // Edition mode has its own page: the fold page waits, then lands straight on the stop picked there.
+    if (editing) { wasEditing.current = true; return; }
     const view = engine.current, target = landing.current, mark = focusAfter.current;
     landing.current = null; focusAfter.current = null;
     if (!view) return;
@@ -176,6 +191,7 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
       const open = peekRef.current;
       if (open?.unit.root.classList.contains("fold-off")) { open.host.remove(); view.peek = null; setPeek(null); }
     };
+    if (wasEditing.current) { wasEditing.current = false; view.jump(index); dropHiddenPeek(); article.current?.focus({ preventScroll: true }); return; }
     if (!target && topicShown) {
       // Topic covers the page: fold it underneath once Topic has painted, in a task of its own.
       let timer = 0;
@@ -195,7 +211,7 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     landed.focus({ preventScroll: true });
     landed.classList.add("fold-landed");
     landed.addEventListener("animationend", () => landed.classList.remove("fold-landed"), { once: true });
-  }, [index]);
+  }, [index, editing]);
   useEffect(() => short ? undefined : warmTopic(topic, id), [topic, id, short]);
   // Leaving the Topic overlay by key or bar removes the focused card; focus returns to the page.
   useLayoutEffect(() => {
@@ -211,6 +227,20 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     const timer = window.setTimeout(() => setToast(false), TOAST_MS);
     return () => clearTimeout(timer);
   }, [toast, feed]);
+  // The fold of what changed reruns when this note or its marks change; the earlier edition was read once.
+  const editionOld = edition?.old ?? null;
+  useEffect(() => {
+    if (editionOld === null) return;
+    let live = true;
+    const settle = (status: EditionStatus) => { if (live) setEdition(current => current?.old === editionOld ? { ...current, status } : current); };
+    compareEditions(editionOld, content, pins).then(result => settle({ state: "ready", edition: result }), () => settle({ state: "error" }));
+    return () => { live = false; };
+  }, [editionOld, content, pins]);
+  const editionKey = edition?.source.key;
+  useEffect(() => {
+    if (editionKey) section.current?.querySelector<HTMLElement>(".fold-edition")?.focus({ preventScroll: true });
+  }, [editionKey]);
+  const editionTicks = useMemo(() => folded && feed.marks.length ? STOPS.map((_, at) => projectEdition(folded, feed.marks, at).at.ticks) : undefined, [folded, feed.marks]);
   useEffect(() => {
     const element = section.current!;
     let pending = 0, target: FoldUnitView | null = null, timer = 0;
@@ -364,9 +394,9 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     return found;
   }, [lens, feed.study]);
   function pick(next: number) {
-    if (short) return;
+    if (short && !edition) return;
     setHint(false);
-    if (next === index) engine.current?.switchTo(next);
+    if (next === index && !edition) engine.current?.switchTo(next);
     setStop(STOPS[next]);
   }
   function openAt(unit: string, top: number) {
@@ -384,6 +414,27 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     const back = from instanceof Node && !!page && !!(page.compareDocumentPosition(from) & Node.DOCUMENT_POSITION_FOLLOWING);
     const stops = section.current?.querySelectorAll<HTMLElement>(back ? '.fold-topic [tabindex="0"]' : '.fold-bar [role="slider"]');
     stops?.[stops.length - 1]?.focus();
+  }
+  // E: the picker opens; the picked note is the earlier edition and this one the new.
+  function toggleEdition() {
+    if (edition) { leaveEdition(); return; }
+    if (!editions) return;
+    if (cut) toggleCut();
+    setPicking(null); setDeck(null); setTray(false);
+    if (choosing) closePicker(); else setChoosing(true);
+  }
+  function closePicker() {
+    setChoosing(false);
+    article.current?.focus({ preventScroll: true });
+  }
+  function leaveEdition() {
+    setEdition(null);
+  }
+  async function chooseEdition(source: EditionSource) {
+    setChoosing(false);
+    setEdition({ source, old: null, status: { state: "loading" } });
+    const old = await editions!.read(source.key).catch(() => null);
+    setEdition(current => current?.source.key !== source.key ? current : old === null ? { ...current, status: { state: "error" } } : { ...current, old });
   }
   function moveFocus(delta: number) {
     const view = engine.current;
@@ -605,6 +656,7 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     let handled = true;
     if (key === "Escape") {
       if (picking) { setPicking(null); getSelection()?.removeAllRanges(); picking.unit.root.focus({ preventScroll: true }); }
+      else if (edition) leaveEdition();
       else if (deck) { setDeck(null); deck.chip.focus({ preventScroll: true }); }
       else if (tray) setTray(false);
       else if (stripOpen && strip.contains(target)) { setStripOpen(false); strip.querySelector<HTMLElement>(".fold-strip-adjust")?.focus(); }
@@ -614,19 +666,20 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     else if (key === "Enter" && event.shiftKey && unit) reveal(unit.unit.line, unit.root.getBoundingClientRect().top);
     else if (key === "Enter" && !event.shiftKey && unit && target === unit.root) togglePeek(unit);
     else if ((key === "h" || key === "H") && unit?.kind === "words" && target === unit.root && !cut) selectLine(unit);
-    else if ((key === "c" || key === "C") && !target.closest("button:not([data-compare-handle])")) toggleCut();
+    else if ((key === "e" || key === "E") && editions) toggleEdition();
+    else if ((key === "c" || key === "C") && !edition && !target.closest("button:not([data-compare-handle])")) toggleCut();
     else if (key === "[") pick(Math.max(0, index - 1));
     else if (key === "]") pick(Math.min(STOPS.length - 1, index + 1));
     else if (/^[1-5]$/.test(key)) pick(Number(key) - 1);
     else if (key === "6") setHint(true);
     else if ((key === "d" || key === "D" || key === "ContextMenu" || (key === "F10" && event.shiftKey)) && unit && target === unit.root) openMenu(unit);
-    else if ((key === "ArrowDown" || key === "ArrowUp") && !target.closest('[role="slider"],.fold-topic')) moveFocus(key === "ArrowDown" ? 1 : -1);
+    else if ((key === "ArrowDown" || key === "ArrowUp") && !edition && !target.closest('[role="slider"],.fold-topic')) moveFocus(key === "ArrowDown" ? 1 : -1);
     else handled = false;
     if (handled) { event.preventDefault(); event.stopPropagation(); }
   }}>
     {topicShown && <FoldTopic topic={topic} title={title} documentId={id} view={view} setView={chooseView}
       reading={() => engine.current?.topLine() ?? latest.current.start.line} open={openAt} />}
-    <div ref={scroller} className="fold-scroller" aria-hidden={topicShown || undefined} onFocus={topicShown ? passPage : undefined}
+    <div ref={scroller} className="fold-scroller" hidden={editing} aria-hidden={topicShown || undefined} onFocus={topicShown ? passPage : undefined}
       onPointerUp={() => requestAnimationFrame(selectFromPage)} onClick={event => {
         const chip = (event.target as Element).closest<HTMLElement>("button[data-action]");
         if (chip && article.current?.contains(chip)) railAction(chip); else setDeck(null);
@@ -638,6 +691,8 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     </div>
     {showStrip && createPortal(<PreFoldStrip groups={groups} choice={choice} setChoice={setChoice} open={stripOpen} setOpen={setStripOpen}
       uncarded={feed.uncarded} makeCards={feed.makeCards} />, strip)}
+    {edition && <FoldEdition status={edition.status} name={edition.source.name} documentId={id} stop={STOPS[index]} marks={feed.marks} reveal={reveal} leave={leaveEdition} />}
+    {choosing && editions && <EditionPicker sources={editions} current={name} pick={source => void chooseEdition(source)} close={closePicker} />}
     {peek && engine.current && createPortal(<FoldEvidence html={engine.current.source(peek.unit)} line={peek.unit.unit.line}
       open={() => reveal(peek.unit.unit.line, peek.unit.root.getBoundingClientRect().top)} />, peek.host)}
     {lens && engine.current && section.current && <FoldLens frame={section.current} root={lens.unit.root} html={engine.current.source(lens.unit)} marks={lensMarks} x={lens.x} y={lens.y} />}
@@ -657,7 +712,7 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
       style={{ right: `calc(100% - ${deck.x}px)`, top: deck.y }}>
       <ul>{deck.marks.map(mark => <li key={mark.id}><button type="button" onClick={() => jumpTo(mark)}>{markLine(mark)}</button></li>)}</ul>
     </div>}
-    {trayCount > 0 && !cut && <div className="fold-tray">
+    {trayCount > 0 && !cut && !edition && <div className="fold-tray">
       <button type="button" className="fold-tray-chip" aria-expanded={tray} onClick={() => { setDeck(null); setTray(!tray); }}>{t("Re-anchor tray · {{n}}", { n: trayCount })}</button>
       {tray && <div className="fold-pop fold-tray-pop" role="dialog" aria-label={t("Re-anchor tray")}>
         {orphans.length > 0 && <><p className="fold-pop-head">{t("Without a line")}</p><ul>{orphans.map(mark => <li key={mark.id}>{markLine(mark)}</li>)}</ul></>}
@@ -668,9 +723,11 @@ export default function FoldView({ id, title, memory, content, stop, setStop, cl
     </div>}
     {toast && <div className="fold-toast" role="status">{t("Highlight added")}
       {feed.canUndo && <button type="button" onClick={undo}>{t("Undo")}</button>}</div>}
-    <FoldBar index={index} percents={percents} ticks={ticks} disabled={short} hint={hint} pick={pick} cut={cut} toggleCut={toggleCut}
-      scrub={value => { setScrubbing(true); engine.current?.scrub(value); }}
+    <FoldBar index={index} percents={percents} ticks={edition ? editionTicks : ticks} disabled={short && !edition} hint={hint && !edition} pick={pick}
+      cut={cut} toggleCut={toggleCut} edition={editing} toggleEdition={editions ? toggleEdition : undefined}
+      scrub={value => { if (edition) editionScrub.current = value; else { setScrubbing(true); engine.current?.scrub(value); } }}
       release={() => {
+        if (edition) { setHint(false); setStop(STOPS[Math.round(editionScrub.current)]); return; }
         const settled = engine.current?.release();
         setHint(false);
         if (settled !== undefined) setStop(STOPS[settled]);

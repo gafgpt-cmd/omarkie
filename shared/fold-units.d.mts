@@ -140,4 +140,5 @@ export declare function foldUnit(unit: DocumentUnit, level: number | LocalLevelI
 export declare function enforceMonotonic<T extends string | FoldLine>(stops: Partial<Record<LocalLevelId, T>>): MonotonicResult<T>;
 export declare function isMonotonic(stops: Partial<Record<LocalLevelId, string | FoldLine>>): boolean;
 export declare function foldDocumentLadder(markdown: string, options?: LadderOptions): FoldDocumentLadder;
+export declare function isHiddenUnit(unit: { kind?: string; markdown?: string } | null | undefined): boolean;
 export declare function foldDocument(markdown: string, level: number | LocalLevelId, options?: LadderOptions): FoldDocumentResult;

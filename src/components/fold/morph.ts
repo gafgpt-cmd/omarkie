@@ -26,7 +26,7 @@ const atomKey = (element: Element) => element.matches(".mathjax-node") ? `math:$
   : element instanceof HTMLImageElement ? `img:${element.getAttribute("src") ?? ""}` : `${element.localName}:${element.textContent ?? ""}`;
 
 // Author words in document order. With wrap, each word becomes its own span so it can move and hide.
-function scan(root: Node, wrap: boolean) {
+export function scan(root: Node, wrap: boolean) {
   const keys: string[] = [], nodes: HTMLElement[] = [], atoms = new Map<number, Element>();
   const visit = (node: Node) => {
     for (const child of [...node.childNodes]) {

@@ -254,6 +254,8 @@ const browser: Host = {
     return () => {};
   },
 };
+// One wrapper per method: a fresh function on every read would change identity each render and rerun every effect that lists it.
+const calls = new Map<keyof Host, (...args: unknown[]) => Promise<unknown>>();
 export const host: Host = window.desktop
   ? new Proxy({ native: true } as Host, {
       get(target, name: keyof Host) {
@@ -265,7 +267,9 @@ export const host: Host = window.desktop
         if ((name === "foldGet" || name === "foldRun" || name === "foldCancel" || name === "onFoldProgress") && !window.desktop?.[name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "onFoldProgress" || name === "closeWindow")
           return window.desktop![name];
-        return async (...args: unknown[]) => {
+        const cached = calls.get(name);
+        if (cached) return cached;
+        const call = async (...args: unknown[]) => {
           if (name === "spellcheckLanguages" && !window.desktop![name]) return [];
           const response = await window.desktop![name](...args);
           if (!response.ok) {
@@ -275,6 +279,8 @@ export const host: Host = window.desktop
           }
           return response.value;
         };
+        calls.set(name, call);
+        return call;
       },
     })
   : browser;
