@@ -789,12 +789,11 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   const load = useCallback(() => {
     const path = latest.current.note;
     if (!path) return;
-    const mine = ++loadSeq.current;
+    // Writes issued after this point queue behind the list and are missing from it: their optimistic state wins.
+    const mine = ++loadSeq.current, startedAt = revision.current;
     const run = queue.current.then(async () => {
       try {
-        const startedAt = revision.current;
         const value = await glassCall({ note: path, action: "list" });
-        // A write that landed while this list was in flight wins; its optimistic state is newer.
         if (revision.current !== startedAt || mine !== loadSeq.current) return;
         loaded.current = true;
         applyMagnets(value.magnets ?? []);
@@ -1704,7 +1703,10 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
         const value = await send({ action: "add", magnet: id, fields: { anchor: draft.anchor, w: width, aspect },
           image: { base64: await fileBase64(file), name: file.name, displayBase64: display, wrap } });
         const stored = value?.magnet && imageFromMagnet(value.magnet);
-        if (stored) setImages(current => current.map(item => item.id === id ? stored : item));
+        // Edits made while the picture was storing (a sheet, a size) are queued behind this add: keep them over its echo.
+        if (stored) setImages(current => current.map(item => item.id === id
+          ? { ...stored, ...Object.fromEntries(Object.entries(item).filter(([key, field]) => field !== draft[key as keyof GlassImage])) }
+          : item));
       } catch (error) {
         setImages(current => current.filter(item => item.id !== id));
         setNotice(message(error));
