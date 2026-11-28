@@ -54,10 +54,10 @@ test("section embeds render read-only with source links, rebased assets and visi
   assert.match(section.querySelector(".note-embed-body").textContent, /Visible text/);
   assert.doesNotMatch(section.textContent, /hidden/);
   assert.equal(decodeURIComponent(section.querySelector("img").getAttribute("src")).endsWith("/fixture/b/img/chart.png"), true);
-  assert.equal(section.querySelector(".note-embed .note-embed .note-embed-message")?.textContent, "This embed shows itself; stopped here.");
+  assert.equal(section.querySelector(".note-embed .note-embed .note-embed-message")?.textContent, "此嵌入会显示自身，已在此停止。");
   const link = section.querySelector("a[data-embed-open]");
   assert.equal(link.dataset.embedRelative, "b/Topic.md"); assert.equal(link.dataset.embedLine, "1");
-  assert.equal(frames[1].querySelector(".note-embed-message").textContent, "Embedded note not found.");
+  assert.equal(frames[1].querySelector(".note-embed-message").textContent, "未找到嵌入的笔记。");
   const before = reads; await renderEmbeds(holder, "fixture"); assert.equal(reads, before);
   const { openEmbed, freezeEmbeds } = await import("../src/editor/embeds.ts"); openEmbed(link, "fixture");
   assert.deepEqual(opened, ["b/Topic.md", 1, "fixture"]);
