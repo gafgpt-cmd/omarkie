@@ -428,7 +428,8 @@ async function auditFull() {
     for (const route of ["menu", "toolbar", "native"]) await audit(`Export ${kind}: ${route}`, async () => {
     await fixture("# Audit\n\nAudit text\n");
     const output = path.join(data, `export-${route}.` + kind);
-    const savedPreferences = await preferenceState();
+    // A run that never saved preferences uses the app defaults.
+    const savedPreferences = { pdfPaper: "a4", pdfMargin: 36, pdfHeader: "", pdfFooter: "", ...await preferenceState() };
     if (kind === "pdf") await application.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0].webContents, print = contents.printToPDF.bind(contents);
       contents.printToPDF = options => { globalThis.auditPrintOptions = options; return print(options); };
