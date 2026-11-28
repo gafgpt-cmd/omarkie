@@ -1,12 +1,12 @@
 import { _electron as electron, expect } from "playwright/test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { installPlugin } from "../electron/plugins.mjs";
 import { fullSize, headlessArguments, isolatedEnvironment, packagedScreenshotArguments } from "./desktop-window.mjs";
 
-const data=await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-"));
+const data=await realpath(await mkdtemp(path.join(os.tmpdir(),"omarkie-ime-")));
 const qa=process.env.OMARKIE_QA_DIR || path.join(data,"evidence"); await mkdir(qa,{recursive:true});
 const file=path.join(data,"中文输入验收.md"), repeatFile=path.join(data,'重复中文选区.md'), profile=path.join(data,"profile"); await mkdir(profile);
 const original='# IME acceptance\n\n输入区：end\n\n- 列表：end\n\n| A | B |\n| --- | --- |\n| 单元格：end | value |\n\n```text\n代码：end\n```\n';
