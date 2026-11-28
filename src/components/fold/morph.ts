@@ -215,18 +215,19 @@ export class FoldEngine {
     this.commit(stop);
   }
 
-  // Change the whole page (or one unit with an override) and glide what survives from where it was.
-  switchTo(stop: number, only?: FoldUnitView) {
+  // Change the whole page (or one unit with an override) and glide what survives from where it was; `glide` false
+  // still keeps the reading anchor, for a page nobody sees (Topic covers it).
+  switchTo(stop: number, only?: FoldUnitView, glide = true) {
     this.endSegment();
     if (only) { if (this.stopOf(only) === stop) return; }
     else if (stop === this.stop && !this.overrides.size) return;
-    const near = only ? [only] : this.near(), before = this.measure(this.pieces(near));
+    const near = only ? [only] : this.near(), before = glide ? this.measure(this.pieces(near)) : null;
     const next = (unit: FoldUnitView) => only ? (unit === only ? stop : this.stopOf(unit)) : stop;
     const anchor = this.anchor(only ? this.near() : near, unit => this.stopOf(unit), next), anchorTop = anchor?.root.getBoundingClientRect().top;
     if (only) { this.overrides.set(only, stop); this.commit(stop, [only]); }
     else { this.overrides.clear(); this.stop = stop; this.value = stop; this.commit(stop); }
     if (anchor && anchorTop !== undefined && anchor !== only) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - anchorTop;
-    this.glide(before, this.pieces(near));
+    if (before) this.glide(before, this.pieces(near));
   }
 
   // A continuous slider value: survivors sit part way between the two stops, dropped words fade.
@@ -265,6 +266,17 @@ export class FoldEngine {
     this.overrides.clear(); this.stop = stop;
     this.commit(stop);
     if (anchor && top !== undefined) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - top;
+  }
+
+  // Land on a stop with one unit's top at a viewport y: a Topic card opens its section where the card was.
+  reveal(stop: number, elementId: string, top: number) {
+    this.jump(stop);
+    const from = this.units.findIndex(unit => unit.unit.elementId === elementId);
+    const target = from < 0 ? undefined : this.units.slice(from).find(unit => !unit.root.classList.contains("fold-off"));
+    if (!target) return null;
+    this.scroller.scrollTop += target.root.getBoundingClientRect().top - top;
+    this.container.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: "ease-out" });
+    return target.root;
   }
 
   private prepare(from: number, to: number): Segment {
