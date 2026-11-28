@@ -4,6 +4,7 @@
 import { normalizeText } from "./anchor-core.mjs";
 import { elementId, markdownElements, tableCells } from "./element-model.mjs";
 import { isFoldLine, levelOf } from "./fold-format.mjs";
+import { quoteSentences, unitAtLine } from "./fold-project.mjs";
 import { LOCAL_LEVELS, firstSentence, sentences, words } from "./fold-text.mjs";
 
 const LOCAL_STOP_IDS = Object.freeze(LOCAL_LEVELS.map(entry => entry.id));
@@ -738,8 +739,26 @@ function isProseUnit(unit) {
   return true;
 }
 
+// The first `n` sentences when `lead`, plus every sentence a pin covers, in source order; a gap reads "… ".
+// `skipped` says the kept text starts after the run's first sentence.
+function keepSentences(text, n, pin, lead) {
+  if (!pin) return lead ? { ...sentences(text, n), skipped: false } : { text: "", more: true, skipped: false };
+  const list = [];
+  for (let rest = text.trim(); rest;) { const s = firstSentence(rest); list.push(s.head); rest = s.rest; }
+  const keep = new Set();
+  if (lead) for (let index = 0; index < Math.min(n, list.length); index++) keep.add(index);
+  for (const quote of pin.quotes) for (const index of quoteSentences(list, quote)) keep.add(index);
+  if (pin.block && !keep.size && list.length) keep.add(0);
+  const order = [...keep].sort((a, b) => a - b);
+  const kept = order.map((index, k) => (k && order[k - 1] !== index - 1 ? "… " : "") + list[index]).join(" ");
+  return { text: kept, more: order.length > 0 && order[order.length - 1] < list.length - 1, skipped: order[0] > 0 };
+}
+
 function foldProseUnit(unit, effectiveDepth, ctx) {
   const keepAtHighStop = effectiveDepth <= 3 || (effectiveDepth === 4 ? ctx.isFirstInSection : ctx.isFirstInDocument);
+  const pin = ctx.pin;
+  // Items never inherit a block pin: the unit already shows at these stops.
+  const itemPin = pin && { quotes: pin.quotes, block: false };
 
   if (unit.kind === "html") {
     if (isHtmlComment(unit.markdown)) return effectiveDepth <= 3 ? unit.markdown : "";
@@ -758,13 +777,13 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
       for (let k = 0; k < all.length; k++) {
         const item = all[k];
         const isChildDropped = effectiveDepth === 3 && item.indent > minIndent;
-        if (!isChildDropped && item.text.trim()) {
+        const s = item.text.trim() ? keepSentences(item.text, 1, itemPin, !isChildDropped) : null;
+        if (s?.text) {
           const droppedChildren = effectiveDepth === 3 && k + 1 < all.length && all[k + 1].indent > item.indent;
-          const s = firstSentence(item.text);
           const emitIndent = activeContentIndent === null
             ? (item.indent <= 3 ? item.indent : 0)
             : Math.min(item.indent, activeContentIndent + 3);
-          rendered.push(`${" ".repeat(emitIndent)}${item.marker} ${s.head}${s.more || droppedChildren ? MORE : ""}`);
+          rendered.push(`${" ".repeat(emitIndent)}${item.marker} ${s.skipped ? "… " : ""}${s.text}${s.more || droppedChildren ? MORE : ""}`);
           activeContentIndent = emitIndent + item.marker.length + 1;
           prevWasRaw = false;
         }
@@ -793,13 +812,21 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
       }
     }
     let prose = "";
-    if (keepAtHighStop) {
-      const top = all.find(item => item.indent === minIndent && item.text.trim()) ?? all.find(item => item.text.trim());
-      if (top) {
-        const s = firstSentence(top.text);
-        const more = s.more || all.length > 1 || (effectiveDepth === 4 ? ctx.hasMoreProseInSection : ctx.hasMoreProseAfter);
-        prose = s.head + (more ? MORE : "");
+    const top = all.find(item => item.indent === minIndent && item.text.trim()) ?? all.find(item => item.text.trim());
+    const tail = effectiveDepth === 4 ? ctx.hasMoreProseInSection : ctx.hasMoreProseAfter;
+    if (pin) {
+      const parts = [];
+      let last = null;
+      for (const item of all) {
+        if (!item.text.trim()) continue;
+        const s = keepSentences(item.text, 1, item === top ? pin : itemPin, keepAtHighStop && item === top);
+        if (s.text) { parts.push((s.skipped ? "… " : "") + s.text); last = s; }
       }
+      if (parts.length) prose = parts.join(" … ") + (last.more || all.length > 1 || tail ? MORE : "");
+    } else if (keepAtHighStop && top) {
+      const s = firstSentence(top.text);
+      const more = s.more || all.length > 1 || tail;
+      prose = s.head + (more ? MORE : "");
     }
     const combined = [prose, ...foldedRaws].filter(Boolean).join("\n\n");
     return preserveInlineMedia(combined, unit.inlineMedia);
@@ -810,14 +837,14 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
     const header = lines[0] ?? "";
     const { proseLines, rawBlocks } = parseQuotedBody(lines.slice(1));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
-    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const body = proseLines.join(" ");
+    const s = body ? keepSentences(body, effectiveDepth === 2 ? 2 : 1, pin, keepAtHighStop) : null;
+    if (!keepAtHighStop && !s?.text) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     if (!body && !foldedRaws.length) return preserveInlineMedia(header, unit.inlineMedia, { quotePrefix: true });
     const parts = [];
-    if (body) {
-      const s = sentences(body, effectiveDepth === 2 ? 2 : 1);
+    if (s?.text) {
       const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
-      parts.push(`> ${s.text}${more ? MORE : ""}`);
+      parts.push(`> ${s.skipped ? "… " : ""}${s.text}${more ? MORE : ""}`);
     }
     parts.push(...foldedRaws);
     return preserveInlineMedia(`${header}\n${parts.join("\n>\n")}`, unit.inlineMedia, { quotePrefix: true });
@@ -826,13 +853,13 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
   if (unit.kind === "quote") {
     const { proseLines, rawBlocks } = parseQuotedBody(splitLines(unit.markdown));
     const foldedRaws = rawBlocks.map(rb => prefixQuote(foldRawBlock(rb.raw, rb.markdown, effectiveDepth)));
-    if (!keepAtHighStop) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const raw = proseLines.join(" ");
+    const s = raw ? keepSentences(raw, effectiveDepth === 2 ? 2 : 1, pin, keepAtHighStop) : null;
+    if (!keepAtHighStop && !s?.text) return preserveInlineMedia(foldedRaws.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
     const parts = [];
-    if (raw) {
-      const s = sentences(raw, effectiveDepth === 2 ? 2 : 1);
+    if (s?.text) {
       const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
-      parts.push(`> ${s.text}${more ? MORE : ""}`);
+      parts.push(`> ${s.skipped ? "… " : ""}${s.text}${more ? MORE : ""}`);
     }
     parts.push(...foldedRaws);
     return preserveInlineMedia(parts.join("\n>\n"), unit.inlineMedia, { quotePrefix: true });
@@ -843,15 +870,17 @@ function foldProseUnit(unit, effectiveDepth, ctx) {
   if (isArtParagraph(lines)) {
     return effectiveDepth <= 3 ? unit.markdown : preserveInlineMedia("", unit.inlineMedia);
   }
-  if (!keepAtHighStop) return preserveInlineMedia("", unit.inlineMedia);
+  if (!keepAtHighStop && !pin) return preserveInlineMedia("", unit.inlineMedia);
   const raw = lines.map(l => l.trim()).filter(Boolean).join(" ");
-  const s = sentences(raw, effectiveDepth === 2 ? 2 : 1);
+  const s = keepSentences(raw, effectiveDepth === 2 ? 2 : 1, pin, keepAtHighStop);
+  if (!s.text) return preserveInlineMedia("", unit.inlineMedia);
   const more = s.more || (effectiveDepth === 4 && ctx.hasMoreProseInSection) || (effectiveDepth === 5 && ctx.hasMoreProseAfter);
-  const text = s.text + (more ? MORE : "");
+  const text = (s.skipped ? "… " : "") + s.text + (more ? MORE : "");
   return preserveInlineMedia(text, unit.inlineMedia);
 }
 
-/** Folds a single unit at a local stop while preserving raw blocks (D5). */
+/** Folds a single unit at a local stop while preserving raw blocks (D5). A `context.pin` keeps the
+ *  sentences it covers (a block pin keeps the first) through Takeaway, in the author's words. */
 export function foldUnit(unit, level, context = {}) {
   const entry = resolveLocalLevel(level);
   const depth = entry.digit;
@@ -865,6 +894,7 @@ export function foldUnit(unit, level, context = {}) {
     isFirstInDocument: context.isFirstInDocument ?? true,
     hasMoreProseInSection: context.hasMoreProseInSection ?? false,
     hasMoreProseAfter: context.hasMoreProseAfter ?? false,
+    pin: depth <= 4 && context.pin && (context.pin.block || context.pin.quotes?.length) ? { quotes: context.pin.quotes ?? [], block: !!context.pin.block } : null,
   });
 }
 
@@ -972,21 +1002,37 @@ function buildContexts(units) {
   return contexts;
 }
 
-/** Computes all five local stops in one pass with D5 raw-block preservation and D4 per-unit monotonic guard. */
+// Pins by unit index: a pin on a heading or a raw block changes nothing there.
+function pinsByUnit(units, pins) {
+  const byUnit = new Map();
+  for (const pin of Array.isArray(pins) ? pins : []) {
+    const index = unitAtLine(units, pin?.line);
+    if (index < 0 || units[index].kind === "heading" || units[index].raw !== null) continue;
+    const entry = byUnit.get(index) ?? { quotes: [], block: false };
+    if (typeof pin.quote === "string" && pin.quote.trim()) entry.quotes.push(pin.quote); else entry.block = true;
+    byUnit.set(index, entry);
+  }
+  return byUnit;
+}
+
+/** Computes all five local stops in one pass with D5 raw-block preservation and D4 per-unit monotonic guard.
+ *  `options.pins` ([{ line, quote? }]) keep marked sentences through Takeaway; `pinned` lists the stops a pin changed. */
 export function foldDocumentLadder(markdown, options = {}) {
   const source = typeof markdown === "string" ? markdown : "";
   const units = extractUnits(source, options);
   const contexts = buildContexts(units);
+  const pins = pinsByUnit(units, options.pins);
 
   const byUnit = units.map((unit, index) => {
-    const ctx = contexts[index];
-    const rawStops = {
-      full: foldUnit(unit, "full", ctx),
-      brief: foldUnit(unit, "brief", ctx),
-      key: foldUnit(unit, "key", ctx),
-      takeaway: foldUnit(unit, "takeaway", ctx),
-      topic: foldUnit(unit, "topic", ctx),
-    };
+    const ctx = contexts[index], pin = pins.get(index);
+    const ladderOf = context => ({
+      full: foldUnit(unit, "full", context),
+      brief: foldUnit(unit, "brief", context),
+      key: foldUnit(unit, "key", context),
+      takeaway: foldUnit(unit, "takeaway", context),
+      topic: foldUnit(unit, "topic", context),
+    });
+    const rawStops = ladderOf(pin ? { ...ctx, pin } : ctx);
     const guarded = enforceMonotonic(rawStops);
     const wordCounts = {
       full: words(guarded.stops.full),
@@ -995,7 +1041,12 @@ export function foldDocumentLadder(markdown, options = {}) {
       takeaway: words(guarded.stops.takeaway),
       topic: words(guarded.stops.topic),
     };
-    return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations };
+    let pinned = [];
+    if (pin) {
+      const plain = enforceMonotonic(ladderOf(ctx)).stops;
+      pinned = LOCAL_STOP_IDS.filter(stopId => plain[stopId] !== guarded.stops[stopId]);
+    }
+    return { unit, stops: guarded.stops, words: wordCounts, violations: guarded.violations, pinned };
   });
 
   const total = byUnit.reduce((sum, item) => sum + item.words.full, 0);
