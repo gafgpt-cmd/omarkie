@@ -76,6 +76,7 @@ contextBridge.exposeInMainWorld("desktop", {
   reopen: id => call("reopen", id),
   chooseImage: (id, options) => call("chooseImage", id, options),
   exportHtml: (name, html) => call("html", name, html),
+  exportImage: (name, html, options) => call("png", name, html, options),
   writeClipboard: text => call("writeClipboard", text),
   readClipboard: () => call("readClipboard"),
   confirmClose: name => call("confirmClose", name),

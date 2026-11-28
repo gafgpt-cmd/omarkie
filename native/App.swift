@@ -104,6 +104,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
   var webView: WKWebView!
   var store: DocumentStore!
   var pdfExporter: PDFExporter?
+  var imageExporter: ImageExporter?
   var closing = false
   var undoAvailable = false
   var redoAvailable = false
@@ -402,6 +403,42 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
           DispatchQueue.main.async { self?.reply(id, result) }
         }
       } catch { reply(id, ["ok": false, "error": error.localizedDescription]) }
+      return
+    }
+    if name == "exportImage" {
+      do {
+        let title = try arg(args, 0, String.self), html = try arg(args, 1, String.self)
+        let options = args.count > 2 ? args[2] as? [String: Any] ?? [:] : [:]
+        guard html.utf8.count <= 150 * 1024 * 1024 else { throw NativeFailure("资源过大。") }
+        #if WEBTEST
+          let destination = store.dataDirectory.appendingPathComponent("native-test.png")
+        #else
+          let panel = NSSavePanel()
+          panel.allowedContentTypes = [.png]
+          panel.nameFieldStringValue = URL(fileURLWithPath: title).deletingPathExtension().lastPathComponent + ".png"
+          guard panel.runModal() == .OK, let destination = panel.url else {
+            reply(id, ["ok": true, "value": NSNull()])
+            return
+          }
+        #endif
+        let exporter = ImageExporter(
+          resources: Bundle.main.resourceURL!.appendingPathComponent("dist"), store: store,
+          scale: (options["scale"] as? NSNumber)?.doubleValue ?? 1)
+        imageExporter = exporter
+        exporter.export(html) { [weak self] result in
+          guard let self else { return }
+          do {
+            try atomicWrite(destination, try result.get())
+            self.reply(id, ["ok": true, "value": destination.path])
+          } catch {
+            self.reply(
+              id, ["ok": false, "error": Self.localized(error.localizedDescription, locale: self.rendererLocale), "code": "DOCUMENT_ERROR"])
+          }
+          self.imageExporter = nil
+        }
+      } catch {
+        reply(id, ["ok": false, "error": error.localizedDescription, "code": "DOCUMENT_ERROR"])
+      }
       return
     }
     if name == "exportPdf" {

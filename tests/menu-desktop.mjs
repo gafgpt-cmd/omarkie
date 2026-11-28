@@ -451,6 +451,17 @@ async function auditFull() {
     pass(`Export ${kind}: ${route}`, "Actual nonempty output with expected content or file signature");
     });
   }
+  for (const route of ["menu", "toolbar", "native"]) await audit(`Export image: ${route}`, async () => {
+    await fixture("# Audit\n\nAudit text\n");
+    const output = path.join(data, `export-${route}.png`);
+    await application.evaluate(({ dialog }, file) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: file }); }, output);
+    await command("image-export", route);
+    const dialog = page.getByRole("dialog", { name: t("Export image"), exact: true });
+    await dialog.getByRole("button", { name: t("导出"), exact: true }).click();
+    await expect.poll(async () => { try { return (await readFile(output)).length; } catch { return 0; } }, { timeout: 60000 }).toBeGreaterThan(20);
+    assert.deepEqual([...(await readFile(output)).subarray(0, 4)], [137, 80, 78, 71]);
+    pass(`Export image: ${route}`, "Dialog export writes an actual PNG");
+  });
   for (const action of ["outline", "files", "file-tree"]) {
     for (const route of ["menu", "toolbar", "native", "shortcut"]) {
       await rich().focus(); await command(action, route);

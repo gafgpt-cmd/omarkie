@@ -24,6 +24,7 @@
     {"label":"导入 Word / 其他格式…","action":"import"},
     {"label":"导出 HTML…","action":"html","context":"document"},
     {"label":"导出 PDF…","action":"pdf","context":"document"},
+    {"label":"Export image…","action":"image-export","context":"document"},
     {"label":"导出 Word…","action":"docx","context":"document"},
     {"label":"导出 RTF…","action":"rtf","context":"document"},
     {"label":"导出 OpenDocument…","action":"odt","context":"document"},

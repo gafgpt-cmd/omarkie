@@ -163,6 +163,7 @@ export interface Host {
   importImage(id: string, bytes: Uint8Array, name: string, options?: Record<string, unknown>): Promise<string>;
   exportPdf(html?: string, options?: Record<string, unknown>): Promise<string | null>;
   exportHtml(name: string, html: string): Promise<string | null>;
+  exportImage?(name: string, html: string, options: { scale: 1 | 2 }): Promise<string | null>;
   writeClipboard(text: string): Promise<unknown>;
   readClipboard(): Promise<string>;
   readAloud?(text: string | null): Promise<void>;
