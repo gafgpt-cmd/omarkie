@@ -11,6 +11,7 @@ import {
   clipboard,
   safeStorage,
 } from "electron";
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.mjs";
@@ -49,6 +50,19 @@ function startupMark(name, detail) {
   console.log(`[startup] ${name} ${performance.now().toFixed(1)}ms`);
 }
 startupMark("main-module-evaluated");
+// OMARKIE_DEBUG_LOG=<file>: Glass startup steps, saves and main-process stalls, one line each; off by default.
+const debugLogFile = process.env.OMARKIE_DEBUG_LOG?.trim();
+function debugLog(...parts) {
+  if (!debugLogFile) return;
+  try { appendFileSync(debugLogFile, `${new Date().toISOString()} ${parts.join(" ")}\n`); } catch { /* diagnostics never break the app */ }
+}
+const elapsed = since => `${Math.round(performance.now() - since)}ms`;
+if (debugLogFile) {
+  let tick = performance.now();
+  setInterval(() => { const now = performance.now(), late = now - tick - 100; if (late > 250) debugLog("main-stall", `${Math.round(late)}ms`); tick = now; }, 100).unref();
+}
+// Tests hold Glass startup back after the bridge binds to model a slow machine.
+const testGlassDelay = Number(process.env.OMARKIE_TEST_GLASS_DELAY_MS) || 0;
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const development = process.env.OMARKIE_DEV_URL;
 let tutorSessions, tutorLoading;
@@ -245,14 +259,20 @@ async function syncGlassNow(folder) {
   let started;
   glassRuntime.started = new Promise(resolve => { started = resolve; });
   try {
+    let lap = performance.now();
+    const step = name => { debugLog("glass", name, elapsed(lap)); lap = performance.now(); };
     const root = await realpath(folder);
     if (glassRuntime.folder !== folder) return;
     // The bridge listens before storage and the index open (index and watcher startup can outlast first paint);
     // its requests wait for them, so an agent's first CLI call never races a cold start.
     await bindGlassBridge(folder, root);
+    step("bridge");
+    if (testGlassDelay) { await new Promise(resolve => setTimeout(resolve, testGlassDelay)); step("test-delay"); }
     const { GlassService } = await import("./glass-service.mjs");
+    step("import");
     if (glassRuntime.folder !== folder) return;
     const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
+    step("service-open");
     if (glassRuntime.folder !== folder) { await service.close(); return; }
     glassRuntime.root = root;
     glassRuntime.service = service;
@@ -260,10 +280,11 @@ async function syncGlassNow(folder) {
     service.subscribe(status => window?.webContents.send("glass:storage", status));
     let sync = null;
     try {
-      sync = new GlassSync({ service, cacheDir: path.join(app.getPath("cache"), "omarkie"), appData: app.getPath("userData") });
+      sync = new GlassSync({ service, cacheDir: path.join(app.getPath("cache"), "omarkie"), appData: app.getPath("userData"), trace: (name, ms) => debugLog("glass", name, `${ms}ms`) });
       service.sync = sync;
       glassRuntime.sync = sync;
       await sync.start();
+      debugLog("glass ready");
     } catch (error) {
       await sync?.close().catch(() => {});
       service.sync = null;
@@ -785,7 +806,16 @@ const handlers = {
       });
       if (result.response !== 1) return null;
     }
-    return store.save(id, text, destination, force, options);
+    const began = performance.now();
+    debugLog("save received");
+    try {
+      const saved = await store.save(id, text, destination, force, options);
+      debugLog("save done", elapsed(began));
+      return saved;
+    } catch (error) {
+      debugLog("save failed", elapsed(began), error.code || "");
+      throw error;
+    }
   },
   persist: (_, value) => store.persist(value),
   check: (_, id) => store.check(id),
