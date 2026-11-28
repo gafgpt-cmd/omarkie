@@ -27,7 +27,7 @@
     {
       "title": "Metabolic acidosis: check respiratory compensation",
       "nodes": [
-        { "id": "winter", "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2", "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+        { "id": "winter", "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
         { "id": "high", "text": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present", "evidence": [{ "quote": "If measured PaCO2 is higher than Winter's upper limit, a concomitant respiratory acidosis is present" }] },
         { "id": "low", "text": "If lower than the lower limit, a concomitant respiratory alkalosis is present", "evidence": [{ "quote": "if lower than the lower limit, a concomitant respiratory alkalosis is present" }] }
       ],
@@ -39,7 +39,7 @@
   ],
   "bloques": [
     { "kind": "dx", "bullets": [
-      { "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2", "stars": 2, "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+      { "text": "Winter's formula: Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "stars": 2, "evidence": [{ "quote": "Winter's formula predicts respiratory compensation" }, { "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
       { "text": "Delta-delta ratio (AG corrected - 12)/(24 - HCO3-): <1 concurrent non-anion-gap metabolic acidosis; 1 to 2 pure high anion gap metabolic acidosis; >2 concurrent metabolic alkalosis or chronic respiratory acidosis", "stars": 2, "evidence": [{ "quote": "\\frac{\\text{AG}_{\\text{corrected}} - 12}{24 - [\\text{HCO}_3^-]}" }, { "quote": "A ratio <1 indicates a concurrent non-anion-gap metabolic acidosis; a ratio between 1 and 2 indicates a pure high anion gap metabolic acidosis; a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis" }] }
     ] },
     { "kind": "pitfall", "bullets": [
@@ -57,7 +57,7 @@
   "cards": [
     { "q": "Normal anion gap?", "a": "8 to 12 mEq/L", "evidence": [{ "quote": "The normal anion gap is 8 to 12 mEq/L" }] },
     { "q": "Albumin correction of the anion gap?", "a": "Add 2.5 mEq/L for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL", "evidence": [{ "quote": "add 2.5 mEq/L to the observed anion gap for every 1.0 g/dL decrease in serum albumin below 4.0 g/dL" }] },
-    { "q": "Winter's formula?", "a": "Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2", "evidence": [{ "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
+    { "q": "Winter's formula?", "a": "Expected PaCO2 = 1.5 x [HCO3-] + 8 ± 2 mmHg", "evidence": [{ "quote": "1.5 \\times [\\text{HCO}_3^-] + 8 \\pm 2\\text{ mmHg}" }] },
     { "q": "Normal pH with abnormal PaCO2 and HCO3-?", "a": "Proves a mixed disorder", "evidence": [{ "quote": "a normal pH with abnormal PaCO2 and HCO3- proves a mixed disorder" }] },
     { "q": "Delta-delta ratio >2?", "a": "Concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis", "evidence": [{ "quote": "a ratio >2 indicates a concurrent metabolic alkalosis or pre-existing chronic respiratory acidosis" }] }
   ],
