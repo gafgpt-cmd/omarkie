@@ -303,6 +303,38 @@ function items(b) {
 const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/g;
 const NON_CJK_WORD = /(?:\p{N}+(?:[.,]\p{N}+)*|\p{L})[\p{L}\p{M}\p{N}'’_-]*(?:[/.][\p{L}\p{N}][\p{L}\p{M}\p{N}'’_-]*)*/gu;
 const CODE_FOLD_PLACEHOLDER = /`⋯ \d+ lines of code`/g;
+const QUOTE_LINE = /^\s*>\s?/;
+
+function stripQuoteDepth(line, maxDepth = Infinity) {
+  let s = line;
+  let depth = 0;
+  while (depth < maxDepth) {
+    const match = QUOTE_LINE.exec(s);
+    if (!match) break;
+    s = s.slice(match[0].length);
+    depth++;
+  }
+  return { depth, rest: s };
+}
+
+function stripBlockContainers(line) {
+  let s = line;
+  let quoteDepth = 0;
+  while (true) {
+    const q = QUOTE_LINE.exec(s);
+    if (q) {
+      s = s.slice(q[0].length);
+      quoteDepth++;
+      continue;
+    }
+    const m = ITEM.exec(s);
+    if (m) {
+      s = s.slice(m[0].length);
+      continue;
+    }
+    return { quoteDepth, rest: s };
+  }
+}
 
 function stripForWordCount(md) {
   const lines = (md.includes("\r") ? md.replace(/\r\n?/g, "\n") : md).split("\n");
@@ -311,13 +343,16 @@ function stripForWordCount(md) {
   const kept = [];
   while (i < lines.length) {
     const line = lines[i] ?? "";
-    const mark = fenceMark(line);
+    const { quoteDepth, rest } = stripBlockContainers(line);
+    const mark = fenceMark(rest);
     if (mark) {
       i++;
       while (i < lines.length) {
         const l = lines[i] ?? "";
+        const inner = stripQuoteDepth(l, quoteDepth);
+        if (inner.depth < quoteDepth) break;
         i++;
-        if (fenceClose(l, mark)) break;
+        if (fenceClose(inner.rest, mark)) break;
       }
       continue;
     }
