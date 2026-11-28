@@ -1,0 +1,89 @@
+{
+  "oneLiner": { "text": "Assess perfusion and congestion within the first hour; start IV furosemide 40 mg for a patient not on diuretics.", "stars": 2, "evidence": [{ "quote": "Assess perfusion and congestion within the first hour" }, { "quote": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics" }] },
+  "caso": [
+    { "entity": "ADHF", "text": "rapid onset of symptoms and signs of congestion or hypoperfusion at rest", "stars": 1, "evidence": [{ "quote": "rapid onset of symptoms and signs of congestion or hypoperfusion at rest" }] }
+  ],
+  "vs": [
+    {
+      "title": "Perfusion and congestion within the first hour: warm or cold, wet or dry",
+      "columns": ["Means", "Do"],
+      "rows": [
+        { "label": "Cold and wet", "stars": 2, "cells": [
+          { "text": "Low output with congestion", "evidence": [{ "quote": "Cold and wet means low output with congestion" }] },
+          { "text": "Give diuretics and consider inotropes", "evidence": [{ "quote": "give diuretics and consider inotropes" }] }
+        ] },
+        { "label": "Warm and wet", "stars": 2, "cells": [
+          { "text": "Congestion with adequate output", "evidence": [{ "quote": "Warm and wet means congestion with adequate output" }] },
+          { "text": "Diurese and vasodilate", "evidence": [{ "quote": "diurese and vasodilate" }] }
+        ] },
+        { "label": "Warm and dry", "stars": 1, "cells": [
+          { "text": "Warm and dry", "evidence": [{ "quote": "Warm and dry" }] },
+          { "text": "Needs no decongestion", "evidence": [{ "quote": "Warm and dry needs no decongestion" }] }
+        ] },
+        { "label": "Cold and dry", "stars": 1, "cells": [
+          { "text": "Hypovolaemic or low output", "evidence": [{ "quote": "Cold and dry is hypovolaemic or low output" }] },
+          { "text": "Assess with echocardiography", "evidence": [{ "quote": "assess with echocardiography" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "BNP", "value": ">100", "unit": "pg/mL", "consequence": "supports the diagnosis; obesity lowers it, renal failure raises it", "decisive": true, "stars": 1, "evidence": [{ "quote": "BNP above 100 pg/mL supports the diagnosis, but obesity lowers it and renal failure raises it" }, { "quote": ">100 pg/mL" }] },
+    { "label": "NT-proBNP", "value": ">300", "unit": "pg/mL", "consequence": "threshold", "decisive": true, "stars": 1, "evidence": [{ "quote": "NT-proBNP" }, { "quote": ">300 pg/mL" }, { "quote": "Threshold" }] },
+    { "label": "IV furosemide", "value": "40", "unit": "mg", "consequence": "starting dose for a patient not on diuretics", "decisive": true, "stars": 2, "evidence": [{ "quote": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics" }] },
+    { "label": "Reassess urine output and symptoms", "value": "2", "unit": "hours", "consequence": "then every 6 hours", "decisive": false, "stars": 1, "evidence": [{ "quote": "Reassess urine output and symptoms at 2 hours, then every 6 hours" }] },
+    { "label": "Urinary sodium at 6 hours", "value": "below 50", "unit": "mmol/L", "consequence": "predicts diuretic resistance", "decisive": true, "stars": 2, "evidence": [{ "quote": "Sodium excretion below 50 mmol/L at 6 hours predicts diuretic resistance" }] }
+  ],
+  "flujo": [
+    {
+      "title": "Decongestion",
+      "nodes": [
+        { "id": "start", "text": "Not on diuretics: IV furosemide 40 mg. Already taking furosemide: double the home oral dose.", "evidence": [{ "quote": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics" }, { "quote": "Double the home oral dose in a patient already taking furosemide" }] },
+        { "id": "reassess", "text": "Reassess urine output and symptoms at 2 hours, then every 6 hours", "evidence": [{ "quote": "Reassess urine output and symptoms at 2 hours, then every 6 hours" }] },
+        { "id": "thiazide", "text": "Add a thiazide when the response is poor after 6 hours", "evidence": [{ "quote": "Add a thiazide when the response is poor after 6 hours" }] }
+      ],
+      "edges": [
+        { "from": "start", "to": "reassess" },
+        { "from": "reassess", "to": "thiazide", "label": "poor response" }
+      ]
+    }
+  ],
+  "bloques": [
+    { "kind": "dx", "bullets": [
+      { "text": "Bedside triad: dyspnoea, orthopnoea and elevated jugular venous pressure", "stars": 2, "evidence": [{ "quote": "Dyspnoea, orthopnoea and elevated jugular venous pressure are the bedside triad" }] }
+    ] },
+    { "kind": "tx", "bullets": [
+      { "text": "Not on diuretics: IV furosemide 40 mg. Already taking furosemide: double the home oral dose.", "stars": 2, "evidence": [{ "quote": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics" }, { "quote": "Double the home oral dose in a patient already taking furosemide" }] },
+      { "text": "Nitrates reduce preload; first line when blood pressure allows", "stars": 1, "evidence": [{ "quote": "Nitrates reduce preload and are first line when blood pressure allows" }] },
+      { "text": "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia", "stars": 0, "evidence": [{ "quote": "Non-invasive ventilation is for respiratory distress with acidosis or hypoxaemia" }] },
+      { "text": "Inotropes are for cardiogenic shock, not for congestion alone", "stars": 1, "evidence": [{ "quote": "Inotropes are for cardiogenic shock, not for congestion alone" }] }
+    ] },
+    { "kind": "monitoring", "bullets": [
+      { "text": "Check potassium and renal function after every diuretic dose change", "stars": 1, "evidence": [{ "quote": "Check potassium and renal function after every diuretic dose change" }] }
+    ] },
+    { "kind": "mechanism", "bullets": [
+      { "text": "The dose-response curve is flat until the urinary sodium rises", "stars": 0, "evidence": [{ "quote": "The dose-response curve is flat until the urinary sodium rises" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "Do not give fluids for a low blood pressure that comes with congestion", "why": "", "stars": 2, "evidence": [{ "quote": "Do not give fluids for a low blood pressure that comes with congestion" }] },
+    { "text": "Do not stop beta blockers abruptly unless there is shock", "why": "", "stars": 2, "evidence": [{ "quote": "Do not stop beta blockers abruptly unless there is shock" }] },
+    { "text": "Inotropes not for congestion alone", "why": "", "stars": 1, "evidence": [{ "quote": "not for congestion alone" }] }
+  ],
+  "buzzwords": [
+    { "term": "Cold and wet", "concept": "low output with congestion", "evidence": [{ "quote": "Cold and wet means low output with congestion" }] },
+    { "term": "Bedside triad", "concept": "dyspnoea, orthopnoea, elevated jugular venous pressure", "evidence": [{ "quote": "Dyspnoea, orthopnoea and elevated jugular venous pressure are the bedside triad" }] }
+  ],
+  "mnemonics": [],
+  "cards": [
+    { "q": "Which BNP supports ADHF?", "a": "BNP above 100 pg/mL; obesity lowers it and renal failure raises it", "evidence": [{ "quote": "BNP above 100 pg/mL supports the diagnosis, but obesity lowers it and renal failure raises it" }] },
+    { "q": "Starting IV furosemide dose for a patient not on diuretics?", "a": "40 mg", "evidence": [{ "quote": "Intravenous furosemide 40 mg is the starting dose for a patient not on diuretics" }] },
+    { "q": "When do you add a thiazide?", "a": "When the response is poor after 6 hours", "evidence": [{ "quote": "Add a thiazide when the response is poor after 6 hours" }] },
+    { "q": "Warm and dry profile: decongest?", "a": "Warm and dry needs no decongestion", "evidence": [{ "quote": "Warm and dry needs no decongestion" }] },
+    { "q": "Low blood pressure with congestion: give fluids?", "a": "Do not give fluids for a low blood pressure that comes with congestion", "evidence": [{ "quote": "Do not give fluids for a low blood pressure that comes with congestion" }] },
+    { "q": "What predicts diuretic resistance?", "a": "Sodium excretion below 50 mmol/L at 6 hours", "evidence": [{ "quote": "Sodium excretion below 50 mmol/L at 6 hours predicts diuretic resistance" }] }
+  ],
+  "gaps": [
+    { "text": "Thiazide dose not stated", "evidence": [{ "quote": "Add a thiazide when the response is poor after 6 hours" }] }
+  ]
+}

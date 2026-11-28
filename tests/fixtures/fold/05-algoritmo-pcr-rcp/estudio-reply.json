@@ -1,0 +1,425 @@
+{
+ "oneLiner": {
+  "text": "RCP de alta calidad: compresiones a 100 a 120 por minuto, 5 a 6 cm; nunca interrumpir más de 10 segundos.",
+  "stars": 2,
+  "evidence": [
+   {
+    "quote": "100 a 120 por minuto"
+   },
+   {
+    "quote": "5 a 6 cm"
+   },
+   {
+    "quote": "Nunca interrumpir las compresiones durante más de 10 segundos"
+   }
+  ]
+ },
+ "caso": [
+  {
+   "entity": "Parada cardiorrespiratoria",
+   "text": "Paciente inconsciente que no respira o presenta respiración agónica: iniciar compresiones torácicas de inmediato",
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "inconsciente que no respira o presenta respiración agónica"
+    },
+    {
+     "quote": "iniciar compresiones torácicas de inmediato"
+    }
+   ]
+  }
+ ],
+ "vs": [
+  {
+   "title": "Capnografía cuantitativa durante la RCP",
+   "columns": [
+    "EtCO2",
+    "Significado"
+   ],
+   "rows": [
+    {
+     "label": "EtCO2 bajo",
+     "stars": 2,
+     "cells": [
+      {
+       "text": "EtCO2 inferior a 10 mmHg tras 20 minutos de RCP",
+       "evidence": [
+        {
+         "quote": "EtCO2 inferior a 10 mmHg tras 20 minutos de RCP"
+        }
+       ]
+      },
+      {
+       "text": "Perfusión muy pobre; exige mejorar la calidad de las compresiones",
+       "evidence": [
+        {
+         "quote": "refleja perfusión muy pobre y exige mejorar la calidad de las compresiones"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "label": "Aumento brusco del EtCO2",
+     "stars": 2,
+     "cells": [
+      {
+       "text": "EtCO2 por encima de 40 mmHg",
+       "evidence": [
+        {
+         "quote": "aumento brusco del EtCO2 por encima de 40 mmHg"
+        }
+       ]
+      },
+      {
+       "text": "Sugiere recuperación de la circulación espontánea (RCE)",
+       "evidence": [
+        {
+         "quote": "sugiere recuperación de la circulación espontánea (RCE)"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "numeros": [
+  {
+   "label": "Frecuencia de compresiones",
+   "value": "100 a 120",
+   "unit": "por minuto",
+   "consequence": "100 a 120 por minuto",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "100 a 120 por minuto"
+    }
+   ]
+  },
+  {
+   "label": "Profundidad de compresiones",
+   "value": "5-6",
+   "unit": "cm",
+   "consequence": "profundidad de 5 a 6 cm",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "profundidad de 5 a 6 cm"
+    }
+   ]
+  },
+  {
+   "label": "Cambio de reanimador",
+   "value": "2",
+   "unit": "minutos",
+   "consequence": "cambiando de reanimador cada 2 minutos",
+   "decisive": false,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "cambiando de reanimador cada 2 minutos"
+    }
+   ]
+  },
+  {
+   "label": "Sin vía aérea avanzada",
+   "value": "30:2",
+   "unit": "relación",
+   "consequence": "30 compresiones por 2 ventilaciones",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "Sin vía aérea avanzada, aplicar una relación de 30 compresiones por 2 ventilaciones"
+    }
+   ]
+  },
+  {
+   "label": "Con vía aérea avanzada",
+   "value": "10",
+   "unit": "respiraciones por minuto",
+   "consequence": "ventilar de forma asíncrona a 10 respiraciones por minuto (una cada 6 segundos)",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "ventilar de forma asíncrona a 10 respiraciones por minuto (una cada 6 segundos)"
+    }
+   ]
+  },
+  {
+   "label": "Descarga bifásica",
+   "value": "150-200",
+   "unit": "J",
+   "consequence": "descarga bifásica de 150-200 J",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "descarga bifásica de 150-200 J"
+    }
+   ]
+  },
+  {
+   "label": "Adrenalina",
+   "value": "1",
+   "unit": "mg",
+   "consequence": "adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos)",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos)"
+    }
+   ]
+  },
+  {
+   "label": "Amiodarona",
+   "value": "300",
+   "unit": "mg",
+   "consequence": "tras la tercera descarga, amiodarona 300 mg IV/IO en bolo",
+   "decisive": true,
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "Tras la tercera descarga"
+    },
+    {
+     "quote": "amiodarona 300 mg IV/IO en bolo"
+    }
+   ]
+  }
+ ],
+ "flujo": [
+  {
+   "title": "Rama desfibrilable (FV / TV sin pulso)",
+   "nodes": [
+    {
+     "id": "d1",
+     "text": "Descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos",
+     "evidence": [
+      {
+       "quote": "descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos"
+      }
+     ]
+    },
+    {
+     "id": "d2",
+     "text": "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, segunda descarga y 2 minutos de RCP",
+     "evidence": [
+      {
+       "quote": "Evaluar el ritmo a los 2 minutos; si persiste FV o TV sin pulso, administrar una segunda descarga y continuar 2 minutos de RCP"
+      }
+     ]
+    },
+    {
+     "id": "d3",
+     "text": "Tras la tercera descarga: adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo",
+     "evidence": [
+      {
+       "quote": "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo"
+      }
+     ]
+    },
+    {
+     "id": "d4",
+     "text": "Si el ritmo desfibrilable persiste tras la quinta descarga, segunda dosis de amiodarona de 150 mg IV/IO",
+     "evidence": [
+      {
+       "quote": "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO"
+      }
+     ]
+    }
+   ],
+   "edges": [
+    {
+     "from": "d1",
+     "to": "d2"
+    },
+    {
+     "from": "d2",
+     "to": "d3"
+    },
+    {
+     "from": "d3",
+     "to": "d4"
+    }
+   ]
+  }
+ ],
+ "bloques": [
+  {
+   "kind": "tx",
+   "bullets": [
+    {
+     "text": "Descarga bifásica de 150-200 J, luego RCP inmediata 2 minutos sin comprobar el pulso inmediatamente después de la descarga; tras la tercera descarga adrenalina 1 mg y amiodarona 300 mg",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "descarga bifásica de 150-200 J y reanudar de inmediato las compresiones torácicas durante 2 minutos sin comprobar el pulso inmediatamente después de la descarga"
+      },
+      {
+       "quote": "Tras la tercera descarga, administrar adrenalina 1 mg IV/IO (repetir cada 3 a 5 minutos) y amiodarona 300 mg IV/IO en bolo"
+      }
+     ]
+    },
+    {
+     "text": "Si el ritmo desfibrilable persiste tras la quinta descarga: segunda dosis de amiodarona de 150 mg IV/IO",
+     "stars": 1,
+     "evidence": [
+      {
+       "quote": "Si el ritmo desfibrilable persiste tras la quinta descarga, administrar una segunda dosis de amiodarona de 150 mg IV/IO"
+      }
+     ]
+    },
+    {
+     "text": "Asistolia o AESP: RCP de alta calidad durante 2 minutos y adrenalina 1 mg IV/IO tan pronto como se disponga de acceso vascular, repitiendo cada 3 a 5 minutos",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "Iniciar RCP de alta calidad durante 2 minutos y administrar adrenalina 1 mg IV/IO tan pronto como se disponga de acceso vascular, repitiendo cada 3 a 5 minutos"
+      }
+     ]
+    },
+    {
+     "text": "Comprobar pulso únicamente si aparece un ritmo eléctrico organizado compatible con perfusión",
+     "stars": 1,
+     "evidence": [
+      {
+       "quote": "comprobar pulso únicamente si aparece un ritmo eléctrico organizado compatible con perfusión"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "dx",
+   "bullets": [
+    {
+     "text": "Causas reversibles, las 4 H: hipoxia, hipovolemia, hipo/hiperpotasemia y alteraciones metabólicas, hipotermia; las 4 T: neumotórax a tensión, taponamiento cardiaco, tóxicos, trombosis coronaria o pulmonar",
+     "stars": 1,
+     "evidence": [
+      {
+       "quote": "las 4 H (hipoxia, hipovolemia, hipo/hiperpotasemia y alteraciones metabólicas, hipotermia) y las 4 T (neumotórax a tensión, taponamiento cardiaco, tóxicos, trombosis coronaria o pulmonar)"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "monitoring",
+   "bullets": [
+    {
+     "text": "EtCO2 inferior a 10 mmHg tras 20 minutos de RCP: perfusión muy pobre; aumento brusco por encima de 40 mmHg sugiere RCE",
+     "stars": 2,
+     "evidence": [
+      {
+       "quote": "EtCO2 inferior a 10 mmHg tras 20 minutos de RCP refleja perfusión muy pobre"
+      },
+      {
+       "quote": "aumento brusco del EtCO2 por encima de 40 mmHg sugiere recuperación de la circulación espontánea (RCE)"
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "nunca": [
+  {
+   "text": "Nunca interrumpir las compresiones durante más de 10 segundos",
+   "why": "",
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "Nunca interrumpir las compresiones durante más de 10 segundos"
+    }
+   ]
+  },
+  {
+   "text": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso",
+   "why": "",
+   "stars": 2,
+   "evidence": [
+    {
+     "quote": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso"
+    }
+   ]
+  },
+  {
+   "text": "Ventilar con vía aérea avanzada evitando la hiperventilación",
+   "why": "",
+   "stars": 1,
+   "evidence": [
+    {
+     "quote": "vía aérea avanzada, ventilar de forma asíncrona a 10 respiraciones por minuto (una cada 6 segundos) evitando la hiperventilación"
+    }
+   ]
+  }
+ ],
+ "buzzwords": [
+  {
+   "term": "RCE",
+   "concept": "recuperación de la circulación espontánea",
+   "evidence": [
+    {
+     "quote": "recuperación de la circulación espontánea (RCE)"
+    }
+   ]
+  }
+ ],
+ "mnemonics": [],
+ "cards": [
+  {
+   "q": "Frecuencia de compresiones?",
+   "a": "100 a 120 por minuto",
+   "evidence": [
+    {
+     "quote": "100 a 120 por minuto"
+    }
+   ]
+  },
+  {
+   "q": "Profundidad de compresiones?",
+   "a": "5 a 6 cm",
+   "evidence": [
+    {
+     "quote": "5 a 6 cm"
+    }
+   ]
+  },
+  {
+   "q": "Energía de la descarga bifásica?",
+   "a": "150-200 J",
+   "evidence": [
+    {
+     "quote": "descarga bifásica de 150-200 J"
+    }
+   ]
+  },
+  {
+   "q": "Se desfibrila la asistolia?",
+   "a": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso",
+   "evidence": [
+    {
+     "quote": "No desfibrilar la asistolia ni la actividad eléctrica sin pulso"
+    }
+   ]
+  },
+  {
+   "q": "Dosis inicial de amiodarona?",
+   "a": "300 mg IV/IO en bolo tras la tercera descarga",
+   "evidence": [
+    {
+     "quote": "Tras la tercera descarga"
+    },
+    {
+     "quote": "amiodarona 300 mg IV/IO en bolo"
+    }
+   ]
+  }
+ ],
+ "gaps": []
+}

@@ -1,0 +1,63 @@
+{
+  "oneLiner": { "text": "Metformina debe ajustarse estrictamente según el eGFR; por debajo de 30 mL/min/1,73 m² está estrictamente contraindicada.", "stars": 2, "evidence": [{ "quote": "Metformina debe ajustarse estrictamente según el filtrado glomerular estimado (eGFR)" }, { "quote": "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada" }] },
+  "caso": [],
+  "vs": [
+    {
+      "title": "Ajuste de metformina según eGFR",
+      "columns": ["Dosis", "Control"],
+      "rows": [
+        { "label": "eGFR ≥60 mL/min/1,73 m²", "stars": 1, "cells": [
+          { "text": "Puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día)", "evidence": [{ "quote": "Con un eGFR ≥60 mL/min/1,73 m² puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día)" }] },
+          { "text": "Control anual de función renal", "evidence": [{ "quote": "Con un eGFR ≥60 mL/min/1,73 m²" }, { "quote": "con control anual de función renal" }] }
+        ] },
+        { "label": "eGFR 45-59 mL/min/1,73 m²", "stars": 1, "cells": [
+          { "text": "Suele mantenerse la dosis habitual", "evidence": [{ "quote": "entre 45 y 59 mL/min/1,73 m², suele mantenerse la dosis habitual" }] },
+          { "text": "Monitorización a cada 3-6 meses", "evidence": [{ "quote": "entre 45 y 59 mL/min/1,73 m²" }, { "quote": "monitorización a cada 3-6 meses" }] }
+        ] },
+        { "label": "eGFR 30-44 mL/min/1,73 m²", "stars": 2, "cells": [
+          { "text": "Reducir la dosis al 50 % (máximo 1.000 mg/día); no iniciar tratamiento nuevo", "evidence": [{ "quote": "entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día)" }, { "quote": "no iniciar tratamiento nuevo con metformina en este rango" }] },
+          { "text": "Monitorizar el eGFR cada 3 meses", "evidence": [{ "quote": "entre 30 y 44 mL/min/1,73 m²" }, { "quote": "monitorizar el eGFR cada 3 meses" }] }
+        ] },
+        { "label": "eGFR <30 mL/min/1,73 m²", "stars": 2, "cells": [
+          { "text": "Estrictamente contraindicada", "evidence": [{ "quote": "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada" }] },
+          { "text": "Riesgo de acidosis láctica (MALA)", "evidence": [{ "quote": "Por debajo de 30 mL/min/1,73 m²" }, { "quote": "riesgo de acidosis láctica asociada a metformina (MALA)" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "eGFR", "value": "≥60", "unit": "mL/min/1,73 m²", "consequence": "puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día), control anual de función renal", "decisive": true, "stars": 1, "evidence": [{ "quote": "Con un eGFR ≥60 mL/min/1,73 m² puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día), con control anual de función renal" }] },
+    { "label": "eGFR", "value": "45-59", "unit": "mL/min/1,73 m²", "consequence": "suele mantenerse la dosis habitual, monitorización cada 3-6 meses", "decisive": true, "stars": 1, "evidence": [{ "quote": "entre 45 y 59 mL/min/1,73 m², suele mantenerse la dosis habitual pero aumentando la frecuencia de monitorización a cada 3-6 meses" }] },
+    { "label": "eGFR", "value": "30-44", "unit": "mL/min/1,73 m²", "consequence": "reducir la dosis al 50 %, eGFR cada 3 meses, no iniciar tratamiento nuevo", "decisive": true, "stars": 2, "evidence": [{ "quote": "entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 %" }, { "quote": "monitorizar el eGFR cada 3 meses y no iniciar tratamiento nuevo con metformina en este rango" }] },
+    { "label": "Dosis máxima con filtrados entre 30 y 44 mL/min/1,73 m²", "value": "1.000", "unit": "mg/día", "consequence": "máximo", "decisive": true, "stars": 2, "evidence": [{ "quote": "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día)" }] },
+    { "label": "eGFR", "value": "<30", "unit": "mL/min/1,73 m²", "consequence": "estrictamente contraindicada por riesgo de acidosis láctica", "decisive": true, "stars": 2, "evidence": [{ "quote": "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada debido al riesgo de acidosis láctica" }] },
+    { "label": "Reanudar tras contraste", "value": "48", "unit": "horas", "consequence": "únicamente si se comprueba que la función renal permanece estable", "decisive": true, "stars": 2, "evidence": [{ "quote": "reanudarla únicamente tras 48 horas si se comprueba que la función renal permanece estable" }] }
+  ],
+  "flujo": [],
+  "bloques": [
+    { "kind": "tx", "bullets": [
+      { "text": "Suspender de forma transitoria ante hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal", "stars": 2, "evidence": [{ "quote": "Suspender metformina de forma transitoria ante cualquier situación de hipoperfusión, hipoxia, sepsis, insuficiencia cardiaca aguda descompensada, deshidratación grave o lesión renal aguda, independientemente del eGFR basal" }] },
+      { "text": "Contraste yodado: suspender si el eGFR es inferior a 45 mL/min/1,73 m² o intraarterial; reanudar únicamente tras 48 horas si la función renal permanece estable", "stars": 2, "evidence": [{ "quote": "suspender metformina en el momento de la prueba si el eGFR es inferior a 45 mL/min/1,73 m² (o en administración intraarterial)" }, { "quote": "reanudarla únicamente tras 48 horas si se comprueba que la función renal permanece estable" }] }
+    ] },
+    { "kind": "monitoring", "bullets": [
+      { "text": "El uso prolongado puede causar déficit de vitamina B12; medirla periódicamente, sobre todo si aparece anemia o neuropatía periférica", "stars": 1, "evidence": [{ "quote": "El uso prolongado de metformina puede causar déficit de vitamina B12" }, { "quote": "medir vitamina B12 periódicamente, sobre todo si aparece anemia o neuropatía periférica" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "No iniciar tratamiento nuevo con metformina con eGFR entre 30 y 44 mL/min/1,73 m²", "why": "", "stars": 2, "evidence": [{ "quote": "Con filtrados entre 30 y 44 mL/min/1,73 m²" }, { "quote": "no iniciar tratamiento nuevo con metformina en este rango" }] },
+    { "text": "eGFR por debajo de 30 mL/min/1,73 m²: estrictamente contraindicada por riesgo de acidosis láctica", "why": "", "stars": 2, "evidence": [{ "quote": "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada debido al riesgo de acidosis láctica" }] },
+    { "text": "No suspenderla de forma rutinaria antes del contraste si el eGFR es ≥45 mL/min/1,73 m² y la administración es intravenosa sin factores de riesgo agudos", "why": "", "stars": 2, "evidence": [{ "quote": "No suspenderla de forma rutinaria antes del contraste si el eGFR es ≥45 mL/min/1,73 m² y la administración es intravenosa sin factores de riesgo agudos" }] }
+  ],
+  "buzzwords": [
+    { "term": "MALA", "concept": "acidosis láctica asociada a metformina", "evidence": [{ "quote": "acidosis láctica asociada a metformina (MALA)" }] }
+  ],
+  "mnemonics": [],
+  "cards": [
+    { "q": "Con eGFR ≥60 mL/min/1,73 m², qué dosis?", "a": "Puede utilizarse a dosis plena, hasta 2.000-2.550 mg/día", "evidence": [{ "quote": "Con un eGFR ≥60 mL/min/1,73 m² puede utilizarse a dosis plena (hasta 2.000-2.550 mg/día)" }] },
+    { "q": "Con filtrados entre 30 y 44 mL/min/1,73 m², dosis máxima?", "a": "Máximo 1.000 mg/día", "evidence": [{ "quote": "Con filtrados entre 30 y 44 mL/min/1,73 m², se recomienda reducir la dosis al 50 % (máximo 1.000 mg/día)" }] },
+    { "q": "Con eGFR <30 mL/min/1,73 m², metformina?", "a": "Estrictamente contraindicada", "evidence": [{ "quote": "Por debajo de 30 mL/min/1,73 m², metformina está estrictamente contraindicada" }] },
+    { "q": "Cuándo reanudar tras contraste yodado?", "a": "Únicamente tras 48 horas si la función renal permanece estable", "evidence": [{ "quote": "reanudarla únicamente tras 48 horas si se comprueba que la función renal permanece estable" }] },
+    { "q": "Qué déficit puede causar el uso prolongado?", "a": "Déficit de vitamina B12", "evidence": [{ "quote": "El uso prolongado de metformina puede causar déficit de vitamina B12" }] }
+  ],
+  "gaps": []
+}

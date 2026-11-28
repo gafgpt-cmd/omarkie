@@ -217,7 +217,9 @@ test("FoldHost refuses an off-computer route in a never-online vault: no job, no
     await assert.rejects(host.run({ note: "note.md", slot: "ladder" }), error => error.code === "FOLD_OFFLINE" && error.route.ready === false);
     preferences = { ...payloadPrefs(REMOTE), foldSlots: slots({ route: "payload", allow: REMOTE }) };
     await assert.rejects(host.run({ note: "note.md" }), { code: "FOLD_OFFLINE" });
-    await assert.rejects(host.run({ note: "note.md", slot: "estudio" }), { code: "FOLD_SLOT_UNAVAILABLE" });
+    // Estudio runs on its own slot route: left local it folds nothing, so it reads and sends nothing.
+    await assert.rejects(host.run({ note: "note.md", slot: "estudio" }), { code: "FOLD_ROUTE_LOCAL" });
+    await assert.rejects(host.run({ note: "note.md", slot: "both" }), { code: "VALIDATION_ERROR" });
     assert.deepEqual([host.bridge.jobs.size, payloads.length, events.length, glass.initialized], [0, 0, 0, false]);
   } finally { await host.close(); await glass.close(); }
 });

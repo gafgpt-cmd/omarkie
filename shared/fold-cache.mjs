@@ -1,6 +1,7 @@
 // Fold chunking and content-hash cache keys (design §4.3). Pure ESM (Node + browser): no disk, network, or clock.
 // A chunk is the unit of one model call and one cache file: ≤ CHUNK_LIMIT units, a section below the limit is never split.
 
+import { estudioElements, filterEstudio, mergeEstudio } from "./fold-estudio.mjs";
 import { FOLD_FORMAT, FOLD_VERSION } from "./fold-format.mjs";
 import { sha256, toFoldUnit } from "./fold-units.mjs";
 
@@ -125,8 +126,8 @@ function remapRecord(record, chunk) {
   };
 }
 
-/** One ladder fold record; a cache file holds the chunk's units only, `fold.json` all of them (`foldProblems` accepts both). */
-export function foldRecord(meta, units, written, sections) {
+/** One fold record; a cache file holds the chunk's units only, `fold.json` / `estudio.json` all of them (`foldProblems` accepts both). */
+export function foldRecord(meta, units, written, sections, estudio = null) {
   return {
     format: FOLD_FORMAT,
     version: FOLD_VERSION,
@@ -134,7 +135,7 @@ export function foldRecord(meta, units, written, sections) {
     units: units.map(toFoldUnit),
     written,
     sections,
-    estudio: null,
+    estudio,
   };
 }
 
@@ -176,4 +177,38 @@ export function assembleFold(meta, units, chunks, records, previous = null) {
     }
   }
   return foldRecord(meta, units, written, sections);
+}
+
+/**
+ * The note's Estudio sheet over the current units: each fresh chunk's checked sheet from its cache record, and for
+ * edited chunks the previous sheet's items whose quotes all sit in those chunks and still fit (stale until re-run),
+ * merged in reading order (`mergeEstudio`).
+ */
+export function assembleEstudio(meta, units, chunks, records, previous = null) {
+  const carry = previous?.estudio && sameWriter(previous.meta, meta) ? previous.estudio : null;
+  const elements = estudioElements(units);
+  const sheets = [];
+  const staleUnits = new Set();
+  for (const chunk of chunks) {
+    const record = records.get(chunk.key);
+    if (!record?.estudio) { chunk.unitIds.forEach(id => staleUnits.add(id)); continue; }
+    // Unit ids map by position (the key pins the hash sequence); cell ids follow their table's content.
+    const ids = new Map(record.units.map((unit, index) => [unit.elementId, chunk.unitIds[index]]));
+    sheets.push(remapEvidence(record.estudio, id => ids.get(id) ?? id));
+  }
+  if (carry) {
+    sheets.push(filterEstudio(carry, entry => {
+      const element = elements.get(entry.elementId);
+      return Boolean(element) && staleUnits.has(element.unitId) && element.text.slice(entry.start, entry.end) === entry.quote;
+    }));
+  }
+  return foldRecord(meta, units, [], [], mergeEstudio(sheets, { elements }));
+}
+
+function remapEvidence(value, id) {
+  if (Array.isArray(value)) return value.map(item => remapEvidence(item, id));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, key === "evidence" && Array.isArray(item)
+    ? item.map(entry => ({ ...entry, elementId: id(entry.elementId) }))
+    : remapEvidence(item, id)]));
 }

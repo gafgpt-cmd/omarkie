@@ -84,8 +84,50 @@ export interface Fold {
   written: WrittenUnit[];
   sections: WrittenSection[];
   /** Schema `omarkie/fold-estudio` v1; null in a ladder record. */
-  estudio: Record<string, unknown> | null;
+  estudio: EstudioSheet | null;
 }
+
+export declare const ESTUDIO_FORMAT: "omarkie/fold-estudio";
+export declare const ESTUDIO_VERSION: 1;
+export type EstudioBlock = "caso" | "vs" | "numeros" | "flujo" | "bloques" | "nunca" | "buzzwords" | "mnemonics" | "cards" | "gaps";
+export type BloqueKind = "mechanism" | "dx" | "tx" | "monitoring" | "pitfall" | "prognosis";
+export declare const ESTUDIO_BLOCKS: readonly EstudioBlock[];
+export declare const BLOQUE_KINDS: readonly BloqueKind[];
+export declare const ESTUDIO_LIMITS: Readonly<Record<
+  "oneLinerWords" | "lineWords" | "vs" | "vsRows" | "vsColumns" | "numeros" | "flujo" | "flujoNodes" | "bloques" | "bullets"
+  | "nunca" | "buzzwords" | "mnemonics" | "cards" | "caso" | "gaps", number>>;
+
+type Stars = 0 | 1 | 2;
+type Grounded<T> = T & { evidence: [Evidence, ...Evidence[]] };
+export interface EstudioSheet {
+  format: typeof ESTUDIO_FORMAT;
+  version: typeof ESTUDIO_VERSION;
+  oneLiner: Grounded<{ text: string; stars: Stars }> | null;
+  caso: Grounded<{ entity: string; text: string; stars: Stars }>[];
+  vs: { title: string; columns: string[]; rows: { label: string; stars: Stars; cells: Grounded<{ text: string }>[] }[] }[];
+  numeros: Grounded<{ label: string; value: string; unit: string; consequence: string; decisive: boolean; stars: Stars }>[];
+  flujo: { title: string; nodes: Grounded<{ id: string; text: string }>[]; edges: { from: string; to: string; label?: string }[] }[];
+  bloques: { kind: BloqueKind; bullets: Grounded<{ text: string; stars: Stars }>[] }[];
+  nunca: Grounded<{ text: string; why: string; stars: Stars }>[];
+  buzzwords: Grounded<{ term: string; concept: string }>[];
+  mnemonics: { label: string; word: string; items: Grounded<{ letter: string; text: string }>[] }[];
+  cards: Grounded<{ q: string; a: string }>[];
+  gaps: Grounded<{ text: string }>[];
+  /** Checker tally: lines shown, lines with a number gap, lines over their word cap, items dropped with their source. */
+  checks: { lines: number; gapped: number; long: number; dropped: { block: "oneLiner" | EstudioBlock; evidence: [Evidence, ...Evidence[]] }[] };
+}
+
+/** Problems of `value` against a JSON Schema subset (type, enum, const, required, properties, items, bounds), by path. */
+export declare function jsonSchemaProblems(schema: Readonly<Record<string, unknown>>, value: unknown, path: string, problems?: string[]): string[];
+export declare function estudioSchema(evidence: Readonly<Record<string, unknown>>, options: { stored: boolean }): Readonly<Record<string, unknown>>;
+export declare const ESTUDIO_SHEET_SCHEMA: Readonly<Record<string, unknown>>;
+export declare const ESTUDIO_REPLY_EVIDENCE: Readonly<Record<string, unknown>>;
+export declare const ESTUDIO_REPLY_SCHEMA: Readonly<Record<string, unknown>>;
+export declare function anchorQuote<T>(entry: T, text: string | undefined): T | Evidence;
+export declare function estudioShapeProblems(sheet: Record<string, any>, path?: string): string[];
+export declare function estudioEvidence(sheet: Record<string, any>, path?: string, out?: [string, Evidence[]][]): [string, Evidence[]][];
+export declare function estudioProblems(value: unknown, path?: string): string[];
+export declare function isEstudioSheet(value: unknown): value is EstudioSheet;
 
 export declare function isLevelId(value: unknown): value is LevelId;
 export declare function isRole(value: unknown): value is Role;

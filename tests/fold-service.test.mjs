@@ -48,7 +48,7 @@ function faithful(request) {
 
 function runner(reply = faithful) {
   const calls = [];
-  return { calls, promptVersion: 1, schemaVersion: 1, run: request => { calls.push(request); return reply(request, calls.length); } };
+  return { calls, versions: () => ({ promptVersion: 1, schemaVersion: 1 }), run: request => { calls.push(request); return reply(request, calls.length); } };
 }
 
 function service(storeDir, model, options = {}) {
@@ -195,7 +195,7 @@ test("a crash in the middle of a cache write leaves no entry and the previous fo
     const { atomicWrite } = await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL("../electron/store.mjs", import.meta.url))).href)});
     const { firstSentence } = await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL("../shared/fold-text.mjs", import.meta.url))).href)});
     const line = unit => { const text = firstSentence(unit.text).head.trim(); const start = unit.text.indexOf(text); return { by: "model", text, evidence: [{ elementId: unit.elementId, quote: text, sentence: 0, start, end: start + text.length }] }; };
-    const runner = { promptVersion: 1, schemaVersion: 1, run: ({ chunk }) => ({ written: chunk.units.filter(unit => !unit.raw && unit.kind !== "heading").map(unit => ({ elementId: unit.elementId, role: "context", key: line(unit), takeaway: line(unit), topic: line(unit) })), sections: [] }) };
+    const runner = { versions: () => ({ promptVersion: 1, schemaVersion: 1 }), run: ({ chunk }) => ({ written: chunk.units.filter(unit => !unit.raw && unit.kind !== "heading").map(unit => ({ elementId: unit.elementId, role: "context", key: line(unit), takeaway: line(unit), topic: line(unit) })), sections: [] }) };
     const write = (file, data) => atomicWrite(file, data, () => process.kill(process.pid, "SIGKILL"));
     const fold = new FoldService({ storeDir: ${JSON.stringify(root)}, runner, write });
     await fold.run(${JSON.stringify({ noteId: NOTE, title: "Metformina", markdown: edited, ...ROUTE })}).done;
@@ -329,6 +329,69 @@ test("get before any run reports local chunks; bad requests are refused before a
   assert.throws(() => fold.run({ noteId: "../x", title: "x", markdown: "a", ...ROUTE }), /note id/);
   assert.throws(() => fold.run({ noteId: NOTE, title: "x", markdown: "a", ...ROUTE, outLang: "xx" }), /outLang/);
   assert.throws(() => fold.run({ noteId: NOTE, title: "x", markdown: "a", route: "agent", model: "m", outLang: "es" }), /agent/);
+  assert.throws(() => fold.run({ noteId: NOTE, title: "x", markdown: "a", ...ROUTE, slot: "both" }), /slot/);
   assert.equal(model.calls.length, 0);
   assert.deepEqual(await readdir(root), []);
+});
+
+// A faithful synthetic Estudio model: one card per unit, its answer the unit's first words, quoted as its own evidence.
+function studied(request) {
+  const cards = request.chunk.units.filter(unit => !unit.raw && unit.kind !== "heading" && unit.text.trim()).map(unit => {
+    const quote = unit.text.match(/^\S+(?:\s+\S+){0,11}/u)[0];
+    return { q: "What does the note say?", a: quote, evidence: [{ elementId: unit.elementId, quote }] };
+  });
+  return { oneLiner: null, caso: [], vs: [], numeros: [], flujo: [], bloques: [], nunca: [], buzzwords: [], mnemonics: [], cards, gaps: [] };
+}
+const quotesUnit = (sheet, id) => sheet.cards.some(card => card.evidence.some(entry => entry.elementId === id));
+
+test("an Estudio run caches its own chunks beside the ladder's, merges the sheet, and an edit re-runs one chunk", async () => {
+  const root = await store();
+  const { markdown } = fixture("12-");
+  const ladder = runner(), estudio = runner(studied);
+  const { fold } = service(root, ladder);
+  await fold.run({ noteId: NOTE, title: "Physiology", markdown, ...ROUTE }).done;
+  const ladderFiles = await chunkFiles(root);
+  const { fold: study, events } = service(root, estudio);
+  const result = await study.run({ noteId: NOTE, title: "Physiology", markdown, ...ROUTE, slot: "estudio" }).done;
+  const dir = await noteDir(root);
+  assert.equal(result.state, "done");
+  assert.ok(estudio.calls.every(call => call.slot === "estudio" && call.chunk.units.every(unit => !("brief" in unit))));
+  assert.equal((await readdir(path.join(dir, "estudio-chunks"))).length, estudio.calls.length);
+  assert.deepEqual(await chunkFiles(root), ladderFiles, "an Estudio run never prunes the ladder cache");
+  assert.equal((await fold.get({ noteId: NOTE, title: "Physiology", markdown })).stale, 0);
+  assert.ok(events.filter(event => event.phase === "chunk").every(event => event.slot === "estudio" && event.estudio.format === "omarkie/fold-estudio"));
+
+  const sheet = (await study.get({ noteId: NOTE, title: "Physiology", markdown, slot: "estudio" })).fold.estudio;
+  assert.equal(sheet.cards.length, 10, "the merged sheet keeps its card cap");
+  const first = sheet.cards[0].evidence[0].elementId;
+  const target = extractUnits(markdown).find(unit => unit.elementId === first);
+  const edited = markdown.slice(0, target.from) + target.markdown.replace(/\b(\p{L}{5,})\b/u, "$1s") + markdown.slice(target.to);
+  const stale = await study.get({ noteId: NOTE, title: "Physiology", markdown: edited, slot: "estudio" });
+  assert.equal(stale.stale, 1);
+  const staleChunk = stale.chunks.find(chunk => chunk.state === "stale");
+  assert.ok(!quotesUnit(stale.fold.estudio, first), "an item whose quote no longer fits leaves");
+  assert.ok(staleChunk.unitIds.some(id => id !== first && quotesUnit(stale.fold.estudio, id)), "the stale chunk's other items stay");
+  const before = estudio.calls.length;
+  await study.run({ noteId: NOTE, title: "Physiology", markdown: edited, ...ROUTE, slot: "estudio" }).done;
+  assert.deepEqual(estudio.calls.slice(before).map(call => call.chunk.key), [staleChunk.key]);
+  assert.equal((await study.get({ noteId: NOTE, title: "Physiology", markdown: edited, slot: "estudio" })).stale, 0);
+});
+
+test("Estudio and ladder runs of one note run side by side; cancelling one slot leaves the other running", async () => {
+  const root = await store();
+  const { markdown } = fixture("01-");
+  const hold = deferred();
+  const model = runner(async request => { await hold.promise; return request.slot === "estudio" ? studied(request) : faithful(request); });
+  const { fold } = service(root, model);
+  const ladder = fold.run({ noteId: NOTE, title: "ADHF", markdown, ...ROUTE });
+  const estudio = fold.run({ noteId: NOTE, title: "ADHF", markdown, ...ROUTE, slot: "estudio" });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(fold.cancel({ noteId: NOTE, slot: "estudio" }), true);
+  hold.resolve();
+  assert.deepEqual([(await estudio.done).state, (await ladder.done).state], ["cancelled", "done"]);
+  // A table reaches the Estudio model cell by cell, so a vs row can quote one cell.
+  const study = await fold.run({ noteId: NOTE, title: "ADHF", markdown, ...ROUTE, slot: "estudio" }).done;
+  assert.equal(study.state, "done");
+  const table = model.calls.filter(call => call.slot === "estudio").flatMap(call => call.chunk.units).find(unit => unit.kind === "table");
+  assert.ok(table.cells.some(cell => cell.text === ">100 pg/mL"));
 });

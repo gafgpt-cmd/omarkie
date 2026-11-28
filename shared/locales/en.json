@@ -1640,7 +1640,6 @@
   "This vault never goes online; only a loopback route can fold.": "This vault never goes online; only a loopback route can fold.",
   "Name a model for this fold slot in Preferences → Fold.": "Name a model for this fold slot in Preferences → Fold.",
   "Allow this slot to send note text to {{destination}} in Preferences → Fold first.": "Allow this slot to send note text to {{destination}} in Preferences → Fold first.",
-  "Only the Ladder slot can run a fold.": "Only the Ladder slot can run a fold.",
   "Open a note folder before folding.": "Open a note folder before folding.",
   "Unknown fold slot.": "Unknown fold slot.",
   "Canvas boards…": "Canvas boards…",

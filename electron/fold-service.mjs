@@ -1,23 +1,30 @@
-// Fold service (design §4.1-4.3): the single writer of `<store>/folds/<note> ~<id>/` (`fold.json` + `chunks/<key>.json`).
-// Chunks queue in document order (visible chunk first), run two at a time across notes, stream in queue order,
-// and cancel without a partial cache entry. Model calls go through the injected runner; no route lives here.
+// Fold service (design §4.1-4.3): the single writer of `<store>/folds/<note> ~<id>/`: the ladder slot's `fold.json` +
+// `chunks/<key>.json`, the Estudio slot's `estudio.json` + `estudio-chunks/<key>.json`. Chunks queue in document order
+// (visible chunk first), run two at a time across notes, stream in queue order, and cancel without a partial cache
+// entry. Each slot runs on its own: a ladder run and an Estudio run of one note neither cancel nor prune each other.
+// Model calls go through the injected runner; no route lives here.
 
 import { EventEmitter } from "node:events";
 import { mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { assembleFold, chunkUnits, foldRecord, planChunks, queueOrder, sameWriter } from "../shared/fold-cache.mjs";
+import { assembleEstudio, assembleFold, chunkUnits, foldRecord, planChunks, queueOrder, sameWriter } from "../shared/fold-cache.mjs";
 import { checkLadderChunk } from "../shared/fold-check.mjs";
-import { foldProblems } from "../shared/fold-format.mjs";
+import { checkEstudioChunk, mergeEstudio } from "../shared/fold-estudio.mjs";
+import { SLOTS, foldProblems } from "../shared/fold-format.mjs";
 import { extractUnits, foldDocumentLadder, isHiddenUnit } from "../shared/fold-units.mjs";
 import { glassFileName } from "../shared/glass-core.mjs";
 import { atomicWrite } from "./store.mjs";
 
-const SLOT = "ladder";
-const STOPS = ["key", "takeaway", "topic"];
+// Where each slot keeps its note record and its chunk cache files.
+const FILES = Object.freeze({
+  ladder: { record: "fold.json", chunks: "chunks" },
+  estudio: { record: "estudio.json", chunks: "estudio-chunks" },
+});
 const noteIdPattern = /^[a-z0-9]{4,32}$/;
 const chunkFile = /^([0-9a-f]{64})\.json$/;
 const leftoverTemp = /^\..+\.tmp$/;
+const runKey = (slot, noteId) => `${slot}:${noteId}`;
 
 const abortError = () => Object.assign(new Error("Fold run cancelled."), { name: "AbortError", code: "FOLD_CANCELLED" });
 const isAbort = error => error?.name === "AbortError";
@@ -61,12 +68,12 @@ export class FoldService extends EventEmitter {
   /**
    * @param {object} options
    * @param {string | (() => string | null)} options.storeDir Omarkie store (`.omarkie` or the app-data vault store).
-   * @param {{ promptVersion: number, schemaVersion: number, run: (request: object) => Promise<object> }} options.runner
+   * @param {{ versions: (slot: string) => { promptVersion: number, schemaVersion: number }, run: (request: object) => Promise<object> }} options.runner
    * @param {(file: string, data: string) => Promise<void>} [options.write] atomic file write (tmp + fsync + rename).
    */
   constructor({ storeDir, runner, write = atomicWrite, concurrency = 2, now = () => new Date() }) {
     super();
-    if (!runner || typeof runner.run !== "function") throw new TypeError("Fold service needs a runner.");
+    if (!runner || typeof runner.run !== "function" || typeof runner.versions !== "function") throw new TypeError("Fold service needs a runner.");
     this.storeDir = typeof storeDir === "function" ? storeDir : () => storeDir;
     this.runner = runner;
     this.write = write;
@@ -78,56 +85,64 @@ export class FoldService extends EventEmitter {
     this.runs = 0;
   }
 
-  /** Cached fold for the note as it is now: fresh chunks show written lines, edited chunks keep the old lines as stale.
-   *  `noteId` null: the store does not know the note yet, so nothing is cached. */
-  async get({ noteId, title, markdown, pins = [] }) {
+  /** Cached fold of one slot for the note as it is now: fresh chunks show written lines, edited chunks keep the old
+   *  lines as stale. `noteId` null: the store does not know the note yet, so nothing is cached. */
+  async get({ noteId, title, markdown, pins = [], slot = "ladder" }) {
+    if (!SLOTS.includes(slot)) throw new TypeError("Invalid fold slot.");
     const units = extractUnits(markdown);
     const dir = noteId === null ? null : await this.#folder(noteId, title, false);
-    const previous = dir ? await readFold(path.join(dir, "fold.json")) : null;
-    const running = this.active.has(noteId);
+    const found = dir ? await readFold(path.join(dir, FILES[slot].record)) : null;
+    const previous = found?.meta.slot === slot ? found : null;
+    const running = this.active.has(runKey(slot, noteId));
     if (!previous) {
       const chunks = chunkUnits(units).map(chunk => ({ ...chunk, key: null }));
-      return { noteId, fold: null, chunks: chunks.map(chunk => summary(chunk, "local")), stale: 0, running };
+      return { noteId, slot, fold: null, chunks: chunks.map(chunk => summary(chunk, "local")), stale: 0, running };
     }
-    const meta = { ...previous.meta, ...this.#versions() };
+    const meta = { ...previous.meta, ...this.runner.versions(slot) };
     const chunks = planChunks(units, meta, pins);
     const records = await this.#records(dir, chunks, meta);
-    const fold = assembleFold(meta, units, chunks, records, previous);
+    const fold = (slot === "estudio" ? assembleEstudio : assembleFold)(meta, units, chunks, records, previous);
     const states = chunks.map(chunk => summary(chunk, records.has(chunk.key) ? "written" : "stale"));
-    return { noteId, fold, chunks: states, stale: states.filter(chunk => chunk.state === "stale").length, running };
+    return { noteId, slot, fold, chunks: states, stale: states.filter(chunk => chunk.state === "stale").length, running };
   }
 
   /**
-   * Starts a ladder run. Only chunks without a fresh cache file call the runner; `sections` limits the run to the
-   * chunks holding those heading ids. A second run for the same note cancels the first (finished chunks stay)
-   * and starts once the first has settled, so `fold.json` never goes back to an older note version.
+   * Starts a run of one slot. Only chunks without a fresh cache file call the runner; `sections` limits the run to
+   * the chunks holding those heading ids. A second run of the same slot and note cancels the first (finished chunks
+   * stay) and starts once the first has settled, so the note record never goes back to an older note version.
    * `connection` reaches the runner with each chunk (the route's endpoint); it is never written to the cache.
    */
-  run({ noteId, title, markdown, route, agent, model, outLang, pins = [], sections = null, visible = null, connection = null }) {
+  run({ noteId, title, markdown, slot = "ladder", route, agent, model, outLang, pins = [], sections = null, visible = null, connection = null }) {
     if (!noteIdPattern.test(String(noteId))) throw new TypeError("Invalid fold note id.");
-    const meta = { slot: SLOT, route, ...(route === "agent" ? { agent } : {}), model, ...this.#versions(), outLang, created: this.now().toISOString() };
-    const problems = foldProblems(foldRecord(meta, [], [], []));
+    if (!SLOTS.includes(slot)) throw new TypeError("Invalid fold slot.");
+    const meta = { slot, route, ...(route === "agent" ? { agent } : {}), model, ...this.runner.versions(slot), outLang, created: this.now().toISOString() };
+    const problems = foldProblems(foldRecord(meta, [], [], [], slot === "estudio" ? mergeEstudio([]) : null));
     if (problems.length) throw new TypeError(`Invalid fold run: ${problems.join("; ")}`);
-    this.cancel({ noteId });
+    this.cancel({ noteId, slot });
+    const key = runKey(slot, noteId);
     const runId = `${noteId}-${++this.runs}`;
     const controller = new AbortController();
-    const prior = this.tails.get(noteId) ?? Promise.resolve();
+    const prior = this.tails.get(key) ?? Promise.resolve();
     const done = prior.then(() => this.#execute({ runId, noteId, title, markdown, meta, pins, sections, visible, connection, signal: controller.signal }))
-      .finally(() => { if (this.active.get(noteId)?.runId === runId) this.active.delete(noteId); });
+      .finally(() => { if (this.active.get(key)?.runId === runId) this.active.delete(key); });
     const tail = done.catch(() => {});
-    this.tails.set(noteId, tail);
-    tail.then(() => { if (this.tails.get(noteId) === tail) this.tails.delete(noteId); });
-    this.active.set(noteId, { runId, controller, done });
+    this.tails.set(key, tail);
+    tail.then(() => { if (this.tails.get(key) === tail) this.tails.delete(key); });
+    this.active.set(key, { runId, controller, done });
     return { runId, done };
   }
 
-  /** Stops the note's run: finished chunks stay cached, the rest stay local. */
-  cancel({ noteId }) {
-    const run = this.active.get(noteId);
-    if (!run) return false;
-    this.active.delete(noteId);
-    run.controller.abort();
-    return true;
+  /** Stops the note's run of `slot`, or of every slot: finished chunks stay cached, the rest stay local. */
+  cancel({ noteId, slot = null }) {
+    let stopped = false;
+    for (const each of slot ? [slot] : SLOTS) {
+      const run = this.active.get(runKey(each, noteId));
+      if (!run) continue;
+      this.active.delete(runKey(each, noteId));
+      run.controller.abort();
+      stopped = true;
+    }
+    return stopped;
   }
 
   async close() {
@@ -136,24 +151,29 @@ export class FoldService extends EventEmitter {
     await Promise.allSettled([...this.tails.values()]);
   }
 
-  #versions() {
-    return { promptVersion: this.runner.promptVersion, schemaVersion: this.runner.schemaVersion };
-  }
-
   async #execute({ runId, noteId, title, markdown, meta, pins, sections, visible, connection, signal }) {
-    const ladder = foldDocumentLadder(markdown);
-    const units = new Map(ladder.units.map(unit => [unit.elementId, unit]));
-    const stops = new Map(ladder.byUnit.map(entry => [entry.unit.elementId, entry.stops]));
-    const chunks = planChunks(ladder.units, meta, pins);
+    const { slot } = meta;
+    const ladder = slot === "ladder" ? foldDocumentLadder(markdown) : null;
+    const allUnits = ladder ? ladder.units : extractUnits(markdown);
+    const units = new Map(allUnits.map(unit => [unit.elementId, unit]));
+    const stops = ladder ? new Map(ladder.byUnit.map(entry => [entry.unit.elementId, entry.stops])) : null;
+    const chunks = planChunks(allUnits, meta, pins);
     const dir = await this.#folder(noteId, title, true);
-    const previous = await readFold(path.join(dir, "fold.json"));
+    await mkdir(path.join(dir, FILES[slot].chunks), { recursive: true, mode: 0o700 });
+    const found = await readFold(path.join(dir, FILES[slot].record));
+    const previous = found?.meta.slot === slot ? found : null;
     const records = await this.#records(dir, chunks, meta);
     const wanted = Array.isArray(sections) ? new Set(sections) : null;
     const inWanted = chunk => !wanted || chunk.unitIds.some(id => wanted.has(units.get(id).sectionId));
     const queue = queueOrder(chunks.filter(chunk => !records.has(chunk.key) && inWanted(chunk)), visible);
     const tally = { calls: 0, ms: 0, written: 0, errors: 0 };
-    const emit = event => this.emit("progress", { runId, noteId, ...event });
-    const saveFold = () => this.#serial(dir, () => this.write(path.join(dir, "fold.json"), json(assembleFold(meta, ladder.units, chunks, records, previous))));
+    const emit = event => this.emit("progress", { runId, noteId, slot, ...event });
+    const assemble = slot === "estudio" ? assembleEstudio : assembleFold;
+    const saveFold = () => this.#serial(dir, async () => {
+      const record = assemble(meta, allUnits, chunks, records, previous);
+      await this.write(path.join(dir, FILES[slot].record), json(record));
+      return record;
+    });
     if (signal.aborted) {
       emit({ phase: "cancelled", total: queue.length, ...tally });
       return { runId, state: "cancelled", ...tally };
@@ -162,7 +182,7 @@ export class FoldService extends EventEmitter {
     emit({ phase: "start", total: queue.length, cached: records.size, chunks: queue.map(chunk => summary(chunk, "queued")) });
     if (!queue.length) {
       await saveFold();
-      await this.#prune(dir, chunks);
+      await this.#prune(dir, chunks, slot);
       emit({ phase: "done", done: 0, total: 0, ...tally });
       return { runId, state: "done", ...tally };
     }
@@ -183,14 +203,20 @@ export class FoldService extends EventEmitter {
         const chunkUnits = chunk.unitIds.map(id => units.get(id));
         const reply = await this.#foldChunk({ noteId, meta, chunk, chunkUnits, stops, pins, connection, signal, tally });
         if (signal.aborted) throw abortError();
-        const record = foldRecord({ ...meta, created: this.now().toISOString() }, chunkUnits, reply.written, reply.sections);
+        const created = { ...meta, created: this.now().toISOString() };
+        const record = slot === "estudio"
+          ? foldRecord(created, chunkUnits, [], [], reply.estudio)
+          : foldRecord(created, chunkUnits, reply.written, reply.sections);
         const problems = foldProblems(record);
         if (problems.length) throw Object.assign(new Error(`Fold reply rejected: ${problems[0]}`), { code: "FOLD_INVALID" });
-        await this.#serial(dir, () => this.write(path.join(dir, "chunks", `${chunk.key}.json`), json(record)));
+        await this.#serial(dir, () => this.write(path.join(dir, FILES[slot].chunks, `${chunk.key}.json`), json(record)));
         records.set(chunk.key, record);
-        await saveFold();
+        const saved = await saveFold();
         tally.written++;
-        outcome = { state: "written", chunk: summary(chunk, "written"), written: record.written, sections: record.sections, warnings: reply.warnings };
+        outcome = slot === "estudio"
+          // An Estudio chunk shows as the whole merged sheet: a chunk's items fold into the others'.
+          ? { state: "written", chunk: summary(chunk, "written"), estudio: saved.estudio, retried: reply.retried, outOfFold: reply.outOfFold }
+          : { state: "written", chunk: summary(chunk, "written"), written: record.written, sections: record.sections, warnings: reply.warnings };
       } catch (error) {
         if (isAbort(error) || signal.aborted) outcome = { state: "cancelled" };
         else {
@@ -210,7 +236,7 @@ export class FoldService extends EventEmitter {
       emit({ phase: "cancelled", total: queue.length, ...tally });
       return { runId, state: "cancelled", ...tally };
     }
-    await this.#prune(dir, chunks);
+    await this.#prune(dir, chunks, slot);
     emit({ phase: "done", done: queue.length, total: queue.length, ...tally });
     return { runId, state: "done", ...tally };
   }
@@ -226,17 +252,18 @@ export class FoldService extends EventEmitter {
     return untilAborted(pending, signal);
   }
 
-  // One chunk: the shared ladder validator calls, validates, payload-checks, retries once naming the lost tokens,
-  // then falls back to Brief words (shared/fold-check.mjs `checkLadderChunk`).
+  // One chunk: the slot's shared checker calls, validates, payload-checks and retries once naming the lost tokens;
+  // the ladder then falls back to Brief words (`checkLadderChunk`), Estudio drops the item (`checkEstudioChunk`).
   async #foldChunk({ noteId, meta, chunk, chunkUnits: allUnits, stops, pins, connection, signal, tally }) {
     // HTML comments are invisible on the page: the model never sees them, so no line can quote or obey them.
     const chunkUnits = allUnits.filter(unit => !isHiddenUnit(unit));
     const chunkIds = new Set(chunkUnits.map(unit => unit.elementId));
     const chunkPins = pins.filter(pin => chunkIds.has(pin?.elementId) && typeof pin.quote === "string" && pin.quote.trim())
       .map(pin => ({ elementId: pin.elementId, quote: pin.quote }));
+    const estudio = meta.slot === "estudio";
     const request = {
       noteId,
-      slot: SLOT,
+      slot: meta.slot,
       route: meta.route,
       ...(meta.agent ? { agent: meta.agent } : {}),
       model: meta.model,
@@ -248,7 +275,8 @@ export class FoldService extends EventEmitter {
         key: chunk.key,
         units: chunkUnits.map(unit => ({
           elementId: unit.elementId, kind: unit.kind, raw: unit.raw, sectionId: unit.sectionId, headings: unit.headings,
-          markdown: unit.markdown, text: unit.text, brief: stops.get(unit.elementId).brief,
+          markdown: unit.markdown, text: unit.text,
+          ...(estudio ? (unit.cells ? { cells: unit.cells } : {}) : { brief: stops.get(unit.elementId).brief }),
         })),
         pins: chunkPins,
       },
@@ -259,24 +287,26 @@ export class FoldService extends EventEmitter {
       try { return await this.#call({ ...request, retry }, signal, tally); }
       catch (error) { if (isAbort(error) || signal.aborted) throw error; return null; }
     };
+    if (estudio) return checkEstudioChunk(ask, { units: request.chunk.units, pins: chunkPins });
     return checkLadderChunk(ask, { units: chunkUnits, stops, pins: chunkPins, sectionIds: chunk.sectionIds });
   }
 
   async #records(dir, chunks, meta) {
     const records = new Map();
     await Promise.all(chunks.map(async chunk => {
-      const record = await readFold(path.join(dir, "chunks", `${chunk.key}.json`));
+      const record = await readFold(path.join(dir, FILES[meta.slot].chunks, `${chunk.key}.json`));
       if (record && sameWriter(record.meta, meta) && record.units.length === chunk.hashes.length
         && record.units.every((unit, index) => unit.hash === chunk.hashes[index])) records.set(chunk.key, record);
     }));
     return records;
   }
 
-  // After a full run only the current keys stay; leftovers of a killed write go too.
-  async #prune(dir, chunks) {
+  // After a full run only the slot's current keys stay; leftovers of a killed write go too. The other slot's cache
+  // folder is never touched.
+  async #prune(dir, chunks, slot) {
     const keep = new Set(chunks.map(chunk => chunk.key));
     await this.#serial(dir, async () => {
-      for (const folder of [dir, path.join(dir, "chunks")]) {
+      for (const folder of [dir, path.join(dir, FILES[slot].chunks)]) {
         const names = await readdir(folder).catch(() => []);
         for (const name of names) {
           const key = chunkFile.exec(name)?.[1];

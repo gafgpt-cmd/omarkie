@@ -1,0 +1,64 @@
+{
+  "oneLiner": { "text": "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium.", "stars": 1, "evidence": [{ "quote": "Beta-blockers competitively antagonise beta-adrenergic receptors, decreasing cyclic AMP and intracellular calcium" }] },
+  "caso": [],
+  "vs": [
+    {
+      "title": "Subclasses",
+      "columns": ["Agents", "Feature"],
+      "rows": [
+        { "label": "Cardioselective beta-1", "stars": 2, "cells": [
+          { "text": "Metoprolol, bisoprolol, atenolol, esmolol", "evidence": [{ "quote": "Cardioselective beta-1 blockers (metoprolol, bisoprolol, atenolol, esmolol)" }] },
+          { "text": "Selectivity is lost at high doses, although largely sparing beta-2 at standard doses", "evidence": [{ "quote": "largely sparing beta-2 bronchial receptors at standard doses, although selectivity is lost at high doses" }] }
+        ] },
+        { "label": "Non-selective", "stars": 2, "cells": [
+          { "text": "Propranolol, nadolol, timolol", "evidence": [{ "quote": "Non-selective beta-1 and beta-2 blockers (propranolol, nadolol, timolol)" }] },
+          { "text": "Block beta-2 vasodilation, bronchodilation, glycogenolysis", "evidence": [{ "quote": "additionally block peripheral beta-2 vasodilation, bronchodilation, and glycogenolysis" }] }
+        ] },
+        { "label": "Mixed alpha-1 and beta", "stars": 2, "cells": [
+          { "text": "Carvedilol, labetalol", "evidence": [{ "quote": "Mixed alpha-1 and beta blockers (carvedilol, labetalol)" }] },
+          { "text": "Peripheral vasodilation reduces afterload", "evidence": [{ "quote": "add peripheral vasodilation to reduce afterload" }] }
+        ] },
+        { "label": "Intrinsic sympathomimetic activity", "stars": 1, "cells": [
+          { "text": "Pindolol, acebutolol", "evidence": [{ "quote": "intrinsic sympathomimetic activity (pindolol, acebutolol)" }] },
+          { "text": "Partial agonists, less resting bradycardia", "evidence": [{ "quote": "act as partial agonists and produce less resting bradycardia" }] }
+        ] }
+      ]
+    }
+  ],
+  "numeros": [
+    { "label": "Esmolol ultra-short half-life", "value": "9", "unit": "minutes", "consequence": "acute perioperative control", "decisive": true, "stars": 1, "evidence": [{ "quote": "esmolol has an ultra-short half-life of 9 minutes for acute perioperative control" }] },
+    { "label": "Taper after abrupt withdrawal", "value": "over 1 to 2", "unit": "weeks", "consequence": "avoids rebound tachycardia and angina", "decisive": true, "stars": 1, "evidence": [{ "quote": "Abrupt withdrawal causes rebound tachycardia and angina due to beta-receptor upregulation: taper over 1 to 2 weeks" }] },
+    { "label": "Severe symptomatic bradycardia", "value": "<50", "unit": "bpm", "consequence": "heart rate", "decisive": true, "stars": 2, "evidence": [{ "quote": "severe symptomatic bradycardia (heart rate <50 bpm)" }] }
+  ],
+  "flujo": [],
+  "bloques": [
+    { "kind": "tx", "bullets": [
+      { "text": "Chronic HFrEF: bisoprolol, carvedilol, metoprolol succinate reduce mortality once the patient is euvolaemic", "stars": 2, "evidence": [{ "quote": "bisoprolol, carvedilol, and metoprolol succinate reduce mortality once the patient is euvolaemic" }] },
+      { "text": "Aortic dissection: intravenous labetalol or esmolol lowers shear stress and blood pressure", "stars": 1, "evidence": [{ "quote": "aortic dissection:** intravenous labetalol or esmolol lowers shear stress and blood pressure" }] },
+      { "text": "Overdose: intravenous glucagon, independent of beta receptors, atropine, and high-dose insulin", "stars": 2, "evidence": [{ "quote": "treat with intravenous glucagon (activates adenylyl cyclase independent of beta receptors), atropine, and high-dose insulin" }] }
+    ] },
+    { "kind": "pitfall", "bullets": [
+      { "text": "In diabetes, beta-blockers mask hypoglycaemia warning signs while diaphoresis persists because sweating is cholinergic", "stars": 2, "evidence": [{ "quote": "In diabetes, beta-blockers mask adrenergic hypoglycaemia warning signs (tremor, palpitations) while diaphoresis persists because sweating is cholinergic" }] },
+      { "text": "In cocaine toxicity or untreated phaeochromocytoma: unopposed alpha-1 vasoconstriction and dangerous hypertension", "stars": 2, "evidence": [{ "quote": "In cocaine toxicity or untreated phaeochromocytoma, pure beta blockade causes unopposed alpha-1 vasoconstriction and dangerous hypertension" }] },
+      { "text": "Abrupt withdrawal causes rebound tachycardia and angina; taper over 1 to 2 weeks", "stars": 1, "evidence": [{ "quote": "Abrupt withdrawal causes rebound tachycardia and angina due to beta-receptor upregulation: taper over 1 to 2 weeks" }] }
+    ] }
+  ],
+  "nunca": [
+    { "text": "HFrEF: never start in acute decompensated shock", "why": "", "stars": 2, "evidence": [{ "quote": "never start in acute decompensated shock" }] },
+    { "text": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, bradycardia <50 bpm, cardiogenic shock, or overt decompensated heart failure", "why": "", "stars": 2, "evidence": [{ "quote": "Do not give beta-blockers in second- or third-degree AV block without a pacemaker, severe symptomatic bradycardia (heart rate <50 bpm), cardiogenic shock, or overt decompensated heart failure" }] },
+    { "text": "Avoid non-selective agents in asthma", "why": "", "stars": 2, "evidence": [{ "quote": "Avoid non-selective agents in asthma" }] }
+  ],
+  "buzzwords": [
+    { "term": "Diaphoresis persists", "concept": "sweating is cholinergic", "evidence": [{ "quote": "diaphoresis persists because sweating is cholinergic" }] },
+    { "term": "Unopposed alpha-1", "concept": "vasoconstriction and dangerous hypertension", "evidence": [{ "quote": "unopposed alpha-1 vasoconstriction and dangerous hypertension" }] }
+  ],
+  "mnemonics": [],
+  "cards": [
+    { "q": "Esmolol half-life?", "a": "9 minutes", "evidence": [{ "quote": "half-life of 9 minutes" }] },
+    { "q": "Taper duration?", "a": "Taper over 1 to 2 weeks", "evidence": [{ "quote": "taper over 1 to 2 weeks" }] },
+    { "q": "Overdose antidote?", "a": "Intravenous glucagon", "evidence": [{ "quote": "intravenous glucagon" }] },
+    { "q": "Which HFrEF agents reduce mortality?", "a": "Bisoprolol, carvedilol, metoprolol succinate", "evidence": [{ "quote": "bisoprolol, carvedilol, and metoprolol succinate reduce mortality" }] },
+    { "q": "Why does diaphoresis persist?", "a": "Sweating is cholinergic", "evidence": [{ "quote": "sweating is cholinergic" }] }
+  ],
+  "gaps": []
+}

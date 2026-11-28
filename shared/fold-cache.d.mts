@@ -1,4 +1,4 @@
-import type { Fold, FoldMeta, FoldUnit, Slot, WrittenSection, WrittenUnit } from "./fold-format.mjs";
+import type { EstudioSheet, Fold, FoldMeta, FoldUnit, Slot, WrittenSection, WrittenUnit } from "./fold-format.mjs";
 
 export declare const CHUNK_LIMIT: 12;
 export declare const CHUNK_KEY_VERSION: 1;
@@ -47,10 +47,17 @@ export declare function chunkKey(settings: ChunkSettings, hashes: readonly strin
 export declare function planChunks(units: readonly ChunkUnit[], settings: ChunkSettings, pins?: readonly PinRef[], limit?: number): PlannedChunk[];
 export declare function queueOrder<T extends Chunk>(chunks: readonly T[], visibleId?: string | null): T[];
 export declare function sameWriter(a: Partial<FoldMeta> | null | undefined, b: Partial<FoldMeta> | null | undefined): boolean;
-export declare function foldRecord(meta: FoldMeta, units: readonly FoldUnit[], written: WrittenUnit[], sections: WrittenSection[]): Fold;
+export declare function foldRecord(meta: FoldMeta, units: readonly FoldUnit[], written: WrittenUnit[], sections: WrittenSection[], estudio?: EstudioSheet | null): Fold;
 export declare function assembleFold(
   meta: FoldMeta,
   units: readonly (FoldUnit & { text: string })[],
+  chunks: readonly PlannedChunk[],
+  records: ReadonlyMap<string, Fold>,
+  previous?: Fold | null,
+): Fold;
+export declare function assembleEstudio(
+  meta: FoldMeta,
+  units: readonly (FoldUnit & { text: string; cells?: readonly { elementId: string; row: number; column: number; text: string }[] })[],
   chunks: readonly PlannedChunk[],
   records: ReadonlyMap<string, Fold>,
   previous?: Fold | null,
