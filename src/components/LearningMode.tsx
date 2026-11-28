@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { FolderOpen, Heading, Layers, LayoutDashboard, LockKeyhole, PencilLine, Scissors, Sparkles, StickyNote } from "lucide-react";
 import { sourceLines } from "../../shared/source-lines.mjs";
@@ -55,7 +55,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: RefObject<ReadonlyMap<number, readonly StudyMark[]>> }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
   openBoard?(clips?: CanvasNode[]): void; tutorRequest?: { text: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
@@ -385,6 +385,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     const line = locations.get(entry.id);
     if (line != null) atLine(line).marks.push(entry);
   }
+  // Fold view's Rayos X lens shows these marks under the folded line.
+  useEffect(() => { fold.marks.current = new Map([...byLine].filter(([, group]) => group.marks.length).map(([line, group]) => [line, group.marks])); });
   const ink = new Map<number, Ink[]>(), looseInk: Ink[] = [];
   const confidence = new Map<number, Confidence & { at: string }>();
   for (const item of study.entries) {

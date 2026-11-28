@@ -1,26 +1,31 @@
 import { useRef } from "react";
 import type { CompareDirection } from "../../shared/glass-visual.mjs";
+import "./compare-slider.css";
 
 interface Props {
-  left: string | null;
-  right: string | null;
-  leftAlt: string;
-  rightAlt: string;
+  // Picture panes; an overlay divider (`overlay`) has none and lets the page underneath take the pointer.
+  left?: string | null;
+  right?: string | null;
+  leftAlt?: string;
+  rightAlt?: string;
+  overlay?: boolean;
   value: number;
   direction: CompareDirection;
   before: string;
   after: string;
   hint?: string;
+  label?: string;
+  valueText?(value: number): string;
   onChange(value: number): void;
   onCommit(value: number): void;
   onSwap?(): void;
   onDelete?(): void;
 }
 
-// One compare widget for before/after pictures and, later, any two pieces of glass.
+// One compare widget for before/after pictures and, as an overlay divider, two layouts of one page.
 // The reference library has no ARIA value; this one is a real slider: arrows ±1,
 // Shift ±10, Home/End, and a spoken percentage.
-export default function CompareSlider({ left, right, leftAlt, rightAlt, value, direction, before, after, hint,
+export default function CompareSlider({ left, right, leftAlt = "", rightAlt = "", overlay, value, direction, before, after, hint, label, valueText,
   onChange, onCommit, onSwap, onDelete }: Props) {
   const frame = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointer: number } | undefined>(undefined);
@@ -49,9 +54,9 @@ export default function CompareSlider({ left, right, leftAlt, rightAlt, value, d
     else if (vertical && event.key === "ArrowLeft") { event.preventDefault(); step(-coarse); }
     else if (vertical && event.key === "ArrowRight") { event.preventDefault(); step(coarse); }
   };
-  return <div ref={frame} className="glass-compare" data-compare data-compare-direction={direction}
+  return <div ref={frame} className="glass-compare" data-compare data-compare-direction={direction} data-compare-overlay={overlay || undefined}
     data-compare-value={shown} onPointerDown={event => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || overlay) return;
       const target = event.target as HTMLElement;
       if (target.closest("button, [data-compare-handle]")) return;
       event.preventDefault();
@@ -67,18 +72,20 @@ export default function CompareSlider({ left, right, leftAlt, rightAlt, value, d
       move(event.clientX, event.clientY);
       onCommit(latest.current);
     }} onLostPointerCapture={() => { drag.current = undefined; }}>
-    <div className="glass-compare-pane" data-compare-side="after">
-      {right ? <img src={right} alt={rightAlt} draggable={false} /> : <span className="glass-compare-missing">{rightAlt} missing</span>}
-    </div>
-    <div className="glass-compare-pane" data-compare-side="before" style={{ clipPath: vertical
-      ? `inset(0 0 ${100 - shown}% 0)` : `inset(0 ${100 - shown}% 0 0)` }}>
-      {left ? <img src={left} alt={leftAlt} draggable={false} /> : <span className="glass-compare-missing">{leftAlt} missing</span>}
-    </div>
+    {overlay ? <span className="glass-compare-line" aria-hidden="true" style={vertical ? { top: `${shown}%` } : { left: `${shown}%` }} /> : <>
+      <div className="glass-compare-pane" data-compare-side="after">
+        {right ? <img src={right} alt={rightAlt} draggable={false} /> : <span className="glass-compare-missing">{rightAlt} missing</span>}
+      </div>
+      <div className="glass-compare-pane" data-compare-side="before" style={{ clipPath: vertical
+        ? `inset(0 0 ${100 - shown}% 0)` : `inset(0 ${100 - shown}% 0 0)` }}>
+        {left ? <img src={left} alt={leftAlt} draggable={false} /> : <span className="glass-compare-missing">{leftAlt} missing</span>}
+      </div>
+    </>}
     <span className="glass-compare-label" data-compare-label="before" aria-hidden="true">{before}</span>
     <span className="glass-compare-label" data-compare-label="after" aria-hidden="true">{after}</span>
     <button type="button" className="glass-compare-handle" data-compare-handle tabIndex={0}
-      role="slider" aria-label="Compare before and after" aria-orientation={vertical ? "vertical" : "horizontal"}
-      aria-valuemin={0} aria-valuemax={100} aria-valuenow={shown} aria-valuetext={`${shown} percent ${before}`}
+      role="slider" aria-label={label ?? "Compare before and after"} aria-orientation={vertical ? "vertical" : "horizontal"}
+      aria-valuemin={0} aria-valuemax={100} aria-valuenow={shown} aria-valuetext={valueText ? valueText(shown) : `${shown} percent ${before}`}
       style={vertical ? { top: `${shown}%`, left: "50%" } : { left: `${shown}%`, top: "50%" }}
       onKeyDown={key} onClick={event => event.preventDefault()} onPointerDown={event => {
         if (event.button !== 0) return;
@@ -100,12 +107,12 @@ export default function CompareSlider({ left, right, leftAlt, rightAlt, value, d
       }}>
       <span aria-hidden="true">◂▸</span>
     </button>
-    <div className="glass-compare-tools" role="group" aria-label="Compare">
+    {!overlay && <div className="glass-compare-tools" role="group" aria-label="Compare">
       {onSwap && <button type="button" data-compare-swap aria-label="Swap before and after" title="Swap sides"
         onClick={onSwap}>⇆</button>}
       {onDelete && <button type="button" data-compare-delete aria-label="Delete compare" title="Delete compare"
         onClick={onDelete}>×</button>}
-    </div>
+    </div>}
     {hint && <span className="glass-compare-hint">{hint}</span>}
   </div>;
 }

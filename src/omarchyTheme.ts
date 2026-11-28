@@ -28,7 +28,7 @@ export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "oma
     + `${scope} .rich-document blockquote{border-left:3px solid ${c.accent};background:${mix(c.accent, 5)};padding:1px 15px}`
     + `${scope} .rich-document{caret-color:${c.accent}}${scope} .rich-document hr{height:1px}`
     + `${scope} .hljs-keyword,${scope} .hljs-selector-tag,${scope} .hljs-built_in{color:${c.magenta}}${scope} .hljs-string{color:${c.green}}${scope} .hljs-title{color:${c.blue}}${scope} .hljs-number,${scope} .hljs-literal{color:${c.orange}}${scope} .hljs-comment{color:${mix(c.foreground, 50)};font-style:italic}`
-    + `${scope} *{border-radius:0!important}${scope} .dirty-dot{border-radius:50%!important;background:${c.accent}}`
+    + `${scope} *{border-radius:0!important}${scope} :is(.glass-lens,.fold-lens-ring){border-radius:50%!important}${scope} .dirty-dot{border-radius:50%!important;background:${c.accent}}`
     + `${scope} .file-row.selected{box-shadow:inset 2px 0 ${c.accent}}${scope} .document-title{color:${mix(c.foreground, 50)}}`
     + `${scope} :is(.toast,.more-menu,.sidebar-switcher-menu,.table-tools,.table-size-picker,.about-dialog,.leave-focus){border:2px solid ${c.accent};box-shadow:none}${scope} .toast{background:${c.background};color:${c.foreground}}`
     + `${scope} ::-webkit-scrollbar{width:8px;height:8px}${scope} ::-webkit-scrollbar-thumb{background:${mix(c.foreground, 18)}}${scope} ::-webkit-scrollbar-track{background:transparent}`;

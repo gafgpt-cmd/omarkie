@@ -1769,5 +1769,13 @@
   "Too short to fold": "Prea scurtă pentru pliere",
   "Local fold · model lines when you choose": "Pliere locală · rânduri de model când alegi tu",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}}% din cuvinte",
-  "Estudio needs a model; local stops only for now": "Studiul are nevoie de un model; deocamdată doar niveluri locale"
+  "Estudio needs a model; local stops only for now": "Studiul are nevoie de un model; deocamdată doar niveluri locale",
+  "Evidence": "Dovadă",
+  "Source · line {{line}}": "Sursă · rândul {{line}}",
+  "Open in editor": "Deschide în editor",
+  "Back to fold · Esc": "Înapoi la pliere · Esc",
+  "Corte": "Secțiune",
+  "Compare with Full · C": "Compară cu Complet · C",
+  "Divider between Full and {{level}}": "Separator între Complet și {{level}}",
+  "{{percent}}% shows Full": "{{percent}}% arată Complet"
 }

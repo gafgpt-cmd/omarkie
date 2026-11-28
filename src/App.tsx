@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useEffectEvent, useInsertionEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { FilePlus2, Files, FolderOpen, X, AlertCircle } from "lucide-react";
 import { conflictCopy, copiesOf } from "../shared/sync-conflicts.mjs";
 import { useDocuments } from "./useDocuments";
@@ -38,7 +38,8 @@ const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => (
 const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
 const FoldView = lazy(() => import("./components/fold/FoldView"));
-import type { Stop } from "./components/fold/stops";
+import type { FoldStart, Stop } from "./components/fold/stops";
+import type { StudyMark } from "./components/learning-overlays";
 import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
@@ -120,7 +121,10 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
-  const [foldId, setFoldId] = useState<string | null>(null), [foldStop, setFoldStop] = useState<Stop>("key"), foldStart = useRef(1);
+  const [foldId, setFoldId] = useState<string | null>(null), [foldStop, setFoldStop] = useState<Stop>("key"), foldStart = useRef<FoldStart>({ line: 1 });
+  // Editor reveal from the fold: pending until the fold unmounts, then armed as the way back (Esc or the pill).
+  const foldReveal = useRef<{ id: string; line: number; y: number } | null>(null), [foldReturn, setFoldReturn] = useState<{ id: string; line: number; y: number } | null>(null);
+  const foldMarks = useRef<ReadonlyMap<number, readonly StudyMark[]>>(new Map());
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
@@ -280,28 +284,66 @@ export default function App() {
   const activeIdRef = useRef(active?.id);
   activeIdRef.current = active?.id;
   useEffect(() => { if (!readingVisible && !(learningEnabled && !focus)) setFoldId(null); }, [readingVisible, learningEnabled, focus]);
-  useEffect(() => { setFoldId(null); }, [active?.id]);
+  useEffect(() => { setFoldId(null); setFoldReturn(null); }, [active?.id]);
+  useEffect(() => { if (!readingVisible) setFoldReturn(null); }, [readingVisible]);
   function toggleFold() {
     if (!active || editor()?.composing()) return;
+    setFoldReturn(null);
     if (foldVisible) { setFoldId(null); return; }
-    foldStart.current = editorTopLine();
+    foldStart.current = { line: editorTopLine() };
     if (cleanVisible) setCleanId(null);
     if (!learningEnabled) toggleReading();
     else if (focus) setFocus(false);
     setFoldId(active.id);
   }
   // Back on the page at the fold's top line. Learning mode keeps the page read-only, so focus returns to the fold toggle.
+  // After an editor reveal the source line lands at the y the fold line had, and its block flashes.
   function leaveFold(id: string, line: number, focused: boolean) {
+    const reveal = foldReveal.current?.id === id ? foldReveal.current : null;
+    foldReveal.current = null;
     requestAnimationFrame(() => {
       if (activeIdRef.current !== id) return;
       const handle = editors.current.get(id);
-      const top = handle?.topOfLine(line), scroller = document.querySelector<HTMLElement>(foldScroller);
-      if (scroller && top !== null && top !== undefined) scroller.scrollTop = top;
+      const top = handle?.topOfLine(reveal ? reveal.line : line), scroller = document.querySelector<HTMLElement>(foldScroller);
+      if (scroller && top !== null && top !== undefined) scroller.scrollTop = reveal ? top - (reveal.y - scroller.getBoundingClientRect().top) : top;
+      if (reveal) {
+        const node = handle?.readingContext()?.nodes.findLast(item => item.line <= reveal.line);
+        const block = node && scroller?.querySelector<HTMLElement>(`[data-cid="${CSS.escape(node.id)}"]`);
+        if (block) {
+          block.classList.remove("fold-reveal-flash");
+          void block.offsetWidth;
+          block.classList.add("fold-reveal-flash");
+          window.setTimeout(() => block.classList.remove("fold-reveal-flash"), 1200);
+        }
+        setFoldReturn(reveal);
+        scroller?.querySelector<HTMLElement>(".rich-document")?.focus({ preventScroll: true });
+        return;
+      }
       if (!focused) return;
       const toggle = [...document.querySelectorAll<HTMLElement>(".fold-toggle")].find(element => element.getClientRects().length > 0);
       if (toggle) toggle.focus({ preventScroll: true }); else handle?.focus();
     });
   }
+  // Reopen the fold at the same stop, the revealed line back at its y and focused.
+  function returnToFold() {
+    if (!foldReturn || active?.id !== foldReturn.id || editor()?.composing()) return;
+    foldStart.current = { line: foldReturn.line, y: foldReturn.y, focus: true };
+    setFoldReturn(null);
+    if (cleanVisible) setCleanId(null);
+    setFoldId(foldReturn.id);
+  }
+  const escapeToFold = useEffectEvent((event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || foldVisible) return;
+    if (event.target instanceof Element && event.target.closest('input,textarea,select,[role="dialog"],[role="menu"]')) return;
+    event.preventDefault();
+    returnToFold();
+  });
+  useEffect(() => {
+    if (!foldReturn) return;
+    const back = (event: KeyboardEvent) => escapeToFold(event);
+    window.addEventListener("keydown", back);
+    return () => window.removeEventListener("keydown", back);
+  }, [foldReturn]);
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadSupported = !!window.desktop?.payloadRequest;
   const payloadEnabled = preferences.payloadEnabled && payloadSupported;
@@ -961,12 +1003,15 @@ export default function App() {
             /></Suspense>}
             {foldVisible && <Suspense fallback={null}><FoldView
               key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
-              startLine={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
+              start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
+              reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={() => foldMarks.current}
             /></Suspense>}
+            {foldReturn && !foldVisible && readingVisible && active?.id === foldReturn.id &&
+              <button type="button" className="leave-focus" onClick={returnToFold}>{t("Back to fold · Esc")}</button>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               note={vaultRelative(session.folder, active.path)}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} fold={{ open: foldVisible, stop: foldStop, toggle: toggleFold }} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} fold={{ open: foldVisible, stop: foldStop, toggle: toggleFold, marks: foldMarks }} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
               openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}
