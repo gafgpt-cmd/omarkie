@@ -4,9 +4,9 @@ import { STOPS, stopLabel as labelOf } from "./stops";
 
 const stopLabel = (index: number) => labelOf(STOPS[index]);
 
-// Floating level bar: five local stops on one slider, the model stop apart and off, then the Corte divider toggle.
+// Floating level bar: five local stops on one slider, the model stop apart and off, the Corte divider toggle, then Nueva edición.
 // With marks on the note, each stop also says how many of them it shows.
-export function FoldBar({ index, percents, ticks, disabled, hint, pick, scrub, release, cut, toggleCut }: {
+export function FoldBar({ index, percents, ticks, disabled, hint, pick, scrub, release, cut, toggleCut, edition, toggleEdition }: {
   index: number;
   percents: number[];
   ticks?: readonly { shown: number; total: number }[];
@@ -17,6 +17,9 @@ export function FoldBar({ index, percents, ticks, disabled, hint, pick, scrub, r
   release(): void;
   cut: boolean;
   toggleCut(): void;
+  // The stops fold what changed since an earlier edition; absent when no other note can be one.
+  edition: boolean;
+  toggleEdition?(): void;
 }) {
   const track = useRef<HTMLDivElement>(null), drag = useRef<{ id: number; moved: boolean; x: number } | null>(null);
   // Piecewise between stop label centres, so the thumb lands on a label at each whole stop.
@@ -71,8 +74,12 @@ export function FoldBar({ index, percents, ticks, disabled, hint, pick, scrub, r
         <span>{t("Estudio")}</span><small>{t("off")}</small>
       </button>
       <span className="fold-gap" aria-hidden="true" />
-      <button type="button" className="fold-stop fold-cut-toggle" aria-pressed={cut} disabled={disabled} title={t("Compare with Full · C")} onClick={toggleCut}>
+      <button type="button" className="fold-stop fold-cut-toggle" aria-pressed={cut} disabled={disabled || edition} title={t("Compare with Full · C")} onClick={toggleCut}>
         <span>{t("Corte")}</span><small aria-hidden="true">C</small>
+      </button>
+      <span className="fold-gap" aria-hidden="true" />
+      <button type="button" className="fold-stop fold-edition-toggle" aria-pressed={edition} disabled={!toggleEdition} title={t("Compare with an earlier edition · E")} onClick={toggleEdition}>
+        <span>{t("New edition")}</span><small aria-hidden="true">E</small>
       </button>
     </div>
   </div>;

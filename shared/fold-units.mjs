@@ -1016,10 +1016,11 @@ function pinsByUnit(units, pins) {
 }
 
 /** Computes all five local stops in one pass with D5 raw-block preservation and D4 per-unit monotonic guard.
- *  `options.pins` ([{ line, quote? }]) keep marked sentences through Takeaway; `pinned` lists the stops a pin changed. */
+ *  `options.pins` ([{ line, quote? }]) keep marked sentences through Takeaway; `pinned` lists the stops a pin changed.
+ *  `options.units` reuses units already extracted from this same `markdown`. */
 export function foldDocumentLadder(markdown, options = {}) {
   const source = typeof markdown === "string" ? markdown : "";
-  const units = extractUnits(source, options);
+  const units = options.units ?? extractUnits(source, options);
   const contexts = buildContexts(units);
   const pins = pinsByUnit(units, options.pins);
 
