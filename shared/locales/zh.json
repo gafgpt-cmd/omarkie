@@ -767,5 +767,21 @@
   "That connection is not valid JSON Canvas.": "该连线不是有效的 JSON Canvas。",
   "The board has too many cards or connections.": "白板的卡片或连线过多。",
   "The board is not text.": "白板不是文本。",
-  "The board is not valid JSON.": "白板不是有效的 JSON。"
+  "The board is not valid JSON.": "白板不是有效的 JSON。",
+  "Fold view": "折叠视图",
+  "Fold_rail": "折叠",
+  "Full": "全文",
+  "Brief": "简要",
+  "Key": "要点",
+  "Takeaway": "结论",
+  "Topic": "主题",
+  "Estudio": "学习版",
+  "local": "本地",
+  "now": "刚刚",
+  "off": "关闭",
+  "Fold level": "折叠层级",
+  "Too short to fold": "太短，无法折叠",
+  "Local fold · model lines when you choose": "本地折叠 · 需要时再加模型句子",
+  "{{level}}, {{percent}}% of words": "{{level}}，{{percent}}% 的字词",
+  "Estudio needs a model; local stops only for now": "学习版需要模型；目前仅本地层级"
 }

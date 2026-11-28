@@ -37,6 +37,8 @@ const DocumentTools = lazy(() => import("./components/DocumentTools").then(modul
 const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
 const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
+const FoldView = lazy(() => import("./components/fold/FoldView"));
+import type { Stop } from "./components/fold/stops";
 import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
@@ -118,6 +120,7 @@ export default function App() {
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
+  const [foldId, setFoldId] = useState<string | null>(null), [foldStop, setFoldStop] = useState<Stop>("key"), foldStart = useRef(1);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
@@ -258,7 +261,46 @@ export default function App() {
   }
   function toggleClean() {
     if (cleanVisible) closeClean();
-    else openClean();
+    else { setFoldId(null); openClean(); }
+  }
+  const foldVisible = !!active && readingVisible && foldId === active.id && !cleanVisible;
+  const foldScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
+  // The source line at the top of the page, so the fold opens where the reader was.
+  function editorTopLine() {
+    const handle = editor(), scroller = document.querySelector<HTMLElement>(foldScroller);
+    if (!active || !handle || !scroller) return 1;
+    let low = 1, high = active.content.split("\n").length, best = 1;
+    while (low <= high) {
+      const middle = (low + high) >> 1, top = handle.topOfLine(middle);
+      if (top === null) break;
+      if (top <= scroller.scrollTop + 1) { best = middle; low = middle + 1; } else high = middle - 1;
+    }
+    return best;
+  }
+  const activeIdRef = useRef(active?.id);
+  activeIdRef.current = active?.id;
+  useEffect(() => { if (!readingVisible && !(learningEnabled && !focus)) setFoldId(null); }, [readingVisible, learningEnabled, focus]);
+  useEffect(() => { setFoldId(null); }, [active?.id]);
+  function toggleFold() {
+    if (!active || editor()?.composing()) return;
+    if (foldVisible) { setFoldId(null); return; }
+    foldStart.current = editorTopLine();
+    if (cleanVisible) setCleanId(null);
+    if (!learningEnabled) toggleReading();
+    else if (focus) setFocus(false);
+    setFoldId(active.id);
+  }
+  // Back on the page at the fold's top line. Learning mode keeps the page read-only, so focus returns to the fold toggle.
+  function leaveFold(id: string, line: number, focused: boolean) {
+    requestAnimationFrame(() => {
+      if (activeIdRef.current !== id) return;
+      const handle = editors.current.get(id);
+      const top = handle?.topOfLine(line), scroller = document.querySelector<HTMLElement>(foldScroller);
+      if (scroller && top !== null && top !== undefined) scroller.scrollTop = top;
+      if (!focused) return;
+      const toggle = [...document.querySelectorAll<HTMLElement>(".fold-toggle")].find(element => element.getClientRects().length > 0);
+      if (toggle) toggle.focus({ preventScroll: true }); else handle?.focus();
+    });
   }
   const activeEditorReady = active ? readyEditors[active.id] : undefined;
   const payloadSupported = !!window.desktop?.payloadRequest;
@@ -428,9 +470,9 @@ export default function App() {
     document.documentElement.style.setProperty("--standalone-image-scale", String(preferences.standaloneImageScale));
     pluginRuntime.current?.event("displayChanged");
   }, [preferences]);
-  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, glass: glassOn, "shared-glass": sharedOn };
+  const checked = { source: !renderedView, focus, typewriter, sidebar: sidebarVisible, outline: filesVisible && tab === "outline", files: filesVisible && tab === "files", "file-tree": filesVisible && tab === "tree", "reading-layers": learningEnabled, fold: foldVisible, glass: glassOn, "shared-glass": sharedOn };
   const menuContext = editor()?.context() || "";
-  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, glassOn, sharedOn, tab, active?.id, menuContext]);
+  useEffect(() => { if (window.desktop?.viewState) void window.desktop.viewState(focus, typewriter, sidebarVisible, checked, !active, menuContext).catch(() => {}); }, [focus, typewriter, sidebarVisible, filesVisible, renderedView, learningEnabled, foldVisible, glassOn, sharedOn, tab, active?.id, menuContext]);
   async function refreshThemes() { const items = await host.themes(); setThemes(items); return items; }
   useEffect(() => { if (painted) void refreshThemes().catch(e => session.setMessage(e.message)); }, [painted]);
   const [omarchy, setOmarchy] = useState<OmarchyPalette | null>(null), themeUnset = useRef(!localStorage.getItem("omarkie-theme-chosen"));
@@ -580,6 +622,7 @@ export default function App() {
     else if (["text-larger", "text-smaller", "text-reset"].includes(action)) setPreferences(previous => ({ ...previous, fontSize: action === "text-reset" ? 16 : Math.max(12, Math.min(28, previous.fontSize + (action === "text-larger" ? 1 : -1))) }));
     else if (action === "source") setRenderedView(!renderedView);
     else if (action === "reading-layers") toggleReading();
+    else if (action === "fold") toggleFold();
     else if (action === "glass") toggleGlass();
     else if (action === "shared-glass") toggleSharedGlass();
     else if (action === "glass-export" && active) setDialog("glass-export");
@@ -827,7 +870,7 @@ export default function App() {
             {session.documents.map((record) => record.id === session.activeId || mountedDocuments.has(record.id) ? (
               <div
                 className="document-editor"
-                hidden={record.id !== session.activeId || cleanVisible}
+                hidden={record.id !== session.activeId || cleanVisible || foldVisible}
                 key={record.id}
               >
                 <MarkdownEditor
@@ -876,10 +919,14 @@ export default function App() {
               key={active.id} record={active} current={() => pluginContext.current.active} editor={() => pluginContext.current.editor()}
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
+            {foldVisible && <Suspense fallback={null}><FoldView
+              key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
+              startLine={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
+            /></Suspense>}
             {readingVisible && <Suspense fallback={null}><LearningMode
               key={`${active.id}:${active.path}:${session.folder}`} id={active.id} content={settledContent} editor={editor}
               note={vaultRelative(session.folder, active.path)}
-              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
+              saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} fold={{ open: foldVisible, stop: foldStop, toggle: toggleFold }} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
               openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}

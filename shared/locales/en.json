@@ -1609,5 +1609,21 @@
   "That connection is not valid JSON Canvas.": "That connection is not valid JSON Canvas.",
   "The board has too many cards or connections.": "The board has too many cards or connections.",
   "The board is not text.": "The board is not text.",
-  "The board is not valid JSON.": "The board is not valid JSON."
+  "The board is not valid JSON.": "The board is not valid JSON.",
+  "Fold view": "Fold view",
+  "Fold_rail": "Fold",
+  "Full": "Full",
+  "Brief": "Brief",
+  "Key": "Key",
+  "Takeaway": "Takeaway",
+  "Topic": "Topic",
+  "Estudio": "Estudio",
+  "local": "local",
+  "now": "now",
+  "off": "off",
+  "Fold level": "Fold level",
+  "Too short to fold": "Too short to fold",
+  "Local fold · model lines when you choose": "Local fold · model lines when you choose",
+  "{{level}}, {{percent}}% of words": "{{level}}, {{percent}}% of words",
+  "Estudio needs a model; local stops only for now": "Estudio needs a model; local stops only for now"
 }
