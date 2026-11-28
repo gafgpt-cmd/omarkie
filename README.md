@@ -22,7 +22,7 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 
 ## Features
 
-- **Live Markdown editing**: headings, inline formatting, lists, tasks, tables, links, footnotes and YAML front matter. Edit code and formulas in place, or switch to the full source view.
+- **Live Markdown editing**: headings, inline formatting, lists, tasks, tables (row/column grips, size picker), links, footnotes and YAML front matter. Edit code and formulas in place, or switch to the full source view.
 - **Shared undo/redo**: rich and source views keep edits in order. Switching views preserves history; each IME commit remains one step.
 - **Themes and fonts**: 17 built-in themes, including Toypora, Toyzetlr and live Omarchy themes, plus pickers for the text, heading, code and interface fonts. The fonts are bundled, so documents look the same on any machine.
 - **Omarchy integration**: themes follow the current Omarchy palette and font, and update while the app is open when you run `omarchy-theme-set` or `omarchy-font-set`. Under Omarchy, Omarkie uses the Omarchy theme until you choose another theme yourself.
@@ -37,7 +37,7 @@ Every change is AI reviewed and tested before it lands, with [no-mistakes](https
 - **Private by default**: remote media and embeds are blocked until allowed. [Payload summaries and follow-up questions](docs/document-workflows.md#payload) and [LanguageTool](#grammar-with-languagetool) are opt-in and send text only when requested.
 - **Images, math and diagrams**: [standalone images that fit the reading column](docs/document-workflows.md#reading-images), local and pasted images, Obsidian-style pictures (paths with spaces, `![[picture.png]]`, `![[picture.png|300]]`, `![[picture.png|300x200]]`, found anywhere in the vault), [section embeds](docs/document-workflows.md#section-embeds) (`![[Note#Heading]]`, live and read-only), read-only [Obsidian Bases](docs/document-workflows.md#bases) (`.base` tables and cards, `![[file.base#View]]` embeds), `{width=300}` sizes and `file://` paths, offline MathJax, Mermaid and a [legacy sequence/flow subset](docs/diagrams.md). Optional uploads through a configured PicGo Server.
 - **More than UTF-8**: UTF-16 LE/BE, GB18030, GBK, Big5, Shift JIS and Windows-1252. BOM and mixed line endings survive edits, transforms and undo.
-- **Import and export**: HTML and PDF built in; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
+- **Import and export**: HTML, PDF and PNG image (whole note or selected lines) built in, with optional smart punctuation (en/es/ca quotes, dashes, ellipses) for reading mode and exports; DOCX, ODT, RTF, EPUB and more through [Pandoc](https://pandoc.org/).
 
 ## See what it renders
 
