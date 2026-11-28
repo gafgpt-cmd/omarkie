@@ -9,7 +9,7 @@
 }
 .fold-scroller { position: relative; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .fold-document { padding-bottom: 140px; outline: none; }
-.fold-unit { outline: none; border-radius: 4px; }
+.fold-unit { position: relative; outline: none; border-radius: 4px; }
 /* Far units skip style and layout, so a stop change on a 10k-word note costs what the screen shows. Near ones stay visible: containment would clip gliding words. */
 .fold-unit:not(.fold-near) { content-visibility: auto; contain-intrinsic-size: auto 3em; }
 .fold-unit:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -80,6 +80,121 @@
 .fold-map-node:is([data-kind="section"], [data-kind="line"]):hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--paper)); }
 .fold-map-node[data-current] { border-color: var(--accent); }
 
+/* Glass in the fold: a highlight tints the author's own words; the tint bridges the spaces between them. */
+.fold-document .fold-w[data-mark] { border-radius: 2px; background: var(--fold-mark); box-shadow: 0.25em 0 0 var(--fold-mark); }
+.fold-document .fold-w[data-mark-end] { box-shadow: none; }
+.fold-w[data-mark="amber"], .fold-swatch[data-colour="amber"] { --fold-mark: color-mix(in srgb, var(--warning, #c88730) 40%, transparent); }
+.fold-w[data-mark="blue"], .fold-swatch[data-colour="blue"] { --fold-mark: color-mix(in srgb, var(--accent) 40%, transparent); }
+.fold-w[data-mark="rose"], .fold-swatch[data-colour="rose"] { --fold-mark: color-mix(in srgb, var(--error, #bf566f) 40%, transparent); }
+.fold-w[data-mark="green"], .fold-swatch[data-colour="green"] { --fold-mark: color-mix(in srgb, var(--success, #458249) 40%, transparent); }
+::highlight(fold-mark-amber) { background: color-mix(in srgb, var(--warning, #c88730) 40%, transparent); }
+::highlight(fold-mark-blue) { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+::highlight(fold-mark-rose) { background: color-mix(in srgb, var(--error, #bf566f) 40%, transparent); }
+::highlight(fold-mark-green) { background: color-mix(in srgb, var(--success, #458249) 40%, transparent); }
+
+/* Riders: out-of-fold count and pins in the left margin, deck, ink glyph and your words in the right one. */
+.fold-scroller { container: fold-page / inline-size; }
+.fold-rail { position: absolute; top: 0.2em; z-index: 1; display: flex; flex-direction: column; gap: 4px; width: max-content; font-size: 11.5px; line-height: 1.35; }
+.fold-rail-start { right: calc(100% + 8px); align-items: flex-end; }
+.fold-rail-end { left: calc(100% + 8px); align-items: flex-start; }
+.fold-out, .fold-deck, .fold-glyph, .fold-words {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fold-out { border-style: dashed; }
+.fold-out:hover, .fold-deck:hover, .fold-glyph:hover, .fold-words:hover, .fold-words[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--ink); }
+.fold-out:focus-visible, .fold-deck:focus-visible, .fold-glyph:focus-visible, .fold-words:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fold-out-count, .fold-words-count { display: none; }
+.fold-pin { color: var(--accent); font-size: 13px; line-height: 1; }
+.fold-deck svg { width: 13px; height: 13px; fill: var(--paper); stroke: currentColor; stroke-width: 1.2; }
+.fold-glyph svg { width: 28px; height: 10px; margin-block: 2px; overflow: visible; }
+.fold-ink { position: absolute; z-index: 1; pointer-events: none; }
+.fold-ink svg { display: block; overflow: visible; }
+.fold-words-card { margin: 6px 0 12px; padding: 8px 12px; border: 1px solid var(--border); border-inline-start: 3px solid var(--warning, #c88730); border-radius: 6px; background: var(--sidebar); font-size: 0.92em; }
+.fold-words-card ul { margin: 0; padding-inline-start: 1.1em; }
+.fold-measure { position: absolute !important; top: 0; left: 0; visibility: hidden; pointer-events: none; }
+.fold-cutting .fold-rail, .fold-cutting .fold-ink, .fold-cutting .fold-words-card { display: none; }
+:root[data-appearance="dark"] .fold-document path[data-ink-colour="#24292f"] { fill: #e9e7e2; }
+:root[data-appearance="dark"] .fold-document path[data-ink-colour="#1d4ed8"] { fill: #8fb2ff; }
+:root[data-appearance="dark"] .fold-document path[data-ink-colour="#b42318"] { fill: #ff9a8a; }
+:root[data-appearance="dark"] .fold-document path[data-ink-tool="highlighter"] { fill-opacity: 0.22; mix-blend-mode: screen; }
+/* The glyph is an icon of the ink, not the ink: one solid text-colour line at least 1.6 px thick, whatever the pen or theme. */
+:root .fold-document .fold-glyph path[data-ink-colour] { fill: currentColor; fill-opacity: 1; stroke: currentColor; stroke-width: 1.6px; stroke-linejoin: round; vector-effect: non-scaling-stroke; mix-blend-mode: normal; }
+.fold-glyph { color: var(--ink); }
+/* A narrow page has no margin for words: the chips shrink to their counts and the page makes room for them. */
+@container fold-page (max-width: 1120px) {
+  .rich-document.fold-document[data-marks] { padding-inline: 48px; }
+  .fold-out-label, .fold-words-label { display: none; }
+  .fold-out-count, .fold-words-count { display: inline; }
+  .fold-words-count::before { content: "❝ "; }
+  .fold-out, .fold-deck, .fold-glyph, .fold-words { padding: 1px 6px; }
+  .fold-rail-start { right: calc(100% + 6px); }
+  .fold-rail-end { left: calc(100% + 6px); }
+  .fold-glyph svg { width: 20px; }
+}
+
+/* Making a highlight in the fold; the marks list popovers; the re-anchor tray. */
+.fold-pick { position: absolute; z-index: 5; padding: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); box-shadow: 0 6px 20px rgb(0 0 0 / 16%); }
+.fold-pick > div { display: flex; gap: 4px; }
+.fold-swatch { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: var(--fold-mark); cursor: pointer; }
+.fold-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fold-pop {
+  position: absolute;
+  z-index: 5;
+  width: max-content;
+  max-width: min(360px, calc(100% - 24px));
+  max-height: 50vh;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 8px 26px rgb(0 0 0 / 18%);
+  font-size: 13px;
+}
+.fold-pop ul { margin: 0; padding: 0; list-style: none; }
+.fold-pop li { display: flex; gap: 8px; padding: 4px 6px; }
+.fold-pop li:has(> button) { padding: 0; }
+.fold-pop li > button { display: flex; gap: 8px; width: 100%; padding: 4px 6px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.fold-pop li > button:hover, .fold-pop li > button:focus-visible { background: var(--sidebar); outline: none; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.fold-pop-kind { flex: none; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.fold-pop-text { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.fold-pop-head { margin: 4px 6px 2px; color: var(--muted); font-size: 11.5px; }
+.fold-pop-open { margin: 6px 6px 2px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--sidebar); color: var(--ink); font: inherit; cursor: pointer; }
+.fold-pop-open:focus-visible, .fold-tray-chip:focus-visible, .fold-toast button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fold-tray { position: absolute; top: 10px; right: 16px; z-index: 4; display: grid; justify-items: end; gap: 6px; }
+.fold-tray .fold-pop { position: static; }
+.fold-tray-chip { padding: 3px 10px; border: 1px dashed var(--border); border-radius: 999px; background: var(--sidebar); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.fold-tray-chip:hover, .fold-tray-chip[aria-expanded="true"] { color: var(--ink); }
+.fold-toast {
+  position: absolute;
+  bottom: 88px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 5px 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--sidebar);
+  color: var(--ink);
+  font-size: 12.5px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 14%);
+  translate: -50% 0;
+}
+.fold-toast button { padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--ink); font: inherit; cursor: pointer; }
+
 /* Evidence peek: the line's Full source, inline under it. */
 .fold-peek-card { margin: 6px 0 12px; padding: 8px 12px 6px; border: 1px solid var(--border); border-inline-start: 3px solid var(--accent); border-radius: 6px; background: var(--sidebar); }
 .fold-peek-quote { color: var(--ink); }
@@ -129,29 +244,27 @@
   .fold-reveal-flash { animation: none; background-color: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
 }
 
+/* One panel: the hint line sits on the bar's own surface, never as a second chip over the text. */
 .fold-bar {
   position: absolute;
   inset-inline: 0;
   bottom: 18px;
   display: grid;
   justify-items: center;
-  gap: 4px;
+  gap: 2px;
+  width: fit-content;
   z-index: 2;
-  pointer-events: none;
-}
-.fold-bar-note { margin: 0; padding: 2px 10px; border-radius: 999px; background: var(--sidebar); color: var(--muted); font-size: 12px; }
-.fold-bar-row {
-  display: flex;
-  align-items: stretch;
   max-width: calc(100% - 24px);
+  margin-inline: auto;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 18px;
   background: color-mix(in srgb, var(--sidebar) 92%, transparent);
   box-shadow: 0 6px 22px rgb(0 0 0 / 14%);
-  pointer-events: auto;
   backdrop-filter: blur(8px);
 }
+.fold-bar-note { margin: 0; padding: 2px 10px 0; color: var(--muted); font-size: 12px; }
+.fold-bar-row { display: flex; align-items: stretch; max-width: 100%; }
 .fold-track { display: flex; min-width: 0; border-radius: 999px; cursor: pointer; touch-action: none; user-select: none; }
 .fold-track:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .fold-stop {
@@ -166,6 +279,7 @@
   white-space: nowrap;
 }
 .fold-stop small { font-size: 10.5px; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.fold-stop .fold-ticks { font-size: 10px; opacity: 0.7; }
 .fold-stop[data-current] { background: var(--accent); color: var(--paper); }
 .fold-gap { width: 1px; margin: 4px 6px; border-inline-start: 1px dashed var(--border); }
 .fold-estudio { border: 0; background: none; font: inherit; }
@@ -183,4 +297,4 @@
   .fold-topic .fold-cards { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) { .fold-unit.fold-landed { animation-duration: 0.6s; } }
-@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare { display: none; } }
+@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare, .fold-rail, .fold-pick, .fold-pop, .fold-tray, .fold-toast { display: none; } }

@@ -28,6 +28,10 @@ import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
 import type { CanvasNode } from "../../shared/json-canvas.mjs";
 import { headingNode, snapshotNode } from "../../shared/papercut.mjs";
 import { stopLabel, type Stop } from "./fold/stops";
+import type { FoldMark, FoldMarks } from "./fold/fold-marks";
+import { glassMarks } from "./fold/glass-marks";
+import type { GlassMagnet } from "../glass/glass-model";
+import { squash } from "../../shared/fold-project.mjs";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
@@ -55,7 +59,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
-  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: RefObject<ReadonlyMap<number, readonly StudyMark[]>> }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
+  cleanVisible: boolean; toggleClean(): void; fold: { open: boolean; stop: Stop; toggle(): void; marks: FoldMarks }; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
   openBoard?(clips?: CanvasNode[]): void; tutorRequest?: { text: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
@@ -385,8 +389,50 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     const line = locations.get(entry.id);
     if (line != null) atLine(line).marks.push(entry);
   }
-  // Fold view's Rayos X lens shows these marks under the folded line.
-  useEffect(() => { fold.marks.current = new Map([...byLine].filter(([, group]) => group.marks.length).map(([line, group]) => [line, group.marks])); });
+  // Fold view projects these marks onto its lines; it writes through `highlight` and `undo` only.
+  const [magnets, setMagnets] = useState<GlassMagnet[]>();
+  const foldOpen = fold.open, foldGlass = foldOpen && glass && !!note;
+  useEffect(() => {
+    if (!foldGlass || !note) { setMagnets(undefined); return; }
+    let current = true;
+    const load = () => window.desktop?.glass?.({ note, action: "list" })
+      .then((reply: { ok?: boolean; value?: { magnets?: GlassMagnet[] } } | null) => { if (current && reply?.ok) setMagnets(reply.value?.magnets ?? []); }).catch(() => {});
+    void load();
+    const stop = window.desktop?.onGlassChanged?.((event: { note?: string; action?: string } | undefined) => { if (!event?.note || event.note === note) void load(); });
+    return () => { current = false; stop?.(); };
+  }, [foldGlass, note]);
+  const glassList = useMemo(() => magnets ? glassMarks(magnets, context) : [], [magnets, context]);
+  const foldActions = useRef({ highlight: foldHighlight, undo: undoLast });
+  foldActions.current = { highlight: foldHighlight, undo: undoLast };
+  const published = useRef("");
+  useEffect(() => {
+    if (!foldOpen) return;
+    const marks: FoldMark[] = [];
+    for (const entry of study.entries) if (entry.type === "mark" && visibleSheet(entry.sheet))
+      marks.push({ id: entry.id, kind: "highlight", line: locations.get(entry.id) ?? null, colour: entry.colour, quote: entry.anchor.quote });
+    marks.push(...glassList);
+    const signature = JSON.stringify([marks, !!undo]);
+    if (signature === published.current) return;
+    published.current = signature;
+    fold.marks.set({
+      marks, canUndo: !!undo,
+      study: new Map([...byLine].filter(([, group]) => group.marks.length).map(([line, group]) => [line, group.marks])),
+      highlight: (...args) => foldActions.current.highlight(...args), undo: () => foldActions.current.undo(),
+    });
+  });
+  useEffect(() => () => { published.current = ""; fold.marks.set({ marks: [], study: new Map(), canUndo: false, highlight: async () => false, undo: async () => false }); }, [fold.marks]);
+  useEffect(() => { if (!foldOpen) published.current = ""; }, [foldOpen]);
+  async function foldHighlight(line: number, endLine: number, quote: string, colour: SheetColour) {
+    const current = editor()?.readingContext(), needle = squash(quote);
+    if (!current || !saved || !needle) return false;
+    const blocks = readingBlocks(current).filter(block => block.line >= line && block.line <= endLine);
+    const block = blocks.find(candidate => squash(candidate.block).includes(needle)) ?? blocks[0];
+    if (!block) return false;
+    const start = Math.max(0, block.block.normalize("NFC").replace(/\s+/gu, " ").trimStart().indexOf(quote));
+    const item = { type: "mark", id: crypto.randomUUID(), sheet: activeSheet ?? "highlights", anchor: { ...block, quote }, colour, start, end: start + quote.length } as const;
+    return write(item, { ...item, deleted: true });
+  }
+  function undoLast() { return undo ? write(undo) : Promise.resolve(false); }
   const ink = new Map<number, Ink[]>(), looseInk: Ink[] = [];
   const confidence = new Map<number, Confidence & { at: string }>();
   for (const item of study.entries) {

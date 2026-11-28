@@ -10,10 +10,14 @@ const ATOM = "img,video,iframe,code,.mathjax-node";
 const BLOCK = "p,li,h1,h2,h3,h4,h5,h6,blockquote,tr,dt,dd,figure,pre,aside,details";
 const ALL = (1 << STOPS.length) - 1;
 
-interface WordUnit { kind: "words"; unit: DocumentUnit; root: HTMLElement; present: number; stop: number; tokens: HTMLElement[]; bits: Uint8Array; blocks: HTMLElement[]; blockBits: Uint8Array }
+export interface WordUnit { kind: "words"; unit: DocumentUnit; root: HTMLElement; present: number; stop: number; tokens: HTMLElement[]; bits: Uint8Array; blocks: HTMLElement[]; blockBits: Uint8Array }
 interface RawUnit { kind: "raw"; unit: DocumentUnit; root: HTMLElement; present: number; stop: number; variants: HTMLElement[] }
 export type FoldUnitView = WordUnit | RawUnit;
 interface Move { element: HTMLElement; dx: number; dy: number }
+type Point = readonly [number, number];
+// Mark riders: chips and ink that sit on a unit's margins. `capture` reads where marks are before a commit,
+// `paint` lays the riders out for the committed stops and says which new rider glides out of which point.
+export interface Riders { capture(): void; paint(): Map<HTMLElement, Point> }
 interface Segment { from: number; to: number; moves: Move[]; fades: HTMLElement[]; offset: number }
 // Corte geometry for one near unit: dropped tokens by centre x, dropped raw blocks by left edge (scroller-relative).
 interface CutGeometry { tokens: HTMLElement[]; centres: Float64Array; gone: Uint8Array; blocks: HTMLElement[]; lefts: Float64Array }
@@ -154,6 +158,7 @@ export class FoldEngine {
   cutting = false;
   // The open evidence peek; it glides with its unit.
   peek: HTMLElement | null = null;
+  riders: Riders | null = null;
   private overrides = new Map<FoldUnitView, number>();
   private segment: Segment | null = null;
   private observer: IntersectionObserver;
@@ -198,12 +203,14 @@ export class FoldEngine {
     return html;
   }
 
-  // The visible change; its measure is what the 50 ms commit budget holds.
+  // The visible change; its measure is what the 50 ms commit budget holds. Riders follow the words they ride.
   private commit(stop: number, units = this.units) {
+    this.riders?.capture();
     const start = performance.now();
     for (const unit of units) applyStop(unit, units === this.units ? stop : this.stopOf(unit));
     void this.scroller.scrollHeight;
     performance.measure("omarkie:fold-commit", { start, end: performance.now() });
+    return this.riders?.paint();
   }
 
   private near() {
@@ -223,10 +230,12 @@ export class FoldEngine {
   private pieces(units: FoldUnitView[]) {
     const elements: HTMLElement[] = [];
     for (const unit of units) {
+      if (unit.root.classList.contains("fold-off")) continue;
       if (unit.kind === "words" && this.wordMorph) {
         for (const token of unit.tokens) { if (!token.classList.contains("fold-off")) elements.push(token); }
         if (this.peek && unit.root.contains(this.peek)) elements.push(this.peek);
-      } else if (!unit.root.classList.contains("fold-off")) elements.push(unit.root);
+        elements.push(...unit.root.querySelectorAll<HTMLElement>(".fold-rider"));
+      } else elements.push(unit.root);
     }
     return elements;
   }
@@ -235,13 +244,16 @@ export class FoldEngine {
     return new Map(elements.map(element => { const rect = element.getBoundingClientRect(); return [element, [rect.left, rect.top] as const]; }));
   }
 
-  private glide(before: Map<HTMLElement, readonly [number, number]>, after: HTMLElement[]) {
+  // A new element fades in, or glides out of its origin (a chip leaving the words it stands for).
+  private glide(before: Map<HTMLElement, Point>, after: HTMLElement[], origins?: Map<HTMLElement, Point>) {
     if (reducedMotion()) { this.container.animate([{ opacity: 0.35 }, { opacity: 1 }], { duration: FADE_MS }); return; }
     for (const element of after) {
-      const was = before.get(element);
+      const was = before.get(element) ?? origins?.get(element);
       if (!was) { element.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS, easing: "ease-out" }); continue; }
       const rect = element.getBoundingClientRect(), dx = was[0] - rect.left, dy = was[1] - rect.top;
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) element.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: GLIDE_MS, easing: "ease-out" });
+      const fade = !before.has(element);
+      if (fade || Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) element.animate([{ transform: `translate(${dx}px, ${dy}px)`, ...(fade ? { opacity: 0 } : {}) },
+        { transform: "none", ...(fade ? { opacity: 1 } : {}) }], { duration: GLIDE_MS, easing: "ease-out" });
     }
   }
 
@@ -262,10 +274,11 @@ export class FoldEngine {
     const near = only ? [only] : this.near(), before = glide ? this.measure(this.pieces(near)) : null;
     const next = (unit: FoldUnitView) => only ? (unit === only ? stop : this.stopOf(unit)) : stop;
     const anchor = this.anchor(only ? this.near() : near, unit => this.stopOf(unit), next), anchorTop = anchor?.root.getBoundingClientRect().top;
-    if (only) { this.overrides.set(only, stop); this.commit(stop, [only]); }
-    else { this.overrides.clear(); this.stop = stop; this.value = stop; this.commit(stop); }
+    let origins;
+    if (only) { this.overrides.set(only, stop); origins = this.commit(stop, [only]); }
+    else { this.overrides.clear(); this.stop = stop; this.value = stop; origins = this.commit(stop); }
     if (anchor && anchorTop !== undefined && anchor !== only) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - anchorTop;
-    if (before) this.glide(before, this.pieces(near));
+    if (before) this.glide(before, this.pieces(near), origins);
   }
 
   // A continuous slider value: survivors sit part way between the two stops, dropped words fade.
@@ -294,9 +307,9 @@ export class FoldEngine {
     const anchor = this.anchor(near, () => this.stop, () => target), anchorTop = anchor?.root.getBoundingClientRect().top;
     this.endSegment();
     this.stop = target; this.value = target;
-    this.commit(target);
+    const origins = this.commit(target);
     if (anchor && anchorTop !== undefined) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - anchorTop;
-    this.glide(before, this.pieces(near));
+    this.glide(before, this.pieces(near), origins);
     return target;
   }
 
@@ -382,6 +395,7 @@ export class FoldEngine {
     this.cuts.clear();
     if (on) for (const unit of this.units) { applyStop(unit, 0); markCut(unit, this.stopOf(unit)); }
     else for (const unit of this.units) { clearCut(unit); applyStop(unit, this.stopOf(unit)); }
+    this.riders?.paint();
     void this.scroller.scrollHeight;
     if (anchor && anchorTop !== undefined) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - anchorTop;
     if (on) for (const unit of this.nearUnits) this.cutUnit(unit);
