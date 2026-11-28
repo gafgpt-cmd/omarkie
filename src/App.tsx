@@ -757,6 +757,7 @@ export default function App() {
         firstDocumentPainted.current = true;
       }
       setPaintedDocument(id || null);
+      if (!painted) void window.desktop?.painted?.();
       setPainted(true);
     });
   }, [session.ready, active?.id, activeEditorReady]);
