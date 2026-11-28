@@ -587,7 +587,7 @@ describe("raw-block preservation rule (D5)", () => {
         "> - ```js",
         ">   const x = 1;",
         ">   ```",
-        "> - Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h.",
+        "> - Administer IV furosemide 40 mg if diuretic-naive. Reassess urine output at 2 h. Monitor serum potassium closely.",
       ].join("\n"),
     ];
 
@@ -595,7 +595,12 @@ describe("raw-block preservation rule (D5)", () => {
       const ladder = foldDocumentLadder(md);
       assert.deepEqual(ladder.byUnit[0].violations, []);
       assert.equal(isMonotonic(ladder.byUnit[0].stops), true);
-      assert.equal(ladder.stops.brief.text.includes("Reassess urine output at 2 h."), false);
+      if (ladder.units[0].kind === "quote") {
+        // Blockquotes keep 2 sentences at Brief and 1 at Key.
+        assert.equal(ladder.stops.brief.text.includes("Monitor serum potassium closely."), false);
+      } else {
+        assert.equal(ladder.stops.brief.text.includes("Reassess urine output at 2 h."), false);
+      }
       assert.equal(ladder.stops.key.text.includes("Reassess urine output at 2 h."), false);
       assert.ok(ladder.stops.brief.text.includes("Administer IV furosemide 40 mg if diuretic-naive."));
       assert.ok(ladder.stops.topic.text.includes("Administer IV furosemide 40 mg if diuretic-naive."));
@@ -751,9 +756,15 @@ describe("raw-block preservation rule (D5)", () => {
     assert.equal(codeLadder.stops.key.text.includes("Reassess urine output at 2 h."), false);
     assert.ok(codeLadder.stops.brief.text.includes("> ```js"));
     assert.ok(codeLadder.stops.brief.text.includes("> const dose = 40;"));
-    assert.ok(codeLadder.stops.takeaway.text.includes("> `⋯ 2 lines of code`"));
+    // Unheaded document treats Takeaway as Key (short code stays verbatim), while Topic folds it.
+    assert.equal(codeLadder.stops.takeaway.text, codeLadder.stops.key.text);
     assert.ok(codeLadder.stops.topic.text.includes("> `⋯ 2 lines of code`"));
     assert.equal(codeLadder.stops.topic.text.includes("const dose = 40;"), false);
+    const headedCodeLadder = foldDocumentLadder(`## Dosing\n\n${listQuotedCode}`);
+    assert.deepEqual(headedCodeLadder.byUnit[1].violations, []);
+    assert.ok(headedCodeLadder.stops.takeaway.text.includes("> `⋯ 2 lines of code`"));
+    assert.ok(headedCodeLadder.stops.topic.text.includes("> `⋯ 2 lines of code`"));
+    assert.equal(headedCodeLadder.stops.takeaway.text.includes("const dose = 40;"), false);
     for (const stopId of ["brief", "key"]) {
       const tokens = parser.parse(codeLadder.stops[stopId].text, {});
       assert.equal(tokens.some(t => t.type === "blockquote_open"), true);
