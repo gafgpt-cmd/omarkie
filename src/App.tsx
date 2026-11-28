@@ -376,8 +376,8 @@ export default function App() {
       return new Set(session.documents.filter(record => record.id === session.activeId || current.has(record.id)).map(record => record.id));
     });
   }, [session.activeId, session.documents]);
-  const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage });
-  pluginContext.current = { active, editor, preferences, notify: session.setMessage };
+  const pluginContext = useRef({ active, editor, preferences, notify: session.setMessage, session, importCards });
+  pluginContext.current = { active, editor, preferences, notify: session.setMessage, session, importCards };
   const pluginDefinitions = useMemo(() => [...bundledPlugins, ...installedPlugins].map(definition => ({ ...definition, config: { ...definition.config, ...pluginPreferences[definition.id]?.config } })), [installedPlugins, pluginPreferences]);
   const runtimeDefinitions = useMemo(() => pluginDefinitions.filter(definition => !definition.renderer), [pluginDefinitions]);
   const runtimeEnabled = runtimeDefinitions.some(definition => pluginPreferences[definition.id]?.enabled);
@@ -405,6 +405,32 @@ export default function App() {
       setReadOnly, notify: text => pluginContext.current.notify(text), changed: (id, state) => setPluginStates(previous => ({ ...previous, [id]: state })),
       reservedHotkeys: [...commandsByAction.values()].map(command => commandKey(command) || "").filter(Boolean),
       saveConfig: (id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config: { ...previous[id]?.config, ...config } } })),
+      // Obsidian ports read through this; capabilities.ts decides which port may call what.
+      ports: {
+        snapshot: async () => {
+          const { session } = pluginContext.current;
+          if (!session.folder) throw new Error(t("Open a folder first. Queries read only notes in the open folder."));
+          const value = await host.vaultSnapshot();
+          return {
+            truncated: value.truncated, assets: value.assets.map(asset => ({ relative: asset.relative.replaceAll("\\", "/") })),
+            notes: value.notes.map(note => {
+              const path = note.path || session.files.find(file => file.token === note.token)?.path;
+              const draft = session.documents.find(record => record.path && record.path === path);
+              return { relative: note.relative.replaceAll("\\", "/"), content: draft ? draft.content : note.content };
+            }),
+          };
+        },
+        activeNote: () => {
+          const { active, editor, session } = pluginContext.current;
+          return { relative: vaultRelative(session.folder, active?.path) ?? null, content: editor()?.markdown() ?? active?.content ?? "" };
+        },
+        open: async relative => {
+          const { session } = pluginContext.current;
+          const file = session.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === relative);
+          return !!file && !!await session.openToken(file.token);
+        },
+        draftCards: (drafts, found) => pluginContext.current.importCards(drafts, found),
+      },
     });
     loaded = runtime; pluginRuntime.current = runtime; setRuntimeReady(true);
     }).catch(error => session.setMessage(error.message));
@@ -511,6 +537,20 @@ export default function App() {
       if (halfTile) setDrawer(false);
       setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target, answer });
     }
+  }
+  // Spaced Repetition port drafts open in Study cards for review; Learning mode hosts that panel, so it turns on.
+  function importCards(drafts: NonNullable<FlashcardPanel["imported"]>["drafts"], found: number) {
+    if (!readingSupported) throw new Error(t("Study cards need the desktop app."));
+    if (!active?.path || !session.folder) throw new Error(t("Save this note in the open folder to import its cards."));
+    if (editor()?.composing()) return;
+    if (!learningEnabled) {
+      setPluginPreferences(previous => ({ ...previous, [learningPluginId]: { ...previous[learningPluginId], enabled: true } }));
+      setShowFiles(false);
+      setFocus(false);
+    }
+    setTutor(null);
+    if (halfTile) setDrawer(false);
+    setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, imported: { drafts, found } });
   }
   function toggleReading() {
     if (!readingSupported || editor()?.composing()) return;

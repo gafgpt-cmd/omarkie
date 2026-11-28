@@ -1,4 +1,6 @@
-export interface PluginDefinition { id: string; name: string; description: string; config: Record<string, any>; builtin?: boolean; renderer?: boolean; load?: () => Promise<(context: any) => any>; factory?: (context: any) => any; url?: string }
+import type { Capability } from "./ports/capabilities.ts";
+/** `origin: "obsidian"` marks a first-party port of an Obsidian plugin; it reaches notes only through `capabilities`. */
+export interface PluginDefinition { id: string; name: string; description: string; config: Record<string, any>; builtin?: boolean; renderer?: boolean; load?: () => Promise<(context: any) => any>; factory?: (context: any) => any; url?: string; origin?: "obsidian"; capabilities?: readonly Capability[] }
 export interface PluginState { enabled: boolean; status: "disabled" | "loading" | "ready" | "error"; error?: string }
 export interface PluginPreference { enabled: boolean; config?: Record<string, any> }
 export type PluginPreferences = Record<string, PluginPreference>;

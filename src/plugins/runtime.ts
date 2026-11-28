@@ -5,6 +5,7 @@ import { PluginEvents } from "./events.ts";
 import { imeKey } from "../editor/composition.ts";
 import { StateRecorder } from "./stateRecorder.ts";
 import { t } from "../i18n.ts";
+import { portHost, type PortProvider } from "./ports/capabilities.ts";
 
 interface Options {
   getMarkdown(): string; getPath(): string | null; getSelection(): string;
@@ -24,6 +25,7 @@ interface Options {
   editable?(): boolean;
   getWidth?(): number;
   setWidth?(columns: number): void;
+  ports?: PortProvider;
 }
 interface Running {
   definition: PluginDefinition; plugin: any; disposed: boolean;
@@ -288,7 +290,10 @@ export class PluginRuntime {
     Object.defineProperty(file, "isLocked", { configurable: true, enumerable: true, get: () => this.locks.size > 0, set: value => value ? file.lock() : file.unlock() });
     item.file = file;
     const entities = { get eWrite() { const root = document.getElementById("write"); if (!root) throw new Error(t("请先打开文档。")); return track(root); }, get eContent() { const content = document.querySelector(".writing-area"); return content && track(content); }, querySelectorInWrite: (selector: string) => { const element = [...(this.write()?.querySelectorAll(selector) || [])].find(element => !isSpacer(element)); return element ? track(element) : null; }, querySelectorAllInWrite: (selector: string) => [...(this.write()?.querySelectorAll(selector) || [])].filter(element => !isSpacer(element)).map(track) };
+    const ports = portHost(item.definition, this.options.ports);
+    own(ports.dispose);
     const utils: any = {
+      ports: ports.api,
       PLUGIN_LOAD_ABORT: Symbol("PLUGIN_LOAD_ABORT"), supportHasSelector: CSS.supports("selector(:has(*))"), entities,
       reading: {
         root: this.write, own,

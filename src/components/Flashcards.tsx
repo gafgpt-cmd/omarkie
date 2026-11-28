@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { cardsPerNote, dueCards, sourceDraft, suggestCards, type CardDraft, type StoredCard } from "../flashcards";
+import { cardsPerNote, dueCards, freshImports, sourceDraft, suggestCards, type CardDraft, type StoredCard } from "../flashcards";
 import type { RecallRating } from "../flashcard-schedule";
 import type { ReadingEntry, ReadingStore, ReadingTarget } from "../../shared/reading-store.ts";
 import { collectReadingItems } from "../../shared/reading-collector.ts";
@@ -11,6 +11,8 @@ import "./flashcards.css";
 export interface FlashcardPanel {
   target?: ReadingTarget;
   answer?: { front: string; back: string };
+  /** Drafts proposed by the Spaced Repetition port; `found` counts every card it parsed. */
+  imported?: { drafts: Omit<CardDraft, "id" | "type">[]; found: number };
 }
 
 type Draft = CardDraft & { selected: boolean };
@@ -30,6 +32,7 @@ export default function Flashcards({ id, content, panel, close }: {
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [importNote, setImportNote] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const locked = useRef(false), action = useRef<HTMLButtonElement>(null);
   const region = useRef<HTMLElement>(null);
@@ -42,8 +45,18 @@ export default function Flashcards({ id, content, panel, close }: {
     void store(id, { action: "list", types: ["card", "note"], studyNotes: true }).then(items => {
       if (!current) return;
       setEntries(items);
-      if (panel.target && items.filter(item => item.type === "card").length < cardsPerNote) {
-        setDrafts([{ ...sourceDraft(panel.target, t("[…]"), fallback(panel.target)), ...panel.answer, id: crypto.randomUUID(), type: "card", selected: true }]);
+      if (panel.imported) {
+        const { fresh, saved, skipped } = freshImports(items.filter(item => item.type === "card"), panel.imported.drafts);
+        setDrafts(fresh.map(draft => ({ ...draft, id: crypto.randomUUID(), type: "card", selected: true })));
+        setImportNote([
+          t("Spaced Repetition: {{found}} cards found, {{fresh}} new.", { found: panel.imported.found, fresh: fresh.length }),
+          saved ? t("{{saved}} already saved.", { saved }) : "",
+          skipped ? t("{{skipped}} left out: a note holds at most {{limit}} cards.", { skipped, limit: cardsPerNote }) : "",
+        ].filter(Boolean).join(" "));
+      } else {
+        setImportNote("");
+        if (panel.target && items.filter(item => item.type === "card").length < cardsPerNote)
+          setDrafts([{ ...sourceDraft(panel.target, t("[…]"), fallback(panel.target)), ...panel.answer, id: crypto.randomUUID(), type: "card", selected: true }]);
       }
     }).catch(error => { if (current) setError((error as Error).message); })
       .finally(() => { if (current) setLoading(false); });
@@ -116,7 +129,8 @@ export default function Flashcards({ id, content, panel, close }: {
         </> : <p role="status">{session.rated ? t("复习完成。") : t("资料库没有到期的新卡或复习卡。")}</p>}
         <div className="dialog-actions"><button type="button" disabled={busy} onClick={() => setSession(null)}>{t("返回卡片")}</button></div>
       </> : drafts ? <form onSubmit={event => { event.preventDefault(); void run(saveCards); }}>
-        {drafts.length === 0 && <p role="status">{t("没有可用的新高亮或页边笔记。")}</p>}
+        {importNote && <p className="dialog-note" role="status">{importNote}</p>}
+        {drafts.length === 0 && <p role="status">{panel.imported ? t("No new cards to import from this note.") : t("没有可用的新高亮或页边笔记。")}</p>}
         {drafts.length > 0 && <p className="dialog-note">{t("检查并编辑卡片，然后保存选中的卡片。")}</p>}
         {drafts.map((draft, index) => <fieldset key={draft.id} disabled={busy}>
           <legend><label className="checkbox-option"><input type="checkbox" checked={draft.selected} disabled={busy} onChange={event => {
