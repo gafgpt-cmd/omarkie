@@ -29,40 +29,54 @@ export function assertFrameCadence(gaps, gesture) {
 }
 
 // What the page itself spends: the app stamps each drag frame's own handler work on data-*-ms, and
-// long tasks name any stall that could swallow a frame.
+// renderer main-thread tasks name any stall that could swallow a frame. Tasks are gated on thread CPU
+// time (trace `tdur`): wall time on a loaded host also counts the time other processes held the core.
+const traces = new WeakMap();
+
 export async function watchWork(page) {
   await page.evaluate(() => {
     window.__workEvents = [];
-    window.__workLong = [];
     window.__eventObserver = new PerformanceObserver(list => {
       for (const entry of list.getEntries()) window.__workEvents.push(entry.processingEnd - entry.processingStart);
     });
     window.__eventObserver.observe({ type: "event", durationThreshold: 0 });
-    window.__workLongStart = performance.now();
-    window.__workObserver = new PerformanceObserver(list => {
-      for (const entry of list.getEntries()) window.__workLong.push(entry.duration);
-      window.__workLongDetail = [...(window.__workLongDetail ?? []), ...list.getEntries().map(entry => ({ duration: Math.round(entry.duration), at: Math.round(entry.startTime - (window.__workLongStart ?? 0)) }))];
-    });
-    window.__workObserver.observe({ entryTypes: ["longtask"] });
   });
+  const cdp = await page.context().newCDPSession(page), events = [];
+  cdp.on("Tracing.dataCollected", ({ value }) => events.push(...value));
+  // RunTask with thread time is all the gate needs; the timeline's per-call events would add their own CPU.
+  await cdp.send("Tracing.start", { transferMode: "ReportEvents", traceConfig: { includedCategories: ["disabled-by-default-devtools.timeline"] } });
+  traces.set(page, { cdp, events });
+}
+
+async function mainThreadTasks(page) {
+  const { cdp, events } = traces.get(page);
+  traces.delete(page);
+  const done = new Promise(resolve => cdp.once("Tracing.tracingComplete", resolve));
+  await cdp.send("Tracing.end");
+  await done;
+  await cdp.detach();
+  const main = new Set(events.filter(event => event.name === "thread_name" && event.args?.name === "CrRendererMain").map(event => `${event.pid}:${event.tid}`));
+  const tasks = events.filter(event => event.name === "RunTask" && event.ph === "X" && main.has(`${event.pid}:${event.tid}`));
+  assert.ok(tasks.length > 0 && tasks.every(task => Number.isFinite(task.tdur)), "the trace has renderer tasks with thread time");
+  return tasks.map(task => ({ cpu: task.tdur / 1000, wall: task.dur / 1000 }));
 }
 
 export async function readWork(page) {
-  return page.evaluate(() => {
+  const events = await page.evaluate(() => {
     window.__eventObserver?.disconnect();
-    window.__workObserver?.disconnect();
     // Live entries plus the browser's recent buffer: a long gesture can outrun the observer queue.
     const buffered = (performance.getEntriesByType("event") ?? []).map(entry => entry.processingEnd - entry.processingStart);
-    return { events: [...(window.__workEvents ?? []), ...buffered], longTasks: window.__workLong ?? [], detail: window.__workLongDetail ?? [] };
+    return [...(window.__workEvents ?? []), ...buffered];
   });
+  return { events, longTasks: await mainThreadTasks(page) };
 }
 
 export function assertWorkBudget({ work, longTasks = [], gesture, p95 = 8, longest = 50, minimum = 8 }) {
   const sorted = [...work].sort((a, b) => a - b);
   const count = sorted.length, p = sorted[Math.max(0, Math.ceil(count * 0.95) - 1)] ?? 0, max = sorted.at(-1) ?? 0;
-  const longestTask = longTasks.length ? Math.max(...longTasks) : 0;
-  console.log(`${gesture}: handler p95 ${p.toFixed(1)} ms, max ${max.toFixed(1)} ms over ${count} events; longest task ${longestTask.toFixed(0)} ms`);
+  const slowest = longTasks.reduce((worst, task) => task.cpu > worst.cpu ? task : worst, { cpu: 0, wall: 0 });
+  console.log(`${gesture}: handler p95 ${p.toFixed(1)} ms, max ${max.toFixed(1)} ms over ${count} events; slowest task ${slowest.cpu.toFixed(0)} ms CPU (${slowest.wall.toFixed(0)} ms wall) of ${longTasks.length}`);
   assert.ok(count >= minimum, `${gesture}: only ${count} timed pointer events`);
   assert.ok(p <= p95, `${gesture}: handler p95 ${p.toFixed(1)} ms must stay under ${p95} ms`);
-  assert.ok(longestTask <= longest, `${gesture}: a ${longestTask.toFixed(0)} ms long task blocks the page (budget ${longest} ms)`);
+  assert.ok(slowest.cpu <= longest, `${gesture}: a ${slowest.cpu.toFixed(0)} ms CPU task blocks the page (budget ${longest} ms)`);
 }
