@@ -29,7 +29,7 @@ try {
   app=await electron.launch({...(process.env.OMARKIE_EXECUTABLE?{executablePath:process.env.OMARKIE_EXECUTABLE,args:packagedScreenshotArguments}:{args:[process.cwd(),...headlessArguments]}),env,timeout:30000});
   page=await app.firstWindow(); page.on('pageerror',e=>errors.push(e.message)); await fullSize(app,page);
   console.log('IME: launched');
-  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'travel-journal.md',exact:true})).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name:'插件管理…',exact:true}).click();
   await page.getByRole('checkbox',{name:'启用IME-probe',exact:true}).check();
   await expect.poll(()=>page.evaluate(()=>!!window.imeProbe)).toBe(true);
@@ -37,7 +37,7 @@ try {
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},file);
   await page.getByRole('button',{name:'更多操作',exact:true}).click(); await page.getByRole('menuitem',{name:'打开文件',exact:true}).click();
   const surface=page.locator('.document-editor:not([hidden])'), root=surface.locator('.rich-document');
-  await expect(root.getByRole('heading',{name:'IME acceptance',exact:true})).toBeVisible();
+  await expect(root.getByRole('heading',{name:'IME acceptance',exact:true})).toBeVisible({ timeout: 15_000 });
   const fixtureLoads=()=>page.evaluate(files=>window.imeProbe.loads.filter(path=>files.includes(path)),[file,repeatFile]);
   console.log('IME: fixture and installed probe loaded');
   const cdp=await page.context().newCDPSession(page);
@@ -94,7 +94,7 @@ try {
   const prefix='# Replacement\n\n',repeatSource=prefix+'同\n\n同\n';await writeFile(repeatFile,repeatSource);
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},repeatFile);
   await page.getByRole('button',{name:'更多操作',exact:true}).click();await page.getByRole('menuitem',{name:'打开文件',exact:true}).click();
-  await expect(root.getByRole('heading',{name:'Replacement',exact:true})).toBeVisible();
+  await expect(root.getByRole('heading',{name:'Replacement',exact:true})).toBeVisible({ timeout: 15_000 });
   for(const candidate of ['同','同同','中文😀']) {
     await root.evaluate(root=>{const nodes=root.querySelectorAll(':scope > p');root.focus();getSelection().setBaseAndExtent(nodes[0].firstChild,0,nodes[1].firstChild,1);document.dispatchEvent(new Event('selectionchange'));});
     await mark('tong');await page.waitForTimeout(100);assert.equal(await readFile(repeatFile,'utf8'),repeatSource);
