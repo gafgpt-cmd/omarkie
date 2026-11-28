@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld("desktop", {
   voice: request => call("voice", request),
   checkGrammar: (url, approvedOrigin, text) => call("checkGrammar", url, approvedOrigin, text),
   ready: () => call("ready"),
-  painted: () => call("painted"),
   cancelClose: () => call("cancelClose"),
   fileOperation: operation => call("fileOperation", operation),
   recent: () => call("recent"),
