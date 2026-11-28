@@ -1767,5 +1767,20 @@
   "Too short to fold": "Demasiado corta para plegar",
   "Local fold · model lines when you choose": "Pliegue local · líneas del modelo cuando elijas",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}} % de las palabras",
-  "Estudio needs a model; local stops only for now": "Estudio necesita un modelo; por ahora solo niveles locales"
+  "Estudio needs a model; local stops only for now": "Estudio necesita un modelo; por ahora solo niveles locales",
+  "How Topic shows": "Cómo se muestra el Tema",
+  "Cards": "Tarjetas",
+  "Map": "Mapa",
+  "Topic cards": "Tarjetas del tema",
+  "Topic map": "Mapa del tema",
+  "Opening": "Inicio",
+  "Open any line at {{level}} with a click or Enter": "Abre cualquier línea en {{level}} con un clic o Intro",
+  "{{count}} rows": "{{count}} filas",
+  "{{count}} rows_one": "{{count}} fila",
+  "{{count}} rows_many": "{{count}} de filas",
+  "{{count}} rows_other": "{{count}} filas",
+  "{{count}} lines": "{{count}} líneas",
+  "{{count}} lines_one": "{{count}} línea",
+  "{{count}} lines_many": "{{count}} de líneas",
+  "{{count}} lines_other": "{{count}} líneas"
 }

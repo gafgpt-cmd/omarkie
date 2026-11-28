@@ -910,5 +910,16 @@
   "Too short to fold": "太短，无法折叠",
   "Local fold · model lines when you choose": "本地折叠 · 需要时再加模型句子",
   "{{level}}, {{percent}}% of words": "{{level}}，{{percent}}% 的字词",
-  "Estudio needs a model; local stops only for now": "学习版需要模型；目前仅本地层级"
+  "Estudio needs a model; local stops only for now": "学习版需要模型；目前仅本地层级",
+  "How Topic shows": "主题层的显示方式",
+  "Cards": "卡片",
+  "Map": "导图",
+  "Topic cards": "主题卡片",
+  "Topic map": "主题导图",
+  "Opening": "开头",
+  "Open any line at {{level}} with a click or Enter": "单击或按 Enter 键，在{{level}}层打开任意一行",
+  "{{count}} rows": "{{count}} 行",
+  "{{count}} rows_other": "{{count}} 行",
+  "{{count}} lines": "{{count}} 行",
+  "{{count}} lines_other": "{{count}} 行"
 }

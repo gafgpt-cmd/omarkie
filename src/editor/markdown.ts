@@ -239,6 +239,15 @@ export function renderMarkdown(
 ) {
   return cleanHtml(md.render(source, { ...environment, documentId }), documentId, typeof environment.standalone === "boolean" ? environment.standalone : undefined);
 }
+/** renderMarkdown for many small sources with one sanitizer pass; a source with unbalanced HTML sends the batch one by one. */
+export function renderMarkdownEach(sources: readonly string[], documentId?: string) {
+  const template = document.createElement("template");
+  template.innerHTML = cleanHtml(sources.map(source => `<div>${md.render(source, { documentId })}</div>`).join(""), documentId);
+  const parts = [...template.content.children];
+  return parts.length === sources.length && parts.every(part => part.localName === "div")
+    ? parts.map(part => part.innerHTML)
+    : sources.map(source => renderMarkdown(source, documentId));
+}
 
 export function speechText(source: string) {
   const content = (tokens: Token[]): string => tokens.map(token => {

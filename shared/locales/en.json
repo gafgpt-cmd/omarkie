@@ -1752,5 +1752,18 @@
   "Too short to fold": "Too short to fold",
   "Local fold · model lines when you choose": "Local fold · model lines when you choose",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}}% of words",
-  "Estudio needs a model; local stops only for now": "Estudio needs a model; local stops only for now"
+  "Estudio needs a model; local stops only for now": "Estudio needs a model; local stops only for now",
+  "How Topic shows": "How Topic shows",
+  "Cards": "Cards",
+  "Map": "Map",
+  "Topic cards": "Topic cards",
+  "Topic map": "Topic map",
+  "Opening": "Opening",
+  "Open any line at {{level}} with a click or Enter": "Open any line at {{level}} with a click or Enter",
+  "{{count}} rows": "{{count}} rows",
+  "{{count}} rows_one": "{{count}} row",
+  "{{count}} rows_other": "{{count}} rows",
+  "{{count}} lines": "{{count}} lines",
+  "{{count}} lines_one": "{{count}} line",
+  "{{count}} lines_other": "{{count}} lines"
 }
