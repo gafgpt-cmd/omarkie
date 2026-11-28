@@ -564,7 +564,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     <button type="button" onClick={() => openCard()}>{t("学习卡片")}</button>
     <button type="button" onClick={() => setSearching(true)}>{t("Search scraps")}</button>
     <StudyQueue note={note} />
-    {openBoard && <button type="button" onClick={() => openBoard()} title={t("Open the board used last in this folder")}><LayoutDashboard size={14} />{t("Papercut board")}</button>}
+    {openBoard && <button type="button" className="study-board" aria-label={t("Papercut board")} onClick={() => openBoard()} title={t("Open the board used last in this folder")}><LayoutDashboard size={14} /><span>{t("Papercut board")}</span></button>}
     <button type="button" disabled={busy} onClick={() => void store(id, { action: "export" }).catch(err => setError(t(err.message)))}>{t("导出笔记和卡片")}</button>
     {undo && <button type="button" disabled={busy} onClick={() => void write(undo)}>{t("撤销")}</button>}
   </div>;
