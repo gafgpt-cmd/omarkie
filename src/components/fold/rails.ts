@@ -2,13 +2,29 @@
 // tokens; everything else rides the margins of the line that holds it, or of the line that absorbed it.
 import { inkPath, type InkPoint } from "../../../shared/ink-core.mjs";
 import { projectAt, projectMarks, squash, unitAtLine, type Projection } from "../../../shared/fold-project.mjs";
+import type { KeptClass } from "../../../shared/fold-strip.mjs";
 import type { FoldDocumentLadder } from "../../../shared/fold-units.mjs";
 import type { SheetColour } from "../../../shared/reading-store.ts";
 import { resolveBox } from "../../glass/ink-model";
 import { t } from "../../i18n";
 import type { FoldMark } from "./fold-marks";
 import type { FoldEngine, FoldUnitView, Riders, WordUnit } from "./morph";
-import { STOPS } from "./stops";
+import { STOPS, stopLabel, type Stop } from "./stops";
+
+/** Post-fold hints, from the strip's choice; quiet, and never applied by themselves. */
+export interface RailHints {
+  // Units a reader's own mark pins (★); any other pinned unit was kept by a suggested red flag (⚑).
+  starred: ReadonlySet<number>;
+  // What a reader's pin keeps that the plain stop would drop, per unit and stop.
+  kept: ReadonlyMap<number, Partial<Record<Stop, KeptClass>>>;
+  // Out-of-fold marks a pin would keep: their group is let fold.
+  keepable(mark: FoldMark): boolean;
+}
+const NO_HINTS: RailHints = { starred: new Set(), kept: new Map(), keepable: () => false };
+
+function keptLabel(kept: KeptClass) {
+  return kept === "negation" ? t("Negation kept") : kept === "condition" ? t("Condition kept") : kept === "restriction" ? t("Limit kept") : t("Number kept");
+}
 
 type Point = readonly [number, number];
 type Side = "start" | "end";
@@ -109,6 +125,7 @@ export class FoldRails implements Riders {
   private seen = new Map<string, Point>();
   private riders = new Map<number, Map<string, HTMLElement>>();
   private sizes = new Map<string, readonly [number, number]>();
+  private hints = NO_HINTS;
 
   constructor(engine: FoldEngine, container: HTMLElement, ladder: FoldDocumentLadder, changed: () => void) {
     this.engine = engine; this.container = container; this.ladder = ladder; this.changed = changed;
@@ -131,6 +148,8 @@ export class FoldRails implements Riders {
     });
   }
 
+  // True when the hints changed, so the caller repaints.
+  setHints(hints: RailHints) { if (this.hints === hints) return false; this.hints = hints; return true; }
   unitOf(mark: FoldMark) { return unitAtLine(this.lines, mark.line); }
 
   private stopAt(index: number) { return this.engine.cutting ? 0 : this.engine.stopOf(this.engine.units[index]); }
@@ -249,15 +268,24 @@ export class FoldRails implements Riders {
       element.title = label;
       return element;
     };
-    const present = shows(unit.present, stop) && !this.engine.cutting;
-    if (present && this.ladder.byUnit[index].pinned.includes(STOPS[stop])) {
-      const pin = place(rail("start"), "pin", "span", "fold-pin", []), label = t("Pinned: kept in the author's words");
-      pin.setAttribute("role", "img"); pin.setAttribute("aria-label", label); pin.title = label; pin.textContent = "★";
+    const present = shows(unit.present, stop) && !this.engine.cutting, level = STOPS[stop];
+    if (present && this.ladder.byUnit[index].pinned.includes(level)) {
+      const own = this.hints.starred.has(index), kept = own ? this.hints.kept.get(index)?.[level] : undefined;
+      const pin = place(rail("start"), "pin", "span", own ? "fold-pin" : "fold-pin fold-flag", []);
+      const label = own ? t("Pinned: kept in the author's words") : t("Red flag: kept by suggestion");
+      const why = kept && t("{{kept}}: {{level}} alone would drop it from your highlight", { kept: keptLabel(kept), level: stopLabel(level) });
+      pin.setAttribute("role", "img"); pin.setAttribute("aria-label", why ? `${label} · ${why}` : label); pin.title = why ? `${label}\n${why}` : label;
+      pin.textContent = own ? "★" : "⚑";
+      if (kept) place(rail("start"), "kept", "span", "fold-kept", []).replaceChildren(span("fold-kept-label", keptLabel(kept)));
     }
     const out = present ? projection.out.get(index) : undefined;
     if (out) {
       const chip = button(rail("start"), "out", "fold-out", out, "out", t("{{n}} marks out of fold at this line: show them", { n: out.length }));
       chip.replaceChildren(span("fold-out-label", t("Out of fold · {{n}}", { n: out.length })), span("fold-out-count", String(out.length)));
+      // Brief to Takeaway keep pinned marks; offer it for marks whose group the reader lets fold.
+      const keep = stop >= 1 && stop <= 3 ? out.filter(mark => this.hints.keepable(mark) && this.engine.units[this.unitOf(mark)]?.kind === "words") : [];
+      if (keep.length) button(rail("start"), "keep", "fold-keep", keep, "keep", t("Keep {{count}} marks in the fold", { count: keep.length }))
+        .replaceChildren(span("fold-keep-label", t("Keep")), span("fold-keep-icon", "+"));
     }
     const deck = present ? projection.decks.get(index) : undefined;
     if (deck) {

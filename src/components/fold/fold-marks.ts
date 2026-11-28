@@ -33,6 +33,9 @@ export interface FoldMarksState {
   highlight(line: number, endLine: number, quote: string, colour: SheetColour): Promise<boolean>;
   // Take back the last study change.
   undo(): Promise<boolean>;
+  // Highlights that could still become cards (the note's card limit counted), and opening their drafts for review.
+  uncarded: number;
+  makeCards(): void;
 }
 
 export interface FoldMarks {
@@ -41,10 +44,10 @@ export interface FoldMarks {
   subscribe(listener: () => void): () => void;
 }
 
-const empty: FoldMarksState = { marks: [], study: new Map(), canUndo: false, highlight: async () => false, undo: async () => false };
+export const emptyFoldMarks: FoldMarksState = { marks: [], study: new Map(), canUndo: false, highlight: async () => false, undo: async () => false, uncarded: 0, makeCards: () => {} };
 
 export function createFoldMarks(): FoldMarks {
-  let state = empty;
+  let state = emptyFoldMarks;
   const listeners = new Set<() => void>();
   return {
     get: () => state,

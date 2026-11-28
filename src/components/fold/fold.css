@@ -38,7 +38,7 @@
 .fold-rail { position: absolute; top: 0.2em; z-index: 1; display: flex; flex-direction: column; gap: 4px; width: max-content; font-size: 11.5px; line-height: 1.35; }
 .fold-rail-start { right: calc(100% + 8px); align-items: flex-end; }
 .fold-rail-end { left: calc(100% + 8px); align-items: flex-start; }
-.fold-out, .fold-deck, .fold-glyph, .fold-words {
+.fold-out, .fold-deck, .fold-glyph, .fold-words, .fold-keep {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -52,10 +52,14 @@
   cursor: pointer;
 }
 .fold-out { border-style: dashed; }
-.fold-out:hover, .fold-deck:hover, .fold-glyph:hover, .fold-words:hover, .fold-words[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--ink); }
-.fold-out:focus-visible, .fold-deck:focus-visible, .fold-glyph:focus-visible, .fold-words:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.fold-out-count, .fold-words-count { display: none; }
+.fold-out:hover, .fold-deck:hover, .fold-glyph:hover, .fold-words:hover, .fold-words[aria-expanded="true"], .fold-keep:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); color: var(--ink); }
+.fold-out:focus-visible, .fold-deck:focus-visible, .fold-glyph:focus-visible, .fold-words:focus-visible, .fold-keep:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fold-out-count, .fold-words-count, .fold-keep-icon { display: none; }
 .fold-pin { color: var(--accent); font-size: 13px; line-height: 1; }
+/* A red flag the suggestion keeps, not the reader's own pin. */
+.fold-flag { color: var(--warning, #c88730); }
+.fold-kept { color: var(--muted); font-size: 10.5px; font-style: italic; white-space: nowrap; }
+.fold-keep { color: var(--accent); }
 .fold-deck svg { width: 13px; height: 13px; fill: var(--paper); stroke: currentColor; stroke-width: 1.2; }
 .fold-glyph svg { width: 28px; height: 10px; margin-block: 2px; overflow: visible; }
 .fold-ink { position: absolute; z-index: 1; pointer-events: none; }
@@ -64,6 +68,8 @@
 .fold-words-card ul { margin: 0; padding-inline-start: 1.1em; }
 .fold-measure { position: absolute !important; top: 0; left: 0; visibility: hidden; pointer-events: none; }
 .fold-cutting .fold-rail, .fold-cutting .fold-ink, .fold-cutting .fold-words-card { display: none; }
+/* Corte compares words; the strip keeps its place so nothing jumps, but steps out of the divider's way. */
+.fold-cutting .fold-strip { visibility: hidden; }
 :root[data-appearance="dark"] .fold-document path[data-ink-colour="#24292f"] { fill: #e9e7e2; }
 :root[data-appearance="dark"] .fold-document path[data-ink-colour="#1d4ed8"] { fill: #8fb2ff; }
 :root[data-appearance="dark"] .fold-document path[data-ink-colour="#b42318"] { fill: #ff9a8a; }
@@ -74,15 +80,35 @@
 /* A narrow page has no margin for words: the chips shrink to their counts and the page makes room for them. */
 @container fold-page (max-width: 1120px) {
   .rich-document.fold-document[data-marks] { padding-inline: 48px; }
-  .fold-out-label, .fold-words-label { display: none; }
-  .fold-out-count, .fold-words-count { display: inline; }
+  .fold-out-label, .fold-words-label, .fold-keep-label, .fold-kept { display: none; }
+  .fold-out-count, .fold-words-count, .fold-keep-icon { display: inline; }
   .fold-words-count::before { content: "❝ "; }
-  .fold-out, .fold-deck, .fold-glyph, .fold-words { padding: 1px 6px; }
+  .fold-out, .fold-deck, .fold-glyph, .fold-words, .fold-keep { padding: 1px 6px; }
   .fold-rail-start { right: calc(100% + 6px); }
   .fold-rail-end { left: calc(100% + 6px); }
   .fold-glyph svg { width: 20px; }
 }
 
+/* Pre-fold strip: one quiet line above the first fold line; the checklist opens under it, never over the page. */
+.fold-strip { margin: 0 0 20px; color: var(--muted); font: 12.5px/1.45 var(--interface-font, system-ui, sans-serif); }
+.fold-strip:empty { display: none; }
+.fold-strip-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.fold-strip-keeps { min-width: 0; }
+.fold-strip button { padding: 1px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); color: var(--ink); font: inherit; cursor: pointer; }
+.fold-strip button:hover, .fold-strip-adjust[aria-expanded="true"] { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.fold-strip button:focus-visible, .fold-strip input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.fold-strip-cards { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-inline-start: auto; }
+.fold-strip-list { min-width: 0; margin: 8px 0 0; padding: 6px 12px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--sidebar); }
+.fold-strip-list legend { padding: 0 4px; }
+.fold-strip-list label { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 0 8px; padding: 3px 0; color: var(--ink); cursor: pointer; }
+.fold-strip-list input { margin: 0; }
+.fold-strip-reason { color: var(--muted); }
+.fold-strip-reset { margin-top: 6px; }
+@container fold-page (max-width: 720px) {
+  .fold-strip-list label { grid-template-columns: auto 1fr; }
+  .fold-strip-reason { grid-column: 2; }
+  .fold-strip-cards { margin-inline-start: 0; }
+}
 /* Making a highlight in the fold; the marks list popovers; the re-anchor tray. */
 .fold-pick { position: absolute; z-index: 5; padding: 4px; border: 1px solid var(--border); border-radius: 999px; background: var(--paper); box-shadow: 0 6px 20px rgb(0 0 0 / 16%); }
 .fold-pick > div { display: flex; gap: 4px; }
@@ -235,4 +261,4 @@
   .fold-stop { padding: 3px 6px; font-size: 11px; }
   .fold-bar { bottom: 10px; }
 }
-@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare, .fold-rail, .fold-pick, .fold-pop, .fold-tray, .fold-toast { display: none; } }
+@media print { .fold-bar, .fold-lens, .fold-lens-ring, .fold-view .glass-compare, .fold-rail, .fold-pick, .fold-pop, .fold-tray, .fold-toast, .fold-strip { display: none; } }

@@ -573,11 +573,11 @@ export default function App() {
   const flashcardsVisible = !!flashcardPanel && flashcardPanel.id === active?.id
     && flashcardPanel.path === active.path && flashcardPanel.folder === session.folder;
   const closeFlashcards = () => setFlashcardPanel(null);
-  function openFlashcards(target?: FlashcardPanel["target"], answer?: FlashcardPanel["answer"]) {
+  function openFlashcards(target?: FlashcardPanel["target"], answer?: FlashcardPanel["answer"], highlights?: FlashcardPanel["highlights"]) {
     if (window.desktop?.readingStore && active?.path && session.folder) {
       setTutor(null);
       if (halfTile) setDrawer(false);
-      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target, answer });
+      setFlashcardPanel({ id: active.id, path: active.path, folder: session.folder, target, answer, highlights });
     }
   }
   // Spaced Repetition port drafts open in Study cards for review; Learning mode hosts that panel, so it turns on.
@@ -1004,7 +1004,7 @@ export default function App() {
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
             {foldVisible && <Suspense fallback={null}><FoldView
-              key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
+              key={active.id} id={active.id} memory={vaultRelative(session.folder, active.path) ?? active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
               start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
               reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={foldMarks}
             /></Suspense>}
