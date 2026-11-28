@@ -198,6 +198,7 @@ function announceGlass(request) {
 
 let documentPainted;
 const firstDocumentPaint = new Promise(resolve => { documentPainted = resolve; });
+const glassPaintFallback = 10_000;
 let glassQueue = Promise.resolve();
 function syncGlass(folder = store?.folder ?? null) {
   const run = glassQueue.then(() => syncGlassNow(folder));
@@ -665,6 +666,9 @@ const handlers = {
         for (const mark of marks || []) console.log(`[startup] ${mark.name.slice(8)} ${(mark.origin + mark.startTime - performance.timeOrigin).toFixed(1)}ms`);
       }, () => {});
     }
+    // A restored session that never paints (a window launched minimized throttles its frames) still brings Glass up
+    // for omarkie-axi; the bound leaves a slow machine's first render time to finish before startup competes with it.
+    setTimeout(documentPainted, glassPaintFallback).unref?.();
     rendererReady = true; revealWindow(); openFiles(pendingPdfs.splice(0)); for (const file of pending.splice(0)) {
     if (isPdf(file)) { openFiles([file]); continue; }
     try { send({ action: "opened", document: await store.open(file) }); }
@@ -1100,8 +1104,10 @@ app
       );
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
       const contents = created.webContents;
-      // A renderer that dies or a window that closes before its first paint must not hold Glass startup forever.
+      // A window that cannot paint (minimized, hidden, renderer gone or closed) must not hold Glass startup forever.
       contents.on("render-process-gone", () => { stopSpeech(); detachTutor(contents); documentPainted(); });
+      created.once("minimize", () => documentPainted());
+      created.once("hide", () => documentPainted());
       contents.on("did-start-navigation", details => { if (details.isMainFrame && !details.isSameDocument) detachTutor(contents); });
       window.webContents.on("will-navigate", (event) => event.preventDefault());
       if (process.platform === "linux") window.setMenuBarVisibility(false);
