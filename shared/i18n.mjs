@@ -1,18 +1,21 @@
 import i18next from "i18next";
-import en from "./locales/en.json" with { type: "json" };
-import es from "./locales/es.json" with { type: "json" };
-import ca from "./locales/ca.json" with { type: "json" };
-import ro from "./locales/ro.json" with { type: "json" };
-import zh from "./locales/zh.json" with { type: "json" };
+import { readFileSync } from "node:fs";
+import { languages } from "./languages.mjs";
 
 // Chinese source keys fall through; the small catalog covers English-keyed controls.
-const resources = { zh: { translation: zh }, en: { translation: en }, es: { translation: es }, ca: { translation: ca }, ro: { translation: ro } };
+// Catalogs load on demand: a translator needs its own language and the English fallback only.
+const known = new Set(languages.map(([code]) => code)), catalogs = new Map();
+function catalog(code) {
+  if (!catalogs.has(code)) catalogs.set(code, JSON.parse(readFileSync(new URL(`./locales/${code}.json`, import.meta.url), "utf8")));
+  return catalogs.get(code);
+}
 export { languages, resolveLanguage } from "./languages.mjs";
 
 export function createTranslator(language) {
-  const instance = i18next.createInstance();
+  const instance = i18next.createInstance(), fallbackLng = language === "zh" ? false : "en";
+  const resources = Object.fromEntries([...new Set([language, ...(fallbackLng ? [fallbackLng] : [])])].filter(code => known.has(code)).map(code => [code, { translation: catalog(code) }]));
   instance.init({
-    lng: language, fallbackLng: language === "zh" ? false : "en", resources, initAsync: false,
+    lng: language, fallbackLng, resources, initAsync: false,
     keySeparator: false, nsSeparator: false, returnEmptyString: false,
     // No nesting: messages may carry user text such as file names containing "$t(".
     interpolation: { escapeValue: false, nestingPrefix: `\u0000$t(`, nestingSuffix: `)\u0000` },

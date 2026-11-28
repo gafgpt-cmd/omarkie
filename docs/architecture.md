@@ -101,10 +101,11 @@ Plugins are CommonJS modules compiled without `eval`. The host provides lifecycl
 - `firstPhotoWarm` relaunches the cold run's profile once its preview cache holds a photo. Reported, not budgeted.
 - `launchStages`: ms after the launch request for each `OMARKIE_TRACE_STARTUP=1` mark (main process and renderer).
 - `OMARKIE_PERF_HEADLESS=1` runs Linux timing on headless Ozone without an X display, for stage diagnosis. The report records `display: headless`; budgets still apply.
-- Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass.
+- Budgets: [`tests/perf-budgets.json`](../tests/perf-budgets.json). Exceeded budgets fail; no report-only bypass. `npm run verify` ends with `test:perf`, so the CI checks job enforces them; CI uploads the report as artifact `perf-results`.
 - Glass: the 50,000-note unit test checks searchable results and heartbeat progress. Only `test:perf` enforces the 400 ms main-thread gap budget.
 - On a 60 Hz display, drawing ink and dragging arrows must miss no refreshes: no gap above 25 ms, and p95 at most 17.5 ms. The hover check measures handler CPU time, not display intervals.
-- `OMARKIE_PERF_RUNS` sets repetitions (default 3).
+- `OMARKIE_PERF_RUNS` sets measured rounds (default 5); budgets judge the median.
+- `OMARKIE_PERF_WARMUP` sets discarded warmup rounds first (default 1): first-run disk, font and shader caches stay out of the median.
 - `OMARKIE_EXECUTABLE`, with optional `OMARKIE_APP`, targets an installed executable/asar for the UI timings. Glass indexing measures the checked-out code.
 
 Automated composition checks do not replace manual input-method testing.

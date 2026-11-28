@@ -11,6 +11,7 @@ import { configureDocumentRendering } from "./markdownExtensions.ts";
 import type { Token } from "markdown-it";
 import { t } from "../i18n.ts";
 import { bundledImageUrls, normalizedURL, remoteURL, sanitizeDocumentMedia } from "./htmlResources.ts";
+import type { Config } from "dompurify";
 let allowRemoteImages = false;
 export interface Block {
   fromLine: number;
@@ -143,8 +144,18 @@ function imageCandidates(value: string, documentId?: string) {
   }
   return candidates.join(", ");
 }
+const documentURI = /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i;
+// Stable objects: sanitizeDocumentMedia configures one purifier per config.
+const cleanConfig = (remote: boolean): Config => ({ FORBID_TAGS: remote ? [] : ["style"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: documentURI });
+const cleanLocal = cleanConfig(false), cleanRemote = cleanConfig(true);
+const editableConfig: Config = {
+  ADD_TAGS: ["video", "audio", "source"],
+  ALLOWED_URI_REGEXP: documentURI,
+  ADD_URI_SAFE_ATTR: ["srcset"],
+  ADD_ATTR: ["controls", "contenteditable", "data-leaf", "data-task", "data-inline-from", "data-inline-to", "data-mark"],
+};
 function cleanHtml(html: string, documentId?: string, standalone?: boolean) {
-  const safe = sanitizeDocumentMedia(html, { FORBID_TAGS: allowRemoteImages ? [] : ["style"], ADD_TAGS: ["video", "audio", "source", "iframe"], ADD_ATTR: ["controls", "poster", "allowfullscreen", "sandbox"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i });
+  const safe = sanitizeDocumentMedia(html, allowRemoteImages ? cleanRemote : cleanLocal);
   const template = document.createElement("template"); template.innerHTML = safe;
   if (!allowRemoteImages) for (const element of template.content.querySelectorAll("[style]")) {
     const declarations = (element.getAttribute("style") || "").split(";").filter(value => {
@@ -306,20 +317,7 @@ export function editableHtml(
         : renderer.renderToken(tokens, index, md.options);
     })
     .join("");
-  return sanitizeDocumentMedia(html, {
-    ADD_TAGS: ["video", "audio", "source"],
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel|sms|cid|xmpp|omarkie-wiki|omarkie-tag):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
-    ADD_URI_SAFE_ATTR: ["srcset"],
-    ADD_ATTR: [
-      "controls",
-      "contenteditable",
-      "data-leaf",
-      "data-task",
-      "data-inline-from",
-      "data-inline-to",
-      "data-mark",
-    ],
-  });
+  return sanitizeDocumentMedia(html, editableConfig);
 }
 // Fences and inline images a block renders, mirroring the rich renderer's branches; keyed by kind and source.
 let blockCounts = new Map<string, { fences: number; images: number }>();
