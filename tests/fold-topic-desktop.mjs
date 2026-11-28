@@ -6,10 +6,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron as electron, expect } from "playwright/test";
 import sharp from "sharp";
-import { foldTopic, topicCards } from "../shared/fold-topic.mjs";
+import { OPENING, foldTopic, topicCards } from "../shared/fold-topic.mjs";
 import { foldDocumentLadder } from "../shared/fold-units.mjs";
 import { createTranslator } from "../shared/i18n.mjs";
 import { headlessArguments, isolatedEnvironment } from "./desktop-window.mjs";
+import { readWork, stableHost, watchWork } from "./frame-cadence.mjs";
 
 // OM-113: Topic stop as cards or a map, both from one topic model; opening one lands at Key where it was clicked.
 const corpus = fileURLToPath(new URL("./fixtures/fold/", import.meta.url));
@@ -104,6 +105,16 @@ async function landsAt(page, target, expectedUnit) {
   assert.ok(Math.abs(landed.top - top) <= LANDING_SLACK, `landed at ${landed.top}, clicked at ${top}`);
   assert.ok(landed.flash, "the landed unit flashes");
   await settle(page);
+}
+// Entering Topic (and the page folding beneath it) never blocks: on a stable runner no task tops 50 ms.
+async function noLongTask(page, gesture, act) {
+  await watchWork(page);
+  await act();
+  await page.waitForTimeout(600);
+  const { longTasks } = await readWork(page);
+  const longest = longTasks.length ? Math.max(...longTasks) : 0;
+  console.log(`${gesture}: ${longest ? `longest task ${longest.toFixed(0)} ms` : "no long task (none reached 50 ms)"}`);
+  assert.ok(longest <= (stableHost() ? 50 : 500), `${gesture}: a ${longest.toFixed(0)} ms long task blocks the page`);
 }
 
 async function grade(file) {
@@ -253,12 +264,19 @@ try {
   await page.keyboard.press("Escape");
   await quickOpen(page, t, "chapter.md");
   await openFold(page, t);
-  await stop(page, "5", "topic");
   const chapter = topicCards(foldTopic(foldDocumentLadder(notes["chapter.md"])));
+  await noLongTask(page, "Topic cards on 10k words", async () => {
+    await stop(page, "5", "topic");
+    await expect(page.locator(".fold-card")).toHaveCount(chapter.length);
+  });
   const deep = chapter[Math.floor(chapter.length / 2)].section;
   await landsAt(page, page.locator(`.fold-card[data-anchor="${deep.anchor}"]`), deep.anchor);
   await stop(page, "5", "topic");
-  await topicView(page, t, "map");
+  const { sections } = foldTopic(foldDocumentLadder(notes["chapter.md"]));
+  await noLongTask(page, "Topic map on 10k words", async () => {
+    await topicView(page, t, "map");
+    await expect(page.getByRole("treeitem")).toHaveCount(1 + sections.filter(section => section.id !== OPENING).length + sections.flatMap(section => section.items).length);
+  });
   const leaf = chapter[Math.floor(chapter.length / 3)].section.items[0];
   await landsAt(page, page.locator(`.fold-map-node[data-anchor="${leaf.unitId}"]`), leaf.unitId);
   assert.deepEqual(errors, []);

@@ -1,7 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { OPENING, topicCardAt, topicCards, type FoldTopic as Topic, type TopicItem, type TopicSection } from "../../../shared/fold-topic.mjs";
 import type { RawMeta } from "../../../shared/fold-units.mjs";
-import { renderMarkdown, renderMarkdownEach } from "../../editor/markdown";
+import { renderMarkdownEach } from "../../editor/markdown";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
 import { stopLabel } from "./stops";
@@ -13,8 +13,53 @@ export const saveTopicView = (view: TopicView) => localStorage.setItem(VIEW_KEY,
 
 const MAP_PAD = 16, MAP_GAP_X = 40, MAP_GAP_LEAF = 6, MAP_GAP_BRANCH = 14;
 const RAW_GLYPH = { table: "▦", code: "{ }", math: "∑", image: "▣" } as const;
-// Rendered lines per topic, kept across Topic visits; one sanitizer pass fills it.
+// Cards (map nodes four times as many) mounted per frame, so entering Topic never blocks for long.
+const SLICE = 6;
+// Rendered lines per topic, kept across Topic visits.
 const rendered = new WeakMap<Topic, { documentId: string; cache: Map<string, string> }>();
+
+function cacheOf(topic: Topic, documentId: string) {
+  let entry = rendered.get(topic);
+  if (entry?.documentId !== documentId) { entry = { documentId, cache: new Map() }; rendered.set(topic, entry); }
+  return entry.cache;
+}
+
+const strings = (sources: (string | null | undefined)[]) => sources.filter((source): source is string => typeof source === "string");
+// The Markdown a card or a map branch shows.
+const sectionSources = (section: TopicSection, eyebrow: string | null = null) =>
+  strings([eyebrow, section.heading, ...section.items.map(item => item.kind === "line" ? item.markdown : null)]);
+
+// Renders what is missing in one sanitizer pass.
+function fill(cache: Map<string, string>, sources: string[], documentId: string) {
+  const missing = [...new Set(sources)].filter(source => !cache.has(source));
+  if (missing.length) renderMarkdownEach(missing, documentId).forEach((html, index) => cache.set(missing[index], html));
+}
+
+/** Renders the topic's lines in idle time, a few milliseconds at a time, so Topic opens on a warm cache. Returns a cancel. */
+export function warmTopic(topic: Topic, documentId: string) {
+  const cache = cacheOf(topic, documentId);
+  const pending = [...new Set(strings([topic.title?.markdown, ...topicCards(topic).map(card => card.eyebrow),
+    ...topic.sections.flatMap(section => sectionSources(section))]))].filter(source => !cache.has(source));
+  let handle = 0;
+  const slice = (deadline: IdleDeadline) => {
+    const start = performance.now();
+    while (pending.length && deadline.timeRemaining() > 0 && performance.now() - start < 12) fill(cache, pending.splice(0, 1), documentId);
+    if (pending.length) handle = requestIdleCallback(slice);
+  };
+  if (pending.length) handle = requestIdleCallback(slice);
+  return () => cancelIdleCallback(handle);
+}
+
+// How many of `total` entries are mounted: `first` at once, then one more slice each frame.
+function useSlices(total: number, first: number, slice: number) {
+  const [shown, setShown] = useState(() => Math.min(total, first));
+  useEffect(() => {
+    if (shown >= total) return;
+    const frame = requestAnimationFrame(() => setShown(count => Math.min(total, count + slice)));
+    return () => cancelAnimationFrame(frame);
+  }, [shown, total, slice]);
+  return shown;
+}
 
 // A single rendered paragraph without its <p>, for headings and the title.
 function inline(html: string) {
@@ -43,13 +88,21 @@ function Heading({ section, html, id, className }: { section: TopicSection; html
     : <div className={className} id={id} dangerouslySetInnerHTML={{ __html: inline(html(section.heading)) }} />;
 }
 
+// Rendered Markdown by source; `prepare` renders a coming slice in one pass.
+type Html = { (markdown: string): string; prepare(sources: string[]): void };
+
 function Cards({ topic, html, current, onKeyDown }: {
-  topic: Topic; html(markdown: string): string; current: string | null; onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void;
+  topic: Topic; html: Html; current: string | null; onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void;
 }) {
   const cards = useMemo(() => topicCards(topic), [topic]);
   const [active, setActive] = useState(() => current ?? cards[0]?.section.id ?? null);
-  return <ul className="fold-cards" aria-label={t("Topic cards")} onKeyDown={onKeyDown}>
-    {cards.map(({ section, eyebrow }) => {
+  const shown = useSlices(cards.length, Math.max(SLICE, cards.findIndex(card => card.section.id === current) + 1), SLICE);
+  const list = useRef<HTMLUListElement>(null);
+  useLayoutEffect(() => { void renderMath(list.current!).catch(() => {}); }, [shown]);
+  const mounted = cards.slice(0, shown);
+  html.prepare(mounted.flatMap(({ section, eyebrow }) => sectionSources(section, eyebrow)));
+  return <ul ref={list} className="fold-cards" aria-label={t("Topic cards")} onKeyDown={onKeyDown}>
+    {mounted.map(({ section, eyebrow }) => {
       const id = `fold-card-${section.id}`;
       return <li key={section.id}>
         <div className="fold-card" role="button" tabIndex={section.id === active ? 0 : -1} data-anchor={section.anchor ?? undefined}
@@ -100,30 +153,32 @@ function mapNodes(topic: Topic) {
   return nodes;
 }
 
-// Each parent sits level with the middle of its first child; children stack below one another.
+// Each parent sits level with the middle of its first child; children stack below one another. Only mounted nodes
+// (a prefix in reading order, so a whole subtree) take part.
 function layoutMap(canvas: HTMLElement, links: SVGSVGElement, nodes: MapNode[]) {
   const elements = [...canvas.querySelectorAll<HTMLElement>("[data-node]")];
   const size = elements.map(element => [element.offsetWidth, element.offsetHeight] as const);
+  const children = (index: number) => nodes[index].children.filter(child => child < elements.length);
   const position: [number, number][] = [];
   let right = 0, bottom = 0;
   const place = (index: number, x: number, y: number): number => {
-    const [width, height] = size[index], node = nodes[index];
+    const [width, height] = size[index], below = children(index);
     right = Math.max(right, x + width);
-    if (!node.children.length) { position[index] = [x, y]; bottom = Math.max(bottom, y + height); return height; }
+    if (!below.length) { position[index] = [x, y]; bottom = Math.max(bottom, y + height); return height; }
     let next = y;
-    node.children.forEach((child, order) => {
+    below.forEach((child, order) => {
       next += place(child, x + width + MAP_GAP_X, next);
-      const after = node.children[order + 1];
+      const after = below[order + 1];
       if (after !== undefined) next += nodes[child].children.length || nodes[after].children.length ? MAP_GAP_BRANCH : MAP_GAP_LEAF;
     });
-    const first = node.children[0], top = Math.max(y, position[first][1] + size[first][1] / 2 - height / 2);
+    const first = below[0], top = Math.max(y, position[first][1] + size[first][1] / 2 - height / 2);
     position[index] = [x, top];
     bottom = Math.max(bottom, top + height);
     return Math.max(next - y, top + height - y);
   };
   place(0, MAP_PAD, MAP_PAD);
   elements.forEach((element, index) => { element.style.transform = `translate(${position[index][0]}px, ${position[index][1]}px)`; });
-  const paths = nodes.flatMap((node, index) => node.children.map(child => {
+  const paths = elements.flatMap((_, index) => children(index).map(child => {
     const x1 = position[index][0] + size[index][0], y1 = position[index][1] + size[index][1] / 2;
     const x2 = position[child][0], y2 = position[child][1] + Math.min(size[child][1] / 2, 12), middle = (x1 + x2) / 2;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -140,22 +195,26 @@ function layoutMap(canvas: HTMLElement, links: SVGSVGElement, nodes: MapNode[]) 
 }
 
 function TopicMap({ topic, title, html, current, onKeyDown }: {
-  topic: Topic; title: string; html(markdown: string): string; current: string | null; onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void;
+  topic: Topic; title: string; html: Html; current: string | null; onKeyDown(event: ReactKeyboardEvent<HTMLElement>): void;
 }) {
   const nodes = useMemo(() => mapNodes(topic), [topic]);
   const canvas = useRef<HTMLDivElement>(null), links = useRef<SVGSVGElement>(null);
   const [active, setActive] = useState(() => Math.max(0, nodes.findIndex(node => node.section?.id === current)));
+  const shown = useSlices(nodes.length, Math.max(SLICE * 4, active + 1), SLICE * 4);
   useLayoutEffect(() => {
     const element = canvas.current!, svg = links.current!;
     let live = true;
     layoutMap(element, svg, nodes);
     void renderMath(element).then(() => { if (live) layoutMap(element, svg, nodes); }).catch(() => {});
     return () => { live = false; };
-  }, [nodes]);
+  }, [nodes, shown]);
+  const mounted = nodes.slice(0, shown);
+  html.prepare(strings(mounted.flatMap(node => node.kind === "root" ? [topic.title?.markdown]
+    : node.section ? [node.section.heading] : [node.item?.kind === "line" ? node.item.markdown : null])));
   return <div className="fold-map">
     <div ref={canvas} className="fold-map-canvas" role="tree" aria-label={t("Topic map")} onKeyDown={onKeyDown}>
       <svg ref={links} className="fold-map-links" aria-hidden="true" />
-      {nodes.map((node, index) => <div key={node.key} className="fold-map-node" role="treeitem" aria-level={node.depth + 1}
+      {mounted.map((node, index) => <div key={node.key} className="fold-map-node" role="treeitem" aria-level={node.depth + 1}
         tabIndex={index === active ? 0 : -1} data-node={index} data-kind={node.kind} data-anchor={node.anchor ?? undefined}
         data-current={(node.section && node.section.id === current) || undefined} onFocus={() => setActive(index)}>
         {node.kind === "root"
@@ -209,22 +268,10 @@ export function FoldTopic({ topic, title, documentId, view, setView, reading, op
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [current] = useState(() => topicCardAt(topic, reading())?.id ?? null);
-  const html = useMemo(() => {
-    let entry = rendered.get(topic);
-    if (entry?.documentId !== documentId) {
-      const sources = [...new Set([topic.title?.markdown, ...topicCards(topic).map(card => card.eyebrow),
-        ...topic.sections.flatMap(section => [section.heading, ...section.items.map(item => item.kind === "line" ? item.markdown : null)])])]
-        .filter((source): source is string => typeof source === "string");
-      const output = renderMarkdownEach(sources, documentId);
-      entry = { documentId, cache: new Map(sources.map((source, index) => [source, output[index]])) };
-      rendered.set(topic, entry);
-    }
-    const { cache } = entry;
-    return (markdown: string) => {
-      let result = cache.get(markdown);
-      if (result === undefined) { result = renderMarkdown(markdown, documentId); cache.set(markdown, result); }
-      return result;
-    };
+  const html = useMemo<Html>(() => {
+    const cache = cacheOf(topic, documentId);
+    const prepare = (sources: string[]) => fill(cache, sources, documentId);
+    return Object.assign((markdown: string) => { prepare([markdown]); return cache.get(markdown)!; }, { prepare });
   }, [topic, documentId]);
   useLayoutEffect(() => {
     void renderMath(root.current!).catch(() => {});

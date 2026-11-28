@@ -5,7 +5,7 @@ import { foldDocumentLadder } from "../../../shared/fold-units.mjs";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
 import { FoldBar } from "./FoldBar";
-import { FoldTopic, saveTopicView, savedTopicView, type TopicView } from "./FoldTopic";
+import { FoldTopic, saveTopicView, savedTopicView, warmTopic, type TopicView } from "./FoldTopic";
 import { FoldEngine, type FoldUnitView } from "./morph";
 import { STOPS, type Stop } from "./stops";
 import "./fold.css";
@@ -61,13 +61,20 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     const view = engine.current, target = landing.current;
     landing.current = null;
     if (!view) return;
-    if (!target) { view.switchTo(index, undefined, !topicShown); return; }
+    if (!target && topicShown) {
+      // Topic covers the page: fold it underneath once Topic has painted, in a task of its own.
+      let timer = 0;
+      const frame = requestAnimationFrame(() => { timer = window.setTimeout(() => view.switchTo(index, undefined, false)); });
+      return () => { cancelAnimationFrame(frame); clearTimeout(timer); };
+    }
+    if (!target) { view.switchTo(index); return; }
     const landed = view.reveal(index, target.unit, target.top);
     if (!landed) return;
     landed.focus({ preventScroll: true });
     landed.classList.add("fold-landed");
     landed.addEventListener("animationend", () => landed.classList.remove("fold-landed"), { once: true });
   }, [index]);
+  useEffect(() => short ? undefined : warmTopic(topic, id), [topic, id, short]);
   // Leaving the Topic overlay by key or bar removes the focused card; focus returns to the page.
   useLayoutEffect(() => {
     if (!topicShown && (!document.activeElement || document.activeElement === document.body)) article.current?.focus({ preventScroll: true });
@@ -151,6 +158,12 @@ export default function FoldView({ id, title, content, stop, setStop, close, sta
     </div>
     <FoldBar index={index} percents={percents} disabled={short} hint={hint} pick={pick}
       scrub={value => { setScrubbing(true); engine.current?.scrub(value); }}
-      release={() => { const settled = engine.current?.release(); setScrubbing(false); setHint(false); if (settled !== undefined) setStop(STOPS[settled]); }} />
+      release={() => {
+        const settled = engine.current?.release();
+        setHint(false);
+        if (settled !== undefined) setStop(STOPS[settled]);
+        // The page committed in this task; Topic, if the slider settled there, mounts in one of its own.
+        window.setTimeout(() => setScrubbing(false));
+      }} />
   </section>;
 }
