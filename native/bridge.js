@@ -44,6 +44,7 @@
     "viewState",
     "windowAction",
     "exportHtml",
+    "exportImage",
     "readClipboard",
     "writeClipboard",
     "chooseImage",

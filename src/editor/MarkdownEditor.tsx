@@ -175,7 +175,7 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(
     const richViewOptions = useRef<{ preferences?: Preferences; remoteImages?: boolean; typewriter: boolean; readOnly: boolean } | null>(null);
     function richOptions() {
       const { preferences, typewriter, readOnly } = viewOptions.current;
-      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly };
+      return { spellcheck: preferences?.spellcheck ?? false, tabSize: preferences?.tabSize || 2, typewriter, autoPair: preferences?.autoPair ?? false, emoji: preferences?.emoji ?? true, codeLineNumbers: preferences?.codeLineNumbers ?? false, readOnly, smartPunctuation: preferences?.smartPunctuation ?? "off" };
     }
     function applyViewOptions() {
       if (isComposing()) { pendingOptions.current = true; return; }
