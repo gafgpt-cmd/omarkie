@@ -115,7 +115,7 @@ async function capture(page, name) {
   await page.evaluate(() => { const scroller = document.querySelector(".fold-scroller"); if (scroller) scroller.scrollTop = 0; document.querySelector(".fold-document")?.focus({ preventScroll: true }); });
   await settle(page);
   const shot = path.join(evidence, `${name}.png`);
-  await page.screenshot({ path: shot });
+  await page.locator(".fold-view").screenshot({ path: shot });
   const baseline = path.join(baselines, `${name}.png`);
   if (process.env.OMARKIE_UPDATE_BASELINES === "1") { await mkdir(baselines, { recursive: true }); await copyFile(shot, baseline); return; }
   const [fresh, expected] = await Promise.all([grade(shot), grade(baseline)]);
