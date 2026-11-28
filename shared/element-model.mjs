@@ -129,16 +129,27 @@ export function markdownElements(markdown, options = {}) {
   return finish(markdown, drafts, headings);
 }
 
+// Heading path of a line. Lines come in reading order, so one sweep serves them all; a step back restarts it.
 function headingPaths(headings) {
+  const stack = [];
+  let next = 0, last = -Infinity;
   return (line) => {
-    const stack = [];
-    for (const heading of headings) {
-      if (heading.line > line) break;
+    if (line < last) { stack.length = 0; next = 0; }
+    last = line;
+    for (; next < headings.length && headings[next].line <= line; next++) {
+      const heading = headings[next];
       while (stack.length && stack.at(-1).level >= heading.level) stack.pop();
       stack.push(heading);
     }
     return stack.map(heading => heading.text);
   };
+}
+
+// How many entries of a `from`-sorted list start at or before `at`.
+function startingBy(list, at) {
+  let low = 0, high = list.length;
+  while (low < high) { const middle = (low + high) >> 1; if (list[middle].from <= at) low = middle + 1; else high = middle; }
+  return low;
 }
 
 function finish(markdown, drafts, headings) {
@@ -152,28 +163,42 @@ function finish(markdown, drafts, headings) {
   }
   const byId = new Map(drafts.map(draft => [draft.id, draft]));
   const nested = new Set(["list-item", "table-cell", "image", "embed"]);
-  const containers = drafts.filter(draft => !nested.has(draft.kind));
+  // A nested element's block is its earliest-starting container: in `from` order, the first that reaches its end.
+  const containers = drafts.filter(draft => !nested.has(draft.kind)), reach = [];
+  for (const container of containers) reach.push(Math.max(reach.at(-1) ?? -Infinity, container.to));
   for (const draft of drafts) {
     if (!nested.has(draft.kind)) { draft.blockLine = draft.line; continue; }
-    const container = containers.filter(candidate => candidate.from <= draft.from && draft.to <= candidate.to)
-      .sort((left, right) => left.from - right.from)[0];
-    draft.blockLine = container ? container.line : draft.line;
+    const end = startingBy(containers, draft.from);
+    let low = 0, high = end;
+    while (low < high) { const middle = (low + high) >> 1; if (reach[middle] >= draft.to) high = middle; else low = middle + 1; }
+    draft.blockLine = low < end ? containers[low].line : draft.line;
   }
+  // Its parent is the smallest enclosing element of the matching kind, the first one on ties.
+  const ofKind = new Map();
+  for (const draft of drafts) { const list = ofKind.get(draft.kind); if (list) list.push(draft); else ofKind.set(draft.kind, [draft]); }
   for (const draft of drafts) {
     if (draft.parent && byId.has(draft.parent)) continue;
     if (!nested.has(draft.kind)) continue;
-    const parent = drafts.filter(candidate => candidate.id !== draft.id && candidate.from <= draft.from && draft.to <= candidate.to &&
-      (draft.kind === "list-item" ? candidate.kind === "list" : draft.kind === "table-cell" ? candidate.kind === "table" : candidate.kind === "paragraph"))
-      .sort((left, right) => left.to - left.from - (right.to - right.from))[0];
+    const candidates = ofKind.get(draft.kind === "list-item" ? "list" : draft.kind === "table-cell" ? "table" : "paragraph") ?? [];
+    let parent, size = Infinity;
+    // Walking back from the nearest start, no earlier candidate can be smaller once the gap alone exceeds the best size.
+    for (let index = startingBy(candidates, draft.from) - 1; index >= 0 && draft.to - candidates[index].from <= size; index--) {
+      const candidate = candidates[index];
+      if (candidate.id === draft.id || candidate.to < draft.to || candidate.to - candidate.from > size) continue;
+      parent = candidate; size = candidate.to - candidate.from;
+    }
     if (parent) draft.parent = parent.id;
   }
   const blocks = drafts.map(draft => ({ block: draft.markdown, headings: draft.headings, line: draft.line }));
+  // captureAnchor finds a block by its line in `blocks`: hand it that block and its two neighbours only.
+  const firstOnLine = new Map();
+  blocks.forEach((block, index) => { if (!firstOnLine.has(block.line)) firstOnLine.set(block.line, index); });
   return drafts.map(draft => {
-    const element = { ...draft };
+    const element = { ...draft }, at = firstOnLine.get(element.line);
     const prefix = markdown.slice(Math.max(0, element.from - contextWidth), element.from);
     const suffix = markdown.slice(element.to, element.to + contextWidth);
     element.landmarks = captureAnchor({ block: element.markdown, headings: element.headings, line: element.line, kind: element.kind,
-      from: element.from, to: element.to, prefix, suffix }, blocks);
+      from: element.from, to: element.to, prefix, suffix }, blocks.slice(Math.max(0, at - 1), at + 2));
     element.text = normalizeText(element.markdown);
     return element;
   });

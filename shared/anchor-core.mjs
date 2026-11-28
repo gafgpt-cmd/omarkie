@@ -19,14 +19,18 @@ function foldText(text) {
   return normalizeText(text).normalize("NFD").replace(/\p{M}+/gu, "").toLowerCase();
 }
 
+// 64-bit FNV-1a in two 32-bit halves: the prime is 2^40 + 0x1b3, so each step is
+// hash * 0x1b3 plus the low half shifted into the high half. Same digest as BigInt, without its cost.
 export function textHash(text) {
   const value = foldText(text);
-  let hash = 0xcbf29ce484222325n;
+  let high = 0xcbf29ce4, low = 0x84222325;
   for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = (hash * 0x100000001b3n) & 0xffffffffffffffffn;
+    low = (low ^ value.charCodeAt(index)) >>> 0;
+    const product = low * 0x1b3;
+    high = (high * 0x1b3 + Math.floor(product / 0x100000000) + low * 0x100) >>> 0;
+    low = product >>> 0;
   }
-  return hash.toString(16).padStart(16, "0");
+  return high.toString(16).padStart(8, "0") + low.toString(16).padStart(8, "0");
 }
 
 export function captureAnchor(block, blocks) {

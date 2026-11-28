@@ -113,6 +113,11 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
   - Rayos X: hold `Alt` (or press-hold the pen) for a lens showing the source + marks under the pointer. No layout shift. Keyboard: lens sits on the focused line.
   - **Corte** (`C` or bar button): divider over the page. Left = Full, right = current stop; dropped words tinted. Drag or `←` `→` `Home` `End` move it.
   - Drag the level bar or `Ctrl`+wheel to scrub between stops; release settles on the nearest. `Ctrl`+wheel over one unit folds only that unit.
+  - **New edition** (`E` or bar button): compare this note with an earlier edition of it. Picker lists open notes and vault notes, look-alike names first; type to filter, `Enter` picks.
+    - Shows only changed units, by section: `+` Added, `−` Removed, `~` Changed. Inserted words underlined, dropped words struck through.
+    - Fact chips: numbers old → new, new never-dos (with their clause), dropped conditions/scope/hedges. Summary strip counts each; unchanged units stay hidden.
+    - Stops fold each card locally, no model. Keys: `↑` `↓` cards, `Enter` Full, `Shift+Enter` opens the line in the editor, `Esc` folds the card back, then leaves.
+    - Folding runs in a worker; a 50 kB pair stays under 50 ms per main-thread task.
   - Estudio is disabled: it needs a model; local stops only for now. Short notes show **Too short to fold**.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.
 - **Export notes and cards** saves a separate Markdown copy for the vault. It never overwrites a file.

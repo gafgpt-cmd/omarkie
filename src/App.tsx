@@ -31,7 +31,8 @@ import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/Wo
 import type { FileOperation } from "./types";
 import type { CanvasRequest } from "./components/CanvasView";
 import type { CanvasNode } from "../shared/json-canvas.mjs";
-import type { Command, ConversionOptions } from "./types";
+import type { Command, ConversionOptions, DocumentRecord, FileEntry } from "./types";
+import type { EditionSources } from "./components/fold/FoldEdition";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
@@ -67,6 +68,24 @@ function vaultRelative(folder: string | null | undefined, file: string | null | 
   const root = folder.replaceAll("\\", "/").replace(/\/+$/u, ""), path = file.replaceAll("\\", "/");
   if (root && path.startsWith(`${root}/`)) return path.slice(root.length + 1);
   return /^(?:[a-z]:)?\//iu.test(path) ? undefined : path;
+}
+
+// Nueva edición: any other open note (as it stands in memory) or vault Markdown file can be the earlier edition.
+function foldEditions(documents: DocumentRecord[], files: FileEntry[], activeId: string): EditionSources {
+  const open = documents.filter(record => record.id !== activeId);
+  return {
+    list: () => [
+      ...open.map(record => ({ key: `open:${record.id}`, name: record.name, detail: record.path || t("本地草稿") })),
+      ...files.filter(file => file.isDirectory !== "true" && /\.(?:md|markdown|mdown)$/iu.test(file.name) && !documents.some(record => record.path === file.path))
+        .map(file => ({ key: `file:${file.relative}`, name: file.name, detail: file.relative })),
+    ],
+    read: async key => {
+      if (key.startsWith("open:")) return open.find(record => `open:${record.id}` === key)?.content ?? null;
+      if (!host.readNotes) return null;
+      const [note] = await host.readNotes([key.slice("file:".length)]);
+      return note?.content ?? null;
+    },
+  };
 }
 
 export default function App() {
@@ -1004,9 +1023,10 @@ export default function App() {
               canBake={!readOnly && !active.conflict && !session.fileOperationBusy} close={closeClean}
             /></Suspense>}
             {foldVisible && <Suspense fallback={null}><FoldView
-              key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
+              key={active.id} id={active.id} name={active.name} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
               start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
               reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={foldMarks}
+              editions={foldEditions(session.documents, session.folder ? session.files : [], active.id)}
             /></Suspense>}
             {foldReturn && !foldVisible && readingVisible && active?.id === foldReturn.id &&
               <button type="button" className="leave-focus" onClick={returnToFold}>{t("Back to fold · Esc")}</button>}
