@@ -39,7 +39,7 @@ const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
 const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
 const FoldView = lazy(() => import("./components/fold/FoldView"));
 import type { FoldStart, Stop } from "./components/fold/stops";
-import type { StudyMark } from "./components/learning-overlays";
+import { createFoldMarks } from "./components/fold/fold-marks";
 import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
@@ -124,7 +124,7 @@ export default function App() {
   const [foldId, setFoldId] = useState<string | null>(null), [foldStop, setFoldStop] = useState<Stop>("key"), foldStart = useRef<FoldStart>({ line: 1 });
   // Editor reveal from the fold: pending until the fold unmounts, then armed as the way back (Esc or the pill).
   const foldReveal = useRef<{ id: string; line: number; y: number } | null>(null), [foldReturn, setFoldReturn] = useState<{ id: string; line: number; y: number } | null>(null);
-  const foldMarks = useRef<ReadonlyMap<number, readonly StudyMark[]>>(new Map());
+  const [foldMarks] = useState(createFoldMarks);
   const [payload, setPayload] = useState<{ id: string; sequence: number; mode: "summary" | "question"; source: string; selection: boolean } | null>(null);
   const [tutor, setTutor] = useState<string | null>(null), shell = useRef<HTMLDivElement>(null);
   const [showFiles, setShowFiles] = useState(false);
@@ -664,6 +664,8 @@ export default function App() {
   }, [session.activeId]);
   commands.current = ({ action, document: opened, anchor, line, message, note: boardNote, magnet: boardMagnet }) => {
     if (["new", "newWindow", "newTab", "open"].includes(action) && window.desktop?.windowAction) { void host.windowAction(action).catch((error: Error) => session.setMessage(error.message)); return; }
+    // Fold view writes nothing but study marks: Undo there takes back the last mark it made.
+    if (action === "undo" && foldVisible) { const feed = foldMarks.get(); if (feed.canUndo) void feed.undo(); return; }
     const context = commandsByAction.get(action)?.context;
     if (readOnly && ((context && context !== "document") || ["delete-word", "undo", "redo", "paste-plain", "image", "table", "link", "reference-link", "footnote", "copy-all-images", "move-all-images", "upload-all-images"].includes(action))) { session.setMessage(t("只读模式已开启，请先在插件管理中关闭或切换只读效果。")); return; }
     if (context && !active) return;
@@ -1004,7 +1006,7 @@ export default function App() {
             {foldVisible && <Suspense fallback={null}><FoldView
               key={active.id} id={active.id} content={active.content} stop={foldStop} setStop={setFoldStop} close={() => setFoldId(null)}
               start={foldStart.current} leave={(line, focused) => leaveFold(active.id, line, focused)}
-              reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={() => foldMarks.current}
+              reveal={(line, y) => { foldReveal.current = { id: active.id, line, y }; setFoldId(null); }} marks={foldMarks}
             /></Suspense>}
             {foldReturn && !foldVisible && readingVisible && active?.id === foldReturn.id &&
               <button type="button" className="leave-focus" onClick={returnToFold}>{t("Back to fold · Esc")}</button>}

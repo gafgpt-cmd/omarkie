@@ -5,9 +5,11 @@ import { STOPS, stopLabel as labelOf } from "./stops";
 const stopLabel = (index: number) => labelOf(STOPS[index]);
 
 // Floating level bar: five local stops on one slider, the model stop apart and off, then the Corte divider toggle.
-export function FoldBar({ index, percents, disabled, hint, pick, scrub, release, cut, toggleCut }: {
+// With marks on the note, each stop also says how many of them it shows.
+export function FoldBar({ index, percents, ticks, disabled, hint, pick, scrub, release, cut, toggleCut }: {
   index: number;
   percents: number[];
+  ticks?: readonly { shown: number; total: number }[];
   disabled: boolean;
   hint: boolean;
   pick(index: number): void;
@@ -24,13 +26,14 @@ export function FoldBar({ index, percents, disabled, hint, pick, scrub, release,
     for (let i = 1; i < centres.length; i++) if (x <= centres[i]) return i - 1 + (x - centres[i - 1]) / (centres[i] - centres[i - 1]);
     return centres.length - 1;
   };
-  const label = stopLabel(index);
+  const label = stopLabel(index), tick = ticks?.[index];
+  const words = t("{{level}}, {{percent}}% of words", { level: label, percent: percents[index] });
   return <div className="fold-bar" data-disabled={disabled || undefined}>
     {disabled ? <p className="fold-bar-note" role="status">{t("Too short to fold")}</p> : hint && <p className="fold-bar-note">{t("Local fold · model lines when you choose")}</p>}
     <div className="fold-bar-row">
       <div ref={track} className="fold-track" role="slider" tabIndex={disabled ? -1 : 0} aria-label={t("Fold level")} aria-disabled={disabled || undefined}
         aria-valuemin={1} aria-valuemax={STOPS.length} aria-valuenow={index + 1}
-        aria-valuetext={disabled ? t("Too short to fold") : t("{{level}}, {{percent}}% of words", { level: label, percent: percents[index] })}
+        aria-valuetext={disabled ? t("Too short to fold") : tick?.total ? t("{{level}}, {{percent}}% of words, {{shown}}/{{total}} marks", { level: label, percent: percents[index], shown: tick.shown, total: tick.total }) : words}
         onKeyDown={event => {
           if (disabled) return;
           const next = event.key === "ArrowRight" || event.key === "ArrowUp" ? index + 1 : event.key === "ArrowLeft" || event.key === "ArrowDown" ? index - 1
@@ -60,6 +63,7 @@ export function FoldBar({ index, percents, disabled, hint, pick, scrub, release,
         onLostPointerCapture={() => { if (drag.current?.moved) release(); drag.current = null; }}>
         {STOPS.map((stop, i) => <span key={stop} data-stop={stop} className="fold-stop" aria-hidden="true" data-current={i === index || undefined}>
           <span>{stopLabel(i)}</span><small>{percents[i]}%</small>
+          {!!ticks?.[i]?.total && <small className="fold-ticks">{ticks[i].shown}/{ticks[i].total}</small>}
         </span>)}
       </div>
       <span className="fold-gap" aria-hidden="true" />

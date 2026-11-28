@@ -1,14 +1,17 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { worthFolding } from "../../../shared/fold-text.mjs";
-import { foldDocumentLadder } from "../../../shared/fold-units.mjs";
+import { foldDocumentLadder, type FoldDocumentLadder } from "../../../shared/fold-units.mjs";
+import type { SheetColour } from "../../../shared/reading-store.ts";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
 import CompareSlider from "../CompareSlider";
 import type { StudyMark } from "../learning-overlays";
 import { FoldBar } from "./FoldBar";
 import { FoldEvidence, FoldLens } from "./FoldEvidence";
-import { FoldEngine, type FoldUnitView } from "./morph";
+import type { FoldMark, FoldMarks } from "./fold-marks";
+import { FoldEngine, type FoldUnitView, type WordUnit } from "./morph";
+import { FoldRails, markKind, quoteOf, visibleRun } from "./rails";
 import { STOPS, stopLabel, type FoldStart, type Stop } from "./stops";
 import "./fold.css";
 
@@ -16,9 +19,14 @@ const WHEEL_STEP = 60;
 // Pen press-and-hold for Rayos X: still for this long, within this many px.
 const HOLD_MS = 450;
 const HOLD_SLOP = 8;
+const COLOURS: readonly SheetColour[] = ["amber", "blue", "rose", "green"];
+const TOAST_MS = 6000;
 
 interface Peek { unit: FoldUnitView; host: HTMLElement; y: number }
 interface Lens { unit: FoldUnitView; x: number; y: number }
+// Author words picked for a highlight, and where the colour choice opens.
+interface Pick { unit: WordUnit; quote: string; x: number; y: number }
+interface Deck { marks: readonly FoldMark[]; chip: HTMLElement; x: number; y: number }
 
 // Fold view: the note's own words at a chosen local stop, read-only, in place of the rendered page.
 export default function FoldView({ id, content, stop, setStop, close, start, leave, reveal, marks }: {
@@ -31,21 +39,36 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
   leave(line: number, focused: boolean): void;
   // Open the source in the editor with this line at viewport y.
   reveal(line: number, y: number): void;
-  // Visible study marks by source line.
-  marks(): ReadonlyMap<number, readonly StudyMark[]>;
+  // Study marks and Glass magnets, projected here, never copied; writes go through the publisher.
+  marks: FoldMarks;
 }) {
-  const ladder = useMemo(() => foldDocumentLadder(content), [content]);
+  const feed = useSyncExternalStore(marks.subscribe, marks.get);
+  // Highlighted, magnet and circled sentences are pinned: they reach Takeaway in the author's words.
+  const pinKey = JSON.stringify(feed.marks.flatMap(mark => mark.line === null || mark.kind === "sticky" ? []
+    : mark.kind === "highlight" ? (mark.quote ? [[mark.line, mark.quote]] : []) : [[mark.line]]));
+  const previous = useRef<FoldDocumentLadder | null>(null);
+  const ladder = useMemo(() => {
+    const pins = (JSON.parse(pinKey) as [number, string?][]).map(([line, quote]) => quote === undefined ? { line } : { line, quote });
+    const next = foldDocumentLadder(content, { pins }), last = previous.current;
+    // Same lines at every stop: keep the built page (and the reader's place) as it is.
+    const same = last && last.byUnit.length === next.byUnit.length && last.byUnit.every((entry, at) =>
+      entry.pinned.join() === next.byUnit[at].pinned.join() && STOPS.every(level => entry.stops[level] === next.byUnit[at].stops[level]));
+    return previous.current = same ? last : next;
+  }, [content, pinKey]);
   const short = useMemo(() => !worthFolding(content, ladder.stops.topic.text), [content, ladder]);
   const index = short ? 0 : STOPS.indexOf(stop);
   const percents = useMemo(() => STOPS.map(level => ladder.total ? Math.round(ladder.stops[level].shown / ladder.total * 100) : 100), [ladder]);
   const section = useRef<HTMLElement>(null), scroller = useRef<HTMLDivElement>(null), article = useRef<HTMLElement>(null), engine = useRef<FoldEngine | null>(null);
+  const rails = useRef<FoldRails | null>(null), [, setPainted] = useState(0), [ticks, setTicks] = useState<{ shown: number; total: number }[]>();
   const [hint, setHint] = useState(true);
   const [peek, setPeekState] = useState<Peek | null>(null), peekRef = useRef<Peek | null>(null);
   const [lens, setLens] = useState<Lens | null>(null);
   const [cut, setCut] = useState(false), [cutValue, setCutValue] = useState(50), cutRef = useRef(cutValue);
+  const [picking, setPicking] = useState<Pick | null>(null), [deck, setDeck] = useState<Deck | null>(null), [tray, setTray] = useState(false), [toast, setToast] = useState(false);
+  const focusAfter = useRef<FoldMark | null>(null);
   cutRef.current = cutValue;
-  const latest = useRef({ index, start, leave, togglePeek });
-  latest.current = { index, start, leave, togglePeek };
+  const latest = useRef({ index, start, leave, togglePeek, feed });
+  latest.current = { index, start, leave, togglePeek, feed };
   const setPeek = (next: Peek | null) => { peekRef.current = next; setPeekState(next); };
   useLayoutEffect(() => () => {
     const view = engine.current;
@@ -53,26 +76,56 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
   }, []);
   useLayoutEffect(() => {
     const root = article.current!, view = new FoldEngine(scroller.current!, root, ladder, id);
-    engine.current = view;
+    const glass = new FoldRails(view, root, ladder, () => setPainted(count => count + 1));
+    glass.setMarks(latest.current.feed.marks);
+    engine.current = view; rails.current = glass; view.riders = glass;
+    setTicks(glass.ticks());
     view.jump(latest.current.index);
     const { line, y, focus } = latest.current.start;
     const unit = view.scrollToLine(line, y === undefined ? 0 : y - scroller.current!.getBoundingClientRect().top);
     (focus && unit ? unit.root : root).focus({ preventScroll: true });
     void renderMath(root).catch(() => {});
     return () => {
-      latest.current.start = { line: view.topLine() };
+      // A rebuild (new pins) reopens at the same line, same height, same focus.
+      const focused = section.current?.contains(document.activeElement) ? view.unitOf(document.activeElement) : undefined;
+      const kept = focused && !focused.root.classList.contains("fold-off") ? focused : view.unitAtLine(view.topLine());
+      latest.current.start = kept ? { line: kept.unit.line, y: kept.root.getBoundingClientRect().top, focus: kept === focused } : { line: view.topLine() };
+      glass.dispose();
       view.dispose();
-      engine.current = null;
+      engine.current = null; rails.current = null;
       root.replaceChildren();
-      setPeek(null); setLens(null); setCut(false);
+      setPeek(null); setLens(null); setCut(false); setPicking(null); setDeck(null);
     };
   }, [ladder, id]);
+  useEffect(() => {
+    const view = engine.current, glass = rails.current;
+    if (!view || !glass || glass.marks === feed.marks) return;
+    glass.setMarks(feed.marks);
+    setTicks(glass.ticks());
+    view.reflow(() => glass.paint());
+  }, [feed.marks]);
   useEffect(() => {
     engine.current?.switchTo(index);
     // A stop that hides the peeked line takes its peek with it.
     const open = peekRef.current;
     if (open?.unit.root.classList.contains("fold-off")) { open.host.remove(); if (engine.current) engine.current.peek = null; setPeek(null); }
+    setDeck(null); setPicking(null);
+    // Out of fold: the jump lands on the first mark it brought back.
+    const mark = focusAfter.current, glass = rails.current, view = engine.current;
+    focusAfter.current = null;
+    const target = mark && glass && view ? view.units[glass.unitOf(mark)] : undefined;
+    if (target && !target.root.classList.contains("fold-off")) { target.root.focus({ preventScroll: true }); target.root.scrollIntoView({ block: "nearest" }); }
   }, [index]);
+  const couldUndo = useRef(false);
+  useEffect(() => {
+    // Undo (menu, Ctrl+Z, or the toast) took the mark back: the toast goes with it.
+    const undone = couldUndo.current && !feed.canUndo;
+    couldUndo.current = feed.canUndo;
+    if (!toast) return;
+    if (undone) { setToast(false); return; }
+    const timer = window.setTimeout(() => setToast(false), TOAST_MS);
+    return () => clearTimeout(timer);
+  }, [toast, feed]);
   useEffect(() => {
     const element = scroller.current!;
     let pending = 0, target: FoldUnitView | null = null, timer = 0;
@@ -187,11 +240,10 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
   }, [cut]);
   const lensMarks = useMemo(() => {
     if (!lens) return [];
-    const byLine = marks(), found: StudyMark[] = [];
-    for (let line = lens.unit.unit.line; line <= lens.unit.unit.endLine; line++) found.push(...byLine.get(line) ?? []);
+    const found: StudyMark[] = [];
+    for (let line = lens.unit.unit.line; line <= lens.unit.unit.endLine; line++) found.push(...feed.study.get(line) ?? []);
     return found;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lens?.unit, marks]);
+  }, [lens, feed.study]);
   function pick(next: number) {
     if (short) return;
     setHint(false);
@@ -240,15 +292,90 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
     else if (inside) article.current?.focus({ preventScroll: true });
   }
   const moveCut = (value: number) => { setCutValue(value); engine.current?.cutAt(value / 100); };
+  // Mouse: a selection inside one line's shown author words opens the colour choice under it.
+  function selectFromPage() {
+    const view = engine.current, selection = getSelection();
+    if (!view || view.cutting || !selection || selection.isCollapsed || !selection.rangeCount) { setPicking(null); return; }
+    const range = selection.getRangeAt(0), element = (node: Node) => node instanceof Element ? node : node.parentElement;
+    const unit = view.unitOf(element(range.startContainer));
+    if (!unit || unit !== view.unitOf(element(range.endContainer)) || unit.kind !== "words") { setPicking(null); return; }
+    const shown = (token: HTMLElement) => !token.classList.contains("fold-added") && !token.classList.contains("fold-off");
+    const first = unit.tokens.findIndex(token => shown(token) && range.intersectsNode(token));
+    if (first >= 0) choose(unit, visibleRun(unit, first, token => range.intersectsNode(token)), range.getBoundingClientRect(), false);
+  }
+  // Keyboard: `h` on a line picks its first shown words.
+  function selectLine(unit: WordUnit) {
+    const first = unit.tokens.findIndex(token => !token.classList.contains("fold-added") && !token.classList.contains("fold-off"));
+    if (first < 0) return;
+    const run = visibleRun(unit, first), range = document.createRange(), selection = getSelection();
+    range.setStartBefore(unit.tokens[run[0]]); range.setEndAfter(unit.tokens[run[run.length - 1]]);
+    selection?.removeAllRanges(); selection?.addRange(range);
+    choose(unit, run, range.getBoundingClientRect(), true);
+  }
+  function choose(unit: WordUnit, run: readonly number[], rect: DOMRect, focus: boolean) {
+    const quote = run.length ? quoteOf(unit, run) : "", frame = section.current?.getBoundingClientRect();
+    if (!quote || !frame) { setPicking(null); return; }
+    setDeck(null);
+    flushSync(() => setPicking({ unit, quote, x: Math.max(8, rect.left - frame.left), y: rect.bottom - frame.top + 6 }));
+    if (focus) section.current?.querySelector<HTMLElement>(".fold-pick button")?.focus();
+  }
+  async function highlight(colour: SheetColour) {
+    const current = picking;
+    if (!current) return;
+    setPicking(null);
+    getSelection()?.removeAllRanges();
+    current.unit.root.focus({ preventScroll: true });
+    if (await marks.get().highlight(current.unit.unit.line, current.unit.unit.endLine, current.quote, colour)) setToast(true);
+  }
+  function undo() { setToast(false); void marks.get().undo(); }
+  // A rider chip: out of fold jumps to the stop that shows those marks, the deck lists, the glyph re-expands, your words open.
+  function railAction(chip: HTMLElement) {
+    const view = engine.current, glass = rails.current, projection = glass?.projection, at = Number(chip.dataset.unit);
+    if (!view || !glass || !projection) return;
+    const unit = view.units[at], action = chip.dataset.action;
+    if (action === "out") {
+      const list = projection.out.get(at) ?? [];
+      focusAfter.current = list[0] ?? null;
+      pick(glass.reach(list, index));
+    } else if (action === "deck") {
+      const rect = chip.getBoundingClientRect(), frame = section.current!.getBoundingClientRect();
+      setPicking(null);
+      setDeck(deck?.chip === chip ? null : { marks: projection.decks.get(at) ?? [], chip, x: rect.right - frame.left, y: rect.bottom - frame.top + 4 });
+    } else if (action === "ink") {
+      view.switchTo(0, unit);
+      unit.root.focus({ preventScroll: true });
+    } else if (action === "words") {
+      const list = projection.words.get(at) ?? [], opened = list.some(mark => glass.open.has(mark.id));
+      for (const mark of list) if (opened) glass.open.delete(mark.id); else glass.open.add(mark.id);
+      view.reflow(() => glass.paint());
+    }
+  }
+  function jumpTo(mark: FoldMark) {
+    const view = engine.current, glass = rails.current, unit = view && glass ? view.units[glass.unitOf(mark)] : undefined;
+    setDeck(null); setTray(false);
+    if (!unit || unit.root.classList.contains("fold-off")) return;
+    unit.root.focus({ preventScroll: true });
+    unit.root.scrollIntoView({ block: "center" });
+  }
+  useEffect(() => { if (deck) section.current?.querySelector<HTMLElement>(".fold-deck-pop button")?.focus(); }, [deck]);
   const level = stopLabel(STOPS[index]);
+  const orphans = rails.current?.projection?.orphans ?? [], checks = feed.marks.filter(mark => mark.check), trayCount = orphans.length + checks.length;
+  const markLine = (mark: FoldMark) => <><span className="fold-pop-kind">{markKind(mark)}</span>{(mark.quote || mark.text) && <span className="fold-pop-text">{mark.quote || mark.text}</span>}</>;
   return <section ref={section} className="fold-view" aria-label={t("Fold view")} data-stop={STOPS[index]} data-cut={cut || undefined}
     style={cut ? { "--cut-at": `${cutValue}%` } as React.CSSProperties : undefined} onKeyDown={event => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
-    const key = event.key, target = event.target as HTMLElement, unit = engine.current?.unitOf(target);
+    const key = event.key, target = event.target as HTMLElement, unit = engine.current?.unitOf(target), inPopup = !!target.closest(".fold-pop, .fold-pick");
     let handled = true;
-    if (key === "Escape") { if (peekRef.current) closePeek(true); else if (cut) toggleCut(); else close(); }
+    if (key === "Escape") {
+      if (picking) { setPicking(null); getSelection()?.removeAllRanges(); picking.unit.root.focus({ preventScroll: true }); }
+      else if (deck) { setDeck(null); deck.chip.focus({ preventScroll: true }); }
+      else if (tray) setTray(false);
+      else if (peekRef.current) closePeek(true); else if (cut) toggleCut(); else close();
+    }
+    else if (inPopup) handled = false;
     else if (key === "Enter" && event.shiftKey && unit) reveal(unit.unit.line, unit.root.getBoundingClientRect().top);
     else if (key === "Enter" && !event.shiftKey && unit && target === unit.root) togglePeek(unit);
+    else if ((key === "h" || key === "H") && unit?.kind === "words" && target === unit.root && !cut) selectLine(unit);
     else if ((key === "c" || key === "C") && !target.closest("button:not([data-compare-handle])")) toggleCut();
     else if (key === "[") pick(Math.max(0, index - 1));
     else if (key === "]") pick(Math.min(STOPS.length - 1, index + 1));
@@ -258,8 +385,11 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
     else handled = false;
     if (handled) { event.preventDefault(); event.stopPropagation(); }
   }}>
-    <div ref={scroller} className="fold-scroller">
-      <article ref={article} className="rich-document fold-document" tabIndex={0} aria-label={t("Fold view")} />
+    <div ref={scroller} className="fold-scroller" onPointerUp={() => requestAnimationFrame(selectFromPage)} onClick={event => {
+      const chip = (event.target as Element).closest<HTMLElement>("button[data-action]");
+      if (chip && article.current?.contains(chip)) railAction(chip); else setDeck(null);
+    }}>
+      <article ref={article} className="rich-document fold-document" tabIndex={0} aria-label={t("Fold view")} data-marks={feed.marks.length ? "" : undefined} />
     </div>
     {peek && engine.current && createPortal(<FoldEvidence html={engine.current.source(peek.unit)} line={peek.unit.unit.line}
       open={() => reveal(peek.unit.unit.line, peek.unit.root.getBoundingClientRect().top)} />, peek.host)}
@@ -267,7 +397,28 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
     {cut && <CompareSlider overlay value={cutValue} direction="horizontal" before={t("Full")} after={level}
       label={t("Divider between Full and {{level}}", { level })} valueText={value => t("{{percent}}% shows Full", { percent: value })}
       onChange={moveCut} onCommit={moveCut} />}
-    <FoldBar index={index} percents={percents} disabled={short} hint={hint} pick={pick} cut={cut} toggleCut={toggleCut}
+    {picking && <div className="fold-pick" role="group" aria-label={t("选区操作")} style={{ left: picking.x, top: picking.y }}>
+      <div role="group" aria-label={t("高亮")}>{COLOURS.map(colour => {
+        const label = t("Highlight: {{colour}}", { colour: t(colour) });
+        return <button key={colour} type="button" className="fold-swatch" data-colour={colour} aria-label={label} title={label} onClick={() => void highlight(colour)} />;
+      })}</div>
+    </div>}
+    {deck && <div className="fold-pop fold-deck-pop" role="dialog" aria-label={t("Magnets in this section · {{n}}", { n: deck.marks.length })}
+      style={{ right: `calc(100% - ${deck.x}px)`, top: deck.y }}>
+      <ul>{deck.marks.map(mark => <li key={mark.id}><button type="button" onClick={() => jumpTo(mark)}>{markLine(mark)}</button></li>)}</ul>
+    </div>}
+    {trayCount > 0 && !cut && <div className="fold-tray">
+      <button type="button" className="fold-tray-chip" aria-expanded={tray} onClick={() => { setDeck(null); setTray(!tray); }}>{t("Re-anchor tray · {{n}}", { n: trayCount })}</button>
+      {tray && <div className="fold-pop fold-tray-pop" role="dialog" aria-label={t("Re-anchor tray")}>
+        {orphans.length > 0 && <><p className="fold-pop-head">{t("Without a line")}</p><ul>{orphans.map(mark => <li key={mark.id}>{markLine(mark)}</li>)}</ul></>}
+        {checks.length > 0 && <><p className="fold-pop-head">{t("Placement to check")}</p>
+          <ul>{checks.map(mark => <li key={mark.id}><button type="button" onClick={() => jumpTo(mark)}>{markLine(mark)}</button></li>)}</ul></>}
+        <button type="button" className="fold-pop-open" onClick={close}>{t("Open on the page")}</button>
+      </div>}
+    </div>}
+    {toast && <div className="fold-toast" role="status">{t("Highlight added")}
+      {feed.canUndo && <button type="button" onClick={undo}>{t("Undo")}</button>}</div>}
+    <FoldBar index={index} percents={percents} ticks={ticks} disabled={short} hint={hint} pick={pick} cut={cut} toggleCut={toggleCut}
       scrub={value => engine.current?.scrub(value)}
       release={() => { const settled = engine.current?.release(); setHint(false); if (settled !== undefined) setStop(STOPS[settled]); }} />
   </section>;

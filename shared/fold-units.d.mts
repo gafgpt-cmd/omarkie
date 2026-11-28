@@ -53,6 +53,19 @@ export interface FoldUnitContext {
   isFirstInDocument?: boolean;
   hasMoreProseInSection?: boolean;
   hasMoreProseAfter?: boolean;
+  /** Sentences to keep through Takeaway; a block pin keeps the first. */
+  pin?: { quotes?: readonly string[]; block?: boolean } | null;
+}
+
+/** A mark that keeps its sentence: `quote` pins those words, no quote pins the line's block. */
+export interface FoldPin {
+  line: number;
+  quote?: string;
+}
+
+export interface LadderOptions {
+  parser?: unknown;
+  pins?: readonly FoldPin[];
 }
 
 export interface MonotonicViolation {
@@ -87,6 +100,8 @@ export interface UnitLadder {
   stops: Record<LocalLevelId, string>;
   words: Record<LocalLevelId, number>;
   violations: MonotonicViolation[];
+  /** Stops whose text a pin changed. */
+  pinned: LocalLevelId[];
 }
 
 export interface FoldStopResult {
@@ -116,5 +131,5 @@ export declare function extractUnits(markdown: string, options?: { parser?: unkn
 export declare function foldUnit(unit: DocumentUnit, level: number | LocalLevelId, context?: FoldUnitContext): string;
 export declare function enforceMonotonic<T extends string | FoldLine>(stops: Partial<Record<LocalLevelId, T>>): MonotonicResult<T>;
 export declare function isMonotonic(stops: Partial<Record<LocalLevelId, string | FoldLine>>): boolean;
-export declare function foldDocumentLadder(markdown: string, options?: { parser?: unknown }): FoldDocumentLadder;
-export declare function foldDocument(markdown: string, level: number | LocalLevelId, options?: { parser?: unknown }): FoldDocumentResult;
+export declare function foldDocumentLadder(markdown: string, options?: LadderOptions): FoldDocumentLadder;
+export declare function foldDocument(markdown: string, level: number | LocalLevelId, options?: LadderOptions): FoldDocumentResult;
