@@ -20,7 +20,7 @@
 .checkbox-option input{accent-color:var(--accent)}
 .dialog-note{color:var(--muted);font-size:12px;line-height:1.7;margin:12px 0 0}
 .field-error{font-size:13px;color:#b3261e;margin:0}
-[data-appearance=dark] .field-error{color:#ffb4ab}
+[data-appearance=dark] .field-error,[data-appearance=dark] .form-error{color:#ffb4ab}
 .fold-slot{border:1px solid var(--border);border-radius:6px;padding:12px 14px 4px;margin:12px 0}
 .fold-slot-head{display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-bottom:12px;font-weight:600}
 .fold-egress{max-width:100%;padding:2px 8px;border:1px solid currentColor;border-radius:4px;font-size:12px;font-weight:500;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
