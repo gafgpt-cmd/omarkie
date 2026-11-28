@@ -11,6 +11,7 @@ import { loadHighlighting, extractHeadings, renderMarkdown, setMarkdownOptions }
 import { host } from "./host";
 import { refreshDiagrams, renderDiagrams } from "./editor/diagrams";
 import { renderMath } from "./editor/math";
+import { configureEmbeds, freezeEmbeds, openVaultNote, renderEmbeds, updateEmbedDrafts, updateEmbedFiles } from "./editor/embeds";
 import { exportHtml, portableHtml, conversionMarkdown } from "./editor/print";
 import { commandForKey, commandKey, commandsByAction } from "./commands";
 import { loadPreferences } from "./preferences";
@@ -31,6 +32,7 @@ import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
 const CleanLayer = lazy(() => import("./components/CleanLayer").then(module => ({ default: module.CleanLayer })));
 const PayloadPanel = lazy(() => import("./components/PayloadPanel"));
+const BaseView = lazy(() => import("./components/BaseView").then(module => ({ default: module.BaseView })));
 import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
@@ -73,6 +75,25 @@ export default function App() {
   }
   const [mountedDocuments, setMountedDocuments] = useState(() => new Set<string>());
   const session = useDocuments(() => ![...editors.current.values()].some(editor => editor.composing()));
+  const embedSession = useRef(session);
+  embedSession.current = session;
+  useEffect(() => configureEmbeds({
+    read: relatives => host.readNotes ? host.readNotes(relatives) : Promise.resolve([]),
+    note: id => {
+      const current = embedSession.current, record = current.documents.find(item => item.id === id);
+      return record && { relative: vaultRelative(current.folder, record.path) ?? "", content: record.content };
+    },
+    open: async (relative, line) => {
+      if (/\.base$/i.test(relative)) { setBaseOpen(relative); return; }
+      const file =embedSession.current.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === relative);
+      const record = file && await embedSession.current.openToken(file.token);
+      if (record) jumpTo(record.id, line);
+    },
+  }), []);
+  useEffect(() => { updateEmbedFiles(session.folder ? session.files : []); }, [session.files, session.folder]);
+  useEffect(() => {
+    updateEmbedDrafts(session.documents.flatMap(record => { const relative = vaultRelative(session.folder, record.path); return relative ? [{ relative, content: record.content }] : []; }));
+  }, [session.documents, session.folder]);
   const [preferences, setPreferences] = useState(() => { const initial = loadPreferences(); setMarkdownOptions(initial); return initial; });
   const initialPreferences = useRef(preferences);
   const [themes, setThemes] = useState<{ id: string; name: string; css: string }[]>([]);
@@ -99,6 +120,13 @@ export default function App() {
   const [glassOffer, setGlassOffer] = useState<{ count: number; notes?: { path: string; title?: string }[] } | null>(null);
   const [glassBusy, setGlassBusy] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
+  // Bases (`.base`) in the file list open as read-only views; everything else opens as a document.
+  const [baseOpen, setBaseOpen] = useState<string | null>(null);
+  function openListed(token: string) {
+    const file = session.files.find(item => item.token === token), relative = file?.relative.replaceAll("\\", "/");
+    if (relative && /\.base$/i.test(relative)) { setBaseOpen(relative); return Promise.resolve(true); }
+    return session.openToken(token);
+  }
   const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
   const glassDismissed = useRef(false);
   useEffect(() => {
@@ -450,6 +478,7 @@ export default function App() {
       await loadHighlighting();
       printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
       await fontFacesReady();
+      await renderEmbeds(printDocument.current, active.id); freezeEmbeds(printDocument.current, active.id);
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
       const glassNote = vaultRelative(session.folder, active.path);
       if (glassScope && glassNote && host.glass) {
@@ -701,7 +730,7 @@ export default function App() {
         setTab={value => { setTab(value); if (readingVisible) setShowFiles(true); }}
         sheets={readingVisible ? { selected: !showFiles, show: () => setShowFiles(false), mount: setSheetsRoot } : undefined}
         select={session.setActiveId}
-        openToken={session.openToken}
+        openToken={token => void openListed(token)}
         openFolder={session.openFolder}
         create={() => void session.create()}
         refresh={session.refresh}
@@ -879,7 +908,8 @@ export default function App() {
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>
-      {dialog === "quick-open" && <QuickOpen documents={session.documents} files={session.files} recent={session.recent} openRecent={path => session.recentAction("open", path)} select={session.setActiveId} open={session.openToken} close={closeDialog} />}
+      {dialog === "quick-open" && <QuickOpen documents={session.documents} files={session.files} recent={session.recent} openRecent={path => session.recentAction("open", path)} select={session.setActiveId} open={openListed} close={closeDialog} />}
+      <Suspense fallback={null}>{baseOpen && <BaseView key={baseOpen} relative={baseOpen} close={() => setBaseOpen(null)} open={relative => openVaultNote(relative)} />}</Suspense>
       {dialog && ["table", "link", "reference-link", "footnote"].includes(dialog) && <InsertDialog kind={dialog as InsertKind} selected={selectedText} close={closeDialog} submit={value => {
         if (dialog === "link") editor()?.insert(`[${(value.label || value.value || "链接").replace(/[\[\]]/g, character => "\\" + character)}](${value.value})`);
         else editor()?.command(dialog, value);

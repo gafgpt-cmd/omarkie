@@ -140,11 +140,13 @@ export function bundlePlan(snapshot, date = new Date().toISOString().slice(0, 10
         continue;
       }
       let label = ref.dimensionAlias ? target.relative.split("/").at(-1) : ref.alias || ref.target;
-      label = !ref.image ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
-      if (ref.table && ref.image) label = label.replaceAll("|", "\\|");
+      // A note embed leaves the bundle as a link to that note: no portable reader inlines a section.
+      const picture = ref.image && target.content === undefined;
+      label = !picture ? label.replace(/[!-/:-@[-`{-~]/g, "\\$&") : label.replace(/[\[\]\\]/g, "\\$&");
+      if (ref.table && picture) label = label.replaceAll("|", "\\|");
       const dimensions = ref.attributes ? ref.attributes.source.slice(0, -1) + (ref.width && !ref.attributes.width ? ` width=${ref.width}` : "") + (ref.height && !ref.attributes.height ? ` height=${ref.height}` : "") + "}" : ref.image && (ref.width || ref.height) ? `{${[ref.width && `width=${ref.width}`, ref.height && `height=${ref.height}`].filter(Boolean).join(" ")}}` : "";
       const media = ref.image ? /\.(?:mp3|wav|m4a|ogg)$/i.test(target.relative) ? "audio" : /\.(?:mp4|webm)$/i.test(target.relative) ? "video" : "" : "";
-      const replacement = media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${ref.image ? "!" : ""}[${label}](${url})${dimensions}`;
+      const replacement = media ? `<${media} controls preload="metadata" src="${md.utils.escapeHtml(url)}"${ref.width ? ` width="${md.utils.escapeHtml(ref.width)}"` : ""}></${media}>` : `${picture ? "!" : ""}[${label}](${url})${picture ? dimensions : ""}`;
       edits.push({ from: ref.from, to: ref.to, replacement });
     }
     for (const edit of edits.sort((a, b) => b.from - a.from)) content = content.slice(0, edit.from) + edit.replacement + content.slice(edit.to);

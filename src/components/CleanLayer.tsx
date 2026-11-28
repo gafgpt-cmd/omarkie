@@ -5,6 +5,7 @@ import type { EditorHandle } from "../editor/MarkdownEditor";
 import { renderMarkdown } from "../editor/markdown";
 import { renderDiagrams } from "../editor/diagrams";
 import { renderMath } from "../editor/math";
+import { renderEmbeds } from "../editor/embeds";
 import { t } from "../i18n";
 import type { DocumentRecord } from "../types";
 import "./clean-layer.css";
@@ -42,7 +43,7 @@ export function CleanLayer({ record, current, editor, canBake, close }: {
   const html = useMemo(() => preview ? renderMarkdown(preview.markdown, preview.id) : "", [preview]);
   useEffect(() => {
     const root = article.current;
-    if (root) void Promise.all([renderDiagrams(root), renderMath(root)]).catch(() => {});
+    if (root) void renderEmbeds(root, preview?.id).then(() => Promise.all([renderDiagrams(root), renderMath(root)])).catch(() => {});
   }, [html, changes]);
   const changed = !!preview && preview.markdown !== preview.source;
   async function apply() {

@@ -21,6 +21,7 @@ function sanitize(elements: readonly Record<string, unknown>[], appState: Record
   }
   return { type: "excalidraw", version: 2, source: "omarkie", elements, appState: state, files: kept };
 }
+const signature = (scene: Scene) => JSON.stringify([scene.elements.map(element => [element.id, element.version, element.versionNonce, element.isDeleted]), scene.appState, Object.keys(scene.files)]);
 
 export default function BoardView({ note, magnet, name, close }: { note: string; magnet: string; name: string; close(): void }) {
   const [scene, setScene] = useState<Scene | null>(null);
@@ -32,6 +33,7 @@ export default function BoardView({ note, magnet, name, close }: { note: string;
   const saving = useRef<Promise<void> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closed = useRef(false);
+  const persisted = useRef("");
 
   useEffect(() => {
     document.documentElement.classList.add("board-open");
@@ -45,6 +47,7 @@ export default function BoardView({ note, magnet, name, close }: { note: string;
       if (reply.error) { setError(reply.error); setStatus("error"); return; }
       if (reply.corrupt) setWarning(t("This board file could not be read. A blank board is open and the damaged copy is kept beside it."));
       latest.current = reply.scene ?? null;
+      if (reply.scene) persisted.current = signature(reply.scene);
       setScene(reply.scene ?? null);
       setStatus("ready");
     }).catch(error => { if (live) { setError((error as Error).message); setStatus("error"); } });
@@ -105,6 +108,10 @@ export default function BoardView({ note, magnet, name, close }: { note: string;
         {initial && <Excalidraw initialData={initial as never} theme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
           onChange={(elements, appState, files) => {
             latest.current = sanitize(elements as unknown as Record<string, unknown>[], appState as unknown as Record<string, unknown>, files as unknown as Record<string, unknown>);
+            // Excalidraw calls onChange on every render (hover, cursor); save only what would change the file.
+            const next = signature(latest.current);
+            if (next === persisted.current) return;
+            persisted.current = next;
             schedule();
           }}
           UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false, clearCanvas: true, toggleTheme: true } }} />}

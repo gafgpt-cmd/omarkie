@@ -389,7 +389,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       do {
         let query = try arg(args, 0, String.self), options = try arg(args, 1, [String: Bool].self)
         let inventory = try store.scan()
-        let files = inventory["files"] as? [[String: String]] ?? [], skipped = inventory["skipped"] as? Int ?? 0
+        let files = (inventory["files"] as? [[String: String]] ?? []).filter { (($0["name"] ?? "") as NSString).pathExtension.lowercased() != "base" }, skipped = inventory["skipped"] as? Int ?? 0
         let encodings = Dictionary(owner.hosts.flatMap { $0.store.records.values }.compactMap { record in record.path.map { ($0, record.encoding ?? "utf-8") } }, uniquingKeysWith: { first, _ in first })
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
           let result: [String: Any]
@@ -732,6 +732,7 @@ final class NativeWindowHost: NSObject, NSWindowDelegate, WKScriptMessageHandler
       try owner.workspace.remember(file, folder: true)
       return try await scanVault(file)
     case "vaultSnapshot": return try owner.workspace.vaultSnapshot(store, chaptersOnly: args.first as? Bool == true)
+    case "readNotes": return try owner.workspace.readNotes(store, relatives: try arg(args, 0, [String].self))
     case "exportBundle":
       let payload = try arg(args, 0, [String: Any].self)
       let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false

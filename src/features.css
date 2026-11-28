@@ -73,3 +73,35 @@
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body{position:relative;padding-left:4.5em}
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body>code{white-space:pre}
 .code-line-numbers .md-fence:not(.fence-editing)>.fence-body::before{content:attr(data-line-numbers);position:absolute;left:0;top:0;bottom:0;width:3.5em;padding:inherit;padding-left:0;padding-right:.6em;text-align:right;color:var(--muted);border-right:1px solid var(--border);white-space:pre;pointer-events:none;user-select:none;font:inherit}
+.note-embed{display:block;margin:.6em 0;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;background:color-mix(in srgb,var(--paper) 94%,var(--accent));padding:.35em .9em .5em;white-space:normal;user-select:text}
+.note-embed-head{display:flex;align-items:baseline;gap:.6em;font-family:var(--interface-font);font-size:.8em;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:.25em;margin-bottom:.4em}
+.note-embed-open{font-weight:600;color:var(--accent);text-decoration:none;cursor:pointer}.note-embed-open:hover,.note-embed-open:focus-visible{text-decoration:underline}
+.note-embed-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.note-embed-body{display:block}.note-embed-body>:first-child{margin-top:0}.note-embed-body>:last-child{margin-bottom:0}
+.note-embed-message,.base-notice-alert{--notice:#9a5a00}:root[data-appearance=dark] :is(.note-embed-message,.base-notice-alert){--notice:#e6b25c}
+.note-embed-message{display:block;font-family:var(--interface-font);font-size:.85em;color:var(--warning,var(--notice))}
+.note-embed-paragraph{margin:1em 0}
+@media print{.note-embed{background:none}}
+.utility-dialog:has(.base-dialog){width:min(960px,calc(100vw - 40px))}
+.base-path{margin:0 0 12px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.base-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 12px;border-bottom:1px solid var(--border)}
+.base-tabs [role=tab]{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:inherit;font-size:13px;padding:6px 10px;margin-bottom:-1px;cursor:pointer}
+.base-tabs [role=tab][aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.base-tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.base-notice{margin:0 0 8px;font-size:12px;color:var(--muted)}.base-notice-alert{color:var(--warning,var(--notice));font-weight:600}
+.base-surface{overflow:auto}
+.base-table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.base-table th{position:sticky;top:0;text-align:left;font-weight:600;color:var(--muted);background:var(--paper);border-bottom:1px solid var(--border);padding:6px 10px;white-space:nowrap}
+.base-table td{border-bottom:1px solid var(--border);padding:6px 10px;vertical-align:top;overflow-wrap:anywhere}
+.base-table .base-number{text-align:right}.base-table td.base-name{font-weight:600;color:var(--accent)}
+.base-row{cursor:pointer}.base-row:hover{background:color-mix(in srgb,var(--paper) 92%,var(--accent))}
+.base-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;background:color-mix(in srgb,var(--paper) 88%,var(--accent))}
+.base-count{margin:10px 0 0;font-size:12px;color:var(--muted)}
+:is(.base-surface,.base-embed) .base-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;list-style:none;margin:0;padding:2px}
+.base-cards .base-card{border:1px solid var(--border);border-radius:6px;padding:10px 12px;background:var(--paper);font-size:13px;margin:0}
+.base-card:hover{border-color:var(--accent)}
+.base-card-title{display:block;font-weight:600;color:var(--accent);margin-bottom:6px;overflow-wrap:anywhere}
+.base-card dl{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0}
+.base-card dt{color:var(--muted);font-size:12px}.base-card dd{margin:0;overflow-wrap:anywhere}.base-card dd.base-number{text-align:left;font-variant-numeric:tabular-nums}
+.base-embed{font-family:var(--interface-font);overflow-x:auto}.base-embed .base-notice:first-child,.base-embed>:first-child{margin-top:0}
+.base-embed .base-table{font-size:.85em}.base-embed .base-count{margin-top:6px}

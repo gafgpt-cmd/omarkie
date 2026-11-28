@@ -9,7 +9,7 @@ import { frontmatter, properties, setProperties, makeReady, validateOKF } from "
 import { newNote } from "../shared/new-note.mjs";
 import { references, referenceIndex, bundlePlan } from "../shared/references.mjs";
 import { DocumentStore, digest } from "../electron/store.mjs";
-import { vaultSnapshot, exportBundle } from "../electron/document-workflows.mjs";
+import { vaultSnapshot, exportBundle, readNotes } from "../electron/document-workflows.mjs";
 import { conversionOptions, convertExport, pandocPath } from "../electron/interchange.mjs";
 const exec = promisify(execFile);
 async function fixture(t) { const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "document-workflows-"))); t.after(() => rm(root, { recursive: true, force: true })); return root; }
@@ -172,11 +172,15 @@ test("restored aliased notes retain canonical identity, duplicate choices and re
 test("host snapshot/export uses selected-folder scope, bounded copied output and no source mutation", async t => {
   const root = await fixture(t), vault = path.join(root, "vault"), output = path.join(root, "output");
   await mkdir(vault); await mkdir(output); await mkdir(path.join(vault, "images"));
-  const source = '![[images/picture space.png|100]]\n';
+  const source = '![[images/picture space.png|100]]\n', baseText = "views:\n  - type: table\n    name: All\n";
   await writeFile(path.join(vault, "note.md"), source); await writeFile(path.join(vault, "images/picture space.png"), "synthetic image");
+  await writeFile(path.join(vault, "list.base"), baseText);
   await writeFile(path.join(root, "outside.md"), "outside");
   if (process.platform !== "win32") await symlink(path.join(root, "outside.md"), path.join(vault, "escape.md"));
-  const store = new DocumentStore(path.join(root, "session")); await store.scan(vault);
+  const store = new DocumentStore(path.join(root, "session")), listing = await store.scan(vault);
+  assert.deepEqual(listing.files.map(file => file.relative).sort(), ["images", "list.base", "note.md"]);
+  assert.deepEqual(await readNotes(store, ["list.base"]), [{ relative: "list.base", content: baseText }]);
+  await assert.rejects(store.open(path.join(vault, "list.base")), "Bases never open as editable documents");
   const snapshot = await vaultSnapshot(store); assert.equal(snapshot.notes.length, 1);
   assert.equal(snapshot.notes[0].path, path.join(vault, "note.md"));
   const plan = bundlePlan(snapshot, "2026-01-01"), destination = await exportBundle(store, plan, output);
