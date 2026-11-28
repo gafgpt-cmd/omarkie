@@ -201,7 +201,9 @@ test("a crash in the middle of a cache write leaves no entry and the previous fo
     await fold.run(${JSON.stringify({ noteId: NOTE, title: "Metformina", markdown: edited, ...ROUTE })}).done;
   `], { stdio: "inherit" });
   const [code, signal] = await once(child, "exit");
-  assert.equal(signal, "SIGKILL", `child exit ${code}`);
+  // Windows has no signals: Node maps SIGKILL to TerminateProcess(handle, 1), so the child reports exit code 1.
+  if (process.platform === "win32") assert.deepEqual([code, signal], [1, null]);
+  else assert.equal(signal, "SIGKILL", `child exit ${code}`);
 
   assert.equal(await readFile(path.join(dir, "fold.json"), "utf8"), before);
   const names = await readdir(path.join(dir, "chunks"));
