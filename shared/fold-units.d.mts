@@ -66,6 +66,8 @@ export interface FoldPin {
 export interface LadderOptions {
   parser?: unknown;
   pins?: readonly FoldPin[];
+  /** This markdown's units from `extractUnits`, to skip extracting them again. */
+  units?: DocumentUnit[];
 }
 
 export interface MonotonicViolation {
@@ -102,6 +104,8 @@ export interface UnitLadder {
   violations: MonotonicViolation[];
   /** Stops whose text a pin changed. */
   pinned: LocalLevelId[];
+  /** The stops without this unit's pins; only on pinned units. */
+  plain?: Record<LocalLevelId, string>;
 }
 
 export interface FoldStopResult {
@@ -128,6 +132,8 @@ export declare function unitHash(kind: string, markdown: string): string;
 export declare function rawClassOf(kindOrElement: string | { kind?: string } | null | undefined): RawClass | null;
 export declare function toFoldUnit(unit: FoldUnit): FoldUnit;
 export declare function extractUnits(markdown: string, options?: { parser?: unknown }): DocumentUnit[];
+/** The sentences a pin can keep, split as the fold splits them. */
+export declare function unitSentences(unit: DocumentUnit): string[];
 export declare function foldUnit(unit: DocumentUnit, level: number | LocalLevelId, context?: FoldUnitContext): string;
 export declare function enforceMonotonic<T extends string | FoldLine>(stops: Partial<Record<LocalLevelId, T>>): MonotonicResult<T>;
 export declare function isMonotonic(stops: Partial<Record<LocalLevelId, string | FoldLine>>): boolean;

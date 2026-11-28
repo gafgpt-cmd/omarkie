@@ -13,6 +13,8 @@ export interface FlashcardPanel {
   answer?: { front: string; back: string };
   /** Drafts proposed by the Spaced Repetition port; `found` counts every card it parsed. */
   imported?: { drafts: Omit<CardDraft, "id" | "type">[]; found: number };
+  /** Study highlights still without a card (from Fold view's strip): their drafts wait for review, never saved by themselves. */
+  highlights?: ReadingTarget[];
 }
 
 type Draft = CardDraft & { selected: boolean };
@@ -53,6 +55,10 @@ export default function Flashcards({ id, content, panel, close }: {
           saved ? t("{{saved}} already saved.", { saved }) : "",
           skipped ? t("{{skipped}} left out: a note holds at most {{limit}} cards.", { skipped, limit: cardsPerNote }) : "",
         ].filter(Boolean).join(" "));
+      } else if (panel.highlights) {
+        const fresh = suggestCards(items.filter(item => item.type === "card"), panel.highlights, [], t("[…]"), fallback);
+        setDrafts(fresh.map(draft => ({ ...draft, id: crypto.randomUUID(), type: "card", selected: true })));
+        setImportNote(t("{{count}} card drafts from your highlights: review them, then save.", { count: fresh.length }));
       } else {
         setImportNote("");
         if (panel.target && items.filter(item => item.type === "card").length < cardsPerNote)

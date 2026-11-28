@@ -151,7 +151,8 @@ try {
   await settle(page);
 
   // Reveal: Shift+Enter opens the editor with the source line at the same y and flashes it 1.2 s.
-  await page.locator(".fold-scroller").evaluate(element => { element.scrollTop = 0; });
+  // Scrolled just past the pre-fold strip: the editor has nothing above its first line, so a line under the strip cannot keep its y.
+  await page.locator(".fold-scroller").evaluate(element => { element.scrollTop = element.querySelector(".fold-strip").offsetHeight; });
   const assessment = unit(page, ASSESSMENT);
   await focusUnit(page, ASSESSMENT);
   const y1 = await top(assessment);

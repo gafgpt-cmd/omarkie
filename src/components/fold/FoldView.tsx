@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { unitAtLine } from "../../../shared/fold-project.mjs";
+import { keeps, keptPayload, markGroup, markPins, readChoice, redFlags, setKeep, stripGroups, type StripChoice } from "../../../shared/fold-strip.mjs";
 import { worthFolding } from "../../../shared/fold-text.mjs";
-import { foldDocumentLadder, type FoldDocumentLadder } from "../../../shared/fold-units.mjs";
+import { extractUnits, foldDocumentLadder, type FoldDocumentLadder, type FoldPin } from "../../../shared/fold-units.mjs";
 import type { SheetColour } from "../../../shared/reading-store.ts";
 import { renderMath } from "../../editor/math";
 import { t } from "../../i18n";
@@ -11,7 +13,8 @@ import { FoldBar } from "./FoldBar";
 import { FoldEvidence, FoldLens } from "./FoldEvidence";
 import type { FoldMark, FoldMarks } from "./fold-marks";
 import { FoldEngine, type FoldUnitView, type WordUnit } from "./morph";
-import { FoldRails, markKind, quoteOf, visibleRun } from "./rails";
+import { PreFoldStrip } from "./PreFoldStrip";
+import { FoldRails, markKind, quoteOf, visibleRun, type RailHints } from "./rails";
 import { STOPS, stopLabel, type FoldStart, type Stop } from "./stops";
 import "./fold.css";
 
@@ -21,6 +24,8 @@ const HOLD_MS = 450;
 const HOLD_SLOP = 8;
 const COLOURS: readonly SheetColour[] = ["amber", "blue", "rose", "green"];
 const TOAST_MS = 6000;
+// What the strip keeps, per note: `{ seen, keep }` with only the reader's overrides.
+const STRIP_STORE = "omarkie-fold-strip:";
 
 interface Peek { unit: FoldUnitView; host: HTMLElement; y: number }
 interface Lens { unit: FoldUnitView; x: number; y: number }
@@ -29,8 +34,10 @@ interface Pick { unit: WordUnit; quote: string; x: number; y: number }
 interface Deck { marks: readonly FoldMark[]; chip: HTMLElement; x: number; y: number }
 
 // Fold view: the note's own words at a chosen local stop, read-only, in place of the rendered page.
-export default function FoldView({ id, content, stop, setStop, close, start, leave, reveal, marks }: {
+export default function FoldView({ id, memory, content, stop, setStop, close, start, leave, reveal, marks }: {
   id: string;
+  // The note's name for what the reader chose to keep (its vault path, else its id).
+  memory: string;
   content: string;
   stop: Stop;
   setStop(stop: Stop): void;
@@ -43,47 +50,68 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
   marks: FoldMarks;
 }) {
   const feed = useSyncExternalStore(marks.subscribe, marks.get);
-  // Highlighted, magnet and circled sentences are pinned: they reach Takeaway in the author's words.
-  const pinKey = JSON.stringify(feed.marks.flatMap(mark => mark.line === null || mark.kind === "sticky" ? []
-    : mark.kind === "highlight" ? (mark.quote ? [[mark.line, mark.quote]] : []) : [[mark.line]]));
+  const units = useMemo(() => extractUnits(content), [content]), flags = useMemo(() => redFlags(units), [units]);
+  const [choice, setChoiceState] = useState(() => readChoice(localStorage.getItem(STRIP_STORE + memory)));
+  const setChoice = (next: StripChoice) => { setChoiceState(next); localStorage.setItem(STRIP_STORE + memory, JSON.stringify(next)); };
+  const groups = useMemo(() => stripGroups(feed.marks, flags), [feed.marks, flags]);
+  // Kept groups pin their marks' sentences, red flags their own: they reach Takeaway in the author's words.
+  const ownPins = useMemo(() => markPins(feed.marks, choice), [feed.marks, choice]);
+  const pinKey = JSON.stringify([ownPins, keeps(choice, "redflag")]);
   const previous = useRef<FoldDocumentLadder | null>(null);
   const ladder = useMemo(() => {
-    const pins = (JSON.parse(pinKey) as [number, string?][]).map(([line, quote]) => quote === undefined ? { line } : { line, quote });
-    const next = foldDocumentLadder(content, { pins }), last = previous.current;
+    const [own, flagged] = JSON.parse(pinKey) as [FoldPin[], boolean];
+    const next = foldDocumentLadder(content, { pins: flagged ? [...own, ...flags] : own, units }), last = previous.current;
     // Same lines at every stop: keep the built page (and the reader's place) as it is.
     const same = last && last.byUnit.length === next.byUnit.length && last.byUnit.every((entry, at) =>
       entry.pinned.join() === next.byUnit[at].pinned.join() && STOPS.every(level => entry.stops[level] === next.byUnit[at].stops[level]));
     return previous.current = same ? last : next;
-  }, [content, pinKey]);
+  }, [content, units, flags, pinKey]);
+  // Post-fold hints: ★ for the reader's own pins (and what they keep), ⚑ for suggested red flags, Keep for marks let fold.
+  const hints = useMemo<RailHints>(() => ({
+    starred: new Set(ownPins.map(pin => unitAtLine(ladder.units, pin.line))),
+    kept: keptPayload(ladder, ownPins),
+    keepable: mark => { const group = mark.line === null ? null : markGroup(mark); return !!group && !keeps(choice, group); },
+  }), [ladder, ownPins, choice]);
   const short = useMemo(() => !worthFolding(content, ladder.stops.topic.text), [content, ladder]);
   const index = short ? 0 : STOPS.indexOf(stop);
   const percents = useMemo(() => STOPS.map(level => ladder.total ? Math.round(ladder.stops[level].shown / ladder.total * 100) : 100), [ladder]);
   const section = useRef<HTMLElement>(null), scroller = useRef<HTMLDivElement>(null), article = useRef<HTMLElement>(null), engine = useRef<FoldEngine | null>(null);
   const rails = useRef<FoldRails | null>(null), [, setPainted] = useState(0), [ticks, setTicks] = useState<{ shown: number; total: number }[]>();
-  const [hint, setHint] = useState(true);
+  const [hint, setHint] = useState(true), [stripOpen, setStripOpen] = useState(false);
+  // The strip rides inside the page, above the first fold line; it outlives rebuilds so its focus does too.
+  const [strip] = useState(() => Object.assign(document.createElement("div"), { className: "fold-strip" }));
+  const showStrip = !short && (groups.length > 0 || feed.uncarded > 0);
   const [peek, setPeekState] = useState<Peek | null>(null), peekRef = useRef<Peek | null>(null);
   const [lens, setLens] = useState<Lens | null>(null);
   const [cut, setCut] = useState(false), [cutValue, setCutValue] = useState(50), cutRef = useRef(cutValue);
   const [picking, setPicking] = useState<Pick | null>(null), [deck, setDeck] = useState<Deck | null>(null), [tray, setTray] = useState(false), [toast, setToast] = useState(false);
   const focusAfter = useRef<FoldMark | null>(null);
   cutRef.current = cutValue;
-  const latest = useRef({ index, start, leave, togglePeek, feed });
-  latest.current = { index, start, leave, togglePeek, feed };
+  const latest = useRef({ index, start, leave, togglePeek, feed, hints });
+  latest.current = { index, start, leave, togglePeek, feed, hints };
   const setPeek = (next: Peek | null) => { peekRef.current = next; setPeekState(next); };
+  // The last build's rendered HTML: a rebuild for new pins re-renders only the units they changed.
+  const rendered = useRef<ReadonlyMap<string, string>>(undefined);
   useLayoutEffect(() => () => {
     const view = engine.current;
     if (view) latest.current.leave(view.topLine(), !!section.current?.contains(document.activeElement));
   }, []);
   useLayoutEffect(() => {
-    const root = article.current!, view = new FoldEngine(scroller.current!, root, ladder, id);
+    const root = article.current!, first = strip.parentNode !== root;
+    if (first) root.prepend(strip);
+    const view = new FoldEngine(scroller.current!, root, ladder, id, rendered.current);
+    rendered.current = view.rendered;
     const glass = new FoldRails(view, root, ladder, () => setPainted(count => count + 1));
+    glass.setHints(latest.current.hints);
     glass.setMarks(latest.current.feed.marks);
     engine.current = view; rails.current = glass; view.riders = glass;
     setTicks(glass.ticks());
     view.jump(latest.current.index);
     const { line, y, focus } = latest.current.start;
     const unit = view.scrollToLine(line, y === undefined ? 0 : y - scroller.current!.getBoundingClientRect().top);
-    (focus && unit ? unit.root : root).focus({ preventScroll: true });
+    // Opening on the first line opens at the top, the strip above it in view.
+    if (first && unit === view.units.find(item => !item.root.classList.contains("fold-off"))) scroller.current!.scrollTop = 0;
+    if (!strip.contains(document.activeElement)) (focus && unit ? unit.root : root).focus({ preventScroll: true });
     void renderMath(root).catch(() => {});
     return () => {
       // A rebuild (new pins) reopens at the same line, same height, same focus.
@@ -93,10 +121,20 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
       glass.dispose();
       view.dispose();
       engine.current = null; rails.current = null;
-      root.replaceChildren();
+      while (root.lastChild && root.lastChild !== strip) root.lastChild.remove();
       setPeek(null); setLens(null); setCut(false); setPicking(null); setDeck(null);
     };
-  }, [ladder, id]);
+  }, [ladder, id, strip]);
+  useEffect(() => {
+    const view = engine.current, glass = rails.current;
+    if (view && glass && glass.setHints(hints)) view.reflow(() => glass.paint());
+  }, [hints]);
+  // The strip opens by itself once per note, the first time there is something to say; after that it stays a line.
+  useEffect(() => {
+    if (!showStrip || choice.seen) return;
+    setStripOpen(true);
+    setChoice({ ...choice, seen: true });
+  });
   useEffect(() => {
     const view = engine.current, glass = rails.current;
     if (!view || !glass || glass.marks === feed.marks) return;
@@ -348,6 +386,11 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
       const list = projection.words.get(at) ?? [], opened = list.some(mark => glass.open.has(mark.id));
       for (const mark of list) if (opened) glass.open.delete(mark.id); else glass.open.add(mark.id);
       view.reflow(() => glass.paint());
+    } else if (action === "keep") {
+      // Keep these marks' groups from now on; the rebuilt page brings them back at this stop.
+      const kept = new Set((projection.out.get(at) ?? []).filter(hints.keepable).flatMap(mark => markGroup(mark) ?? []));
+      unit.root.focus({ preventScroll: true });
+      setChoice(setKeep(choice, [...kept], true));
     }
   }
   function jumpTo(mark: FoldMark) {
@@ -364,12 +407,13 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
   return <section ref={section} className="fold-view" aria-label={t("Fold view")} data-stop={STOPS[index]} data-cut={cut || undefined}
     style={cut ? { "--cut-at": `${cutValue}%` } as React.CSSProperties : undefined} onKeyDown={event => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.nativeEvent.isComposing) return;
-    const key = event.key, target = event.target as HTMLElement, unit = engine.current?.unitOf(target), inPopup = !!target.closest(".fold-pop, .fold-pick");
+    const key = event.key, target = event.target as HTMLElement, unit = engine.current?.unitOf(target), inPopup = !!target.closest(".fold-pop, .fold-pick, .fold-strip");
     let handled = true;
     if (key === "Escape") {
       if (picking) { setPicking(null); getSelection()?.removeAllRanges(); picking.unit.root.focus({ preventScroll: true }); }
       else if (deck) { setDeck(null); deck.chip.focus({ preventScroll: true }); }
       else if (tray) setTray(false);
+      else if (stripOpen && strip.contains(target)) { setStripOpen(false); strip.querySelector<HTMLElement>(".fold-strip-adjust")?.focus(); }
       else if (peekRef.current) closePeek(true); else if (cut) toggleCut(); else close();
     }
     else if (inPopup) handled = false;
@@ -391,6 +435,8 @@ export default function FoldView({ id, content, stop, setStop, close, start, lea
     }}>
       <article ref={article} className="rich-document fold-document" tabIndex={0} aria-label={t("Fold view")} data-marks={feed.marks.length ? "" : undefined} />
     </div>
+    {showStrip && createPortal(<PreFoldStrip groups={groups} choice={choice} setChoice={setChoice} open={stripOpen} setOpen={setStripOpen}
+      uncarded={feed.uncarded} makeCards={feed.makeCards} />, strip)}
     {peek && engine.current && createPortal(<FoldEvidence html={engine.current.source(peek.unit)} line={peek.unit.unit.line}
       open={() => reveal(peek.unit.unit.line, peek.unit.root.getBoundingClientRect().top)} />, peek.host)}
     {lens && engine.current && section.current && <FoldLens frame={section.current} root={lens.unit.root} html={engine.current.source(lens.unit)} marks={lensMarks} x={lens.x} y={lens.y} />}

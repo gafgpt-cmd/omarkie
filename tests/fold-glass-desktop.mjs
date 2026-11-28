@@ -188,10 +188,12 @@ try {
   }
 
   // A highlighted negation is pinned: its own words at every stop that shows the line, out of fold at Topic.
-  for (const [key, name] of [["1", "full"], ["2", "brief"], ["3", "key"], ["4", "takeaway"]]) {
+  // The pin says why: the condition ("unless") the plain stop would drop.
+  for (const [key, name, level] of [["1", "full"], ["2", "brief"], ["3", "key", "Key"], ["4", "takeaway", "Takeaway"]]) {
     await stop(page, key, name);
     await expect.poll(() => tinted(page, PITFALLS)).toEqual({ text: NEGATION, hidden: false });
-    await expect(unit(page, PITFALLS).getByRole("img", { name: t("Pinned: kept in the author's words"), exact: true })).toHaveCount(name === "key" || name === "takeaway" ? 1 : 0);
+    await expect(unit(page, PITFALLS).locator(".fold-pin")).toHaveCount(level ? 1 : 0);
+    if (level) await expect(unit(page, PITFALLS).getByRole("img", { name: `${t("Pinned: kept in the author's words")} · ${t("{{kept}}: {{level}} alone would drop it from your highlight", { kept: t("Condition kept"), level: t(level) })}`, exact: true })).toHaveText("★");
   }
   await settle(page);
   const motion = await riderMotion(page);
