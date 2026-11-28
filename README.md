@@ -185,24 +185,24 @@ Linux and Windows use Electron; the macOS release uses a native Swift/AppKit hos
 
 ## Performance targets
 
-Feature-release correctness uses `npm run verify`: editor, desktop, export, startup and disabled-plugin checks remain mandatory.
-Strict timing is separate: `npm run test:perf` still fails any exceeded [budget](tests/perf-budgets.json). No targets or fixtures were relaxed.
+`npm run verify` ends with `npm run test:perf`, so CI fails any exceeded [budget](tests/perf-budgets.json). No targets or fixtures relaxed.
 
-Eight paired Linux/Xvfb runs, alternating order with fresh profiles. Times are median (min–max), in ms.
+- Method: 1 discarded warmup round, then the median of 5 fresh-profile rounds per metric.
+- Headroom: the median ignores up to 2 slow rounds; warmup keeps first-run disk and font caches out.
+- CI absolute numbers: artifact `perf-results` (`test-results/perf/perf-results.json`) on every checks run.
+- Last Xvfb CI before this budget gate: launch 1227, cold photo 181 (both over).
 
-| Check | Target | Before | After |
+Local paired A/B for the budget gate: 12 alternating headless runs, fresh profiles, busy 8-core host (load 11–16). Relative change is the signal; absolute times are host-bound.
+
+| Check | Before median (min) | After median (min) | Change |
 | --- | ---: | ---: | ---: |
-| Launch to readable note | 1000 | 1312 (1052–1822) | 1227 (1074–1878) |
-| 1.5 MB note readable | 1500 | 1138 (1080–1236) | 1061 (930–1423) |
-| Big-note scroll | 300 | 54 (48–63) | 39 (34–50) |
-| First cold photo | 150 | 265 (252–348) | 181 (163–283) |
+| Launch to readable note | 2327 (1633) | 1918 (1327) | −18% |
+| First cold photo | 278 (174) | 230 (145) | −17% |
 
-- Linux timing run: `flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run test:perf'`.
-- Launch did not improve consistently. Launch and cold photo still miss their targets on Xvfb.
-- Four photos loaded within three seconds on every run. See [timing report fields](docs/architecture.md#tests).
-- Stage trace: main-module evaluation was the largest launch stage. Glass storage and Git sync now load on first use: about 110 ms less import work before the window.
-- Headless Ozone diagnostic after that change (5 runs, 12-core laptop, busy host): launch 720, big note 574, scroll 21, cold photo 101, warm photo 73. All pass; the Xvfb table above still needs a rerun.
-- Cold photo stages (auth, queue, read, decode-to-visible): read dominates at 30–50 ms; queue stays under 10 ms.
+- Main process: feature modules (conversion, workflows, plugins, glass, sync, image tools) load on first use; startup file reads run in parallel; Showcase copies and opens notes concurrently; menu locales and the legacy codec load on demand.
+- Renderer: one preconfigured sanitizer per config; emoji codes found by a linear scan, not a 1,900-name regex; emoji views skip a render round trip; a refreshed theme list with unchanged CSS no longer restyles the note.
+- Photos: cold JPEG body read once and sent in 1 MB slices; preview cache lookups run in parallel.
+- Stage timing fields: [architecture tests](docs/architecture.md#tests).
 
 ## Current limitations
 

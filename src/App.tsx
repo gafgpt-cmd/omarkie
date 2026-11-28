@@ -599,7 +599,9 @@ export default function App() {
     if (palette && themeUnset.current) { themeUnset.current = false; setTheme("omarchy"); }
   }
   useEffect(() => { if (painted) void refreshOmarchy(); }, [painted]);
-  useLayoutEffect(() => { const remove = applyTheme(theme, themes, omarchy); void refreshDiagrams().catch(() => {}); return remove; }, [theme, themes, omarchy]);
+  // Only the selected custom theme feeds applyTheme; a refreshed list with the same CSS must not restyle (full relayout).
+  const customThemeCss = themes.find(item => theme === "custom:" + item.id)?.css;
+  useLayoutEffect(() => { const remove = applyTheme(theme, themes, omarchy); void refreshDiagrams().catch(() => {}); return remove; }, [theme, customThemeCss, omarchy]);
   useLayoutEffect(() => applyFonts(preferences, omarchy?.font ?? null), [preferences.documentFont, preferences.headingFont, preferences.codeFont, preferences.interfaceFont, omarchy]);
   async function refreshBackground() {
     const request = ++backgroundRequest.current, asset = await host.background();

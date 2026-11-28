@@ -14,19 +14,12 @@ import {
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { PhotoPreviews, chromiumPreview, previewWidths } from "./photo-previews.mjs";
-import { imageAction, imageName } from "./image-actions.mjs";
-import { libreOfficePath, pandocPath, convertExport, convertImport, themes, installTheme } from "./interchange.mjs";
 import { Workspace } from "./workspace.mjs";
-import { vaultSnapshot, readNotes, exportBundle, projectDestination } from "./document-workflows.mjs";
 import { randomUUID } from "node:crypto";
 import { atomicWrite, DocumentStore } from "./store.mjs";
 import { moveExclusive } from "./move-exclusive.mjs";
 import { readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { launchFiles, launchLinks } from "./launch-files.mjs";
-import { plugins, installPlugin } from "./plugins.mjs";
-import { pluginResource, exportResource, imageSizes } from "./resources.mjs";
-import { readBackground, saveBackground, clearBackground } from "./background.mjs";
 import { readOmarchyTheme, watchOmarchyTheme } from "./omarchy.mjs";
 import { languages, resolveLanguage } from "../shared/i18n.mjs";
 import { t, useLanguage } from "./i18n.mjs";
@@ -34,12 +27,15 @@ import { blocksRequest } from "./network.mjs";
 import { openShowcase, showcaseDocuments, showcaseFolderName, showcaseSource } from "./showcase.mjs";
 import { dictionaryDownloadURL, dictionarySource, seedDictionaries } from "./spellcheck.mjs";
 import { convertPdf, isPdf, pdfConverter } from "./pdf.mjs";
-import { captureImage, imageScale } from "./image-export.mjs";
 import { ttsTextLimit } from "../shared/tts.mjs";
-import { listenBridge } from "./tutor-transport.mjs";
-import { exportGlassNote, importGlassBundle, sharedGlassForNote } from "./glass-export.mjs";
-import { GlassSync } from "./glass-sync.mjs";
-import { SyncTokenStore } from "./sync-token.mjs";
+// Feature modules load on first use, not before the window (launch budget, tests/perf-budgets.json).
+// Asset modules a first document needs are warmed once the window's page has loaded.
+const interchange = () => import("./interchange.mjs");
+const documentWorkflows = () => import("./document-workflows.mjs");
+const pluginHost = () => import("./plugins.mjs");
+const resources = () => import("./resources.mjs");
+const backgrounds = () => import("./background.mjs");
+const glassExports = () => import("./glass-export.mjs");
 // OMARKIE_DEBUG_LOG=<file>: startup marks, Glass startup steps, dirty/save timings, photo requests and
 // main/renderer stalls, one line each; off by default.
 const debugLogFile = process.env.OMARKIE_DEBUG_LOG?.trim();
@@ -236,16 +232,17 @@ function foldHost() {
   }));
   return foldRuntime;
 }
-function tokenStore() {
+async function tokenStore() {
+  const { SyncTokenStore } = await import("./sync-token.mjs");
   syncTokens ??= new SyncTokenStore({ file: path.join(app.getPath("userData"), "sync-tokens.json"), safeStorage });
   return syncTokens;
 }
 // Git sync and the Glass service load on first use, not during main-module evaluation (tests/perf-desktop.mjs launch stages).
 async function syncEngine() {
   if (!glassRuntime.root) throw new Error("Open a note folder before syncing.");
-  const runtime = glassRuntime, { GitSync } = await import("./git-sync.mjs");
+  const runtime = glassRuntime, [{ GitSync }, tokens] = await Promise.all([import("./git-sync.mjs"), tokenStore()]);
   if (runtime !== glassRuntime) throw new Error("Open a note folder before syncing.");
-  glassRuntime.syncEngine ??= new GitSync({ root: glassRuntime.root, appData: app.getPath("userData"), service: glassRuntime.service, tokenStore: tokenStore() });
+  glassRuntime.syncEngine ??= new GitSync({ root: glassRuntime.root, appData: app.getPath("userData"), service: glassRuntime.service, tokenStore: tokens });
   return glassRuntime.syncEngine;
 }
 function announceGlass(request) {
@@ -315,7 +312,7 @@ async function syncGlassNow(folder) {
     await bindGlassBridge(folder, root);
     step("bridge");
     if (testGlassDelay) { await new Promise(resolve => setTimeout(resolve, testGlassDelay)); step("test-delay"); }
-    const { GlassService } = await import("./glass-service.mjs");
+    const [{ GlassService }, { GlassSync }] = await Promise.all([import("./glass-service.mjs"), import("./glass-sync.mjs")]);
     step("import");
     if (glassRuntime.folder !== folder) return;
     const service = await new GlassService({ root, appData: app.getPath("userData") }).open({ passive: true });
@@ -381,6 +378,7 @@ async function bindGlassBridge(folder, root = glassRuntime.root) {
   const ready = glassRuntime.started;
   let state = "listening";
   try {
+    const { listenBridge } = await import("./tutor-transport.mjs");
     glassRuntime.close = await listenBridge(root, {
       // Fold frames reach the agent queue at once; the rest wait for storage and the index to finish opening
       // (a bridge bound by a retry finds them open).
@@ -472,14 +470,14 @@ const handlers = {
       if (speech === current) speech = undefined;
     }
   },
-  background: () => readBackground(store.dataDir),
-  clearBackground: () => clearBackground(store.dataDir),
+  background: async () => (await backgrounds()).readBackground(store.dataDir),
+  clearBackground: async () => (await backgrounds()).clearBackground(store.dataDir),
   chooseBackground: async () => {
     const result = await dialog.showOpenDialog(window,{title:t("选择背景图片"),filters:[{name:t("背景图片"),extensions:["png","jpg","jpeg","webp"]}],properties:["openFile"]});
     if (result.canceled || !result.filePaths[0]) return null;
     const file = result.filePaths[0];
     if ((await stat(file)).size > 8 * 1024 * 1024) throw new Error(t("背景图片须小于 8 MB。"));
-    return saveBackground(store.dataDir,await readFile(file),path.basename(file),async (_bytes,dataUrl) => {
+    return (await backgrounds()).saveBackground(store.dataDir,await readFile(file),path.basename(file),async (_bytes,dataUrl) => {
       // Chromium supports WebP consistently; nativeImage's supported codecs differ by host.
       const size = await window.webContents.executeJavaScript(`(async () => {
         const image = new Image(); image.src = ${JSON.stringify(dataUrl)};
@@ -491,10 +489,10 @@ const handlers = {
       if (!size.width || !size.height || size.width * size.height > 40_000_000) throw new Error(t("图片无效或分辨率超过 4000 万像素，请选择较小的图片。"));
     });
   },
-  plugins: async () => (await plugins(store.dataDir)).map(authorizedPlugin),
+  plugins: async () => (await (await pluginHost()).plugins(store.dataDir)).map(authorizedPlugin),
   removePlugin: async (_, id) => { if (!/^local-[a-f0-9]{64}$/.test(id)) throw new Error(t("插件标识无效。")); const root = await realpath(path.join(store.dataDir, "plugins")); if (path.dirname(root) !== await realpath(store.dataDir)) throw new Error(t("插件目录无效。")); for (const suffix of [".json", ".mjs"]) { const file = path.join(root, id + suffix); try { if (path.dirname(await realpath(file)) !== root) throw new Error(t("插件资源路径无效。")); await shell.trashItem(file); } catch (error) { if (error.code !== "ENOENT") throw error; } } return true; },
-  installPlugin: async (_, folder = false) => { const result = await dialog.showOpenDialog(window, folder ? { title: t("安装插件文件夹"), properties: ["openDirectory"] } : { filters: [{ name: "JavaScript", extensions: ["js", "cjs"] }], properties: ["openFile"] }); return result.canceled ? null : authorizedPlugin(await installPlugin(result.filePaths[0], store.dataDir)); },
-  themes: () => themes(store.dataDir),
+  installPlugin: async (_, folder = false) => { const result = await dialog.showOpenDialog(window, folder ? { title: t("安装插件文件夹"), properties: ["openDirectory"] } : { filters: [{ name: "JavaScript", extensions: ["js", "cjs"] }], properties: ["openFile"] }); return result.canceled ? null : authorizedPlugin(await (await pluginHost()).installPlugin(result.filePaths[0], store.dataDir)); },
+  themes: async () => (await interchange()).themes(store.dataDir),
   omarchyTheme: () => readOmarchyTheme(),
   editRole: async (event, role) => { if (["cut", "copy", "paste", "selectAll"].includes(role)) event.sender[role](); },
   spellcheckLanguages: (_, languages) => {
@@ -510,9 +508,9 @@ const handlers = {
     // will-navigate blocks a renderer location.reload(), so the main process reloads after replying.
     applyLanguage(choice); buildMenu(); setTimeout(() => window?.webContents.reload()); return true;
   },
-  installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : installTheme(result.filePaths[0], store.dataDir); },
-  readResource: (_, address, project) => exportResource(address, store, path.join(root, "dist"), project === true),
-  imageSizes: (_, id, sources) => imageSizes(store, id, sources),
+  installTheme: async () => { const result = await dialog.showOpenDialog(window, { filters: [{ name: "CSS", extensions: ["css"] }], properties: ["openFile"] }); return result.canceled ? null : (await interchange()).installTheme(result.filePaths[0], store.dataDir); },
+  readResource: async (_, address, project) => (await resources()).exportResource(address, store, path.join(root, "dist"), project === true),
+  imageSizes: async (_, id, sources) => (await resources()).imageSizes(store, id, sources),
   cleanConverted: async (_, body) => (await import("./clean-script.mjs")).runCleanScript(body),
   voice: async (_, request = {}) => {
     const { Voice } = await import("./voice.mjs");
@@ -617,7 +615,7 @@ const handlers = {
     const requested = path.isAbsolute(String(note ?? "")) ? String(note) : path.join(glassWatch.root, String(note ?? ""));
     const relative = path.relative(await realpath(glassWatch.root), await realpath(requested));
     if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("The note is outside the vault.");
-    const layer = await sharedGlassForNote(glassWatch.root, relative.split(path.sep).join("/"));
+    const layer = await (await glassExports()).sharedGlassForNote(glassWatch.root, relative.split(path.sep).join("/"));
     return { note: relative.split(path.sep).join("/"), id: layer.record?.id ?? null, magnets: layer.magnets, readOnly: true };
   },
   glassExport: async (_, request = {}) => {
@@ -635,7 +633,7 @@ const handlers = {
     if (mode === "bundle") {
       const result = await dialog.showOpenDialog(window, { title: t("导出玻璃导出包"), properties: ["openDirectory", "createDirectory"] });
       if (result.canceled) return null;
-      const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePaths[0], target, order, appData: app.getPath("userData") });
+      const exported = await (await glassExports()).exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePaths[0], target, order, appData: app.getPath("userData") });
       return { ...exported, note, display: exported.out };
     }
     const result = await dialog.showSaveDialog(window, {
@@ -644,14 +642,14 @@ const handlers = {
       filters: [{ name: "Markdown", extensions: ["md"] }],
     });
     if (result.canceled) return null;
-    const exported = await exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePath, target, order, appData: app.getPath("userData") });
+    const exported = await (await glassExports()).exportGlassNote({ root: glassWatch.root, note, mode, out: result.filePath, target, order, appData: app.getPath("userData") });
     return { ...exported, note, display: exported.out };
   },
   glassImport: async () => {
     if (!glassWatch.root) throw new Error(t("请先打开文件夹并保存文档。"));
     const result = await dialog.showOpenDialog(window, { title: t("导入玻璃导出包"), properties: ["openDirectory"] });
     if (result.canceled) return null;
-    const imported = await importGlassBundle({ root: glassWatch.root, bundle: result.filePaths[0], appData: app.getPath("userData") });
+    const imported = await (await glassExports()).importGlassBundle({ root: glassWatch.root, bundle: result.filePaths[0], appData: app.getPath("userData") });
     // The bundle wrote journals behind the running service's back; reload before the next reader asks.
     await glassRuntime.service?.reloadStore().catch(() => {});
     void glassRuntime.sync?.scan("sync").catch(() => {});
@@ -669,10 +667,10 @@ const handlers = {
     return true;
   },
   learningSearch: async (_, id, query) => (await import("./learning-index.mjs")).searchLearning(store, id, query),
-  conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
-  importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : convertImport(result.filePaths[0], store.dataDir); },
-  vaultSnapshot: (_, chaptersOnly) => vaultSnapshot(store, chaptersOnly === true),
-  readNotes: (_, relatives) => readNotes(store, relatives),
+  conversionSettings: async (_, choose) => { if (choose) { const result = await dialog.showOpenDialog(window, { title: t("选择 Pandoc 可执行文件"), properties: ["openFile"] }); if (!result.canceled) { await atomicWrite(path.join(store.dataDir, "pandoc-path"), result.filePaths[0]); process.env.OMARKIE_PANDOC = result.filePaths[0]; } } const { libreOfficePath, pandocPath } = await interchange(); return { word: process.platform === "darwin", libreOffice: await libreOfficePath(), pandoc: await pandocPath() }; },
+  importDocument: async () => { const result = await dialog.showOpenDialog(window, { title: t("导入文档"), properties: ["openFile"], filters: [{ name: t("文档"), extensions: ["docx", "doc", "rtf", "odt", "epub", "tex", "rst", "html", "txt"] }] }); return result.canceled ? null : (await interchange()).convertImport(result.filePaths[0], store.dataDir); },
+  vaultSnapshot: async (_, chaptersOnly) => (await documentWorkflows()).vaultSnapshot(store, chaptersOnly === true),
+  readNotes: async (_, relatives) => (await documentWorkflows()).readNotes(store, relatives),
   bibliography: async (_, folder, action, value) => {
     if (!["info", "save", "link", "disconnect", "clear", "suggest", "open"].includes(action)) throw new Error(t("CSL JSON 书目无效"));
     if (!folder || folder !== store.folder) throw new Error(t("请先打开笔记文件夹"));
@@ -687,7 +685,7 @@ const handlers = {
     const file = await service.run("pdf", value);
     if (folder !== store.folder || !file || await shell.openPath(file)) throw new Error(t("无法打开引用的本地 PDF"));
   },
-  exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : exportBundle(store, payload, result.filePaths[0]); },
+  exportBundle: async (_, payload) => { const result = await dialog.showOpenDialog(window, { title: t("导出 OKF 副本压缩包"), properties: ["openDirectory"] }); return result.canceled ? null : (await documentWorkflows()).exportBundle(store, payload, result.filePaths[0]); },
   exportConverted: async (_, id, format, source, html, options) => {
     const project = id?.folder;
     if (project !== undefined && (typeof project !== "string" || project !== store.folder)) throw new Error(t("目录已更新，请刷新后重试。"));
@@ -697,8 +695,8 @@ const handlers = {
     const defaultPath = project ? `${path.basename(project)}.${ext}` : store.require(id).name.replace(/\.[^.]+$/, "." + ext);
     const result = await dialog.showSaveDialog(window, project ? { defaultPath, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] } : { defaultPath });
     if (result.canceled) return null;
-    const destination = project ? await projectDestination(project, result.filePath, ext) : result.filePath;
-    return convertExport(profile, format, source, html, destination, options, async file => {
+    const destination = project ? await (await documentWorkflows()).projectDestination(project, result.filePath, ext) : result.filePath;
+    return (await interchange()).convertExport(profile, format, source, html, destination, options, async file => {
       const localPage = pathToFileURL(file).href;
       const preview = new BrowserWindow({ show: false, webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true, javascript: false, partition: "document-export-" + randomUUID() } });
       try {
@@ -716,6 +714,7 @@ const handlers = {
   },
   imageAction: async (_, id, sources, action, options) => {
     store.require(id);
+    const { imageAction, imageName } = await import("./image-actions.mjs");
     if (!Array.isArray(sources) || !sources.length || sources.length > 200 || sources.some(source => typeof source !== "string") || !["copy", "move", "delete", "upload"].includes(action)) throw new Error(t("图片操作无效。"));
     let destination, directory;
     if (["copy", "move"].includes(action)) {
@@ -828,6 +827,7 @@ const handlers = {
     if (typeof html !== "string" || html.length > 150 * 1024 * 1024) throw new Error(t("资源过大。"));
     const result = await dialog.showSaveDialog(window, { title: t("Export image"), defaultPath: String(name).replace(/\.(?:md|markdown|mdown)$/i, "") + ".png", filters: [{ name: "PNG", extensions: ["png"] }] });
     if (result.canceled) return null;
+    const { captureImage, imageScale } = await import("./image-export.mjs");
     await atomicWrite(result.filePath, await captureImage(html, imageScale(options?.scale), t("This note is too long for one image. Export PDF instead, or select fewer lines.")));
     return result.filePath;
   },
@@ -948,10 +948,15 @@ app
     startupMark("main-process-ready");
     if (process.platform !== "darwin" && !app.hasSingleInstanceLock()) return;
     store = new DocumentStore(app.getPath("userData"));
-    await rm(path.join(store.dataDir, "learning-index"), { recursive: true, force: true }).catch(showError);
     workspace = new Workspace(app.getPath("userData"));
-    if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = await readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => "");
-    applyLanguage(process.env.OMARKIE_LANGUAGE || (await readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto")).trim());
+    // Independent reads run together: the window waits only for the slowest one.
+    const [, pandoc, savedLanguage] = await Promise.all([
+      rm(path.join(store.dataDir, "learning-index"), { recursive: true, force: true }).catch(showError),
+      process.env.OMARKIE_PANDOC ? null : readFile(path.join(store.dataDir, "pandoc-path"), "utf8").catch(() => ""),
+      process.env.OMARKIE_LANGUAGE ? null : readFile(path.join(store.dataDir, "language"), "utf8").catch(() => "auto"),
+    ]);
+    if (!process.env.OMARKIE_PANDOC) process.env.OMARKIE_PANDOC = pandoc;
+    applyLanguage(process.env.OMARKIE_LANGUAGE || savedLanguage.trim());
     ipcMain.on("app:language", event => { event.returnValue = event.sender === window?.webContents ? { language, choice: languageChoice } : null; });
     const preferenceWrites = new Set();
     await Promise.all([["app:preferences", "preferences.json"], ["app:plugin-preferences", "plugin-preferences.json"]].map(async ([channel, name]) => {
@@ -1013,15 +1018,16 @@ app
           return new Response(await readFile(file), { headers: { "Content-Type": mime, "X-Content-Type-Options": "nosniff", "Access-Control-Allow-Origin": "*" } });
         }
         if (url.searchParams.get("token") !== pluginToken) throw new Error(t("插件会话无效。"));
-        const { bytes, mime } = await pluginResource(request.url, store.dataDir);
+        const { bytes, mime } = await (await resources()).pluginResource(request.url, store.dataDir);
         const headers = { "Content-Type": mime, "X-Content-Type-Options": "nosniff" };
         const origin = request.headers.get("origin");
         if (origin === "null" || origin === "file://" || (development && origin === new URL(development).origin)) headers["Access-Control-Allow-Origin"] = origin;
         return new Response(bytes, { headers });
       } catch { return new Response("Resource unavailable", { status: 404 }); }
     });
-    const photoPreviews = new PhotoPreviews(path.join(store.dataDir, "photo-previews"),
-      (file, width) => chromiumPreview(window.webContents, file, width), file => shell.trashItem(file));
+    let photoModule;
+    const photoPreviews = () => photoModule ??= import("./photo-previews.mjs").then(({ PhotoPreviews, chromiumPreview, previewWidths }) => ({ previewWidths,
+      previews: new PhotoPreviews(path.join(store.dataDir, "photo-previews"), (file, width) => chromiumPreview(window.webContents, file, width), file => shell.trashItem(file)) }));
     // Cold preview requests carry whole JPEGs. Give the first body a head start
     // without making later requests depend on an abandoned or stalled response.
     let previewTail = Promise.resolve();
@@ -1048,28 +1054,34 @@ app
           decodeURIComponent(id),
           decodeURIComponent(rest.join("/")),
         );
-        const served = await photoPreviews.get(file, width);
+        const { previews, previewWidths } = await photoPreviews();
+        const original = /\.jpe?g$/i.test(file) && previewWidths.includes(width);
+        // The size check runs beside the cache lookup: one fewer file-system round trip before the first byte.
+        const [served, info] = await Promise.all([previews.get(file, width), original ? stat(file) : null]);
         const source = pathToFileURL(served).href;
         mark("photo-authorized", { preview: width || 0, cached: served !== file });
-        if (served === file && /\.jpe?g$/i.test(file) && previewWidths.includes(width)) {
-          const { size } = await stat(file);
+        if (served === file && original) {
+          const { size } = info;
           const abort = new AbortController(), { signal } = abort;
           const { turn, release } = reservePreview(signal);
-          let reader;
+          // One read once this body's turn comes, then 1 MB slices on demand: relaying net.fetch
+          // chunks cost hundreds of main-thread hops per 15 MB photo. Backpressure still decides
+          // when the next queued photo starts.
+          let bytes, offset = 0;
           const body = new ReadableStream({
             async pull(controller) {
               try {
-                if (!reader) {
+                if (!bytes) {
                   await turn;
                   if (signal.aborted) return;
                   mark("photo-turn");
-                  const response = await net.fetch(source, { signal });
-                  if (!response.ok || !response.body) throw new Error("Image unavailable");
-                  reader = response.body.getReader();
+                  bytes = await readFile(file, { signal });
+                  if (signal.aborted) return;
                 }
-                const { done, value } = await reader.read();
-                if (signal.aborted) return;
-                if (!done) { controller.enqueue(value); return; }
+                if (offset < bytes.length) {
+                  controller.enqueue(bytes.subarray(offset, offset += 1024 * 1024));
+                  if (offset < bytes.length) return;
+                }
                 mark("photo-read", { bytes: size });
                 controller.close();
                 release();
@@ -1152,6 +1164,8 @@ app
       const created = window;
       startupMark("window-created");
       if (traceStartup) created.webContents.once("did-finish-load", () => startupMark("document-loaded"));
+      // A first document asks for image sizes and photos right after it restores.
+      created.webContents.once("did-finish-load", () => { void photoPreviews().catch(() => {}); void resources().catch(() => {}); });
       let paintReady = false, revealing = false;
       revealWindow = () => {
         if (!paintReady || !rendererReady || revealing || created.isDestroyed()) return;

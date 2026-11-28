@@ -12,7 +12,7 @@ import {
   open,
 } from "node:fs/promises";
 import path from "node:path";
-import iconv from "iconv-lite";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomUUID, createHash } from "node:crypto";
 import { t } from "./i18n.mjs";
@@ -74,10 +74,14 @@ export function decodeText(bytes, requested) {
   if (controlCharacters > Math.max(64, text.length / 100) || (nuls > 1 && nuls * 10 > text.length)) throw Object.assign(new Error(t("文件包含非文本字符。")), { code: "INVALID_ENCODING" });
   return { content: text, bom, encoding, ...(controlCharacters ? { controlCharacters } : {}) };
 }
+// iconv-lite's codec tables cost startup time; UTF-8 saves need none of them.
+let iconv;
+const legacyCodec = () => iconv ??= createRequire(import.meta.url)("iconv-lite");
 export function encodeText(text, encoding = "utf-8", bom = false) {
   if (!encodings.includes(encoding)) throw new Error(t("不支持的文本编码。"));
-  const bytes = iconv.encode(text, encoding);
-  if (iconv.decode(bytes, encoding, { stripBOM: false }) !== text) throw Object.assign(new Error(t("此编码无法无损保存部分字符，请改用 UTF-8。原文件未修改。")), { code: "ENCODING_LOSS" });
+  const bytes = encoding === "utf-8" ? Buffer.from(text, "utf8") : legacyCodec().encode(text, encoding);
+  const lossless = encoding === "utf-8" ? bytes.toString("utf8") === text : legacyCodec().decode(bytes, encoding, { stripBOM: false }) === text;
+  if (!lossless) throw Object.assign(new Error(t("此编码无法无损保存部分字符，请改用 UTF-8。原文件未修改。")), { code: "ENCODING_LOSS" });
   const prefix = bom ? { "utf-8": [0xef, 0xbb, 0xbf], "utf-16le": [0xff, 0xfe], "utf-16be": [0xfe, 0xff] }[encoding] || [] : [];
   const output = Buffer.concat([Buffer.from(prefix), bytes]);
   if (output.length > 20 * 1024 * 1024) throw new Error(t("编码后的文件超过 20 MB。"));

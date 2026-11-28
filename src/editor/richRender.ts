@@ -418,7 +418,8 @@ function tokenInlineHtml(
       const from = cursor;
       const source = token.type === "emoji" ? `:${token.markup}:` : token.type === "footnote_ref" ? token.markup : raw.slice(cursor, raw.indexOf(token.type === "sup" ? "^" : "~", cursor + 1) + 1);
       if (source && raw.startsWith(source, cursor)) {
-        const view = renderMarkdown(source, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");
+        // An emoji renders as its glyph: skip the per-token render + sanitize round trip.
+        const view = token.type === "emoji" ? escapeHtml(token.content) : renderMarkdown(source, documentId, { ...environment, fragment: true }).replace(/^<p>|<\/p>\n?$/g, "");
         append(object(source, view, token.type, from)); cursor += source.length; continue;
       }
     }

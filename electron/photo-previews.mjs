@@ -62,9 +62,10 @@ export class PhotoPreviews {
     try {
       const info = await stat(file), key = previewKey(file, info, requestedWidth);
       const target = path.join(this.directory, key), fallback = target.replace(/\.webp$/, ".jpg");
-      for (const cached of [target, fallback]) {
-        try { if ((await stat(cached)).size > 0) { const now = new Date(); void utimes(cached, now, now).catch(() => {}); return cached; } } catch {}
-      }
+      // Both cache names are probed together; a cold photo pays one round trip, not two.
+      const sizes = await Promise.all([target, fallback].map(cached => stat(cached).then(found => found.size, () => 0)));
+      const cached = [target, fallback].find((_, index) => sizes[index] > 0);
+      if (cached) { const now = new Date(); void utimes(cached, now, now).catch(() => {}); return cached; }
       if (this.pending.has(key)) return file;
       // Let the original finish loading before competing for decode and IPC resources.
       const task = new Promise(resolve => { setTimeout(resolve, 2000); }).then(() => this.queue = this.queue.then(async () => {
