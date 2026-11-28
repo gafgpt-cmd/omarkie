@@ -37,7 +37,7 @@ await build({
       mimeTypes: ["text/markdown", "text/x-markdown"],
       syncDesktopName: true,
     },
-    deb: { depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libgbm1", "libasound2", "libx11-xcb1"] },
+    deb: { depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libgbm1", "libasound2t64 | libasound2", "libx11-xcb1"] },
     rpm: { artifactName: outputs.rpm },
   },
 });

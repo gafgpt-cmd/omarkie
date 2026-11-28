@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { GlassService } from "../electron/glass-service.mjs";
 import { createClock, glassFileName, replayJournalText, sanitizeTitle } from "../shared/glass-core.mjs";
+import { lockDirectory, unlockDirectory } from "./readonly-dir.mjs";
 
 const scratch = [];
 after(async () => { for (const root of scratch) await rm(root, { recursive: true, force: true }); });
@@ -113,8 +114,9 @@ test("a killed append leaves a half line that the next open ignores and repairs"
     process.kill(process.pid, "SIGKILL");
   `;
   const child = spawn(process.execPath, ["-e", script, journal], { stdio: "ignore" });
-  const [, signal] = await once(child, "exit");
-  assert.equal(signal, "SIGKILL");
+  const [code, signal] = await once(child, "exit");
+  if (process.platform === "win32") assert.notEqual(code, 0);
+  else assert.equal(signal, "SIGKILL");
   assert.ok(!(await readFile(journal, "utf8")).endsWith("\n"));
 
   const reopened = await open(environment);
@@ -294,9 +296,10 @@ test("names are NFC, Windows-safe and at most 120 bytes", async () => {
 test("a read-only vault switches to outside mode and stays byte-for-byte", async () => {
   const environment = await vault({ "notes/Protected.md": "# Protected\n\nRead only.\n" });
   const before = await checksums(environment.folder);
-  await chmod(environment.folder, 0o555);
-  const service = await open(environment);
+  await lockDirectory(environment.folder, 0o555);
+  let service;
   try {
+    service = await open(environment);
     assert.equal(service.mode, null);
     assert.ok((await service.request({ action: "add", note: "notes/Protected.md", text: "outside" })).saved);
     assert.equal(service.mode, "outside");
@@ -311,8 +314,8 @@ test("a read-only vault switches to outside mode and stays byte-for-byte", async
       assert.equal((await mirror.request({ action: "list", note: "notes/Protected.md" })).magnets.length, 1);
     } finally { await mirror.close(); }
   } finally {
-    await service.close();
-    await chmod(environment.folder, 0o755);
+    await service?.close().catch(() => {});
+    await unlockDirectory(environment.folder, 0o755);
   }
   const writableAgain = await open(environment);
   try {
@@ -436,4 +439,17 @@ test("five shared layers persist one line per field, count each kind and survive
     assert.equal(layers.layers.notes.opacity, 40);
     assert.equal(layers.layers.media.visible, false);
   } finally { await merged.close(); }
+});
+
+test("an NFD note on disk resolves under its NFC spelling", async () => {
+  const nfd = "Fluoroscopi\u0301a.md";
+  const nfc = nfd.normalize("NFC");
+  const environment = await vault({ [nfd]: "# Fluoroscopía\n\nDose.\n" });
+  const service = await open(environment);
+  try {
+    await service.request({ action: "add", note: nfd, magnet: "m-accent", text: "accent pin" });
+    const listed = await service.request({ action: "list", note: nfc });
+    assert.equal(listed.magnets.length, 1);
+    assert.equal(listed.magnets[0].fields.text, "accent pin");
+  } finally { await service.close(); }
 });

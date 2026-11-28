@@ -9,7 +9,7 @@ test("a vault names the desktop app that syncs its parent folder", async () => {
   const syncthing = ["/home/me/Sync/Vault", "/home/me/Sync"];
   const found = await detectFolderSync(syncthing[0], {
     ancestors: syncthing,
-    exists: async target => target.endsWith("/.stfolder"),
+    exists: async target => /[\\/]\.stfolder$/.test(target),
   });
   assert.equal(found.app, "Syncthing");
   assert.equal(found.source, "syncthing");

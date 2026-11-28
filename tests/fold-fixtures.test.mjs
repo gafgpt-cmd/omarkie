@@ -359,6 +359,20 @@ process.stdout.write(JSON.stringify(doc));
       "utf8",
     );
     await chmod(stubPython, 0o755);
+    // Windows cannot exec a shebang script, so `python -m textfold` goes through a real Python shim to the same stub.
+    let python = stubPython, pythonEnv = {};
+    if (process.platform === "win32") {
+      const pkg = path.join(scratch, "pystub", "textfold");
+      await mkdir(pkg, { recursive: true });
+      await writeFile(path.join(pkg, "__init__.py"), "", "utf8");
+      await writeFile(
+        path.join(pkg, "__main__.py"),
+        `import subprocess, sys\nsys.exit(subprocess.run([${JSON.stringify(process.execPath)}, ${JSON.stringify(stubPython)}, "-m", "textfold", *sys.argv[1:]]).returncode)\n`,
+        "utf8",
+      );
+      python = "python";
+      pythonEnv = { PYTHONPATH: path.join(scratch, "pystub") };
+    }
 
     // 1. Missing recording fails --check with numeric counts.
     const missingCheck = await checkFixtureRecording(path.join(tempFixtures, "01-sample"));
@@ -372,8 +386,8 @@ process.stdout.write(JSON.stringify(doc));
 
     // 3. Record in local mode: sets TEXTFOLD_NO_MODELS=1, --no-generate, isolated TEXTFOLD_DATA, stages input.md.
     const localRun = await execFileAsync(process.execPath, [
-      RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", stubPython, "--mode", "local",
-    ]);
+      RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", python, "--mode", "local",
+    ], { env: { ...process.env, ...pythonEnv } });
     assert.match(localRun.stdout, /recorded 01-sample: 1 sections, 1 units/);
     const localJson = JSON.parse(await readFile(path.join(tempFixtures, "01-sample", "textfold.json"), "utf8"));
     assert.equal(localJson.provenance.local, true);
@@ -382,8 +396,8 @@ process.stdout.write(JSON.stringify(doc));
 
     // 4. Record in model mode: omits --no-generate and unsets TEXTFOLD_NO_MODELS.
     await execFileAsync(process.execPath, [
-      RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", stubPython, "--mode", "model",
-    ], { env: { ...process.env, TEXTFOLD_NO_MODELS: "1" } });
+      RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", python, "--mode", "model",
+    ], { env: { ...process.env, ...pythonEnv, TEXTFOLD_NO_MODELS: "1" } });
     const modelJson = JSON.parse(await readFile(path.join(tempFixtures, "01-sample", "textfold.json"), "utf8"));
     assert.equal(modelJson.provenance.local, false);
     assert.equal(modelJson.provenance.ai_generated, true);
@@ -394,8 +408,8 @@ process.stdout.write(JSON.stringify(doc));
     for (const badMode of ["invalid-json", "path-leak"]) {
       await assert.rejects(
         execFileAsync(process.execPath, [
-          RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", stubPython, "--mode", "local",
-        ], { env: { ...process.env, STUB_BEHAVIOR: badMode } }),
+          RECORDER_CLI, "--fixtures-dir", tempFixtures, "--python", python, "--mode", "local",
+        ], { env: { ...process.env, ...pythonEnv, STUB_BEHAVIOR: badMode } }),
       );
       assert.equal(await readFile(path.join(tempFixtures, "01-sample", "textfold.json"), "utf8"), before);
     }

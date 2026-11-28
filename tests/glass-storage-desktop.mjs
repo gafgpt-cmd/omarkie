@@ -57,13 +57,15 @@ async function launch(dataDir) {
   await page.getByRole("heading", { name: "Reading a contour map", exact: true }).waitFor({ timeout: 30_000 });
   return { app, page };
 }
-const socket = endpoint(vault, "glass").socket;
-const socketPresent = () => lstat(socket).then(item => item.isSocket(), () => false);
+const place = endpoint(vault, "glass");
+const bridgeReady = async () =>
+  (await lstat(place.socket).then(item => item.isSocket(), () => false)) &&
+  (await lstat(place.discovery).then(item => item.isFile(), () => false));
 const before = await checksums();
 const first = await launch(home);
 try {
-  await expect.poll(socketPresent, { timeout: 30_000 }).toBe(true);
-  assert.equal((await lstat(endpoint(vault, "glass").discovery)).mode & 0o777, 0o600);
+  await expect.poll(bridgeReady, { timeout: 30_000 }).toBe(true);
+  assert.equal((await lstat(place.discovery)).mode & 0o777, 0o600);
   await assert.rejects(lstat(path.join(vault, ".omarkie")), error => error.code === "ENOENT");
   const cold = await axi("glass", "status");
   assert.equal(cold.initialized, false);
@@ -86,7 +88,7 @@ try {
 
   const competing = await launch(second);
   try {
-    await expect.poll(socketPresent, { timeout: 30_000 }).toBe(true);
+    await expect.poll(bridgeReady, { timeout: 30_000 }).toBe(true);
     const response = await competing.page.evaluate(() => window.desktop.glass({ action: "status" }));
     assert.equal(response.ok, true, JSON.stringify(response));
     assert.equal(response.value.readOnly, true);
@@ -100,7 +102,7 @@ try {
 
 const reopened = await launch(home);
 try {
-  await expect.poll(socketPresent, { timeout: 30_000 }).toBe(true);
+  await expect.poll(bridgeReady, { timeout: 30_000 }).toBe(true);
   const persisted = await axi("glass", "show", "--note", doc, "--magnet", "m-debug");
   assert.equal(persisted.magnet.fields.text, "debug magnet");
   assert.equal((await axi("glass", "list", "--note", doc)).magnets.length, 1);
