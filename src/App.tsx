@@ -12,7 +12,7 @@ import { host } from "./host";
 import { refreshDiagrams, renderDiagrams } from "./editor/diagrams";
 import { renderMath } from "./editor/math";
 import { configureEmbeds, freezeEmbeds, openVaultNote, renderEmbeds, updateEmbedDrafts, updateEmbedFiles } from "./editor/embeds";
-import { exportHtml, portableHtml, conversionMarkdown } from "./editor/print";
+import { exportHtml, portableHtml, conversionMarkdown, imagePage, selectedLines } from "./editor/print";
 import { commandForKey, commandKey, commandsByAction } from "./commands";
 import { loadPreferences } from "./preferences";
 import { applyFonts } from "./fonts";
@@ -22,11 +22,14 @@ import type { InsertKind } from "./components/InsertDialog";
 import { QuickOpen } from "./components/QuickOpen";
 import { Dialog } from "./components/Dialog";
 import { GlassExport } from "./components/GlassExport";
+import { ImageExport, type ImageChoice } from "./components/ImageExport";
 import { paintGlassPrint } from "./editor/glass-print";
 import { imageReferences, updateImageReferences } from "./editor/images";
 import { documentStatistics } from "./editor/statistics";
 import { FileOperationDialog, RecentDialog, GlobalSearch } from "./components/WorkspaceDialog";
 import type { FileOperation } from "./types";
+import type { CanvasRequest } from "./components/CanvasView";
+import type { CanvasNode } from "../shared/json-canvas.mjs";
 import type { Command, ConversionOptions } from "./types";
 import type { ToolTab } from "./components/DocumentTools";
 const DocumentTools = lazy(() => import("./components/DocumentTools").then(module => ({ default: module.DocumentTools })));
@@ -37,7 +40,7 @@ import type { FlashcardPanel } from "./components/Flashcards";
 const Flashcards = lazy(() => import("./components/Flashcards"));
 import appIcon from "../design/icon.svg";
 import { version as appVersion } from "../package.json";
-import { applyTheme, toggledTheme, type OmarchyPalette } from "./themes";
+import { applyTheme, builtInThemes, toggledTheme, type OmarchyPalette } from "./themes";
 import { useSettled } from "./useSettled";
 import { countCharacters } from "./characters";
 import type { PluginRuntime } from "./plugins/runtime";
@@ -51,6 +54,7 @@ import { imeKey } from "./editor/composition";
 import type { BackgroundAsset } from "./background";
 const LearningMode = lazy(() => import("./components/LearningMode"));
 const SyncDialog = lazy(() => import("./components/SyncDialog"));
+const CanvasView = lazy(() => import("./components/CanvasView"));
 
 function vaultRelative(folder: string | null | undefined, file: string | null | undefined) {
   if (!folder || !file) return;
@@ -107,7 +111,7 @@ export default function App() {
   const [readOnly, setReadOnly] = useState(false);
   const pluginRuntime = useRef<PluginRuntime | null>(null);
   const [typewriter, setTypewriter] = useState(false);
-  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | "glass-export" | InsertKind | null>(null);
+  const [dialog, setDialog] = useState<"preferences" | "plugins" | "quick-open" | "statistics" | "recent" | "global-search" | "encoding" | "glass-export" | "image-export" | InsertKind | null>(null);
   const [fileOperation, setFileOperation] = useState<FileOperation | null>(null);
   const [tools, setTools] = useState<{ tab: ToolTab; id: string; request?: string } | null>(null);
   const [cleanId, setCleanId] = useState<string | null>(null);
@@ -128,6 +132,8 @@ export default function App() {
     return session.openToken(token);
   }
   const [boardRequest, setBoardRequest] = useState<{ note: string; magnet: string; at: number }>();
+  const [canvasRequest, setCanvasRequest] = useState<CanvasRequest | null>(null);
+  const [tutorRequest, setTutorRequest] = useState<{ text: string; at: number }>();
   const glassDismissed = useRef(false);
   useEffect(() => {
     glassDismissed.current = false;
@@ -168,6 +174,7 @@ export default function App() {
   const [countUnit, setCountUnit] = useState<"characters" | "words">(() => localStorage.getItem("omarkie-count-unit") === "words" ? "words" : "characters");
   const [exporting, setExporting] = useState(false);
   const exportingRef = useRef(false);
+  const imageRange = useRef<{ from: number; to: number } | null>(null);
   const [rendered, setRendered] = useState(true),
     [sidebar, setSidebar] = useState(() => window.innerWidth > 760),
     [focus, setFocus] = useState(false);
@@ -266,6 +273,17 @@ export default function App() {
     if (halfTile) setDrawer(false);
   }
   function closeTutor() { setTutor(null); editor()?.focus(); }
+  function openCanvas(clips?: CanvasNode[], last = false) {
+    if (!host.canvas || !session.folder) { session.setMessage(t("Open a notes folder to use canvas boards.")); return; }
+    setCanvasRequest({ last, clips, at: Date.now() });
+  }
+  async function openCanvasNote(file: string, line: number) {
+    setCanvasRequest(null);
+    const item = session.files.find(entry => entry.isDirectory !== "true" && entry.relative.replaceAll("\\", "/") === file);
+    const record = item && await session.openToken(item.token);
+    if (!record) { session.setMessage(t("The file no longer exists.")); return; }
+    jumpTo(record.id, line);
+  }
   function openFilesRail() {
     setShowFiles(true);
     openSidebar();
@@ -468,7 +486,7 @@ export default function App() {
   }
   function closeDialog() { setDialog(null); queueMicrotask(() => editor()?.focus()); }
   function changePreferences(next: typeof preferences) { setPreferences(next); }
-  async function exportDocument(kind: string, options?: ConversionOptions, glassScope?: "page" | "flat" | "handout") {
+  async function exportDocument(kind: string, options?: ConversionOptions, glassScope?: "page" | "flat" | "handout", image?: ImageChoice) {
     if (exportingRef.current || !active || !printDocument.current) return;
     if (editor()?.composing()) { session.setMessage(t("请先完成当前输入法组合输入，再导出。")); return; }
     exportingRef.current = true; setExporting(true); document.body.classList.add("printing");
@@ -476,7 +494,7 @@ export default function App() {
     try {
       await host.persist({ documents: session.documents, activeId: session.activeId });
       await loadHighlighting();
-      printDocument.current.innerHTML = renderMarkdown(active.content, active.id);
+      printDocument.current.innerHTML = renderMarkdown(image?.selection && imageRange.current ? selectedLines(active.content, imageRange.current) : active.content, active.id, { smartPunctuation: preferences.smartPunctuation });
       await fontFacesReady();
       await renderEmbeds(printDocument.current, active.id); freezeEmbeds(printDocument.current, active.id);
       await Promise.all([renderDiagrams(printDocument.current), renderMath(printDocument.current), document.fonts.ready]);
@@ -486,7 +504,9 @@ export default function App() {
         const magnets = (Array.isArray(glass?.magnets) ? glass.magnets : []).filter((magnet: { deleted?: boolean }) => !magnet.deleted);
         if (magnets.length) await paintGlassPrint(printDocument.current, { note: glassNote, title: active.name, magnets, scope: glassScope });
       }
-      const result = options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
+      // Image export never fetches: remote pictures become their alt text.
+      if (kind === "png") for (const remote of printDocument.current.querySelectorAll<HTMLImageElement>('img[src^="http:" i],img[src^="https:" i]')) remote.replaceWith(remote.alt);
+      const result = kind === "png" ? await (host.exportImage ? host.exportImage(active.name, imagePage(await portableHtml(printDocument.current, active.name, image?.light ? builtInThemes.find(theme => theme.id === "light") : undefined)), { scale: image?.scale ?? 1 }) : Promise.reject(new Error(t("Image export needs the desktop app.")))) : options ? await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name), options) : kind === "pdf" ? await host.exportPdf(exportHtml(printDocument.current), { paper: preferences.pdfPaper, margin: preferences.pdfMargin, header: preferences.pdfHeader, footer: preferences.pdfFooter, title: active.name }) : kind === "html" ? await host.exportHtml(active.name, await portableHtml(printDocument.current, active.name)) : await host.exportConverted(active.id, kind, await conversionMarkdown(active.content, printDocument.current), await portableHtml(printDocument.current, active.name));
       if (result) session.setMessage(t("{{format}} 已导出。", { format: kind.toUpperCase() }));
     } catch (error) { session.setMessage((error as Error).message); }
     finally { document.body.classList.remove("printing", "printing-handout"); exportingRef.current = false; setExporting(false); }
@@ -555,7 +575,9 @@ export default function App() {
     else if (action === "glass") toggleGlass();
     else if (action === "shared-glass") toggleSharedGlass();
     else if (action === "glass-export" && active) setDialog("glass-export");
+    else if (action === "image-export" && active) { const range = editor()?.selectionRange(); imageRange.current = range && range.to > range.from ? range : null; setDialog("image-export"); }
     else if (action === "sync") setSyncOpen(true);
+    else if (action === "canvas-boards") openCanvas();
     else if (action === "open-board") {
       if (!boardNote || !boardMagnet) return;
       if (!preferences.boardEnabled) { session.setMessage(t("Enable the Board add-on in Settings first.")); return; }
@@ -828,6 +850,7 @@ export default function App() {
               note={vaultRelative(session.folder, active.path)}
               saved={learningSaved} cleanVisible={cleanVisible} toggleClean={toggleClean} glass={glassOn && glassSupported} shared={sharedOn && sharedSupported}
               boardEnabled={preferences.boardEnabled === true} boardRequest={boardRequest}
+              openBoard={host.canvas && session.folder ? clips => openCanvas(clips, true) : undefined} tutorRequest={tutorRequest}
               glassSaved={active.content === active.savedContent}
               reloadNote={session.reload}
               ready={!!activeEditorReady} rendered={activeEditorReady === "rich"} sheetsRoot={sheetsRoot}
@@ -902,9 +925,13 @@ export default function App() {
       {fileOperation && <FileOperationDialog operation={fileOperation} files={session.files} folder={session.folder} run={session.fileOperation} close={() => setFileOperation(null)} />}
       {dialog === "encoding" && active && <EncodingDialog key={active.id} record={active} change={session.changeEncoding} close={closeDialog} />}
       {dialog === "glass-export" && active && <GlassExport key={active.id} note={vaultRelative(session.folder, active.path) ?? ""} close={closeDialog} pdf={scope => exportDocument("pdf", undefined, scope)} />}
+      {dialog === "image-export" && active && <ImageExport key={active.id} selection={Boolean(imageRange.current)} close={closeDialog} run={choice => { closeDialog(); return exportDocument("png", undefined, undefined, choice); }} />}
       {dialog === "recent" && <RecentDialog entries={session.recent} action={session.recentAction} close={closeDialog} />}
       {dialog === "global-search" && <GlobalSearch folder={session.folder} close={closeDialog} open={async match => { const record = await session.openToken(match.token); if (record) jumpTo(record.id, match.line); }} />}
       <Suspense fallback={null}>{syncOpen && <SyncDialog close={() => setSyncOpen(false)} notify={session.setMessage} />}</Suspense>
+      <Suspense fallback={null}>{canvasRequest && session.folder && host.canvas && <CanvasView key={session.folder} vault={session.folder} request={canvasRequest}
+        close={() => { setCanvasRequest(null); editor()?.focus(); }} openNote={(file, line) => void openCanvasNote(file, line)}
+        askTutor={tutorKey ? text => { setCanvasRequest(null); setTutorRequest({ text, at: Date.now() }); } : undefined} />}</Suspense>
       <Suspense fallback={null}>{dialog === "preferences" && <PreferencesDialog value={preferences} change={changePreferences} theme={theme} changeTheme={chooseTheme} themes={themes} installTheme={installTheme} background={background} chooseBackground={chooseBackground} clearBackground={clearBackground} plugins={() => setDialog("plugins")} close={closeDialog} />}
       </Suspense>
       <Suspense fallback={null}>{dialog === "plugins" && <PluginsDialog definitions={pluginDefinitions} preferences={pluginPreferences} states={pluginStates} toggle={(id, enabled) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], enabled } }))} configure={(id, config) => setPluginPreferences(previous => ({ ...previous, [id]: { ...previous[id], config } }))} invoke={async (id,action) => { await pluginRuntime.current?.invoke(id,action); }} actions={id => pluginRuntime.current?.actions(id) || []} install={installPlugin} remove={removePlugin} close={closeDialog} />}</Suspense>

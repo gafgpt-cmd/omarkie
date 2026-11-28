@@ -19,7 +19,7 @@ export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "oma
   const scope = ':root[data-theme^="omarchy"]';
   const css = `:root[data-theme][data-appearance]{${vars};--chrome-font:${mono};--document-font:${mono}}`
     + `.rich-document,.print-document{font-family:var(--document-font)}`
-    + `${scope} :is(.toolbar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.rich-search,.cm-search,.table-tools,.toast,.leave-focus,.empty-document,.dialog-backdrop>*){font-family:var(--chrome-font)}`
+    + `${scope} :is(.toolbar,.sidebar,.statusbar,.quick-actions,.more-menu,.sidebar-switcher-menu,.rich-search,.cm-search,.table-tools,.table-size-picker,.toast,.leave-focus,.empty-document,.dialog-backdrop>*){font-family:var(--chrome-font)}`
     + `${scope} :is(.rich-document,.cm-content) :is(h1,h2,h3,h4,h5,h6){font-family:${mono};font-weight:700;letter-spacing:-.01em}`
     + `${scope} :is(.rich-document,.print-document) :is(code,pre,.md-fence,.md-fence *,.md-fence-opening),${scope} .source-mode .cm-scroller{font-family:${mono}!important}`
     + `${scope} .rich-document h1{color:${c.red}}${scope} .rich-document h2{color:${c.green}}${scope} .rich-document h3{color:${c.yellow}}${scope} .rich-document h4{color:${c.blue}}${scope} .rich-document :is(h5,h6){color:${c.magenta}}`
@@ -30,7 +30,7 @@ export function omarchyTheme(palette: OmarchyPalette = omarchyDefault, id = "oma
     + `${scope} .hljs-keyword,${scope} .hljs-selector-tag,${scope} .hljs-built_in{color:${c.magenta}}${scope} .hljs-string{color:${c.green}}${scope} .hljs-title{color:${c.blue}}${scope} .hljs-number,${scope} .hljs-literal{color:${c.orange}}${scope} .hljs-comment{color:${mix(c.foreground, 50)};font-style:italic}`
     + `${scope} *{border-radius:0!important}${scope} .dirty-dot{border-radius:50%!important;background:${c.accent}}`
     + `${scope} .file-row.selected{box-shadow:inset 2px 0 ${c.accent}}${scope} .document-title{color:${mix(c.foreground, 50)}}`
-    + `${scope} :is(.toast,.more-menu,.sidebar-switcher-menu,.table-tools,.about-dialog,.leave-focus){border:2px solid ${c.accent};box-shadow:none}${scope} .toast{background:${c.background};color:${c.foreground}}`
+    + `${scope} :is(.toast,.more-menu,.sidebar-switcher-menu,.table-tools,.table-size-picker,.about-dialog,.leave-focus){border:2px solid ${c.accent};box-shadow:none}${scope} .toast{background:${c.background};color:${c.foreground}}`
     + `${scope} ::-webkit-scrollbar{width:8px;height:8px}${scope} ::-webkit-scrollbar-thumb{background:${mix(c.foreground, 18)}}${scope} ::-webkit-scrollbar-track{background:transparent}`;
   return { id, name, description, dark, paper: c.background, ink: c.foreground, accent: c.accent, css };
 }

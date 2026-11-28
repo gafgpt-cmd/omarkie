@@ -183,7 +183,7 @@ export const host: Host = window.desktop
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage") && !window.desktop![name]) return undefined;
         if ((name === "exportGlass" || name === "importGlass" || name === "sharedGlass" || name === "sharedGlassState") && !window.desktop![name]) return undefined;
         if ((name === "checkGrammar" || name === "glass" || name === "onGlassStorage" || name === "sync") && !window.desktop![name]) return undefined;
-        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch") && !window.desktop?.[name]) return undefined;
+        if ((name === "bibliography" || name === "tutorBridge" || name === "learningSearch" || name === "canvas") && !window.desktop?.[name]) return undefined;
         if ((name === "foldGet" || name === "foldRun" || name === "foldCancel" || name === "onFoldProgress") && !window.desktop?.[name]) return undefined;
         if (name === "onCommand" || name === "onFileOperation" || name === "onTutor" || name === "onGlassStorage" || name === "onFoldProgress" || name === "closeWindow")
           return window.desktop![name];

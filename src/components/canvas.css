@@ -1,0 +1,55 @@
+/* JSON Canvas board: React Flow wears Omarkie's paper, ink and accent tokens. */
+.canvas-shell{--canvas-red:#d64545;--canvas-orange:#e07b2a;--canvas-yellow:#c9a227;--canvas-green:#3f9a5a;--canvas-cyan:#2a9bb0;--canvas-purple:#8a5cc7;position:relative}
+html[data-theme="dark"] .canvas-shell{--canvas-red:#f07070;--canvas-orange:#f0a060;--canvas-yellow:#e6c65c;--canvas-green:#6cc488;--canvas-cyan:#5cc4d6;--canvas-purple:#b48cf0}
+.canvas-flow .react-flow{--xy-background-color:var(--paper);--xy-node-background-color:var(--paper);--xy-node-color:var(--ink);--xy-node-border:1px solid var(--border);--xy-edge-stroke:var(--muted);--xy-edge-stroke-selected:var(--accent);--xy-handle-background-color:var(--accent);--xy-handle-border-color:var(--paper);--xy-selection-background-color:color-mix(in srgb,var(--accent) 10%,transparent);--xy-selection-border:1px dotted var(--accent);--xy-controls-button-background-color:var(--paper);--xy-controls-button-color:var(--ink);--xy-controls-button-border-color:var(--border);--xy-minimap-background-color:var(--paper);--xy-background-pattern-dots-color:color-mix(in srgb,var(--ink) 18%,transparent);--xy-edge-label-background-color:var(--paper);--xy-edge-label-color:var(--ink);font:inherit}
+.canvas-flow .react-flow__node{padding:0;border:0;background:none;border-radius:6px;font-size:13px}
+.canvas-flow .react-flow__node:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.canvas-flow .react-flow__node.selected>.canvas-card,.canvas-flow .react-flow__node.selected>.canvas-group{box-shadow:0 0 0 2px var(--accent)}
+.canvas-card{--card:var(--border);box-sizing:border-box;width:100%;height:100%;display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:var(--paper);color:var(--ink);border:1px solid color-mix(in srgb,var(--card) 70%,var(--border));border-top:4px solid var(--card);border-radius:6px;overflow:hidden;box-shadow:0 1px 3px #0001}
+.canvas-card-kind{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;min-height:20px}
+.canvas-file-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:600}
+.canvas-file-name em{font-style:normal;font-weight:400;color:var(--muted)}
+.canvas-chip{font-size:11px;line-height:16px;padding:0 6px;border:1px solid var(--border);border-radius:9px;color:var(--muted);white-space:nowrap}
+.canvas-chip-warning{border-color:var(--canvas-orange);color:var(--ink);background:color-mix(in srgb,var(--canvas-orange) 18%,var(--paper))}
+.canvas-card-action{border:0;background:none;color:var(--muted);padding:3px;border-radius:4px;cursor:pointer;display:inline-flex}
+.canvas-card-action:hover,.canvas-card-action:focus-visible{background:var(--hover,#0001);color:var(--ink)}
+.canvas-markdown{flex:1;min-height:0;overflow:auto;line-height:1.45}
+.canvas-markdown>:first-child{margin-top:0}.canvas-markdown>:last-child{margin-bottom:0}
+.canvas-markdown h1,.canvas-markdown h2,.canvas-markdown h3,.canvas-markdown h4{font-size:1.05em;margin:.2em 0 .4em}
+.canvas-markdown blockquote{margin:0 0 .5em;padding-left:10px;border-left:3px solid var(--card,var(--border));color:var(--ink)}
+.canvas-markdown a{color:var(--accent);cursor:default}
+.canvas-card-state{display:flex;align-items:center;gap:6px;margin:0;color:var(--muted);font-size:12px}
+.canvas-card-warning{color:var(--ink);background:color-mix(in srgb,var(--canvas-orange) 18%,var(--paper));padding:4px 6px;border-radius:4px}
+.canvas-url{margin:0;color:var(--muted);font-size:12px;word-break:break-all}
+.canvas-unknown{border-style:dashed}
+.canvas-editor{flex:1;width:100%;min-height:0;box-sizing:border-box;resize:none;font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--accent);border-radius:4px;padding:6px;outline:none}
+input.canvas-editor{flex:0 0 auto;padding:2px 6px}
+.canvas-flow .react-flow__node.canvas-flow-group{background:none}
+.canvas-group{--card:var(--muted);box-sizing:border-box;width:100%;height:100%;border:2px dashed color-mix(in srgb,var(--card) 60%,transparent);border-radius:10px;background:color-mix(in srgb,var(--card) 7%,transparent)}
+.canvas-group-label{position:absolute;bottom:100%;left:0;margin-bottom:4px;font-size:14px;font-weight:600;color:var(--ink);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.canvas-muted{color:var(--muted);font-weight:400}
+.canvas-handle{opacity:0;width:10px;height:10px;transition:opacity .12s}
+.react-flow__node:hover .canvas-handle,.react-flow__node.selected .canvas-handle,.react-flow__node:focus-within .canvas-handle,.react-flow.connecting .canvas-handle{opacity:1}
+.canvas-resize-handle{width:9px!important;height:9px!important;border-radius:2px;background:var(--accent)!important;border-color:var(--paper)!important}
+.canvas-resize-line{border-color:var(--accent)!important}
+.canvas-toolbar{display:flex;gap:4px;padding:4px;background:var(--paper);border:1px solid var(--border);border-radius:7px;box-shadow:0 2px 8px #0002}
+.canvas-toolbar button{display:inline-flex;align-items:center;gap:5px;font:inherit;font-size:13px;padding:5px 8px;border:0;border-radius:5px;background:none;color:var(--ink);cursor:pointer}
+.canvas-toolbar button:hover:not(:disabled),.canvas-toolbar button:focus-visible{background:var(--hover,#0001)}
+.canvas-toolbar button:disabled{color:var(--muted);opacity:.55;cursor:default}
+.canvas-conflict{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.canvas-conflict span{flex:1;min-width:200px}
+.canvas-conflict button,.canvas-preview-actions button{font:inherit;font-size:13px;padding:5px 10px;border:1px solid var(--border);border-radius:5px;background:var(--paper);color:var(--ink);cursor:pointer}
+.canvas-conflict button:hover,.canvas-preview-actions button:hover{border-color:var(--accent)}
+.canvas-notice{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:6;margin:0;padding:7px 14px;background:var(--ink);color:var(--paper);border-radius:6px;font-size:13px;animation:canvas-notice 4s forwards;pointer-events:none}
+@keyframes canvas-notice{0%,85%{opacity:1}100%{opacity:0}}
+.canvas-preview{position:absolute;right:16px;top:64px;z-index:7;width:min(420px,90%);max-height:70%;display:flex;flex-direction:column;gap:8px;padding:14px;background:var(--paper);color:var(--ink);border:1px solid var(--border);border-radius:8px;box-shadow:0 18px 50px #0003}
+.canvas-preview h3{margin:0;font-size:15px}
+.canvas-preview pre{margin:0;flex:1;overflow:auto;white-space:pre-wrap;font:inherit;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:5px;background:color-mix(in srgb,var(--ink) 4%,var(--paper))}
+.canvas-preview-actions{display:flex;justify-content:flex-end;gap:8px}
+.canvas-preview-actions .canvas-primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+.canvas-picker li button{display:flex;flex-direction:column;gap:2px}
+.canvas-picker li button span{font-size:12px;color:var(--muted)}
+.canvas-picker form{display:flex;flex-direction:column;gap:8px}
+.canvas-picker input{font:inherit;padding:8px 10px;border:1px solid var(--border);border-radius:5px;background:var(--paper);color:var(--ink)}
+.canvas-flow .react-flow__minimap{border:1px solid var(--border);border-radius:6px}
+.canvas-flow .react-flow__controls{box-shadow:none;border:1px solid var(--border);border-radius:6px;overflow:hidden}

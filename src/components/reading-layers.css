@@ -175,6 +175,7 @@
   .study-chips .study-confidence { display: flex; align-items: center; gap: 6px; margin: 0; overflow-x: auto; }
   .study-chips .study-confidence div { flex-wrap: nowrap; }
   .study-chips .study-sheet small:empty { display: none; }
+  .study-chips .study-board > span { display: none; }
   .study-tabs { inset-inline-end: -17px; }
   .study-right { grid-area: 4 / 1; width: auto; max-height: 32dvh; border-inline-start: 0; padding: 6px 8px 34px; }
   .study-right:has(.layers-cards) > .study-tray { display: none; }

@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FolderOpen, Layers, LockKeyhole, PencilLine, Sparkles, StickyNote } from "lucide-react";
+import { FolderOpen, Heading, Layers, LayoutDashboard, LockKeyhole, PencilLine, Scissors, Sparkles, StickyNote } from "lucide-react";
 import { sourceLines } from "../../shared/source-lines.mjs";
 import { studySheetLayer, type GlassLayerId } from "../../shared/glass-layers.mjs";
 import type { ConfidenceLevel, ReadingAnchor, ReadingResults, ReadingTarget, SheetColour, StudyItem } from "../../shared/reading-store.ts";
@@ -25,6 +25,8 @@ import StudyQueue from "./StudyQueue";
 import type { StudySearchMatch } from "../types";
 import type { FlashcardPanel } from "./Flashcards";
 import type { TutorDraft, TutorReply, TutorVerb } from "./tutor-verbs";
+import type { CanvasNode } from "../../shared/json-canvas.mjs";
+import { headingNode, snapshotNode } from "../../shared/papercut.mjs";
 import "./reading-layers.css";
 
 type Sheet = Extract<StudyItem, { type: "sheet" }>;
@@ -47,13 +49,14 @@ const defaultSheets: Sheet[] = [
 const emptyStudy: ReadingResults["study"] = { entries: [], locations: [] };
 const pageScroller = ".writing-area > .document-editor:not([hidden]) .rich-scroller:not([hidden])";
 
-export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest }: {
+export default function LearningMode({ id, content, editor, note, saved, ready, rendered, preview, togglePreview, sheetsRoot, canWrite, cleanVisible, toggleClean, glass, glassSaved, shared, reloadNote, tutor, askPayload, openFiles, openCard, openSearchHit, cards, boardEnabled, boardRequest, openBoard, tutorRequest }: {
   id: string; content: string; editor(): EditorHandle | undefined; note?: string; saved: boolean; ready: boolean; rendered: boolean;
   sheetsRoot: HTMLElement | null; canWrite: boolean; openFiles(): void; openCard(target?: ReadingTarget, answer?: FlashcardPanel["answer"]): void; openSearchHit(match: StudySearchMatch): Promise<boolean>; cards: ReactNode;
   preview: boolean; togglePreview(): void;
   askPayload?(source: string): void;
   cleanVisible: boolean; toggleClean(): void; glass: boolean; glassSaved: boolean; shared?: boolean; reloadNote?(): void | Promise<unknown>;
   boardEnabled?: boolean; boardRequest?: { note: string; magnet: string; at: number };
+  openBoard?(clips?: CanvasNode[]): void; tutorRequest?: { text: string; at: number };
   tutor?: { open: boolean; root: HTMLElement | null; preferences: Preferences; configure(): void; show(): void; close(): void };
 }) {
   const store = host.readingStore!;
@@ -139,6 +142,22 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     setTutorDraft({ anchor, verb, text, parent }); tutor.show(); dismiss();
   }
   function askTutor(verb: TutorVerb = "answer") { if (tutorParagraph && selection) tutorAt(selection.target, verb); }
+  // Board clips arrive only after the user previewed them; the clip text is the whole context, and the
+  // curtain still waits for an explicit send.
+  const boardTutor = useRef(tutorRequest?.at);
+  useEffect(() => {
+    if (!tutorRequest || tutorRequest.at === boardTutor.current) return;
+    boardTutor.current = tutorRequest.at;
+    const text = tutorRequest.text.slice(0, 24_000);
+    tutorAt({ block: text, headings: [], line: 1, quote: text.trim().slice(0, 240) }, "answer");
+  }, [tutorRequest]);
+  function clipToBoard(heading: boolean) {
+    if (!selection || !note || !openBoard) return;
+    const { target } = selection;
+    openBoard([heading ? headingNode({ file: note, headings: target.headings })
+      : snapshotNode({ file: note, quote: target.quote, line: target.line, headings: target.headings }, t("Snapshot"))]);
+    dismiss();
+  }
   function saveTutorReply(reply: TutorReply) {
     const { id, anchor, body, verb, parent, text } = reply;
     const kind = verb === "propose" ? "proposal" : verb === "exam" || verb === "quiz" ? "exam" : verb === "glossary" ? "gloss" : "answer";
@@ -545,6 +564,7 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
     <button type="button" onClick={() => openCard()}>{t("学习卡片")}</button>
     <button type="button" onClick={() => setSearching(true)}>{t("Search scraps")}</button>
     <StudyQueue note={note} />
+    {openBoard && <button type="button" className="study-board" aria-label={t("Papercut board")} onClick={() => openBoard()} title={t("Open the board used last in this folder")}><LayoutDashboard size={14} /><span>{t("Papercut board")}</span></button>}
     <button type="button" disabled={busy} onClick={() => void store(id, { action: "export" }).catch(err => setError(t(err.message)))}>{t("导出笔记和卡片")}</button>
     {undo && <button type="button" disabled={busy} onClick={() => void write(undo)}>{t("撤销")}</button>}
   </div>;
@@ -609,6 +629,8 @@ export default function LearningMode({ id, content, editor, note, saved, ready, 
           {colours.map(colour => <button type="button" key={colour} data-colour={colour} disabled={busy} data-layer-action={activeSheet === "highlights" || undefined} aria-label={t("Highlight: {{colour}}", { colour: t(colour) })} onClick={() => mark(colour)}><span className="study-swatch" /></button>)}
         </div>}
         <button type="button" onClick={() => { openCard(selection.target); dismiss(); }}>{t("制作卡片")}</button>
+        {openBoard && note && <button type="button" title={t("Copy the selected words to the board as a snapshot")} onClick={() => clipToBoard(false)}><Scissors size={15} />{t("Clip to board")}</button>}
+        {openBoard && note && selection.target.headings.length > 0 && <button type="button" title={t("Add this section to the board as a live card")} onClick={() => clipToBoard(true)}><Heading size={15} />{t("Heading to board")}</button>}
         {saved && <button type="button" onClick={() => {
           window.dispatchEvent(new CustomEvent("omarkie:comment-request", { detail: { line: selection.target.line, quote: selection.target.quote } }));
           dismiss();
