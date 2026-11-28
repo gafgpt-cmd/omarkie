@@ -47,9 +47,9 @@ Required compatibility checks in CI and no-mistakes:
 npm run verify
 ```
 
-Includes the production build, unit tests, browser startup and Electron compatibility suites.
+Includes the production build, unit tests, browser startup, Electron compatibility suites and strict timing (`test:perf`).
 Desktop checks cover shared undo, photo previews, reading tools, document workflows, packaged citations and collision-safe file operations.
-Strict timing stays separate; see [performance targets](README.md#performance-targets).
+Timing fails any exceeded budget; see [performance targets](README.md#performance-targets).
 
 [CI](.github/workflows/ci.yml) runs the Linux checks on pull requests and pushes to `main`.
 Pull requests also run the two macOS suites below, with Pandoc installed. They do not build or test the installer.

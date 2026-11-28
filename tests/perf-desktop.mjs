@@ -10,8 +10,11 @@ import { runGlassIndexScale } from "./glass-index-fixture.mjs";
 // Display cadence is only asserted on a real compositor: OMARKIE_REAL_COMPOSITOR=1 ./scripts perf run.
 // CI and Xvfb draw in software, so the desktop suites assert handler work and long tasks instead
 // (tests/frame-cadence.mjs).
-const runs = Number(process.env.OMARKIE_PERF_RUNS ?? 3);
+// Median of 5 measured runs after 1 discarded warmup round (disk cache, font cache, shader cache):
+// one slow launch on a shared CI runner moves neither the median nor the verdict.
+const runs = Number(process.env.OMARKIE_PERF_RUNS ?? 5), warmups = Number(process.env.OMARKIE_PERF_WARMUP ?? 1);
 assert.ok(Number.isSafeInteger(runs) && runs > 0, "OMARKIE_PERF_RUNS must be a positive integer");
+assert.ok(Number.isSafeInteger(warmups) && warmups >= 0, "OMARKIE_PERF_WARMUP must be a non-negative integer");
 // OMARKIE_PERF_HEADLESS=1 runs on headless Ozone for stage tracing; the report records that display.
 const headless = process.env.OMARKIE_PERF_HEADLESS === "1" && !process.env.OMARKIE_TEST_DISPLAY;
 assert.ok(process.platform !== "linux" || process.env.OMARKIE_TEST_DISPLAY || headless, "Linux performance checks require an isolated X display via OMARKIE_TEST_DISPLAY; see README.");
@@ -170,10 +173,14 @@ function summarize(values) {
   return { median, p95, min: sorted[0], max: sorted.at(-1) };
 }
 
-const results = { runs, executable: process.env.OMARKIE_EXECUTABLE || "development", samples: [], metrics: {}, unbudgeted: {} };
+const results = { runs, warmups, executable: process.env.OMARKIE_EXECUTABLE || "development", samples: [], metrics: {}, unbudgeted: {} };
 try {
   results.environment = await environment();
   results.fixtures = await prepare();
+  for (let i = 0; i < warmups; i++) {
+    console.log(`Performance warmup ${i + 1}/${warmups} (discarded)`);
+    await measure("photos", photos, "Photos"); await measure("launch"); await measure("big", big, "Big note");
+  }
   for (let i = 0; i < runs; i++) {
     console.log(`Performance run ${i + 1}/${runs}`);
     const cold = await measure("photos", photos, "Photos");

@@ -119,12 +119,13 @@ try {
 
   const small = await readFile(path.join(root, "small.jpg"));
   for (const name of ["held", "cancelled", "ready"]) await writeFile(path.join(root, `${name}.jpg`), small);
-  const readyBytes = await app.evaluate(async ({ net, session }, encoded) => {
+  const readyBytes = await app.evaluate(async ({ session }, encoded) => {
     const require = process.getBuiltinModule("module").createRequire(process.cwd() + "/package.json");
     const assert = require("node:assert/strict");
     const { DocumentStore } = require("./electron/store.mjs");
     const { Readable } = require("node:stream");
-    const asset = DocumentStore.prototype.asset, fetch = net.fetch, fromWeb = Readable.fromWeb;
+    const files = require("node:fs/promises"), { syncBuiltinESMExports } = require("node:module");
+    const asset = DocumentStore.prototype.asset, readFile = files.readFile, fromWeb = Readable.fromWeb;
     const lookup = Promise.withResolvers(), missingStarted = Promise.withResolvers();
     const heldStarted = Promise.withResolvers();
     const opened = [];
@@ -132,12 +133,14 @@ try {
       if (args[1] === "missing.jpg") { missingStarted.resolve(); await lookup.promise; }
       return asset.apply(this, args);
     };
-    net.fetch = (url, ...args) => {
-      const name = new URL(url).pathname.split("/").pop();
+    // Cold JPEG bodies are read in one call once their turn comes; observe and hold those reads.
+    files.readFile = function (file, ...args) {
+      const name = typeof file === "string" ? file.split(/[\\/]/).pop() : "";
       if (["held.jpg", "cancelled.jpg", "ready.jpg"].includes(name)) opened.push(name);
-      if (name === "held.jpg") return Promise.resolve(new Response(new ReadableStream({ start: heldStarted.resolve })));
-      return fetch.call(net, url, ...args);
+      if (name === "held.jpg") return new Promise(resolve => heldStarted.resolve(resolve));
+      return readFile.call(this, file, ...args);
     };
+    syncBuiltinESMExports();
     const request = (name, signal = AbortSignal.timeout(10_000)) => session.defaultSession.fetch(`omarkie-asset://local/photo/${name}.jpg?preview=800`, { signal });
     const cancel = new AbortController();
     try {
@@ -163,8 +166,7 @@ try {
       await Promise.race([disconnected.promise, new Promise((_, reject) => {
         AbortSignal.timeout(10_000).addEventListener("abort", () => reject(new Error("Cancelled client did not disconnect the protocol stream")));
       })]);
-      held.enqueue(Buffer.from(encoded, "base64"));
-      held.close();
+      held(Buffer.from(encoded, "base64"));
       assert.equal(Buffer.from(await firstBody).toString("base64"), encoded);
       const bytes = Buffer.from(await surviving.arrayBuffer()).toString("base64");
       assert.deepEqual(opened, ["held.jpg", "ready.jpg"], "cancelled waiter never opens its file");
@@ -175,7 +177,7 @@ try {
     } finally {
       cancel.abort();
       lookup.resolve();
-      net.fetch = fetch;
+      files.readFile = readFile; syncBuiltinESMExports();
       Readable.fromWeb = fromWeb;
       DocumentStore.prototype.asset = asset;
     }

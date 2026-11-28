@@ -12,7 +12,8 @@ permissions:
 jobs:
   checks:
     runs-on: ${{ fromJSON(vars.CI_ROUTE_M || '["ubicloud-standard-4-ubuntu-2204"]') }}
-    timeout-minutes: 45
+    # verify ends with test:perf (1 warmup + 5 measured rounds of fresh launches).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -41,6 +42,12 @@ jobs:
       - run: flock -w 1800 /tmp/omarkie-electron.lock xvfb-run -a sh -c 'OMARKIE_TEST_DISPLAY="$DISPLAY" OMARKIE_TEST_HIDDEN=0 npm run verify'
         env:
           OMARKIE_REQUIRE_CONVERTERS: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-results
+          path: test-results/perf/perf-results.json
+          if-no-files-found: ignore
 
   chaos:
     # Daily-life chaos rows: unprivileged everywhere, plus the FUSE helper (no root at run time).
