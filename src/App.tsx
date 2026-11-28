@@ -84,7 +84,8 @@ export default function App() {
       return record && { relative: vaultRelative(current.folder, record.path) ?? "", content: record.content };
     },
     open: async (relative, line) => {
-      const file = embedSession.current.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === relative);
+      if (/\.base$/i.test(relative)) { setBaseOpen(relative); return; }
+      const file =embedSession.current.files.find(item => item.isDirectory !== "true" && item.relative.replaceAll("\\", "/") === relative);
       const record = file && await embedSession.current.openToken(file.token);
       if (record) jumpTo(record.id, line);
     },

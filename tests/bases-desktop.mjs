@@ -14,6 +14,7 @@ const qa = process.env.OMARKIE_QA_DIR || path.join(root, "qa"); await mkdir(qa, 
 const book = (author, pages, status, extra = "") => `---\nauthor: ${author}\npages: ${pages}\nread: 0\nstatus: ${status}\npublished: 1900\n${extra}---\n# ${author}\n\nNotes here.\n`;
 const notes = {
   "home.md": "# Home\n\nStart.\n",
+  "shelf.md": "# Shelf\n\n![[reading.base#Unread]]\n\n![[reading.base#All books]]\n\n![[reading.base#Nope]]\n\n![[missing.base]]\n",
   "Library/Moby.md": book("Melville", 600, "reading"),
   "Library/Dune.md": book("Herbert", 500, "todo"),
   "Library/Emma.md": book("Austen", 400, "todo"),
@@ -47,8 +48,8 @@ let { application, page, errors, outbound } = await launch("en");
 try {
   const rich = page.locator(".document-editor:not([hidden]) .rich-document");
   const dialog = page.getByRole("dialog", { name: "reading", exact: true });
-  const rows = dialog.locator("tr.base-row");
-  const names = () => rows.locator("td.base-name").allTextContents();
+  const rows = dialog.locator(".base-row");
+  const names = () => rows.locator(":is(td.base-name, .base-card-title)").allTextContents();
   await expect(rich.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
   await page.reload(); await page.locator(".app-shell").waitFor();
 
@@ -70,6 +71,14 @@ try {
   await expect(dialog.getByRole("tab", { name: "All books" })).toBeFocused();
   await expect.poll(async () => (await names()).length).toBe(5);
   await expect(dialog.locator(".base-count")).toHaveText("Notes: 5");
+  await expect(dialog.locator("ul.base-cards > li.base-card")).toHaveCount(5);
+  await expect(dialog.locator(".base-card").first().locator("dt")).toHaveText(["Author", "published"]);
+  await page.keyboard.press("Tab");
+  await expect(rows.first()).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(rows.nth(1)).toBeFocused();
+  await dialog.screenshot({ path: path.join(qa, "bases-cards-light-en.png") });
+  await dialog.getByRole("tab", { name: "All books" }).focus();
   await page.keyboard.press("Home");
   await expect(dialog.getByRole("tab", { name: "Unread" })).toHaveAttribute("aria-selected", "true");
   await expect.poll(names).toEqual(["Moby", "Dune"]);
@@ -99,10 +108,52 @@ try {
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 
+  await page.getByRole("button", { name: "shelf.md", exact: true }).click();
+  await expect(rich.getByRole("heading", { name: "Shelf", exact: true })).toBeVisible();
+  const embeds = rich.locator(".note-embed"), embedNames = () => embeds.first().locator("td.base-name").allTextContents();
+  await expect(embeds.locator(".note-embed-open")).toHaveText(["reading › Unread", "reading › All books", "reading › Unread", "missing.base"]);
+  await expect.poll(embedNames).toEqual(["Emma"]);
+  await expect(embeds.first().locator(".base-row").first()).not.toHaveAttribute("tabindex");
+  await expect(embeds.nth(1).locator(".base-card")).toHaveCount(5);
+  const [cardList, firstCard, secondCard] = await Promise.all([embeds.nth(1).locator(".base-cards"), embeds.nth(1).locator(".base-card").first(), embeds.nth(1).locator(".base-card").nth(1)].map(item => item.boundingBox()));
+  assert.ok(firstCard.x - cardList.x < 8 && firstCard.y === secondCard.y, "embedded cards drop the editor's list indent and line up");
+  await expect(embeds.nth(2).locator(".base-notice-alert")).toHaveText("View \"Nope\" not found; showing \"Unread\".");
+  await expect(embeds.nth(3).locator(".note-embed-message")).toHaveText("Embedded base not found.");
+  await writeFile(path.join(vault, "Library/Ulysses.md"), book("Joyce", 700, "todo"));
+  await expect.poll(embedNames, { timeout: 15_000 }).toEqual(["Ulysses", "Emma"]);
+  await page.screenshot({ path: path.join(qa, "bases-embed-light-en.png") });
+
+  await embeds.first().locator("td.base-name", { hasText: "Emma" }).click();
+  await expect(rich.getByRole("heading", { level: 1 }).first()).toHaveText("Austen");
+  await page.getByRole("button", { name: "shelf.md", exact: true }).click();
+  await rich.getByRole("heading", { name: "Shelf", exact: true }).click();
+  await page.keyboard.press("End"); await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("tab", { name: "Unread" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  const htmlPath = path.join(root, "shelf.html");
+  await application.evaluate(({ dialog, BrowserWindow }, htmlPath) => {
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: htmlPath });
+    BrowserWindow.getAllWindows()[0].webContents.send("app:command", { action: "html" });
+  }, htmlPath);
+  await expect.poll(async () => { try { return (await readFile(htmlPath, "utf8")).includes("base-table"); } catch { return false; } }).toBe(true);
+  const html = await readFile(htmlPath, "utf8");
+  assert.match(html, /<a [^>]*href="reading\.base"[^>]*>reading › Unread<\/a>/);
+  assert.match(html, /<td class="base-name">Ulysses<\/td>/);
+  assert.match(html, /<li class="base-card base-row"/);
+  assert.equal(await readFile(path.join(vault, "shelf.md"), "utf8"), notes["shelf.md"]);
+
   await theme(page, "dark");
   await page.getByRole("button", { name: "reading.base", exact: true }).click();
   await expect(dialog.locator(".base-count")).toHaveText(/^Notes: \d+$/);
   await dialog.screenshot({ path: path.join(qa, "bases-dark-en.png") });
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "shelf.md", exact: true }).click();
+  await expect(page.locator(".document-editor:not([hidden]) .rich-document .note-embed .base-table").first()).toBeVisible();
+  await page.screenshot({ path: path.join(qa, "bases-embed-dark-en.png") });
   assert.equal(await readFile(path.join(vault, "reading.base"), "utf8"), reading, "the base file is never written");
   assert.deepEqual(errors, []);
   assert.deepEqual(outbound, []);

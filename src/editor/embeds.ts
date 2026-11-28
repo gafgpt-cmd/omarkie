@@ -1,6 +1,6 @@
 // Fills `.note-embed` placeholders (from `![[Note#Heading]]`) with a read-only rendering of the section.
 // Live: the app feeds file stamps and open drafts; frames whose notes changed re-render, the rest stay.
-import { createEmbedSource, type EmbedSection, type EmbedSource } from "../../shared/embeds.mjs";
+import { baseEmbed, createEmbedSource, type EmbedSection, type EmbedSource } from "../../shared/embeds.mjs";
 import { renderMarkdown } from "./markdown.ts";
 import { t } from "../i18n.ts";
 
@@ -11,7 +11,8 @@ type Options = {
   open(relative: string, line: number, documentId: string): void;
 };
 
-let source: EmbedSource | null = null, options: Options | null = null, paths = 0, timer = 0;
+// `notes` counts every note change: a base embed lists the whole vault, so its stamp follows all of them.
+let source: EmbedSource | null = null, options: Options | null = null, paths = 0, notes = 0, timer = 0;
 const versions = new Map<string, number>(), listeners = new Set<() => void>(), ownText = new WeakMap<HTMLElement, string>(), drawn = new WeakMap<HTMLElement, string[]>();
 
 export function configureEmbeds(next: Options) {
@@ -20,6 +21,7 @@ export function configureEmbeds(next: Options) {
 }
 function changed(result: { changed: string[]; paths: boolean }) {
   for (const relative of result.changed) versions.set(relative, (versions.get(relative) ?? 0) + 1);
+  notes += result.changed.length;
   if (result.paths) paths += 1;
   if (!result.changed.length && !result.paths) return;
   clearTimeout(timer);
@@ -32,7 +34,8 @@ export const vaultFiles = () => source?.files() ?? [];
 export const vaultNotes = (relatives: string[]) => source ? source.notes(relatives) : Promise.resolve([]);
 export function openVaultNote(relative: string, line = 1) { options?.open(relative, line, ""); }
 
-const stamp = (deps: string[]) => `${paths}|${deps.map(relative => `${relative}:${versions.get(relative) ?? 0}`).join("|")}`;
+const everyNote = "*";
+const stamp = (deps: string[]) => `${paths}|${deps.map(relative => `${relative}:${relative === everyNote ? notes : versions.get(relative) ?? 0}`).join("|")}`;
 const outer = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>(".note-embed[data-embed]")].filter(frame => !frame.parentElement?.closest(".note-embed"));
 
 function message(result: EmbedSection) {
@@ -49,18 +52,47 @@ function message(result: EmbedSection) {
   }
 }
 
-async function fill(frame: HTMLElement, note: Note & { base?: string }, chain: string[], budget: { bytes: number }, documentId: string): Promise<string[]> {
-  const raw = frame.dataset.embed || "", result = await source!.section(note, raw, chain, budget);
-  const deps = new Set(result.relative !== undefined ? [result.relative] : []);
+function heading(raw: string, title: string, relative: string | undefined, line: number, hint: string) {
   const head = document.createElement("span"), open = document.createElement("a");
   head.className = "note-embed-head";
   open.className = "vault-link note-embed-open"; open.dataset.embedOpen = "true";
   open.href = `omarkie-wiki:${encodeURIComponent(raw)}`;
-  open.textContent = result.title || raw;
-  open.title = t("Open the source note (Ctrl/Cmd+Enter on this line)");
-  if (result.relative) { open.dataset.embedRelative = result.relative; open.dataset.embedLine = String(result.line ?? 1); }
+  open.textContent = title;
+  open.title = hint;
+  if (relative) { open.dataset.embedRelative = relative; open.dataset.embedLine = String(line); }
   head.append(open);
-  if (result.relative) { const where = document.createElement("span"); where.className = "note-embed-path"; where.textContent = result.relative; head.append(where); }
+  if (relative) { const where = document.createElement("span"); where.className = "note-embed-path"; where.textContent = relative; head.append(where); }
+  return head;
+}
+
+// `![[file.base#View]]`: the view drawn read-only, rows open their note. Bases code loads on the first one.
+async function fillBase(frame: HTMLElement, note: Note & { base?: string }, raw: string): Promise<string[]> {
+  const found = source!.resolveBase(note, raw), body = document.createElement("div");
+  body.className = "note-embed-body base-embed";
+  let title = raw;
+  if (found.state === "ok" && found.relative) {
+    const { loadBase, renderBase } = await import("./bases.ts");
+    const state = await loadBase(found.relative, found.view || undefined), name = found.relative.split("/").at(-1)!.replace(/\.base$/i, "");
+    title = state.result?.view ? `${name} › ${state.result.view}` : name;
+    renderBase(body, state, relative => openVaultNote(relative), true);
+  } else {
+    const warning = document.createElement("span");
+    warning.className = "note-embed-message"; warning.setAttribute("role", "note");
+    warning.textContent = found.state === "ambiguous" ? message({ state: "ambiguous", candidates: found.candidates }) : t("Embedded base not found.");
+    body.append(warning);
+  }
+  frame.dataset.embedState = found.state;
+  frame.setAttribute("aria-label", t("Embedded from {{note}}", { note: found.relative || raw }));
+  frame.replaceChildren(heading(raw, title, found.relative, 1, t("Open the base (Ctrl/Cmd+Enter on this line)")), body);
+  return found.relative ? [found.relative, everyNote] : [];
+}
+
+async function fill(frame: HTMLElement, note: Note & { base?: string }, chain: string[], budget: { bytes: number }, documentId: string): Promise<string[]> {
+  const raw = frame.dataset.embed || "";
+  if (baseEmbed(raw)) return fillBase(frame, note, raw);
+  const result = await source!.section(note, raw, chain, budget);
+  const deps = new Set(result.relative !== undefined ? [result.relative] : []);
+  const head = heading(raw, result.title || raw, result.relative, result.line ?? 1, t("Open the source note (Ctrl/Cmd+Enter on this line)"));
   const body = document.createElement("div");
   body.className = "note-embed-body";
   if (result.state === "ok") {

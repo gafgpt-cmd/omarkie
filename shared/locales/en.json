@@ -1421,5 +1421,8 @@
   "Open {{note}}": "Open {{note}}",
   "No notes match this view.": "No notes match this view.",
   "Showing {{shown}} of {{total}} notes": "Showing {{shown}} of {{total}} notes",
-  "Notes: {{total}}": "Notes: {{total}}"
+  "Notes: {{total}}": "Notes: {{total}}",
+  "View \"{{name}}\" not found; showing \"{{shown}}\".": "View \"{{name}}\" not found; showing \"{{shown}}\".",
+  "Embedded base not found.": "Embedded base not found.",
+  "Open the base (Ctrl/Cmd+Enter on this line)": "Open the base (Ctrl/Cmd+Enter on this line)"
 }

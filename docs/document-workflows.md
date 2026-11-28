@@ -31,10 +31,15 @@
 
 ## Bases
 
-Obsidian `.base` files: read-only table of vault notes.
+Obsidian `.base` files: read-only table or cards of vault notes.
 
 - Open from the file list or Quick Open. View tabs on top.
-- Keyboard: Left/Right/Home/End switch views; Tab into rows; Up/Down/Home/End move; Enter or Space opens the note.
+- Keyboard: Left/Right/Home/End switch views; Tab into rows or cards; Up/Down/Left/Right/Home/End move; Enter or Space opens the note.
+- Embed in a note: `![[file.base]]` (first view) or `![[file.base#View]]`.
+  - Read-only, live, click a row or card to open its note.
+  - Ctrl/Cmd+Enter on the embed line opens the full base.
+  - Unknown view: notice, first view shown. Missing or ambiguous file: notice.
+  - HTML export keeps the rows as drawn.
 - Live: drafts, external edits, renames and deletes update rows. No reindex, no save needed.
 - Never writes the `.base` file. No network. No JS, DataviewJS, remote data or executable formulas.
 
@@ -46,7 +51,7 @@ Obsidian `.base` files: read-only table of vault notes.
 | Columns (`order`) | `file.name/basename/path/folder/ext/size/ctime/mtime/tags`, note properties (`author`, `note.author`, `note["x y"]`) |
 | `properties.*.displayName` | column titles |
 | `sort`, `limit` | yes; empties last, then path order |
-| View types | `table`; `cards` shown as a table |
+| View types | `table`, `cards` (title + property list); others shown as a table |
 
 Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknown keys, unknown functions or fields (e.g. `file.backlinks`).
 

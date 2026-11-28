@@ -1436,5 +1436,8 @@
   "Open {{note}}": "Deschide {{note}}",
   "No notes match this view.": "Nicio notiță nu se potrivește cu această vizualizare.",
   "Showing {{shown}} of {{total}} notes": "Se afișează {{shown}} din {{total}} notițe",
-  "Notes: {{total}}": "Notițe: {{total}}"
+  "Notes: {{total}}": "Notițe: {{total}}",
+  "View \"{{name}}\" not found; showing \"{{shown}}\".": "Vizualizarea \"{{name}}\" nu a fost găsită; se afișează \"{{shown}}\".",
+  "Embedded base not found.": "Baza încorporată nu a fost găsită.",
+  "Open the base (Ctrl/Cmd+Enter on this line)": "Deschide baza (Ctrl/Cmd+Enter pe această linie)"
 }

@@ -1434,5 +1434,8 @@
   "Open {{note}}": "Abrir {{note}}",
   "No notes match this view.": "Ninguna nota coincide con esta vista.",
   "Showing {{shown}} of {{total}} notes": "Mostrando {{shown}} de {{total}} notas",
-  "Notes: {{total}}": "Notas: {{total}}"
+  "Notes: {{total}}": "Notas: {{total}}",
+  "View \"{{name}}\" not found; showing \"{{shown}}\".": "No se encuentra la vista \"{{name}}\"; se muestra \"{{shown}}\".",
+  "Embedded base not found.": "No se encuentra la base incrustada.",
+  "Open the base (Ctrl/Cmd+Enter on this line)": "Abrir la base (Ctrl/Cmd+Intro en esta línea)"
 }

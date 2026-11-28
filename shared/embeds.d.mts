@@ -16,8 +16,10 @@ export interface EmbedSource {
   setFiles(list: { relative: string; modified?: string; created?: string; isDirectory?: string }[]): { changed: string[]; paths: boolean };
   setDrafts(list: { relative: string; content: string }[]): { changed: string[]; paths: boolean };
   section(from: { relative: string; content: string; base?: string }, raw: string, chain?: string[], budget?: { bytes: number }): Promise<EmbedSection>;
+  resolveBase(from: { relative: string; base?: string }, raw: string): { state: "ok" | "missing" | "ambiguous"; view: string; relative?: string; candidates?: string[] };
 }
 export const embedLimits: { depth: number; bytes: number; read: number };
 export function noteEmbed(target: string): boolean;
+export function baseEmbed(target: string): boolean;
 export function rebaseLinks(markdown: string, targetRelative: string, fromRelative: string, exists?: (path: string) => boolean): string;
 export function createEmbedSource(options: { read(relatives: string[]): Promise<{ relative: string; content: string }[]> | { relative: string; content: string }[] }): EmbedSource;

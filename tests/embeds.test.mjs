@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createEmbedSource, embedLimits, noteEmbed, rebaseLinks } from "../shared/embeds.mjs";
+import { baseEmbed, createEmbedSource, embedLimits, noteEmbed, rebaseLinks } from "../shared/embeds.mjs";
 import { extractSection, sectionRange } from "../shared/glass-cards.mjs";
 
 const source = [
@@ -39,6 +39,19 @@ test("note embeds keep media precedence and leave non-note files to their own vi
   assert.equal(noteEmbed("photo.PNG"), false);
   assert.equal(noteEmbed("clip.mp4"), false);
   assert.equal(noteEmbed("table.base#View"), false);
+  assert.equal(baseEmbed("table.base#View"), true);
+  assert.equal(baseEmbed("Lists/Table.BASE"), true);
+  assert.equal(baseEmbed("table.base.md"), false);
+});
+
+test("base embeds resolve the vault file and keep the view name", () => {
+  const { embeds, reads } = vault({ "home.md": "", "a/reading.base": "", "b/twin.base": "", "c/twin.base": "" });
+  assert.deepEqual(embeds.resolveBase({ relative: "home.md" }, "reading.base#All books"), { state: "ok", view: "All books", relative: "a/reading.base" });
+  assert.deepEqual(embeds.resolveBase({ relative: "home.md" }, "a/reading.base"), { state: "ok", view: "", relative: "a/reading.base" });
+  assert.deepEqual(embeds.resolveBase({ relative: "home.md" }, "twin.base#V"), { state: "ambiguous", view: "V", candidates: ["b/twin.base", "c/twin.base"] });
+  assert.equal(embeds.resolveBase({ relative: "home.md" }, "gone.base").state, "missing");
+  assert.equal(embeds.resolveBase({ relative: "" }, "reading.base").state, "missing");
+  assert.deepEqual(reads, [], "resolving reads nothing");
 });
 
 test("embedded sections resolve headings, keep the target folder for links, and report ambiguity", async () => {

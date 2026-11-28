@@ -11,6 +11,7 @@ export const noteEmbed = target => {
   const path = String(target ?? "").split("#")[0].trim();
   return !media.test(path) && !otherFile.test(path);
 };
+export const baseEmbed = target => /\.base$/i.test(String(target ?? "").split("#")[0].trim());
 const folderOf = relative => relative.split("/").slice(0, -1).join("/");
 const scheme = /^[a-z][a-z\d+.-]*:|^[/\\]{2}/i;
 
@@ -119,6 +120,14 @@ export function createEmbedSource({ read }) {
       for (const [relative, content] of next) drafts.set(relative, content);
       if (paths) index = null;
       return { changed, paths };
+    },
+    // A `![[file.base#View]]` target: the vault file it names and the view after `#`.
+    resolveBase(from, raw) {
+      const parts = referenceParts(String(raw ?? ""), true), base = from.base ?? from.relative ?? "", view = parts.fragment.trim();
+      if (!base) return { state: "missing", view };
+      const resolved = resolver().resolve({ relative: base }, parts.target.trim(), true);
+      if (resolved.state === "ambiguous") return { state: "ambiguous", view, candidates: resolved.candidates.map(file => file.relative).sort() };
+      return resolved.state === "resolved" ? { state: "ok", view, relative: resolved.candidates[0].relative } : { state: "missing", view };
     },
     // `from` is the note whose text holds the embed: `{ relative, content }`; relative is empty outside a vault. Nested embeds
     // pass `base`, the note on screen: shown sections have their links rebased to it, so paths resolve from there.
