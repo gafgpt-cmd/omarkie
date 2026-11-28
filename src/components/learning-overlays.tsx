@@ -6,7 +6,7 @@ import type { ReadingContext } from "../editor/MarkdownEditor";
 export type StudyMark = Extract<StudyItem<ReadingAnchor>, { type: "mark" }>;
 export interface StudyOverlay { line: number; tabs: ReactNode; tucks: ReactNode; marks: StudyMark[] }
 
-function quoteRange(block: HTMLElement, { anchor, start }: StudyMark) {
+export function quoteRange(block: HTMLElement, { anchor, start }: StudyMark) {
   const quote = anchor.quote;
   const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT, { acceptNode: node =>
     node.parentElement?.closest('[aria-hidden="true"],.md-meta,.md-object-source,.study-floats') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT });

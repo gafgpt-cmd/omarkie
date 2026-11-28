@@ -2172,6 +2172,8 @@ export default function GlassLayer({ editor, root, nodes, groups, note, saved: d
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       if (event.key !== "Alt" || event.repeat || latest.current.tool !== "select" || dragging.current) return;
+      // Fold view hides the page; its own Rayos X lens owns Alt there.
+      if (!root.getClientRects().length) return;
       const target = event.target instanceof Element ? event.target : null;
       setLensOn(true);
       if (pointer.current) setLens(pointer.current);

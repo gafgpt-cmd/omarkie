@@ -1752,5 +1752,13 @@
   "Too short to fold": "Too short to fold",
   "Local fold · model lines when you choose": "Local fold · model lines when you choose",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}}% of words",
-  "Estudio needs a model; local stops only for now": "Estudio needs a model; local stops only for now"
+  "Estudio needs a model; local stops only for now": "Estudio needs a model; local stops only for now",
+  "Evidence": "Evidence",
+  "Source · line {{line}}": "Source · line {{line}}",
+  "Open in editor": "Open in editor",
+  "Back to fold · Esc": "Back to fold · Esc",
+  "Corte": "Corte",
+  "Compare with Full · C": "Compare with Full · C",
+  "Divider between Full and {{level}}": "Divider between Full and {{level}}",
+  "{{percent}}% shows Full": "{{percent}}% shows Full"
 }

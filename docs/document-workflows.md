@@ -107,7 +107,11 @@ Not supported, with a visible notice: `formulas`, `summaries`, `groupBy`, unknow
 - **Write into note… → Accept** imports the image as a note asset and inserts `![label](path){width=240 float=right}`. Save the note as usual. Other Markdown apps can still render the image.
 - Hold **Peek** to see the base page. Turn off Learning mode to edit Markdown.
 - **Fold view** (`Ctrl+Shift+H`, `⌘⇧H` on macOS; also Display menu, toolbar overflow, Learning rail) replaces the page with a read-only fold of the note's own words and turns Learning mode on. Stops: Full, Brief, Key, Takeaway, Topic; opens at Key. Stop is session-only.
-  - Keys: `[` `]` step, `1`-`5` jump, `↑` `↓` move between lines, `Esc` leaves to the fold's top line.
+  - Keys: `[` `]` step, `1`-`5` jump, `↑` `↓` move between lines, `Esc` closes peek → Corte → fold (leaves at the fold's top line).
+  - Evidence peek: `Enter` or `Alt`+click a line. Shows the line's Full source + `Source · line N`. Stop never changes. `Esc` closes it at the same y.
+  - Open in editor: `Shift+Enter` (or the peek button). Fold closes, source line lands at the same y, its block flashes 1.2 s. `Esc` or **Back to fold** reopens the fold there.
+  - Rayos X: hold `Alt` (or press-hold the pen) for a lens showing the source + marks under the pointer. No layout shift. Keyboard: lens sits on the focused line.
+  - **Corte** (`C` or bar button): divider over the page. Left = Full, right = current stop; dropped words tinted. Drag or `←` `→` `Home` `End` move it.
   - Drag the level bar or `Ctrl`+wheel to scrub between stops; release settles on the nearest. `Ctrl`+wheel over one unit folds only that unit.
   - Estudio is disabled: it needs a model; local stops only for now. Short notes show **Too short to fold**.
 - Minor edits reattach scraps at 0.8 similarity; missing or ambiguous anchors go to **Loose scraps**. Existing margin notes appear as scraps without rewriting history.

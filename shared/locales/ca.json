@@ -1769,5 +1769,13 @@
   "Too short to fold": "Massa curta per plegar",
   "Local fold · model lines when you choose": "Plec local · línies del model quan triïs",
   "{{level}}, {{percent}}% of words": "{{level}}, {{percent}} % de les paraules",
-  "Estudio needs a model; local stops only for now": "Estudi necessita un model; de moment només nivells locals"
+  "Estudio needs a model; local stops only for now": "Estudi necessita un model; de moment només nivells locals",
+  "Evidence": "Evidència",
+  "Source · line {{line}}": "Font · línia {{line}}",
+  "Open in editor": "Obre a l’editor",
+  "Back to fold · Esc": "Torna al plec · Esc",
+  "Corte": "Tall",
+  "Compare with Full · C": "Compara amb Complet · C",
+  "Divider between Full and {{level}}": "Divisor entre Complet i {{level}}",
+  "{{percent}}% shows Full": "{{percent}} % mostra Complet"
 }

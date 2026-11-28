@@ -15,6 +15,8 @@ interface RawUnit { kind: "raw"; unit: DocumentUnit; root: HTMLElement; present:
 export type FoldUnitView = WordUnit | RawUnit;
 interface Move { element: HTMLElement; dx: number; dy: number }
 interface Segment { from: number; to: number; moves: Move[]; fades: HTMLElement[]; offset: number }
+// Corte geometry for one near unit: dropped tokens by centre x, dropped raw blocks by left edge (scroller-relative).
+interface CutGeometry { tokens: HTMLElement[]; centres: Float64Array; gone: Uint8Array; blocks: HTMLElement[]; lefts: Float64Array }
 
 const atomKey = (element: Element) => element.matches(".mathjax-node") ? `math:${(element as HTMLElement).dataset.tex ?? ""}`
   : element instanceof HTMLImageElement ? `img:${element.getAttribute("src") ?? ""}` : `${element.localName}:${element.textContent ?? ""}`;
@@ -149,19 +151,52 @@ export class FoldEngine {
   readonly wordMorph: boolean;
   stop = 0;
   value = 0;
+  cutting = false;
+  // The open evidence peek; it glides with its unit.
+  peek: HTMLElement | null = null;
   private overrides = new Map<FoldUnitView, number>();
   private segment: Segment | null = null;
   private observer: IntersectionObserver;
+  private byRoot = new Map<Element, FoldUnitView>();
+  private nearUnits = new Set<FoldUnitView>();
+  private sources = new Map<FoldUnitView, string>();
+  private cutX = 0;
+  private cuts = new Map<FoldUnitView, CutGeometry>();
 
-  constructor(private scroller: HTMLElement, private container: HTMLElement, ladder: FoldDocumentLadder, documentId: string) {
+  constructor(private scroller: HTMLElement, private container: HTMLElement, private ladder: FoldDocumentLadder, private documentId: string) {
     this.units = buildUnits(container, ladder, documentId);
     this.wordMorph = this.units.length <= WORD_MORPH_LIMIT;
+    for (const unit of this.units) this.byRoot.set(unit.root, unit);
     // Two screens either side are near: they lay out fully, so motion there is never clipped.
-    this.observer = new IntersectionObserver(entries => { for (const entry of entries) entry.target.classList.toggle("fold-near", entry.isIntersecting); }, { root: scroller, rootMargin: "200% 0px" });
+    this.observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        entry.target.classList.toggle("fold-near", entry.isIntersecting);
+        const unit = this.byRoot.get(entry.target);
+        if (!unit) continue;
+        if (!entry.isIntersecting) { this.nearUnits.delete(unit); continue; }
+        this.nearUnits.add(unit);
+        if (this.cutting) this.cutUnit(unit);
+      }
+    }, { root: scroller, rootMargin: "200% 0px" });
     for (const unit of this.units) this.observer.observe(unit.root);
   }
 
   stopOf(unit: FoldUnitView) { return this.overrides.get(unit) ?? this.stop; }
+
+  unitOf(element: Element | null) {
+    const root = element?.closest(".fold-unit");
+    return root ? this.byRoot.get(root) : undefined;
+  }
+
+  // The unit's Full author text as rendered HTML: the evidence behind every stop.
+  source(unit: FoldUnitView) {
+    let html = this.sources.get(unit);
+    if (html === undefined) {
+      const markdown = this.ladder.byUnit[this.units.indexOf(unit)]?.stops.full ?? "";
+      this.sources.set(unit, html = markdown ? renderMarkdown(markdown, this.documentId) : "");
+    }
+    return html;
+  }
 
   // The visible change; its measure is what the 50 ms commit budget holds.
   private commit(stop: number, units = this.units) {
@@ -188,8 +223,10 @@ export class FoldEngine {
   private pieces(units: FoldUnitView[]) {
     const elements: HTMLElement[] = [];
     for (const unit of units) {
-      if (unit.kind === "words" && this.wordMorph) for (const token of unit.tokens) { if (!token.classList.contains("fold-off")) elements.push(token); }
-      else if (!unit.root.classList.contains("fold-off")) elements.push(unit.root);
+      if (unit.kind === "words" && this.wordMorph) {
+        for (const token of unit.tokens) { if (!token.classList.contains("fold-off")) elements.push(token); }
+        if (this.peek && unit.root.contains(this.peek)) elements.push(this.peek);
+      } else if (!unit.root.classList.contains("fold-off")) elements.push(unit.root);
     }
     return elements;
   }
@@ -218,6 +255,7 @@ export class FoldEngine {
   // Change the whole page (or one unit with an override) and glide what survives from where it was.
   switchTo(stop: number, only?: FoldUnitView) {
     this.endSegment();
+    if (this.cutting) { if (!only) this.recut(stop); return; }
     if (only) { if (this.stopOf(only) === stop) return; }
     else if (stop === this.stop && !this.overrides.size) return;
     const near = only ? [only] : this.near(), before = this.measure(this.pieces(near));
@@ -233,6 +271,7 @@ export class FoldEngine {
   scrub(value: number) {
     const start = performance.now(), { from, to, fraction } = scrubSegment(value, STOPS.length);
     this.value = value;
+    if (this.cutting) return;
     if (reducedMotion()) { const stop = nearestStop(value, STOPS.length); if (stop !== this.stop) this.switchTo(stop); return; }
     if (this.segment?.from !== from) {
       this.endSegment();
@@ -249,7 +288,7 @@ export class FoldEngine {
   // Let go of a scrub: settle on the nearest stop, gliding from where the words are now.
   release() {
     const target = nearestStop(this.value, STOPS.length);
-    if (!this.segment) { this.switchTo(target); return target; }
+    if (!this.segment || this.cutting) { this.switchTo(target); return target; }
     const near = this.near(), before = this.measure(this.pieces(near));
     const anchor = this.anchor(near, () => this.stop, () => target), anchorTop = anchor?.root.getBoundingClientRect().top;
     this.endSegment();
@@ -295,11 +334,109 @@ export class FoldEngine {
     return (this.units.find(unit => unit.root.getBoundingClientRect().bottom > top && !unit.root.classList.contains("fold-off")) ?? this.units[0])?.unit.line ?? 1;
   }
 
-  scrollToLine(line: number) {
+  // The last shown unit that starts at or before a source line.
+  unitAtLine(line: number) {
     let target: FoldUnitView | undefined;
     for (const unit of this.units) { if (unit.unit.line > line) break; if (!unit.root.classList.contains("fold-off")) target = unit; }
-    if (target) this.scroller.scrollTop += target.root.getBoundingClientRect().top - this.scroller.getBoundingClientRect().top;
+    return target;
+  }
+
+  // Put that line's unit `offset` px below the viewport top. Units never painted sit at their placeholder
+  // height (content-visibility), so everything above the target lays out once first; the observer trims it after.
+  scrollToLine(line: number, offset = 0) {
+    const target = this.unitAtLine(line);
+    if (!target) return target;
+    for (const unit of this.units) { unit.root.classList.add("fold-near"); if (unit === target) break; }
+    this.scroller.scrollTop += target.root.getBoundingClientRect().top - this.scroller.getBoundingClientRect().top - offset;
+    return target;
+  }
+
+  // A layout change outside the stops (a peek opening): what moves glides, the change itself fades in.
+  reflow(change: () => void) {
+    this.endSegment();
+    const near = this.near(), before = this.measure(this.pieces(near));
+    change();
+    this.glide(before, this.pieces(this.near()));
+  }
+
+  // Corte: the page lays out at Full; words the current stop drops are marked and either side of the divider shows or hides them.
+  setCut(on: boolean) {
+    if (on === this.cutting) return;
+    this.endSegment();
+    const near = this.near(), before = this.measure(this.pieces(near));
+    const anchor = this.anchor(near, unit => on ? this.stopOf(unit) : 0, unit => on ? 0 : this.stopOf(unit)), anchorTop = anchor?.root.getBoundingClientRect().top;
+    this.cutting = on;
+    this.container.classList.toggle("fold-cutting", on);
+    this.cuts.clear();
+    if (on) for (const unit of this.units) { applyStop(unit, 0); markCut(unit, this.stopOf(unit)); }
+    else for (const unit of this.units) { clearCut(unit); applyStop(unit, this.stopOf(unit)); }
+    void this.scroller.scrollHeight;
+    if (anchor && anchorTop !== undefined) this.scroller.scrollTop += anchor.root.getBoundingClientRect().top - anchorTop;
+    if (on) for (const unit of this.nearUnits) this.cutUnit(unit);
+    this.glide(before, this.pieces(near));
+  }
+
+  // Divider position as a fraction of the scroller width.
+  cutAt(fraction: number) {
+    this.cutX = fraction * this.scroller.getBoundingClientRect().width;
+    if (this.cutting) for (const unit of this.nearUnits) this.cutUnit(unit);
+  }
+
+  // Width changed: words rewrapped, so cached geometry is stale.
+  remeasureCut() {
+    this.cuts.clear();
+    if (this.cutting) for (const unit of this.nearUnits) this.cutUnit(unit);
+  }
+
+  private recut(stop: number) {
+    this.overrides.clear(); this.stop = stop; this.value = stop;
+    const start = performance.now();
+    for (const unit of this.units) { clearCut(unit); markCut(unit, stop); }
+    this.cuts.clear();
+    for (const unit of this.nearUnits) this.cutUnit(unit);
+    performance.measure("omarkie:fold-commit", { start, end: performance.now() });
+  }
+
+  private cutUnit(unit: FoldUnitView) {
+    let geometry = this.cuts.get(unit);
+    if (!geometry) {
+      const left = this.scroller.getBoundingClientRect().left;
+      const tokens = unit.kind === "words" ? unit.tokens.filter(token => token.classList.contains("fold-cut")) : [];
+      const blocks = [...unit.root.querySelectorAll<HTMLElement>(".fold-cut-block")];
+      geometry = {
+        tokens, blocks, gone: new Uint8Array(tokens.length).fill(2),
+        centres: Float64Array.from(tokens, token => { const rect = token.getBoundingClientRect(); return rect.left + rect.width / 2 - left; }),
+        lefts: Float64Array.from(blocks, block => block.getBoundingClientRect().left - left),
+      };
+      this.cuts.set(unit, geometry);
+    }
+    const { tokens, centres, gone, blocks, lefts } = geometry, x = this.cutX;
+    for (let i = 0; i < tokens.length; i++) {
+      const hidden = centres[i] > x ? 1 : 0;
+      if (gone[i] !== hidden) { gone[i] = hidden; tokens[i].classList.toggle("fold-cut-gone", hidden === 1); }
+    }
+    for (let i = 0; i < blocks.length; i++) blocks[i].style.setProperty("--cut-local", `${x - lefts[i]}px`);
   }
 
   dispose() { this.endSegment(); this.observer.disconnect(); }
+}
+
+// Mark what `stop` drops from a unit laid out at Full. Table rows go one by one; any other changed raw block goes whole.
+function markCut(unit: FoldUnitView, stop: number) {
+  if (unit.kind === "words") {
+    for (let i = 0; i < unit.tokens.length; i++) if (shows(unit.bits[i], 0) && !shows(unit.bits[i], stop)) unit.tokens[i].classList.add("fold-cut");
+    return;
+  }
+  const full = unit.variants[0], kept = unit.variants[stop];
+  if (kept === full) return;
+  const rows = [...full.querySelectorAll("tr")];
+  if (rows.length && shows(unit.present, stop)) {
+    const keep = new Set([...kept.querySelectorAll("tr")].map(row => row.textContent));
+    for (const row of rows) if (!keep.has(row.textContent)) for (const cell of row.cells) cell.classList.add("fold-cut-block");
+  } else full.classList.add("fold-cut-block");
+}
+
+function clearCut(unit: FoldUnitView) {
+  if (unit.kind === "words") { for (const token of unit.tokens) token.classList.remove("fold-cut", "fold-cut-gone"); return; }
+  for (const block of unit.root.querySelectorAll<HTMLElement>(".fold-cut-block")) { block.classList.remove("fold-cut-block"); block.style.removeProperty("--cut-local"); }
 }
